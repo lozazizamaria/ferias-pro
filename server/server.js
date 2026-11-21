@@ -33,6 +33,7 @@ const MIME = {
   ".jpeg": "image/jpeg",
   ".webp": "image/webp",
   ".pdf": "application/pdf",
+  ".pkpass": "application/vnd.apple.pkpass",
   ".ico": "image/x-icon"
 };
 
@@ -497,6 +498,229 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
   const sig = signer.sign(sa.private_key);
   const jwt = `${headerB64}.${claimB64}.${base64Url(sig)}`;
   return `https://pay.google.com/gp/v/save/${jwt}`;
+}
+
+/* ---------- ZERO-DEPENDENCY .PKPASS (ZIP) PARA GOOGLE WALLET ---------- */
+const CRC32_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c = CRC32_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function buildZipBuffer(entries) {
+  const localParts = [];
+  const cdParts = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const nameBuf = Buffer.from(String(entry.name || "file"), "utf8");
+    const dataBuf = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(String(entry.data || ""), "utf8");
+    const crc = crc32(dataBuf);
+
+    const lf = Buffer.alloc(30 + nameBuf.length);
+    lf.writeUInt32LE(0x04034b50, 0);
+    lf.writeUInt16LE(20, 4);
+    lf.writeUInt16LE(0x0800, 6);
+    lf.writeUInt16LE(0, 8);
+    lf.writeUInt16LE(0, 10);
+    lf.writeUInt16LE(0x5421, 12);
+    lf.writeUInt32LE(crc, 14);
+    lf.writeUInt32LE(dataBuf.length, 18);
+    lf.writeUInt32LE(dataBuf.length, 22);
+    lf.writeUInt16LE(nameBuf.length, 26);
+    lf.writeUInt16LE(0, 28);
+    nameBuf.copy(lf, 30);
+
+    const cd = Buffer.alloc(46 + nameBuf.length);
+    cd.writeUInt32LE(0x02014b50, 0);
+    cd.writeUInt16LE(20, 4);
+    cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(0x0800, 8);
+    cd.writeUInt16LE(0, 10);
+    cd.writeUInt16LE(0, 12);
+    cd.writeUInt16LE(0x5421, 14);
+    cd.writeUInt32LE(crc, 16);
+    cd.writeUInt32LE(dataBuf.length, 20);
+    cd.writeUInt32LE(dataBuf.length, 24);
+    cd.writeUInt16LE(nameBuf.length, 28);
+    cd.writeUInt16LE(0, 30);
+    cd.writeUInt16LE(0, 32);
+    cd.writeUInt16LE(0, 34);
+    cd.writeUInt16LE(0, 36);
+    cd.writeUInt32LE(0, 38);
+    cd.writeUInt32LE(offset, 42);
+    nameBuf.copy(cd, 46);
+
+    localParts.push(lf, dataBuf);
+    cdParts.push(cd);
+    offset += lf.length + dataBuf.length;
+  }
+
+  const cdBuf = Buffer.concat(cdParts);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(0, 4);
+  eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(cdBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  eocd.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...localParts, cdBuf, eocd]);
+}
+
+let cachedPassIconPng = null;
+function getPassIconPng() {
+  if (cachedPassIconPng) return cachedPassIconPng;
+  try {
+    const p = path.join(STATIC_DIR, "icons", "icon-192.png");
+    if (fs.existsSync(p)) cachedPassIconPng = fs.readFileSync(p);
+  } catch {}
+  return cachedPassIconPng;
+}
+
+function buildPkpassBuffer(activity, tripName) {
+  const act = activity && typeof activity === "object" ? activity : {};
+  const suffix = crypto.createHash("md5").update(`${act.id || act.name || "pass"}-${act.start || ""}`).digest("hex").slice(0, 12);
+  const actType = String(act.type || "Atividade");
+  const cleanName = String(act.name || "Reserva Férias Pro").trim();
+  const dateLabel = act.end && act.end !== act.start ? `${act.start} a ${act.end}` : (act.start || "-");
+  const totalCost = Number(act.extraCost) || 0;
+  const ticketsArr = Array.isArray(act.tickets) ? act.tickets.filter(t => (Number(t.qty) || 0) > 0 && (Number(t.unitPrice) || 0) > 0) : [];
+  const totalTickets = ticketsArr.reduce((s, t) => s + (Number(t.qty) || 0), 0);
+
+  const bgColors = {
+    Voo: "rgb(2, 132, 199)",
+    Trem: "rgb(13, 148, 136)",
+    "Ônibus": "rgb(217, 119, 6)",
+    Hospedagem: "rgb(5, 150, 105)",
+    Ingresso: "rgb(79, 70, 229)",
+    Evento: "rgb(225, 29, 72)",
+    Passeio: "rgb(147, 51, 234)",
+    Restaurante: "rgb(234, 88, 12)",
+    Viagem: "rgb(37, 99, 235)"
+  };
+
+  const passObj = {
+    formatVersion: 1,
+    passTypeIdentifier: "pass.com.feriaspro.pass",
+    serialNumber: `fp-${suffix}`,
+    teamIdentifier: "FERIASPRO1",
+    organizationName: "Férias Pro",
+    description: `${cleanName} — ${tripName || "Viagem"}`,
+    logoText: "Férias Pro",
+    backgroundColor: bgColors[actType] || "rgb(79, 70, 229)",
+    foregroundColor: "rgb(255, 255, 255)",
+    labelColor: "rgb(224, 231, 255)",
+    barcodes: [{
+      message: `FERIASPRO|${act.id || suffix}|${cleanName}|${act.start || ""}|${act.bookingRef || ""}`,
+      format: "PKBarcodeFormatQR",
+      messageEncoding: "iso-8859-1",
+      altText: String(act.bookingRef || `FP-${suffix.toUpperCase()}`).slice(0, 36)
+    }]
+  };
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(act.start || ""))) {
+    const tStr = (act.startTime && /^\d{2}:\d{2}/.test(String(act.startTime))) ? String(act.startTime).slice(0, 5) + ":00" : "09:00:00";
+    passObj.relevantDate = `${act.start}T${tStr}-03:00`;
+  }
+
+  const secondaryFields = [
+    { key: "trip", label: "VIAGEM", value: String(tripName || "Férias Pro").slice(0, 48) },
+    { key: "date", label: "DATA", value: dateLabel }
+  ];
+  const auxiliaryFields = [];
+  if (totalTickets > 0) auxiliaryFields.push({ key: "tickets", label: "INGRESSOS", value: `${totalTickets} un.` });
+  if (totalCost > 0) auxiliaryFields.push({ key: "cost", label: "VALOR", value: `R$ ${totalCost.toFixed(2).replace(".", ",")}` });
+  if (act.startTime) auxiliaryFields.push({ key: "time", label: "HORÁRIO", value: String(act.startTime).slice(0, 5) });
+  if (act.bookingRef) auxiliaryFields.push({ key: "ref", label: "LOCALIZADOR", value: String(act.bookingRef).slice(0, 32) });
+
+  const backFields = [];
+  if (act.from || act.to) backFields.push({ key: "route", label: "Trecho / Trajeto", value: `${act.from || "-"} -> ${act.to || "-"}` });
+  if (ticketsArr.length) {
+    backFields.push({
+      key: "ticket_detail",
+      label: "Detalhamento de Ingressos",
+      value: ticketsArr.map(t => `${t.qty}x ${t.label || "Ingresso"} @ R$ ${Number(t.unitPrice).toFixed(2).replace(".", ",")}`).join(" | ")
+    });
+  }
+  if (act.notes) backFields.push({ key: "notes", label: "Observações", value: String(act.notes).slice(0, 500) });
+
+  const isTransit = actType === "Voo" || actType === "Trem" || actType === "Ônibus";
+  if (isTransit) {
+    const tType = actType === "Voo" ? "PKTransitTypeAir" : actType === "Trem" ? "PKTransitTypeTrain" : "PKTransitTypeBus";
+    passObj.boardingPass = {
+      transitType: tType,
+      headerFields: [{ key: "type", label: "EMBARQUE", value: actType.toUpperCase() }],
+      primaryFields: (act.from || act.to)
+        ? [
+            { key: "origin", label: "ORIGEM", value: String(act.from || "Origem").slice(0, 28) },
+            { key: "dest", label: "DESTINO", value: String(act.to || cleanName).slice(0, 28) }
+          ]
+        : [{ key: "title", label: "TRECHO", value: cleanName.slice(0, 42) }],
+      secondaryFields,
+      auxiliaryFields,
+      backFields
+    };
+  } else if (["Ingresso", "Evento", "Passeio", "Restaurante"].includes(actType) || totalTickets > 0) {
+    passObj.eventTicket = {
+      headerFields: [{ key: "dateh", label: "DATA", value: act.start || "-" }],
+      primaryFields: [{ key: "event", label: actType.toUpperCase(), value: cleanName.slice(0, 48) }],
+      secondaryFields,
+      auxiliaryFields,
+      backFields
+    };
+  } else {
+    passObj.generic = {
+      headerFields: [{ key: "typeh", label: "ATIVIDADE", value: actType.toUpperCase() }],
+      primaryFields: [{ key: "main", label: "TÍTULO", value: cleanName.slice(0, 48) }],
+      secondaryFields,
+      auxiliaryFields,
+      backFields
+    };
+  }
+
+  const entries = [{ name: "pass.json", data: Buffer.from(JSON.stringify(passObj, null, 2), "utf8") }];
+  const iconPng = getPassIconPng();
+  if (iconPng) {
+    entries.push({ name: "icon.png", data: iconPng });
+    entries.push({ name: "icon@2x.png", data: iconPng });
+    entries.push({ name: "logo.png", data: iconPng });
+  }
+  return buildZipBuffer(entries);
+}
+
+const walletPassTokens = new Map();
+function storeWalletPkpass(buf, activityName) {
+  const now = Date.now();
+  for (const [k, v] of walletPassTokens.entries()) {
+    if (v.expiresAt <= now) walletPassTokens.delete(k);
+  }
+  if (walletPassTokens.size >= 400) {
+    const oldestKey = walletPassTokens.keys().next().value;
+    if (oldestKey) walletPassTokens.delete(oldestKey);
+  }
+  const token = crypto.randomBytes(24).toString("hex");
+  const cleanFile = safeFileName(String(activityName || "passe_ferias_pro").replace(/\s+/g, "_").replace(/[^\w-]/g, "")) || "passe_ferias_pro";
+  walletPassTokens.set(token, {
+    buf,
+    filename: `${cleanFile}.pkpass`,
+    expiresAt: now + 15 * 60 * 1000
+  });
+  return { token, filename: `${cleanFile}.pkpass` };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -1214,6 +1438,42 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
       } catch (err) {
         return sendJson(res, 400, { ok: false, error: err.message || "Falha ao assinar passe do Google Wallet." });
       }
+    }
+
+    if (pathname === "/api/wallet/pkpass" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const body = await readBody(req);
+      if (!body.activity) return sendJson(res, 400, { ok: false, error: "Dados da atividade ausentes." });
+      try {
+        const pkBuf = buildPkpassBuffer(body.activity, body.tripName || "Férias Pro");
+        const { token, filename } = storeWalletPkpass(pkBuf, body.activity.name);
+        return sendJson(res, 200, {
+          ok: true,
+          filename,
+          pkpassUrl: `/api/wallet/pkpass/${token}.pkpass`
+        });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: err.message || "Falha ao gerar passe .pkpass." });
+      }
+    }
+
+    const pkpassMatch = pathname.match(/^\/api\/wallet\/pkpass\/([a-f0-9]{16,64})\.pkpass$/i);
+    if (pkpassMatch && req.method === "GET") {
+      const item = walletPassTokens.get(pkpassMatch[1]);
+      if (!item || item.expiresAt <= Date.now()) {
+        walletPassTokens.delete(pkpassMatch[1]);
+        res.writeHead(404);
+        return res.end("Pass expired or not found");
+      }
+      res.writeHead(200, {
+        "Content-Type": "application/vnd.apple.pkpass",
+        "Content-Disposition": `attachment; filename="${item.filename}"`,
+        "Content-Length": item.buf.length,
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff"
+      });
+      return res.end(item.buf);
     }
 
     /* ---------- CALENDAR FEED (.ics ASSINÁVEL) ---------- */

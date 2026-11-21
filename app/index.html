@@ -6,15 +6,16 @@
 <title>Férias Pro</title>
 <meta name="description" content="Férias Pro: planejamento inteligente de férias com IA Gemini, Gantt horizontal, Google Maps, Google Agenda, Google Wallet e WhatsApp.">
 <meta name="theme-color" content="#0b0f1a">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Férias Pro">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -131,6 +132,7 @@
     <nav class="tabs" id="tabs" aria-label="Navegação principal">
       <button class="tab active" data-view="gantt" id="tab-gantt" type="button">📅 Cronograma</button>
       <button class="tab" data-view="dashboard" id="tab-dashboard" type="button">📊 Dashboard</button>
+      <button class="tab" data-view="finance" id="tab-finance" type="button">💰 Financeiro</button>
       <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
       <button class="tab" data-view="params" id="tab-params" type="button">⚙️ Parâmetros</button>
       <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
@@ -223,6 +225,81 @@
           <span class="muted small">Clique para editar</span>
         </div>
         <div id="tripBars" class="tripbars"></div>
+      </div>
+    </section>
+
+    <!-- FINANCEIRO (LINHA DO TEMPO DIÁRIA, GRÁFICOS E CONTROLE REAL) -->
+    <section class="view" id="view-finance">
+      <div class="kpis fin-kpis" id="finKpis"></div>
+
+      <div class="card fin-controls-card">
+        <div class="card-head">
+          <div>
+            <h2>💰 Planejamento Diário, Economia &amp; Redistribuição</h2>
+            <p class="muted small">Viagens, combustível, pedágios e ingressos caem no dia exato. Alimentação, diárias de hospedagem, fixos e reserva são rateados linearmente por dia.</p>
+          </div>
+          <div class="fin-presets" role="group" aria-label="Presets de economia">
+            <button type="button" class="btn ghost small fin-save-preset" data-savepct="0">Base (0%)</button>
+            <button type="button" class="btn ghost small fin-save-preset" data-savepct="5">-5% Econ.</button>
+            <button type="button" class="btn ghost small fin-save-preset" data-savepct="10">-10% Econ.</button>
+            <button type="button" class="btn ghost small fin-save-preset" data-savepct="15">-15% Econ.</button>
+          </div>
+        </div>
+
+        <div class="fin-controls-grid">
+          <label>🍽️ Alimentação / pessoa / dia (R$)
+            <input type="number" step="1" min="0" id="fin-food">
+          </label>
+          <label>🏨 Hospedagem / noite (R$)
+            <input type="number" step="1" min="0" id="fin-lodging">
+          </label>
+          <label>📦 Outros gastos fixos (R$ total)
+            <input type="number" step="1" min="0" id="fin-fixed">
+          </label>
+          <label>🛟 Margem reserva (%)
+            <input type="number" step="1" min="0" max="100" id="fin-cont">
+          </label>
+          <label class="fin-savings-field">🎯 Meta de economia (R$)
+            <input type="number" step="10" min="0" id="fin-savingsGoal" placeholder="0,00">
+          </label>
+        </div>
+
+        <div id="finRedistBanner" class="fin-redist-banner" hidden></div>
+      </div>
+
+      <div class="card fin-chart-card">
+        <div class="card-head">
+          <div>
+            <h2>📊 Gráfico Diário: Previsto vs Executado</h2>
+            <p class="muted small">Toque em qualquer coluna do dia para lançar ou detalhar o consumo real.</p>
+          </div>
+          <div class="seg" id="finFilterSeg" role="group" aria-label="Filtrar dias no financeiro">
+            <button type="button" class="active" data-ffilter="all">Todos os dias</button>
+            <button type="button" data-ffilter="events">Com viagem/evento</button>
+            <button type="button" data-ffilter="logged">Lançados</button>
+          </div>
+        </div>
+
+        <div class="fin-legend">
+          <span><i style="background:#fb7185"></i> Combustível</span>
+          <span><i style="background:#a78bfa"></i> Pedágio / EV</span>
+          <span><i style="background:#38bdf8"></i> Ingressos / Voos / Eventos</span>
+          <span><i style="background:#10b981"></i> Hospedagem</span>
+          <span><i style="background:#fb923c"></i> Alimentação / Fixos / Reserva</span>
+          <span><i class="fin-leg-real"></i> Gasto Real</span>
+        </div>
+
+        <div class="fin-chart-scroll" id="finChartScroll">
+          <div class="fin-chart" id="finChart"></div>
+        </div>
+      </div>
+
+      <div class="card fin-timeline-card">
+        <div class="card-head">
+          <h2>📅 Linha do Tempo Financeira Dia a Dia</h2>
+          <span class="muted small" id="finTimelineSpan"></span>
+        </div>
+        <div id="finTimelineList" class="fin-timeline-list"></div>
       </div>
     </section>
 
@@ -751,9 +828,9 @@
   <div id="walletBody" class="cal-sync-body"></div>
   <canvas id="walletPassCanvas" style="width:100%;border-radius:14px;border:1px solid var(--border);margin-top:10px"></canvas>
   <details class="help-details" id="walletSetupDetails" style="margin-top:12px" hidden>
-    <summary>⚙️ Ativar abertura automática no app Google Wallet (configuração única do dono)</summary>
+    <summary>⚙️ Emissor oficial Google Wallet (opcional, para link pay.google.com)</summary>
     <div style="display:grid;gap:8px;margin-top:8px">
-      <p class="muted small">Por segurança do Google, passes diretos (<code>pay.google.com/gp/v/save</code>) exigem um <b>Issuer ID</b> gratuito (<a href="https://pay.google.com/business/console" target="_blank" rel="noopener" style="color:var(--accent2)">Pay &amp; Wallet Console ↗</a>) + arquivo <code>.json</code> da Service Account — configurado uma única vez:</p>
+      <p class="muted small">O aplicativo já abre automaticamente o passe <b>.pkpass</b> direto no Google Wallet do Android sem precisar de conta comercial. Caso também deseje usar o link oficial web (<code>pay.google.com/gp/v/save</code>), informe seu <b>Issuer ID</b> (<a href="https://pay.google.com/business/console" target="_blank" rel="noopener" style="color:var(--accent2)">Pay &amp; Wallet Console ↗</a>) + <code>.json</code>:</p>
       <input type="text" id="walletIssuerInline" placeholder="Issuer ID (ex: 3388000000012345678)" style="background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:8px 10px;color:var(--text-strong)">
       <div class="key-actions-row">
         <button type="button" class="btn ghost small" id="btnWalletPickFile">📂 Carregar arquivo .json do Google</button>
@@ -763,9 +840,10 @@
     </div>
   </details>
   <div class="modal-actions">
-    <a class="btn ghost" id="btnOpenWalletApp" href="https://wallet.google.com/" target="_blank" rel="noopener">📱 Abrir Google Wallet ↗</a>
+    <a class="btn ghost" id="btnOpenWalletApp" href="https://wallet.google.com/" target="_blank" rel="noopener">📱 App Google Wallet ↗</a>
     <span class="spacer"></span>
     <button type="button" class="btn ghost" id="btnDownloadPassPng">⬇️ Salvar Passe QR</button>
+    <a class="btn primary" id="btnDownloadPkpass" hidden>💳 Abrir Passe (.pkpass) no Google Wallet</a>
     <a class="btn primary" id="btnOpenGoogleWallet" target="_blank" rel="noopener" hidden>💳 Autorizar no Google Wallet</a>
   </div>
 </dialog>
@@ -878,18 +956,55 @@
   </form>
 </dialog>
 
+<!-- MODAL LANÇAR GASTO REAL DO DIA (FINANCEIRO) -->
+<dialog id="financeDayModal">
+  <form id="financeDayForm" method="dialog">
+    <div class="modal-head">
+      <h2 id="finModalTitle">Lançamento Financeiro do Dia</h2>
+      <button type="button" class="icon-btn modal-close" id="btnCloseFinModal" aria-label="Fechar">✕</button>
+    </div>
+
+    <div id="finModalSummary" class="fin-modal-summary"></div>
+
+    <div class="fin-modal-entries">
+      <div class="route-head-row">
+        <strong>🧾 Lançamentos detalhados do dia (opcional)</strong>
+        <button type="button" class="btn ghost small" id="btnFinAddEntry">➕ Adicionar gasto</button>
+      </div>
+      <div id="finModalEntriesRows" class="tickets-rows"></div>
+      <p class="muted small" id="finEntriesHint">Adicione gastos individuais (ex: Almoço, Posto, Estacionamento) ou digite diretamente o total gasto no campo abaixo.</p>
+    </div>
+
+    <div class="form-grid" style="margin-top:10px">
+      <label class="span2">💳 Total real gasto neste dia (R$)
+        <input type="number" step="0.01" min="0" id="finDayTotalInput" placeholder="Ex: 245,00 (deixe vazio p/ marcar como não lançado)">
+      </label>
+      <label class="span2">📝 Observação do dia
+        <input type="text" id="finDayNoteInput" placeholder="Ex: Posto na saída, almoço em família, economizamos no jantar...">
+      </label>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn danger-ghost" id="btnFinClearDay">🧹 Limpar dia</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnFinCancel">Cancelar</button>
+      <button type="submit" class="btn primary">💾 Salvar &amp; Redistribuir</button>
+    </div>
+  </form>
+</dialog>
+
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=12"></script>
-<script src="vehicles.js?v=12"></script>
-<script src="countries.js?v=12"></script>
-<script src="data.js?v=12"></script>
-<script src="maps.js?v=12"></script>
-<script src="calendar.js?v=12"></script>
-<script src="report.js?v=12"></script>
-<script src="api.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="config.example.js?v=13"></script>
+<script src="vehicles.js?v=13"></script>
+<script src="countries.js?v=13"></script>
+<script src="data.js?v=13"></script>
+<script src="maps.js?v=13"></script>
+<script src="calendar.js?v=13"></script>
+<script src="report.js?v=13"></script>
+<script src="api.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

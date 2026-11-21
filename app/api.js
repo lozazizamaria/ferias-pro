@@ -316,6 +316,13 @@
     return r.data;
   }
 
+  async function createPkpassUrl(activity, tripName) {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/wallet/pkpass", { method: "POST", body: JSON.stringify({ activity, tripName }) });
+    if (!r.ok) throw new Error(r.data?.error || "Falha ao gerar passe .pkpass.");
+    return r.data;
+  }
+
   async function epaVehicles(params) {
     if (!serverAvailable) throw new Error("OFFLINE");
     const qs = new URLSearchParams(params).toString();
@@ -399,6 +406,7 @@
     aiVehicleSpecs,
     aiAnalyzeActivity,
     signWalletPass,
+    createPkpassUrl,
     epaVehicles,
     schedulePush,
     startPolling,

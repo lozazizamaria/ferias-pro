@@ -1,21 +1,21 @@
 /* ===== Service Worker PWA — Férias Pro ===== */
-const CACHE = "ferias-pro-v12";
+const CACHE = "ferias-pro-v13";
 const SHELL = [
-  "./",
-  "./index.html",
-  "./styles.css?v=12",
-  "./vehicles.js?v=12",
-  "./countries.js?v=12",
-  "./data.js?v=12",
-  "./maps.js?v=12",
-  "./calendar.js?v=12",
-  "./report.js?v=12",
-  "./api.js?v=12",
-  "./app.js?v=12",
-  "./manifest.webmanifest",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/icon.svg"
+  "/",
+  "/index.html",
+  "/styles.css?v=13",
+  "/vehicles.js?v=13",
+  "/countries.js?v=13",
+  "/data.js?v=13",
+  "/maps.js?v=13",
+  "/calendar.js?v=13",
+  "/report.js?v=13",
+  "/api.js?v=13",
+  "/app.js?v=13",
+  "/manifest.webmanifest",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon.svg"
 ];
 
 self.addEventListener("install", event => {

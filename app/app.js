@@ -18,6 +18,8 @@ let ganttMode = "gantt";
 let ganttZoom = window.innerWidth < 720 ? 50 : 48;
 let ganttSlimRail = window.innerWidth < 720;
 let checklistFilter = "";
+let financeFilter = "all";
+let activeFinanceDate = "";
 
 let tripsCache = { ownTrips: [], sharedTrips: [], pendingShares: [] };
 let activeTrip = null; // { id, name, role, ownerName, ... }
@@ -54,6 +56,11 @@ function migrateState(raw) {
     }
   });
   merged.checklist.forEach(c => { if (!c.id) c.id = uid(); });
+  const rawFin = s.finance && typeof s.finance === "object" ? s.finance : {};
+  merged.finance = {
+    savingsGoal: Math.max(0, Number(rawFin.savingsGoal) || 0),
+    dailyRecords: rawFin.dailyRecords && typeof rawFin.dailyRecords === "object" ? clone(rawFin.dailyRecords) : {}
+  };
   return merged;
 }
 
@@ -288,6 +295,7 @@ function render() {
   renderGantt(s);
   renderTimeline(s);
   renderDashboard(s, t);
+  renderFinance(s, t);
   renderTable(s, t);
   renderParams();
   renderChecklist();
@@ -368,7 +376,7 @@ function renderGantt(allSorted) {
   }
 
   const DW = ganttZoom;
-  const nameW = ganttSlimRail ? 48 : (window.innerWidth < 720 ? 156 : 260);
+  const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 260);
   const minTs = parseD(s[0].start).getTime() - 2 * DAY;
   const maxS = s.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, s[0].start);
   const trailingDays = window.innerWidth < 720 ? 10 : 14;
@@ -393,8 +401,8 @@ function renderGantt(allSorted) {
   });
 
   let h = `<div class="g-corner">
-    <span>${ganttSlimRail ? "Tipo" : "Atividades"}</span>
-    <button type="button" class="g-focus-btn" id="btnGanttSlim" title="${ganttSlimRail ? "Expandir nomes das atividades" : "Retrair colunas de nome"}">${ganttSlimRail ? "⤢" : "⤡"}</button>
+    ${ganttSlimRail ? "" : `<span>Atividades</span>`}
+    <button type="button" class="g-focus-btn${ganttSlimRail ? " g-focus-only" : ""}" id="btnGanttSlim" title="${ganttSlimRail ? "Expandir nomes das atividades" : "Retrair colunas de nome"}" aria-label="${ganttSlimRail ? "Expandir nomes das atividades" : "Retrair colunas de nome"}">${ganttSlimRail ? "⤢" : "⤡"}</button>
   </div>`;
 
   monthSpans.forEach(ms => {
@@ -678,6 +686,517 @@ function renderDashboard(s, t) {
     hint.textContent = "Clique em 'Carregar mapa completo' para visualizar todos os trechos conectados.";
     btnMap.disabled = false;
   }
+}
+
+/* ---------- MENU FINANCEIRO: LINHA DO TEMPO DIÁRIA & REDISTRIBUIÇÃO ---------- */
+function distributeWaterFill(baseValues, targetTotal) {
+  const n = baseValues.length;
+  const out = new Array(n).fill(0);
+  if (!n) return out;
+  const sumBase = baseValues.reduce((a, b) => a + b, 0);
+  const clampedTarget = Math.max(0, targetTotal);
+  if (clampedTarget >= sumBase) {
+    const extra = (clampedTarget - sumBase) / n;
+    return baseValues.map(b => b + extra);
+  }
+  let active = baseValues.map((_, i) => i);
+  while (active.length) {
+    const remBase = active.reduce((s, i) => s + baseValues[i], 0);
+    const avgDelta = (clampedTarget - remBase) / active.length;
+    const neg = active.filter(i => baseValues[i] + avgDelta < 0);
+    if (!neg.length) {
+      active.forEach(i => { out[i] = Math.max(0, baseValues[i] + avgDelta); });
+      break;
+    }
+    neg.forEach(i => { out[i] = 0; });
+    active = active.filter(i => baseValues[i] + avgDelta >= 0);
+  }
+  return out;
+}
+
+function computeFinancialTimeline(s, t) {
+  if (!s.length) {
+    return {
+      daysList: [],
+      plannedTotal: t.grandTotal || 0,
+      savingsGoal: Math.max(0, Number(state.finance?.savingsGoal) || 0),
+      effectiveCeiling: Math.max(0, (t.grandTotal || 0) - Math.max(0, Number(state.finance?.savingsGoal) || 0)),
+      sumActualLogged: 0,
+      sumLoggedGoal: 0,
+      varianceSoFar: 0,
+      loggedCount: 0,
+      remainingCount: 0,
+      remainingCeiling: 0,
+      avgRemainingPerDay: 0,
+      overBudgetBy: 0
+    };
+  }
+
+  const minISO = s[0].start;
+  const maxISO = s.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, minISO);
+  const minD = parseD(minISO);
+  const maxD = parseD(maxISO);
+  const span = Math.max(1, Math.round((maxD - minD) / DAY) + 1);
+
+  const daysList = [];
+  const dayMap = {};
+  for (let i = 0; i < span; i++) {
+    const dt = new Date(minD.getTime() + i * DAY + 3600e3);
+    dt.setHours(0, 0, 0, 0);
+    const iso = fmtISO(dt);
+    const obj = {
+      idx: i,
+      iso,
+      date: dt,
+      activities: [],
+      items: [],
+      cats: { fuel: 0, tollEv: 0, specificOther: 0, lodging: 0, linear: 0 },
+      plannedBase: 0,
+      goalTarget: 0,
+      adjustedTarget: 0,
+      redistDelta: 0,
+      hasActual: false,
+      actualSpent: 0,
+      actualEntries: [],
+      actualNote: "",
+      deltaVsGoal: 0,
+      cumPlanned: 0,
+      cumExpectedOrReal: 0
+    };
+    daysList.push(obj);
+    dayMap[iso] = obj;
+  }
+
+  // 1) Custos pontuais das atividades alocados nos dias exatos
+  s.forEach(a => {
+    const d0 = parseD(a.start);
+    const d1 = parseD(a.end || a.start);
+    const nDays = Math.max(1, Math.round((d1 - d0) / DAY) + 1);
+    const info = getTypeInfo(a.type);
+    const c = calc(a);
+    const tktNote = formatTicketsNote(a);
+
+    for (let k = 0; k < nDays; k++) {
+      const cur = new Date(d0.getTime() + k * DAY + 3600e3);
+      const cell = dayMap[fmtISO(cur)];
+      if (!cell) continue;
+      cell.activities.push({ id: a.id, name: label(a), icon: info.icon || "•", type: a.type });
+
+      if (a.type === "Viagem") {
+        if (c.fuel > 0) {
+          const amt = c.fuel / nDays;
+          cell.cats.fuel += amt;
+          cell.items.push({ cat: "fuel", icon: "⛽", label: `Combustível (${a.name || "Viagem"})`, amount: amt });
+        }
+        if (c.toll > 0) {
+          const amt = c.toll / nDays;
+          cell.cats.tollEv += amt;
+          cell.items.push({ cat: "tollEv", icon: "🛣️", label: `Pedágio (${a.name || "Viagem"})`, amount: amt });
+        }
+        if (c.charge > 0) {
+          const amt = c.charge / nDays;
+          cell.cats.tollEv += amt;
+          cell.items.push({ cat: "tollEv", icon: "⚡", label: `Recarga EV (${a.name || "Viagem"})`, amount: amt });
+        }
+        if (c.extra > 0) {
+          const amt = c.extra / nDays;
+          cell.cats.specificOther += amt;
+          cell.items.push({ cat: "specificOther", icon: "🚗", label: `Extras viagem (${a.name || "Viagem"})`, amount: amt });
+        }
+      } else {
+        const ex = +a.extraCost || 0;
+        if (ex > 0) {
+          const amt = ex / nDays;
+          if (a.type === "Hospedagem") {
+            cell.cats.lodging += amt;
+            cell.items.push({ cat: "lodging", icon: "🏨", label: a.name || "Hospedagem", amount: amt });
+          } else {
+            cell.cats.specificOther += amt;
+            cell.items.push({
+              cat: "specificOther",
+              icon: info.icon || "🎟️",
+              label: tktNote ? `${a.name} (${tktNote})` : (a.name || info.short),
+              amount: amt
+            });
+          }
+        }
+      }
+    }
+  });
+
+  // 2) Rateio linear diário de Alimentação, Diárias de Hospedagem, Outros Fixos e Reserva
+  const foodPerDay = t.foodCost / span;
+  const lodgPerDay = t.lodgingParamCost / span;
+  const fixedPerDay = t.otherFixedBudget / span;
+  const contPerDay = t.contingencyCost / span;
+
+  const records = (state.finance && state.finance.dailyRecords) || {};
+  daysList.forEach(d => {
+    if (foodPerDay > 0) {
+      d.cats.linear += foodPerDay;
+      d.items.push({ cat: "linear", icon: "🍽️", label: "Alimentação (rateio diário)", amount: foodPerDay });
+    }
+    if (lodgPerDay > 0) {
+      d.cats.lodging += lodgPerDay;
+      d.items.push({ cat: "lodging", icon: "🏨", label: "Hospedagem diária (rateio)", amount: lodgPerDay });
+    }
+    if (fixedPerDay > 0) {
+      d.cats.linear += fixedPerDay;
+      d.items.push({ cat: "linear", icon: "📦", label: "Outros gastos fixos (rateio)", amount: fixedPerDay });
+    }
+    if (contPerDay > 0) {
+      d.cats.linear += contPerDay;
+      d.items.push({ cat: "linear", icon: "🛟", label: `Reserva ${state.params.contingencyPct || 0}% (rateio)`, amount: contPerDay });
+    }
+    d.plannedBase = d.cats.fuel + d.cats.tollEv + d.cats.specificOther + d.cats.lodging + d.cats.linear;
+
+    const rec = records[d.iso];
+    if (rec && ((rec.spent !== null && rec.spent !== undefined && rec.spent !== "") || (Array.isArray(rec.entries) && rec.entries.length > 0))) {
+      d.hasActual = true;
+      d.actualEntries = Array.isArray(rec.entries) ? clone(rec.entries) : [];
+      d.actualNote = rec.note || "";
+      if (rec.spent !== null && rec.spent !== undefined && rec.spent !== "") {
+        d.actualSpent = Math.max(0, Number(rec.spent) || 0);
+      } else {
+        d.actualSpent = d.actualEntries.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      }
+    }
+  });
+
+  // 3) Aplicação da meta de economia & redistribuição inteligente para os dias restantes
+  const plannedTotal = t.grandTotal || 0;
+  const savingsGoal = Math.max(0, Number(state.finance?.savingsGoal) || 0);
+  const effectiveCeiling = Math.max(0, plannedTotal - savingsGoal);
+
+  const goalTargets = distributeWaterFill(daysList.map(d => d.plannedBase), effectiveCeiling);
+  daysList.forEach((d, idx) => { d.goalTarget = goalTargets[idx]; });
+
+  let sumActualLogged = 0;
+  let sumLoggedGoal = 0;
+  const unloggedIndices = [];
+  daysList.forEach((d, idx) => {
+    if (d.hasActual) {
+      sumActualLogged += d.actualSpent;
+      sumLoggedGoal += d.goalTarget;
+      d.deltaVsGoal = d.actualSpent - d.goalTarget;
+      d.adjustedTarget = d.goalTarget;
+    } else {
+      unloggedIndices.push(idx);
+    }
+  });
+
+  const remainingCeiling = Math.max(0, effectiveCeiling - sumActualLogged);
+  const unloggedGoalSlice = unloggedIndices.map(i => daysList[i].goalTarget);
+  const rebalancedUnlogged = distributeWaterFill(unloggedGoalSlice, remainingCeiling);
+  unloggedIndices.forEach((dayIdx, pos) => {
+    const d = daysList[dayIdx];
+    d.adjustedTarget = rebalancedUnlogged[pos];
+    d.redistDelta = d.adjustedTarget - d.goalTarget;
+  });
+
+  let runPlan = 0;
+  let runRealOrAdj = 0;
+  daysList.forEach(d => {
+    runPlan += d.goalTarget;
+    runRealOrAdj += d.hasActual ? d.actualSpent : d.adjustedTarget;
+    d.cumPlanned = runPlan;
+    d.cumExpectedOrReal = runRealOrAdj;
+  });
+
+  const overBudgetBy = Math.max(0, sumActualLogged - effectiveCeiling);
+  const loggedCount = daysList.length - unloggedIndices.length;
+  const remainingCount = unloggedIndices.length;
+  return {
+    daysList,
+    plannedTotal,
+    savingsGoal,
+    effectiveCeiling,
+    sumActualLogged,
+    sumLoggedGoal,
+    varianceSoFar: sumActualLogged - sumLoggedGoal,
+    loggedCount,
+    remainingCount,
+    remainingCeiling,
+    avgRemainingPerDay: remainingCount > 0 ? remainingCeiling / remainingCount : 0,
+    overBudgetBy
+  };
+}
+
+function renderFinance(s, t) {
+  const kpisEl = $("#finKpis");
+  if (!kpisEl) return;
+
+  const data = computeFinancialTimeline(s, t);
+  const fFood = $("#fin-food"), fLodg = $("#fin-lodging"), fFixed = $("#fin-fixed"), fCont = $("#fin-cont"), fSav = $("#fin-savingsGoal");
+  if (fFood) fFood.value = state.params.dailyFoodPerPerson || 0;
+  if (fLodg) fLodg.value = state.params.lodgingPerNight || 0;
+  if (fFixed) fFixed.value = state.params.otherFixedBudget || 0;
+  if (fCont) fCont.value = state.params.contingencyPct || 0;
+  if (fSav) fSav.value = state.finance?.savingsGoal || 0;
+
+  // Destaca preset ativo
+  const activePct = data.plannedTotal > 0 ? Math.round((data.savingsGoal / data.plannedTotal) * 100) : 0;
+  document.querySelectorAll(".fin-save-preset").forEach(btn => {
+    const pct = Number(btn.dataset.savepct || 0);
+    btn.classList.toggle("active", (pct === 0 && data.savingsGoal === 0) || (pct > 0 && Math.abs(activePct - pct) <= 1 && data.savingsGoal > 0));
+  });
+
+  // KPIs
+  const varLabel = data.loggedCount === 0
+    ? "Nenhum dia lançado ainda"
+    : (data.varianceSoFar > 0.05
+        ? `⚠️ +${money(data.varianceSoFar)} acima da meta`
+        : data.varianceSoFar < -0.05
+          ? `💚 ${money(Math.abs(data.varianceSoFar))} economizados!`
+          : "✅ Exatamente na meta");
+
+  const kpis = [
+    ["Planejado Base", money(data.plannedTotal), `${data.daysList.length} dia(s) · ${num(state.params.travelers || 1)} viajante(s)`, "var(--accent2)"],
+    ["Orçamento Alvo", money(data.effectiveCeiling), data.savingsGoal > 0 ? `Economia alvo: -${money(data.savingsGoal)}` : "Sem corte definido (Base)", "#10b981"],
+    ["Já Executado (Real)", money(data.sumActualLogged), `${data.loggedCount}/${data.daysList.length} dias · ${varLabel}`, data.varianceSoFar > 0.05 ? "#fb7185" : "#34d399"],
+    ["Saldo & Média Restante", data.remainingCount ? `${money(data.avgRemainingPerDay)}/dia` : (data.overBudgetBy > 0 ? `-${money(data.overBudgetBy)}` : money(data.remainingCeiling)),
+      data.remainingCount ? `${money(data.remainingCeiling)} livres em ${data.remainingCount} dia(s)` : "Todos os dias lançados", data.overBudgetBy > 0 ? "#fb7185" : "#f59e0b"]
+  ];
+  kpisEl.innerHTML = kpis.map(([l, v, sub, c]) =>
+    `<div class="kpi" style="--c:${c}"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`
+  ).join("");
+
+  // Banner de redistribuição dinâmica
+  const banner = $("#finRedistBanner");
+  if (banner) {
+    banner.className = "fin-redist-banner";
+    if (!data.daysList.length) {
+      banner.hidden = true;
+    } else if (data.overBudgetBy > 0.05) {
+      banner.classList.add("danger");
+      banner.hidden = false;
+      banner.innerHTML = `🚨 <b>Orçamento total excedido em ${money(data.overBudgetBy)}!</b> Você já gastou ${money(data.sumActualLogged)} contra um teto de ${money(data.effectiveCeiling)}. Reduza gastos futuros ou aumente o orçamento.`;
+    } else if (data.loggedCount > 0 && Math.abs(data.varianceSoFar) > 0.05 && data.remainingCount > 0) {
+      const avgShift = data.daysList.filter(d => !d.hasActual).reduce((sum, d) => sum + d.redistDelta, 0) / data.remainingCount;
+      if (data.varianceSoFar > 0) {
+        banner.classList.add("warn");
+        banner.hidden = false;
+        banner.innerHTML = `🔄 <b>Redistribuição ativa (compensando +${money(data.varianceSoFar)} gastos a mais):</b> para fechar dentro do orçamento de ${money(data.effectiveCeiling)}, a meta média dos próximos <b>${data.remainingCount} dias</b> foi reajustada em <b>${money(avgShift)}/dia</b>.`;
+      } else {
+        banner.classList.add("ok");
+        banner.hidden = false;
+        banner.innerHTML = `💚 <b>Economia acumulada de ${money(Math.abs(data.varianceSoFar))}!</b> Os próximos <b>${data.remainingCount} dias</b> ganharam uma folga extra média de <b>+${money(avgShift)}/dia</b> dentro do seu orçamento.`;
+      }
+    } else if (data.savingsGoal > 0) {
+      banner.classList.add("ok");
+      banner.hidden = false;
+      banner.innerHTML = `🎯 <b>Meta de economia ativa (-${money(data.savingsGoal)}):</b> o orçamento alvo foi ajustado para <b>${money(data.effectiveCeiling)}</b>, reduzindo proporcionalmente a meta diária ao longo da viagem.`;
+    } else {
+      banner.hidden = true;
+    }
+  }
+
+  // Filtro da timeline
+  const visibleDays = data.daysList.filter(d => {
+    if (financeFilter === "events") return d.activities.length > 0;
+    if (financeFilter === "logged") return d.hasActual;
+    return true;
+  });
+
+  const chartEl = $("#finChart");
+  const listEl = $("#finTimelineList");
+  const spanEl = $("#finTimelineSpan");
+
+  if (spanEl) {
+    spanEl.textContent = data.daysList.length
+      ? `${fmtBR(data.daysList[0].iso)} até ${fmtBR(data.daysList[data.daysList.length - 1].iso)} (${data.daysList.length} dias)`
+      : "";
+  }
+
+  if (!visibleDays.length) {
+    const emptyMsg = `<p class="muted" style="padding:18px;text-align:center;width:100%">${data.daysList.length ? "Nenhum dia corresponde a este filtro." : "Adicione atividades no Cronograma para visualizar a linha do tempo financeira dia a dia."}</p>`;
+    if (chartEl) chartEl.innerHTML = emptyMsg;
+    if (listEl) listEl.innerHTML = emptyMsg;
+    return;
+  }
+
+  // Escala do gráfico
+  const maxBarVal = Math.max(10, ...visibleDays.map(d => Math.max(d.plannedBase, d.adjustedTarget, d.hasActual ? d.actualSpent : 0)));
+  const BAR_PX = 148;
+  if (chartEl) {
+    chartEl.innerHTML = visibleDays.map(d => {
+      const targetShow = d.hasActual ? d.goalTarget : d.adjustedTarget;
+      const totalH = Math.max(3, Math.round((d.plannedBase / maxBarVal) * BAR_PX));
+      const realH = d.hasActual ? Math.max(3, Math.round((d.actualSpent / maxBarVal) * BAR_PX)) : 0;
+      const adjBottom = Math.min(BAR_PX, Math.round((targetShow / maxBarVal) * BAR_PX));
+      const segOrder = [
+        ["linear", "#fb923c"],
+        ["lodging", "#10b981"],
+        ["specificOther", "#38bdf8"],
+        ["tollEv", "#a78bfa"],
+        ["fuel", "#fb7185"]
+      ];
+      const baseDenom = d.plannedBase || 1;
+      const segHtml = segOrder
+        .filter(([k]) => d.cats[k] > 0)
+        .map(([k, col]) => {
+          const pct = (d.cats[k] / baseDenom) * 100;
+          return `<div class="fin-stack-seg" style="height:${pct.toFixed(1)}%;background:${col}"></div>`;
+        }).join("");
+
+      const iconsTxt = [...new Set(d.activities.map(a => a.icon))].slice(0, 3).join("");
+      const isOver = d.hasActual && d.actualSpent > d.goalTarget + 0.05;
+      const valTop = d.hasActual ? d.actualSpent : targetShow;
+      const tip = `${fmtBR(d.iso)} (${WD[d.date.getDay()]})\nPrevisto Base: ${money(d.plannedBase)}\nMeta p/ Dia: ${money(targetShow)}${d.hasActual ? `\nGasto Real: ${money(d.actualSpent)}` : ""}`;
+
+      return `
+      <div class="fin-bar-col ${d.hasActual ? "has-real" : ""} ${isOver ? "is-over" : ""}" data-fdate="${d.iso}" title="${esc(tip)}">
+        <div class="fin-bar-val">${valTop >= 1000 ? `R$${num(valTop / 1000, 1)}k` : `R$${Math.round(valTop)}`}</div>
+        <div class="fin-bar-pair">
+          <div class="fin-stack-bar" style="height:${totalH}px">${segHtml}</div>
+          ${d.hasActual ? `<div class="fin-real-bar ${isOver ? "over" : ""}" style="height:${realH}px"></div>` : ""}
+          ${(data.savingsGoal > 0 || Math.abs(d.redistDelta) > 0.5) ? `<div class="fin-adj-dot" style="bottom:${adjBottom}px"></div>` : ""}
+        </div>
+        <div class="fin-bar-date">${fmtShortBR(d.iso)}</div>
+        <div class="fin-bar-wd">${WD[d.date.getDay()]}</div>
+        <div class="fin-bar-dots">${iconsTxt || "&nbsp;"}</div>
+      </div>`;
+    }).join("");
+    chartEl.querySelectorAll(".fin-bar-col[data-fdate]").forEach(col => {
+      col.onclick = () => openFinanceDayModal(col.dataset.fdate);
+    });
+  }
+
+  // Lista Linha do Tempo Dia a Dia
+  if (listEl) {
+    listEl.innerHTML = visibleDays.map(d => {
+      const wd = WD[d.date.getDay()];
+      let statusClass = "";
+      let pillHtml = `<span class="fin-status-pill">Previsto</span>`;
+      if (d.hasActual) {
+        if (d.deltaVsGoal > 0.05) {
+          statusClass = "logged-over";
+          pillHtml = `<span class="fin-status-pill over">⚠️ +${money(d.deltaVsGoal)} acima</span>`;
+        } else if (d.deltaVsGoal < -0.05) {
+          statusClass = "logged-ok";
+          pillHtml = `<span class="fin-status-pill ok">💸 Economizou ${money(Math.abs(d.deltaVsGoal))}</span>`;
+        } else {
+          statusClass = "logged-ok";
+          pillHtml = `<span class="fin-status-pill ok">✅ Na meta</span>`;
+        }
+      }
+
+      const actTags = d.activities.map(a => `<span class="fin-act-tag">${a.icon} ${esc(a.name)}</span>`).join("");
+      const itemsHtml = d.items.map(it =>
+        `<span class="fin-cost-chip">${it.icon} ${esc(it.label)}: <b>${money(it.amount)}</b></span>`
+      ).join("") || `<span class="muted small">Sem custos lançados para este dia.</span>`;
+
+      const redistBadge = !d.hasActual && Math.abs(d.redistDelta) > 0.5
+        ? ` <small style="color:${d.redistDelta < 0 ? "#f59e0b" : "#34d399"}">(${d.redistDelta > 0 ? "+" : ""}${money(d.redistDelta)} redist.)</small>`
+        : "";
+
+      return `
+      <div class="fin-day-card ${statusClass}" data-fday="${d.iso}">
+        <div class="fin-day-top">
+          <div class="fin-day-id">
+            <div class="date-badge"><b>${d.date.getDate()}</b>${MON[d.date.getMonth()]}</div>
+            <div style="min-width:0">
+              <div style="font-weight:700;color:var(--text-strong)">${wd} · ${fmtBR(d.iso)}</div>
+              ${actTags ? `<div class="fin-day-acts">${actTags}</div>` : `<div class="muted small">Dia livre / trânsito</div>`}
+            </div>
+          </div>
+          ${pillHtml}
+        </div>
+
+        <div class="fin-day-breakdown">${itemsHtml}</div>
+
+        ${d.actualEntries.length ? `<div class="muted small">🧾 Real detalhado: ${d.actualEntries.map(e => `${esc(e.desc || e.cat || "Gasto")} (${money(e.amount)})`).join(" · ")}</div>` : ""}
+        ${d.actualNote ? `<div class="muted small">📝 ${esc(d.actualNote)}</div>` : ""}
+
+        <div class="fin-day-metrics">
+          <div class="fin-metric-box">
+            <span>Previsto do dia</span>
+            <b>${money(d.plannedBase)}</b>
+          </div>
+          <div class="fin-metric-box">
+            <span>${d.hasActual ? "Meta do dia" : "Meta p/ gastar hoje"}</span>
+            <b class="recalc">${money(d.hasActual ? d.goalTarget : d.adjustedTarget)}${redistBadge}</b>
+          </div>
+          <div class="fin-metric-box">
+            <span>Executado Real</span>
+            <b class="${d.hasActual ? (d.deltaVsGoal > 0.05 ? "real-over" : "real-ok") : ""}">${d.hasActual ? money(d.actualSpent) : "—"}</b>
+          </div>
+          <div class="fin-metric-box">
+            <span>Acumulado até o dia</span>
+            <b>${money(d.cumExpectedOrReal)} <small class="muted">/ ${money(d.cumPlanned)}</small></b>
+          </div>
+          <div class="fin-day-actions">
+            <button type="button" class="btn ${d.hasActual ? "ghost" : "primary"} small" data-finlog="${d.iso}">
+              ${d.hasActual ? "✏️ Editar Real" : "💵 Lançar Gasto"}
+            </button>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+    listEl.querySelectorAll("[data-finlog]").forEach(b => {
+      b.onclick = () => openFinanceDayModal(b.dataset.finlog);
+    });
+  }
+}
+
+let modalFinEntries = [];
+function renderFinModalEntries() {
+  const box = $("#finModalEntriesRows");
+  if (!box) return;
+  if (!modalFinEntries.length) {
+    box.innerHTML = `<p class="muted small">Nenhum item separado lançado (ou preencha apenas o total abaixo).</p>`;
+    return;
+  }
+  const cats = ["Alimentação", "Combustível", "Pedágio", "Ingresso/Lazer", "Hospedagem", "Compras/Outro"];
+  box.innerHTML = modalFinEntries.map((en, i) => `
+    <div class="fin-entry-row" data-fi="${i}">
+      <select data-fe="cat">${cats.map(c => `<option value="${c}"${en.cat === c ? " selected" : ""}>${c}</option>`).join("")}</select>
+      <input type="text" data-fe="desc" value="${esc(en.desc || "")}" placeholder="Ex: Almoço / Posto">
+      <input type="number" step="0.01" min="0" data-fe="amount" value="${en.amount ?? ""}" placeholder="R$ 0,00">
+      <button type="button" class="icon-btn" data-frem="${i}" title="Remover">✕</button>
+    </div>`).join("");
+
+  box.querySelectorAll("[data-fe]").forEach(el => {
+    el.oninput = () => {
+      const idx = parseInt(el.closest(".fin-entry-row").dataset.fi, 10);
+      modalFinEntries[idx][el.dataset.fe] = el.dataset.fe === "amount" ? (el.value === "" ? "" : parseFloat(el.value) || 0) : el.value;
+      const sum = modalFinEntries.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      $("#finDayTotalInput").value = sum > 0 ? sum.toFixed(2) : "";
+    };
+  });
+  box.querySelectorAll("[data-frem]").forEach(btn => {
+    btn.onclick = () => {
+      modalFinEntries.splice(parseInt(btn.dataset.frem, 10), 1);
+      renderFinModalEntries();
+      const sum = modalFinEntries.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      $("#finDayTotalInput").value = modalFinEntries.length ? sum.toFixed(2) : "";
+    };
+  });
+}
+
+function openFinanceDayModal(iso) {
+  const s = sorted();
+  const t = totals();
+  const data = computeFinancialTimeline(s, t);
+  const dayObj = data.daysList.find(d => d.iso === iso);
+  if (!dayObj) return;
+
+  activeFinanceDate = iso;
+  $("#finModalTitle").textContent = `💰 ${WD[dayObj.date.getDay()]}, ${fmtBR(iso)}`;
+  const targetVal = dayObj.hasActual ? dayObj.goalTarget : dayObj.adjustedTarget;
+  $("#finModalSummary").innerHTML = `
+    <div><b>Previsto original do dia:</b> ${money(dayObj.plannedBase)}</div>
+    <div><b>Meta atual p/ este dia (c/ economia e redistribuição):</b> <span style="color:var(--accent2);font-weight:700">${money(targetVal)}</span></div>
+    <div class="muted small">${dayObj.items.map(it => `${it.icon} ${it.label}: ${money(it.amount)}`).join(" · ")}</div>`;
+
+  const rec = (state.finance && state.finance.dailyRecords && state.finance.dailyRecords[iso]) || {};
+  modalFinEntries = Array.isArray(rec.entries) ? clone(rec.entries) : [];
+  renderFinModalEntries();
+  $("#finDayTotalInput").value = dayObj.hasActual ? dayObj.actualSpent.toFixed(2) : "";
+  $("#finDayNoteInput").value = rec.note || "";
+  $("#btnFinClearDay").hidden = !dayObj.hasActual;
+  $("#financeDayModal").showModal();
 }
 
 /* ---------- TABELA ---------- */
@@ -1901,10 +2420,10 @@ function setupPwaInstall() {
       if (res.outcome === "accepted") $("#pwaInstallBanner").hidden = true;
       deferredInstallPrompt = null;
     } else if (isIOS) {
-      alert("No iPhone/iPad: toque no botão Compartilhar (quadrado com seta ⬆️) no Safari e escolha 'Adicionar à Tela de Início' para instalar o Férias Pro.");
+      alert("No iPhone/iPad: toque no botão Compartilhar (quadrado com seta ⬆️) no Safari e escolha 'Adicionar à Tela de Início' para instalar o Férias Pro em tela cheia.");
       $("#pwaInstallBanner").hidden = true;
     } else {
-      alert("Para instalar o Férias Pro no celular: abra o menu (⋮) do navegador e toque em 'Instalar aplicativo' ou 'Adicionar à tela inicial'.");
+      alert("Para instalar em tela cheia (sem barra de endereço): abra o menu (⋮) do Chrome e toque em 'Instalar aplicativo' (evite 'Criar atalho'). Se já tiver uma versão antiga instalada, desinstale o ícone anterior e instale novamente.");
       $("#pwaInstallBanner").hidden = true;
     }
   };
@@ -2741,6 +3260,16 @@ $("#btnReapplyStops").onclick = () => {
 };
 
 /* ---------- GOOGLE WALLET / PASSE POR ATIVIDADE ---------- */
+function triggerPkpassOpen(url, filename) {
+  const link = document.createElement("a");
+  link.href = url;
+  if (filename) link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => link.remove(), 1200);
+}
+
 async function openWalletPassForCurrentActivity() {
   const a = readForm();
   if (editing) a.id = editing;
@@ -2750,13 +3279,14 @@ async function openWalletPassForCurrentActivity() {
   const modal = $("#walletModal");
   const body = $("#walletBody");
   const openBtn = $("#btnOpenGoogleWallet");
+  const pkBtn = $("#btnDownloadPkpass");
   const setupDet = $("#walletSetupDetails");
   openBtn.hidden = true;
+  if (pkBtn) pkBtn.hidden = true;
 
   try {
     const res = await window.FeriasApi.signWalletPass(a, state.title);
     if (res.configured && res.saveUrl) {
-      // Abre diretamente o Google Wallet para o usuário autorizar e salvar na hora
       window.open(res.saveUrl, "_blank", "noopener");
       openBtn.href = res.saveUrl;
       openBtn.hidden = false;
@@ -2766,10 +3296,29 @@ async function openWalletPassForCurrentActivity() {
       modal.showModal();
       return;
     }
+
+    if (window.FeriasApi.isServer() && window.FeriasApi.createPkpassUrl) {
+      const pk = await window.FeriasApi.createPkpassUrl(a, state.title);
+      if (pk && pk.pkpassUrl) {
+        triggerPkpassOpen(pk.pkpassUrl, pk.filename);
+        if (pkBtn) {
+          pkBtn.href = pk.pkpassUrl;
+          pkBtn.download = pk.filename || "passe_ferias_pro.pkpass";
+          pkBtn.hidden = false;
+        }
+        if (setupDet) setupDet.hidden = false;
+        body.innerHTML = `
+          <p>✅ <b>Passe (.pkpass) pronto!</b> No celular Android, toque em <b>Abrir / Google Wallet</b> na notificação (ou toque no botão azul abaixo) para importar automaticamente na sua Carteira do Google.</p>
+          <p class="muted small">Você também pode salvar o cartão visual QR abaixo caso prefira.</p>`;
+        window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
+        modal.showModal();
+        return;
+      }
+    }
+
     if (setupDet) setupDet.hidden = false;
     body.innerHTML = `
-      <p>📲 <b>Cartão pronto para sua Carteira!</b> Baixe a imagem QR abaixo (<b>⬇️ Salvar Passe QR</b>), abra o aplicativo <b>Google Wallet</b> e toque em <b>"+ Adicionar à Carteira ➔ Tudo o mais / Foto"</b>.</p>
-      <p class="muted small">Se preferir abrir direto sem passar pela galeria, ative o emissor único abaixo (1 vez no servidor).</p>`;
+      <p>📲 <b>Cartão pronto!</b> Baixe o Passe QR abaixo (<b>⬇️ Salvar Passe QR</b>), abra o app <b>Google Wallet</b> e toque em <b>"+ Adicionar à Carteira ➔ Foto"</b>.</p>`;
   } catch (err) {
     if (setupDet) setupDet.hidden = false;
     body.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>
@@ -3290,6 +3839,104 @@ $("#fileXlsx").onchange = async e => {
   if (f) await importXlsx(f).catch(() => toast("Erro ao ler planilha"));
   e.target.value = "";
 };
+
+/* ---------- EVENTOS MENU FINANCEIRO & CONTROLE DIÁRIO ---------- */
+[
+  ["#fin-food", "dailyFoodPerPerson"],
+  ["#fin-lodging", "lodgingPerNight"],
+  ["#fin-fixed", "otherFixedBudget"],
+  ["#fin-cont", "contingencyPct"]
+].forEach(([sel, key]) => {
+  const el = $(sel);
+  if (el) {
+    el.onchange = () => {
+      state.params[key] = Math.max(0, parseFloat(el.value) || 0);
+      save("💰 Orçamento diário atualizado");
+    };
+  }
+});
+
+if ($("#fin-savingsGoal")) {
+  $("#fin-savingsGoal").onchange = () => {
+    if (!state.finance) state.finance = { savingsGoal: 0, dailyRecords: {} };
+    state.finance.savingsGoal = Math.max(0, parseFloat($("#fin-savingsGoal").value) || 0);
+    save("🎯 Meta de economia atualizada");
+  };
+}
+
+document.querySelectorAll(".fin-save-preset").forEach(btn => {
+  btn.onclick = () => {
+    const pct = Number(btn.dataset.savepct || 0);
+    if (!state.finance) state.finance = { savingsGoal: 0, dailyRecords: {} };
+    const t = totals();
+    state.finance.savingsGoal = pct > 0 ? Math.round((t.grandTotal || 0) * (pct / 100) * 100) / 100 : 0;
+    save(pct > 0 ? `🎯 Meta de economia -${pct}% aplicada` : "🎯 Orçamento voltou para a base (0%)");
+  };
+});
+
+if ($("#finFilterSeg")) {
+  $("#finFilterSeg").querySelectorAll("button").forEach(b => {
+    b.onclick = () => {
+      financeFilter = b.dataset.ffilter || "all";
+      $("#finFilterSeg").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+      renderFinance(sorted(), totals());
+    };
+  });
+}
+
+if ($("#btnCloseFinModal")) $("#btnCloseFinModal").onclick = () => $("#financeDayModal").close();
+if ($("#btnFinCancel")) $("#btnFinCancel").onclick = () => $("#financeDayModal").close();
+if ($("#btnFinAddEntry")) {
+  $("#btnFinAddEntry").onclick = () => {
+    modalFinEntries.push({ cat: "Alimentação", desc: "", amount: "" });
+    renderFinModalEntries();
+    const rows = $$("#finModalEntriesRows .fin-entry-row");
+    const last = rows[rows.length - 1];
+    if (last) last.querySelector('[data-fe="desc"]')?.focus();
+  };
+}
+if ($("#btnFinClearDay")) {
+  $("#btnFinClearDay").onclick = () => {
+    if (activeFinanceDate && state.finance?.dailyRecords) {
+      delete state.finance.dailyRecords[activeFinanceDate];
+    }
+    $("#financeDayModal").close();
+    save("🧹 Lançamento do dia removido — orçamento reequilibrado!");
+  };
+}
+if ($("#financeDayForm")) {
+  $("#financeDayForm").onsubmit = e => {
+    e.preventDefault();
+    if (!activeFinanceDate) return;
+    if (!state.finance || typeof state.finance !== "object") state.finance = { savingsGoal: 0, dailyRecords: {} };
+    if (!state.finance.dailyRecords) state.finance.dailyRecords = {};
+
+    const cleanEntries = modalFinEntries
+      .map(en => ({ cat: en.cat || "Alimentação", desc: String(en.desc || "").trim(), amount: Math.max(0, Number(en.amount) || 0) }))
+      .filter(en => en.desc || en.amount > 0);
+    const totalRaw = $("#finDayTotalInput").value.trim();
+    const note = $("#finDayNoteInput").value.trim();
+
+    if (totalRaw === "" && !cleanEntries.length) {
+      delete state.finance.dailyRecords[activeFinanceDate];
+      $("#financeDayModal").close();
+      save("🧹 Dia voltou para o status previsto");
+      return;
+    }
+
+    const spentVal = totalRaw !== ""
+      ? Math.max(0, parseFloat(totalRaw) || 0)
+      : cleanEntries.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+
+    state.finance.dailyRecords[activeFinanceDate] = {
+      spent: Math.round(spentVal * 100) / 100,
+      entries: cleanEntries,
+      note
+    };
+    $("#financeDayModal").close();
+    save("💰 Gasto real lançado e dias restantes redistribuídos!");
+  };
+}
 
 window.addEventListener("resize", () => { if (ganttMode === "gantt") renderGantt(sorted()); });
 
