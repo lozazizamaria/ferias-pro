@@ -14,7 +14,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=6">
+<link rel="stylesheet" href="styles.css?v=7">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -556,15 +556,67 @@
   </div>
 </dialog>
 
+<!-- MODAL ADICIONAR / EDITAR ITEM DO CHECKLIST -->
+<dialog id="checkModal">
+  <form id="checkForm" method="dialog">
+    <div class="modal-head">
+      <h2 id="checkModalTitle">Novo item do checklist</h2>
+      <button type="button" class="icon-btn modal-close" id="btnCloseCheckModal" aria-label="Fechar">✕</button>
+    </div>
+    <div class="form-grid">
+      <label class="span2">Item / O que fazer
+        <input id="c-item" required placeholder="Ex: Carregador portátil, Ingressos, Documentos...">
+      </label>
+      <label>Categoria
+        <input id="c-cat" list="checkCats" placeholder="Ex: Geral, Veículo, Bagagem">
+        <datalist id="checkCats">
+          <option value="Geral">
+          <option value="Recarga EV">
+          <option value="Veículo">
+          <option value="Pedágio">
+          <option value="Documentos">
+          <option value="Hospedagem">
+          <option value="Eventos">
+          <option value="Roteiro">
+          <option value="Bagagem">
+        </datalist>
+      </label>
+      <label>Prioridade
+        <select id="c-prio">
+          <option>Alta</option>
+          <option>Média</option>
+          <option>Baixa</option>
+        </select>
+      </label>
+      <label class="span2">Status
+        <select id="c-status">
+          <option>Pendente</option>
+          <option>Em andamento</option>
+          <option>Concluído</option>
+        </select>
+      </label>
+      <label class="span2">Observações / Notas
+        <textarea id="c-notes" rows="2" placeholder="Detalhes opcionais..."></textarea>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn danger-ghost" id="btnCheckDelete">🗑️ Excluir</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnCheckCancel">Cancelar</button>
+      <button type="submit" class="btn primary">Salvar</button>
+    </div>
+  </form>
+</dialog>
+
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=6"></script>
-<script src="data.js?v=6"></script>
-<script src="maps.js?v=6"></script>
-<script src="calendar.js?v=6"></script>
-<script src="api.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="config.example.js?v=7"></script>
+<script src="data.js?v=7"></script>
+<script src="maps.js?v=7"></script>
+<script src="calendar.js?v=7"></script>
+<script src="api.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

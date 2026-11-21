@@ -904,7 +904,7 @@ function renderChecklist() {
   const sel = (c, f, opts) => `<td class="ed"><select data-c="${c.id}" data-f="${f}">${opts.map(o => `<option ${o === c[f] ? "selected" : ""}>${o}</option>`).join("")}</select></td>`;
   const inp = (c, f, cls = "") => `<td class="ed ${cls}"><input data-c="${c.id}" data-f="${f}" value="${esc(c[f])}"></td>`;
 
-  let h = `<thead><tr><th>✓</th><th>#</th><th>Categoria</th><th>Item</th><th>Prioridade</th><th>Status</th><th>Notas</th><th></th></tr></thead><tbody>`;
+  let h = `<thead><tr><th>✓</th><th>#</th><th>Categoria</th><th>Item</th><th>Prioridade</th><th>Status</th><th>Notas</th><th>Ações</th></tr></thead><tbody>`;
   items.forEach((c, i) => {
     h += `<tr class="${c.status === "Concluído" ? "done" : ""}">
       <td><input type="checkbox" data-chk="${c.id}" ${c.status === "Concluído" ? "checked" : ""}></td>
@@ -913,7 +913,7 @@ function renderChecklist() {
       ${sel(c, "prio", ["Alta", "Média", "Baixa"])}
       ${sel(c, "status", ["Pendente", "Em andamento", "Concluído"])}
       ${inp(c, "notes", "wide")}
-      <td><button type="button" class="icon-btn" data-cdel="${c.id}">🗑️</button></td>
+      <td><button type="button" class="icon-btn" data-cedit="${c.id}" title="Editar">✏️</button><button type="button" class="icon-btn" data-cdel="${c.id}" title="Excluir">🗑️</button></td>
     </tr>`;
   });
   const tb = $("#checkTable");
@@ -929,6 +929,9 @@ function renderChecklist() {
         save(el.checked ? "✅ Item concluído!" : "");
       };
     });
+    root.querySelectorAll("[data-cedit]").forEach(b => {
+      b.onclick = () => openCheckModal(b.dataset.cedit);
+    });
     root.querySelectorAll("[data-cdel]").forEach(b => {
       b.onclick = () => { state.checklist = state.checklist.filter(x => x.id !== b.dataset.cdel); save("Item removido"); };
     });
@@ -943,15 +946,33 @@ function renderChecklist() {
           <input type="checkbox" data-chk="${c.id}" ${c.status === "Concluído" ? "checked" : ""}>
           <span>${esc(c.item)}</span>
         </label>
-        <button type="button" class="icon-btn" data-cdel="${c.id}">🗑️</button>
+        <div class="inline-actions">
+          <button type="button" class="icon-btn" data-cedit="${c.id}" title="Editar">✏️</button>
+          <button type="button" class="icon-btn" data-cdel="${c.id}" title="Excluir">🗑️</button>
+        </div>
       </div>
       <div class="m-card-grid">
         <div><span class="muted">Cat.:</span> ${esc(c.cat)}</div>
-        <div><span class="muted">Prioridade:</span> ${esc(c.prio)}</div>
+        <div><span class="muted">Prioridade:</span> ${esc(c.prio)} · ${esc(c.status)}</div>
       </div>
       ${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ""}
     </div>`).join("") || `<p class="muted">Nenhum item nesta categoria.</p>`;
   bindEvents(mc);
+}
+
+let editingCheckId = null;
+function openCheckModal(id) {
+  const item = id ? state.checklist.find(x => x.id === id) : null;
+  editingCheckId = item ? item.id : null;
+  $("#checkModalTitle").textContent = item ? "Editar item do checklist" : "Novo item do checklist";
+  $("#c-item").value = item ? item.item : "";
+  $("#c-cat").value = item ? item.cat : "Geral";
+  $("#c-prio").value = item ? item.prio : "Média";
+  $("#c-status").value = item ? item.status : "Pendente";
+  $("#c-notes").value = item ? (item.notes || "") : "";
+  $("#btnCheckDelete").style.visibility = item ? "visible" : "hidden";
+  $("#checkModal").showModal();
+  setTimeout(() => $("#c-item").focus(), 40);
 }
 
 /* ---------- MODAL ATIVIDADE + MAPS + ANEXOS + AGENDA ---------- */
@@ -2016,7 +2037,34 @@ $("#btnReapplyStops").onclick = () => {
 $("#search").oninput = $("#filterType").onchange = () => renderTable(sorted(), totals());
 $("#filterChecklist").onchange = e => { checklistFilter = e.target.value; renderChecklist(); };
 $("#btnAddScenario").onclick = () => { state.scenarios.push({ id: uid(), name: "Novo cenário", kmL: state.vehicle.hevKmL }); save("➕ Cenário adicionado"); };
-$("#btnAddCheck").onclick = () => { state.checklist.push({ id: uid(), cat: "Geral", item: "Novo item", prio: "Média", status: "Pendente", notes: "" }); save("➕ Item adicionado"); };
+$("#btnAddCheck").onclick = () => openCheckModal();
+$("#btnCloseCheckModal").onclick = $("#btnCheckCancel").onclick = () => $("#checkModal").close();
+$("#checkForm").onsubmit = e => {
+  e.preventDefault();
+  const itemTxt = $("#c-item").value.trim();
+  if (!itemTxt) return;
+  const data = {
+    item: itemTxt,
+    cat: $("#c-cat").value.trim() || "Geral",
+    prio: $("#c-prio").value || "Média",
+    status: $("#c-status").value || "Pendente",
+    notes: $("#c-notes").value.trim()
+  };
+  if (editingCheckId) {
+    const existing = state.checklist.find(x => x.id === editingCheckId);
+    if (existing) Object.assign(existing, data);
+  } else {
+    state.checklist.push({ id: uid(), ...data });
+  }
+  $("#checkModal").close();
+  save(editingCheckId ? "✔️ Item atualizado" : "➕ Item adicionado ao checklist");
+};
+$("#btnCheckDelete").onclick = () => {
+  if (!editingCheckId) return;
+  state.checklist = state.checklist.filter(x => x.id !== editingCheckId);
+  $("#checkModal").close();
+  save("🗑️ Item removido");
+};
 
 $("#btnMenu").onclick = e => {
   e.stopPropagation();
