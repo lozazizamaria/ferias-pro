@@ -31,7 +31,6 @@ function loadDotEnv() {
 loadDotEnv();
 
 const DEFAULT_GOOGLE_CLIENT_ID = "1075987097030-j9htnv6l02rfdbt4spbjp84btj8bopqq.apps.googleusercontent.com";
-const HAS_EXPLICIT_GOOGLE_CLIENT_ID = Object.prototype.hasOwnProperty.call(process.env, "GOOGLE_CLIENT_ID");
 const PORT = parseInt(process.env.PORT || "3080", 10);
 const HOST = process.env.HOST || "127.0.0.1";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
@@ -40,9 +39,8 @@ const LEGACY_STATE_FILE = process.env.DATA_FILE || path.join(DATA_DIR, "state.js
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const STATIC_DIR = process.env.STATIC_DIR || path.resolve(__dirname, "..", "app");
 const SERVE_STATIC = process.env.SERVE_STATIC !== "0";
-const GOOGLE_CLIENT_ID = HAS_EXPLICIT_GOOGLE_CLIENT_ID
-  ? String(process.env.GOOGLE_CLIENT_ID || "").trim()
-  : DEFAULT_GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || "").trim()
+  || (process.env.DISABLE_DEFAULT_GOOGLE_CLIENT_ID === "1" ? "" : DEFAULT_GOOGLE_CLIENT_ID);
 const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
 const ENV_GEMINI_KEY = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "").trim();
 const ENV_GMAPS_KEY = (process.env.GOOGLE_MAPS_API_KEY || "").trim();

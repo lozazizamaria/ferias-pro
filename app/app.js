@@ -3648,32 +3648,19 @@ function showAuthPanel(panel) {
   resetPasswordFieldVisibility($("#authView"));
 }
 
+const DEFAULT_GOOGLE_CLIENT_ID = "1075987097030-j9htnv6l02rfdbt4spbjp84btj8bopqq.apps.googleusercontent.com";
 let gsiScriptLoaded = false;
 function setupGoogleSignInButton(clientId) {
+  const cid = String(clientId || window.FeriasApi?.getGoogleClientId?.() || DEFAULT_GOOGLE_CLIENT_ID).trim();
   const wrap = $("#googleBtnWrap");
   const fallbackBtn = $("#btnGoogleLoginFallback");
   const hint = $("#googleConfigHint");
-  if (fallbackBtn) {
-    fallbackBtn.hidden = false;
-    fallbackBtn.onclick = () => {
-      if (clientId && window.google?.accounts?.id) {
-        window.google.accounts.id.prompt();
-      } else {
-        hint.hidden = !hint.hidden;
-      }
-    };
-  }
-  if (!clientId) {
-    wrap.innerHTML = "";
-    hint.hidden = true;
-    return;
-  }
-  hint.hidden = true;
+  if (hint) hint.hidden = true;
 
   const initAndRender = () => {
     if (!window.google?.accounts?.id) return;
     window.google.accounts.id.initialize({
-      client_id: clientId,
+      client_id: cid,
       auto_select: false,
       callback: async resp => {
         try {
@@ -3693,6 +3680,18 @@ function setupGoogleSignInButton(clientId) {
     window.google.accounts.id.renderButton(wrap, { theme: isDarkTheme() ? "filled_black" : "outline", size: "large", width: w, text: "continue_with" });
     if (fallbackBtn && wrap.children.length > 0) fallbackBtn.hidden = true;
   };
+
+  if (fallbackBtn) {
+    fallbackBtn.hidden = false;
+    fallbackBtn.onclick = () => {
+      if (window.google?.accounts?.id) {
+        initAndRender();
+        window.google.accounts.id.prompt();
+      } else {
+        toast("⏳ Carregando autenticação do Google... tente novamente em 1 segundo.");
+      }
+    };
+  }
 
   if (window.google?.accounts?.id) {
     initAndRender();
@@ -4114,7 +4113,7 @@ function getEffectiveGoogleClientId() {
     (window.FeriasApi && window.FeriasApi.getGoogleClientId()) ||
     (state.params && state.params.googleClientId) ||
     localStorage.getItem("ferias-pro-gcal-client-id") ||
-    ""
+    DEFAULT_GOOGLE_CLIENT_ID
   ).trim();
 }
 
