@@ -13,7 +13,12 @@ const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const STATIC_DIR = process.env.STATIC_DIR || path.resolve(__dirname, "..", "app");
 const SERVE_STATIC = process.env.SERVE_STATIC !== "0";
 const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || "").trim();
-const MAX_BODY_BYTES = 16 * 1024 * 1024; // 16 MB (suporta anexos até ~10 MB)
+const ENV_GEMINI_KEY = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "").trim();
+const ENV_GMAPS_KEY = (process.env.GOOGLE_MAPS_API_KEY || "").trim();
+const ENV_WALLET_ISSUER_ID = (process.env.GOOGLE_WALLET_ISSUER_ID || "").trim();
+const ENV_WALLET_SA_JSON = (process.env.GOOGLE_WALLET_SA_JSON || "").trim();
+const ENV_WALLET_SA_FILE = (process.env.GOOGLE_WALLET_SA_FILE || "").trim();
+const MAX_BODY_BYTES = 32 * 1024 * 1024; // 32 MB (suporta áudios, imagens IA e anexos)
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 dias
 
 const MIME = {
@@ -135,13 +140,81 @@ function getAuthUser(req) {
   return user ? { user, sid } : null;
 }
 
+const VALID_BR_DDDS = new Set([
+  "11","12","13","14","15","16","17","18","19",
+  "21","22","24","27","28","31","32","33","34","35","37","38",
+  "41","42","43","44","45","46","47","48","49","51","53","54","55",
+  "61","62","63","64","65","66","67","68","69","71","73","74","75","77","79",
+  "81","82","83","84","85","86","87","88","89","91","92","93","94","95","96","97","98","99"
+]);
+
+function validateServerWhatsApp(dial, rawNumber) {
+  const cleanDial = String(dial || "+55").trim();
+  const dialDigits = cleanDial.replace(/\D/g, "");
+  let local = String(rawNumber || "").replace(/\D/g, "");
+  if (!dialDigits) return { valid: false, error: "DDI do país inválido." };
+  if (cleanDial === "+55") {
+    if (local.startsWith("0") && local.length === 12) local = local.slice(1);
+    if (local.startsWith("55") && local.length === 13) local = local.slice(2);
+    if (local.length !== 11 || !VALID_BR_DDDS.has(local.slice(0, 2)) || local[2] !== "9" || /^(\d)\1{8}$/.test(local.slice(2))) {
+      return { valid: false, error: "WhatsApp Brasil inválido. Use DDD (2 dígitos) + 9 + 8 dígitos: (DD) 9XXXX-XXXX." };
+    }
+    return {
+      valid: true,
+      dial: "+55",
+      localDigits: local,
+      full: `+55 (${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`,
+      e164Digits: `55${local}`
+    };
+  }
+  if (local.length < 6 || local.length > 14) {
+    return { valid: false, error: "Número internacional inválido (6 a 14 dígitos)." };
+  }
+  return { valid: true, dial: cleanDial, localDigits: local, full: `${cleanDial} ${local}`, e164Digits: `${dialDigits}${local}` };
+}
+
+function getEffectiveCredentials(user) {
+  const integ = (user && user.integrations) || {};
+  let saRaw = integ.walletSaJson || ENV_WALLET_SA_JSON;
+  if (!saRaw && ENV_WALLET_SA_FILE && fs.existsSync(ENV_WALLET_SA_FILE)) {
+    try { saRaw = fs.readFileSync(ENV_WALLET_SA_FILE, "utf8"); } catch {}
+  }
+  return {
+    geminiKey: (integ.geminiKey || ENV_GEMINI_KEY || "").trim(),
+    gmapsKey: (integ.gmapsKey || ENV_GMAPS_KEY || "").trim(),
+    googleClientId: (integ.googleClientId || GOOGLE_CLIENT_ID || "").trim(),
+    walletIssuerId: (integ.walletIssuerId || ENV_WALLET_ISSUER_ID || "").trim(),
+    walletSaJson: (saRaw || "").trim()
+  };
+}
+
+function maskKeyHint(k) {
+  const s = String(k || "").trim();
+  if (!s) return "";
+  if (s.length <= 10) return "••••";
+  return `${s.slice(0, 6)}...${s.slice(-4)}`;
+}
+
 function publicUser(u) {
+  const creds = getEffectiveCredentials(u);
   return {
     id: u.id,
     name: u.name,
     email: u.email,
     avatar: u.avatar || "",
-    hasGoogle: Boolean(u.googleSub)
+    hasGoogle: Boolean(u.googleSub),
+    whatsappCountry: u.whatsappCountry || "+55",
+    whatsappNumber: u.whatsappNumber || "",
+    whatsappFull: u.whatsappFull || "",
+    integrations: {
+      hasGemini: Boolean(creds.geminiKey),
+      geminiHint: maskKeyHint(creds.geminiKey),
+      hasMaps: Boolean(creds.gmapsKey),
+      gmapsKey: creds.gmapsKey || "",
+      googleClientId: creds.googleClientId || "",
+      hasWallet: Boolean(creds.walletIssuerId && creds.walletSaJson),
+      walletIssuerId: creds.walletIssuerId || ""
+    }
   };
 }
 
@@ -334,6 +407,96 @@ async function verifyGoogleIdToken(credential) {
   return info;
 }
 
+async function callGeminiJSON(apiKey, parts, systemInstruction) {
+  if (!apiKey) throw new Error("GEMINI_NOT_CONFIGURED");
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const payload = {
+    contents: [{ role: "user", parts }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.2
+    }
+  };
+  if (systemInstruction) {
+    payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const json = await resp.json().catch(() => null);
+  if (!resp.ok) {
+    throw new Error(json?.error?.message || `Gemini API HTTP ${resp.status}`);
+  }
+  const rawTxt = json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  if (!rawTxt) throw new Error("Gemini não retornou resposta estruturada.");
+  try {
+    return JSON.parse(rawTxt);
+  } catch {
+    const cleaned = rawTxt.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+    return JSON.parse(cleaned);
+  }
+}
+
+function base64Url(input) {
+  const buf = Buffer.isBuffer(input) ? input : Buffer.from(String(input), "utf8");
+  return buf.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, originHost) {
+  let sa;
+  try { sa = JSON.parse(saJsonStr); } catch { throw new Error("JSON da Service Account do Google Wallet inválido."); }
+  if (!sa.client_email || !sa.private_key) {
+    throw new Error("Service Account precisa conter client_email e private_key.");
+  }
+  const suffix = crypto.createHash("md5").update(`${activity.id || activity.name}-${activity.start || ""}`).digest("hex").slice(0, 12);
+  const classId = `${issuerId}.ferias_pro_pass_v1`;
+  const objectId = `${issuerId}.fp_${suffix}`;
+  const isFlight = activity.type === "Voo";
+  const subParts = [activity.type || "Atividade"];
+  if (activity.from || activity.to) subParts.push(`${activity.from || "?"} -> ${activity.to || "?"}`);
+  if (activity.start) subParts.push(activity.end && activity.end !== activity.start ? `${activity.start} ate ${activity.end}` : activity.start);
+
+  const genericObj = {
+    id: objectId,
+    classId,
+    genericType: isFlight ? "GENERIC_TYPE_UNSPECIFIED" : "GENERIC_TYPE_UNSPECIFIED",
+    hexBackgroundColor: "#4f46e5",
+    cardTitle: { defaultValue: { language: "pt-BR", value: `Férias Pro · ${tripName || "Viagem"}` } },
+    header: { defaultValue: { language: "pt-BR", value: activity.name || "Reserva" } },
+    subheader: { defaultValue: { language: "pt-BR", value: subParts.join(" · ") } },
+    barcode: {
+      type: "QR_CODE",
+      value: `FERIASPRO|${activity.id || suffix}|${activity.name || ""}|${activity.start || ""}`
+    },
+    textModulesData: [
+      { id: "data", header: "Data", body: activity.end && activity.end !== activity.start ? `${activity.start} a ${activity.end}` : (activity.start || "-") },
+      ...(activity.from || activity.to ? [{ id: "rota", header: "Trecho / Local", body: `${activity.from || ""} -> ${activity.to || ""}` }] : []),
+      ...(activity.bookingRef ? [{ id: "reserva", header: "Localizador / Reserva", body: String(activity.bookingRef) }] : []),
+      ...(activity.notes ? [{ id: "notas", header: "Notas", body: String(activity.notes).slice(0, 200) }] : [])
+    ]
+  };
+
+  const claims = {
+    iss: sa.client_email,
+    aud: "google",
+    typ: "savetowallet",
+    iat: Math.floor(Date.now() / 1000),
+    origins: originHost ? [originHost] : [],
+    payload: {
+      genericObjects: [genericObj]
+    }
+  };
+  const headerB64 = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claimB64 = base64Url(JSON.stringify(claims));
+  const signer = crypto.createSign("RSA-SHA256");
+  signer.update(`${headerB64}.${claimB64}`);
+  const sig = signer.sign(sa.private_key);
+  const jwt = `${headerB64}.${claimB64}.${base64Url(sig)}`;
+  return `https://pay.google.com/gp/v/save/${jwt}`;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const pathname = url.pathname;
@@ -344,14 +507,20 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true,
         mode: "multi-user",
-        googleClientId: GOOGLE_CLIENT_ID
+        googleClientId: GOOGLE_CLIENT_ID,
+        hasGemini: Boolean(ENV_GEMINI_KEY),
+        hasMaps: Boolean(ENV_GMAPS_KEY),
+        hasWallet: Boolean(ENV_WALLET_ISSUER_ID && (ENV_WALLET_SA_JSON || ENV_WALLET_SA_FILE))
       });
     }
 
     if (pathname === "/api/auth/config" && req.method === "GET") {
       return sendJson(res, 200, {
         ok: true,
-        googleClientId: GOOGLE_CLIENT_ID
+        googleClientId: GOOGLE_CLIENT_ID,
+        hasGemini: Boolean(ENV_GEMINI_KEY),
+        hasMaps: Boolean(ENV_GMAPS_KEY),
+        hasWallet: Boolean(ENV_WALLET_ISSUER_ID && (ENV_WALLET_SA_JSON || ENV_WALLET_SA_FILE))
       });
     }
 
@@ -452,6 +621,59 @@ const server = http.createServer(async (req, res) => {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
       return sendJson(res, 200, { ok: true, user: publicUser(auth.user) });
+    }
+
+    if (pathname === "/api/auth/profile" && req.method === "PUT") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const body = await readBody(req);
+      const u = auth.user;
+      if (typeof body.name === "string" && body.name.trim()) u.name = body.name.trim().slice(0, 80);
+      if (body.whatsappCountry !== undefined || body.whatsappNumber !== undefined) {
+        const dial = String(body.whatsappCountry || u.whatsappCountry || "+55").trim();
+        const raw = String(body.whatsappNumber || "").trim();
+        if (!raw) {
+          u.whatsappCountry = dial;
+          u.whatsappNumber = "";
+          u.whatsappFull = "";
+        } else {
+          const v = validateServerWhatsApp(dial, raw);
+          if (!v.valid) return sendJson(res, 400, { ok: false, error: v.error });
+          u.whatsappCountry = v.dial;
+          u.whatsappNumber = v.localDigits;
+          u.whatsappFull = v.full;
+        }
+      }
+      saveDb();
+      return sendJson(res, 200, { ok: true, user: publicUser(u) });
+    }
+
+    if (pathname === "/api/integrations" && req.method === "PUT") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const body = await readBody(req);
+      const u = auth.user;
+      u.integrations = u.integrations || {};
+      if (typeof body.geminiKey === "string") {
+        if (body.clearGemini) u.integrations.geminiKey = "";
+        else if (body.geminiKey.trim()) u.integrations.geminiKey = body.geminiKey.trim();
+      }
+      if (typeof body.gmapsKey === "string") {
+        if (body.clearMaps) u.integrations.gmapsKey = "";
+        else if (body.gmapsKey.trim()) u.integrations.gmapsKey = body.gmapsKey.trim();
+      }
+      if (typeof body.googleClientId === "string") {
+        u.integrations.googleClientId = body.googleClientId.trim();
+      }
+      if (typeof body.walletIssuerId === "string") {
+        u.integrations.walletIssuerId = body.walletIssuerId.trim();
+      }
+      if (typeof body.walletSaJson === "string") {
+        if (body.clearWalletSa) u.integrations.walletSaJson = "";
+        else if (body.walletSaJson.trim()) u.integrations.walletSaJson = body.walletSaJson.trim();
+      }
+      saveDb();
+      return sendJson(res, 200, { ok: true, user: publicUser(u) });
     }
 
     /* ---------- TRIPS ---------- */
@@ -763,6 +985,166 @@ const server = http.createServer(async (req, res) => {
         delete db.attachments[att.id];
         saveDb();
         return sendJson(res, 200, { ok: true });
+      }
+    }
+
+    /* ---------- GEMINI AI (PLANEJAR COM ÁUDIO/IMAGENS + VEÍCULOS + ATIVIDADE) ---------- */
+    if (pathname === "/api/ai/plan-trip" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.geminiKey) {
+        return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key uma única vez na Central de Integrações." });
+      }
+      const body = await readBody(req);
+      const todayIso = String(body.baseDate || new Date().toISOString().slice(0, 10));
+      const parts = [{
+        text: `Data de referência hoje: ${todayIso}. Instruções do usuário: ${String(body.prompt || "Analise os áudios e imagens anexos para criar um planejamento completo de férias.").trim()}`
+      }];
+      if (Array.isArray(body.media)) {
+        body.media.slice(0, 10).forEach(m => {
+          const b64 = String(m.dataBase64 || "").replace(/^data:[^;]+;base64,/, "").trim();
+          if (b64) {
+            parts.push({ inlineData: { mimeType: String(m.mimeType || "image/jpeg"), data: b64 } });
+          }
+        });
+      }
+      const sysPrompt = `Você é o planejador especialista do aplicativo Férias Pro.
+Analise TODOS os áudios, imagens (passagens aéreas, ingressos, reservas de hotel, documento CRLV de carro) e textos enviados pelo usuário.
+Retorne EXCLUSIVAMENTE um JSON válido com esta estrutura exata:
+{
+  "tripName": "Nome claro das férias (ex: Férias Europa Julho 2027)",
+  "vehicle": {
+    "name": "Modelo completo do carro se identificado ou padrão",
+    "powertrain": "PHEV | HEV | COMBUSTION | BEV",
+    "evRange": 0,
+    "hevKmL": 14,
+    "bevKwhPer100": 18,
+    "tank": 55,
+    "battery": 0,
+    "kwhPerCharge": 0
+  },
+  "params": {
+    "travelers": 2,
+    "lodgingPerNight": 0,
+    "dailyFoodPerPerson": 0
+  },
+  "activities": [
+    {
+      "type": "Viagem | Voo | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
+      "name": "Nome curto da atividade",
+      "start": "YYYY-MM-DD",
+      "end": "YYYY-MM-DD",
+      "from": "Cidade/Aeroporto origem (se Viagem ou Voo)",
+      "to": "Cidade/Aeroporto destino (se Viagem ou Voo)",
+      "km": 0,
+      "drive": 0,
+      "toll": 0,
+      "extraCost": 0,
+      "bookingRef": "Código localizador/voucher se houver",
+      "notes": "Detalhes úteis (horários, voo, endereço, dicas)"
+    }
+  ],
+  "checklist": [
+    { "cat": "Categoria", "item": "Tarefa importante", "prio": "Alta | Média | Baixa", "notes": "" }
+  ]
+}
+Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Converta datas relativas usando ${todayIso} no formato YYYY-MM-DD. Se extrair passagens/ingressos/hotéis das imagens, preencha valores em extraCost, localizadores em bookingRef e todas as datas.`;
+
+      try {
+        const plan = await callGeminiJSON(creds.geminiKey, parts, sysPrompt);
+        return sendJson(res, 200, { ok: true, plan });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: err.message || "Falha ao consultar Gemini AI." });
+      }
+    }
+
+    if (pathname === "/api/ai/vehicle-specs" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.geminiKey) {
+        return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key para consultar modelos fora do catálogo local." });
+      }
+      const body = await readBody(req);
+      const modelName = String(body.modelName || "").trim();
+      if (!modelName) return sendJson(res, 400, { ok: false, error: "Informe o modelo do veículo." });
+      try {
+        const vehicle = await callGeminiJSON(
+          creds.geminiKey,
+          [{ text: `Retorne as especificações técnicas reais (padrão INMETRO/Brasil quando aplicável) para viagens rodoviárias do veículo: "${modelName}".` }],
+          `Retorne JSON exato:
+{
+  "name": "Nome oficial formatado do veículo",
+  "powertrain": "PHEV | HEV | COMBUSTION | BEV",
+  "evRange": número em km de autonomia elétrica real (0 se não for BEV nem PHEV),
+  "hevKmL": consumo rodoviário em km/L na gasolina (0 se 100% BEV),
+  "bevKwhPer100": consumo elétrico em kWh/100km (ex: 17),
+  "tank": litros do tanque de combustível (0 se BEV),
+  "battery": kWh nominais da bateria (0 se combustão pura),
+  "kwhPerCharge": kWh úteis por recarga ~80% da bateria (0 se não plug-in)
+}`
+        );
+        return sendJson(res, 200, { ok: true, vehicle });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: err.message || "Erro na consulta do veículo." });
+      }
+    }
+
+    if (pathname === "/api/ai/analyze-activity" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.geminiKey) {
+        return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key na Central de Integrações." });
+      }
+      const body = await readBody(req);
+      const parts = [{ text: `Extraia dados de atividade/passagem/ingresso/reserva/viagem desta entrada: ${String(body.prompt || "").trim()}` }];
+      if (Array.isArray(body.media)) {
+        body.media.slice(0, 4).forEach(m => {
+          const b64 = String(m.dataBase64 || "").replace(/^data:[^;]+;base64,/, "").trim();
+          if (b64) parts.push({ inlineData: { mimeType: String(m.mimeType || "image/jpeg"), data: b64 } });
+        });
+      }
+      try {
+        const activity = await callGeminiJSON(
+          creds.geminiKey,
+          parts,
+          `Retorne JSON com uma atividade do Férias Pro:
+{
+  "type": "Viagem | Voo | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
+  "name": "Título curto",
+  "start": "YYYY-MM-DD",
+  "end": "YYYY-MM-DD",
+  "from": "Origem se Viagem ou Voo",
+  "to": "Destino se Viagem ou Voo",
+  "extraCost": 0,
+  "bookingRef": "Código localizador/ingresso",
+  "notes": "Horário, companhia, local, poltrona ou detalhes úteis"
+}`
+        );
+        return sendJson(res, 200, { ok: true, activity });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: err.message || "Erro ao analisar atividade com IA." });
+      }
+    }
+
+    /* ---------- GOOGLE WALLET PASS SIGNER ---------- */
+    if (pathname === "/api/wallet/sign" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.walletIssuerId || !creds.walletSaJson) {
+        return sendJson(res, 200, { ok: true, configured: false });
+      }
+      const body = await readBody(req);
+      if (!body.activity) return sendJson(res, 400, { ok: false, error: "Dados da atividade ausentes." });
+      try {
+        const originHost = req.headers.origin || `${req.headers["x-forwarded-proto"] || "https"}://${req.headers.host}`;
+        const saveUrl = buildGoogleWalletSaveUrl(creds.walletIssuerId, creds.walletSaJson, body.activity, body.tripName || "Férias Pro", originHost);
+        return sendJson(res, 200, { ok: true, configured: true, saveUrl });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: err.message || "Falha ao assinar passe do Google Wallet." });
       }
     }
 

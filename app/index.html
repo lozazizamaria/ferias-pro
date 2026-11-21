@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Férias Pro</title>
-<meta name="description" content="Férias Pro: planejamento completo de múltiplas férias com cronograma Gantt, Google Maps, Google Agenda, anexos e compartilhamento.">
+<meta name="description" content="Férias Pro: planejamento inteligente de férias com IA Gemini, Gantt horizontal, Google Maps, Google Agenda, Google Wallet e WhatsApp.">
 <meta name="theme-color" content="#0b0f1a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -14,7 +14,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=8">
+<link rel="stylesheet" href="styles.css?v=10">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -26,7 +26,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="24" height="24" fill="none">
+          <svg viewBox="0 0 32 32" width="22" height="22" fill="none">
             <path d="M16 4.5C11.3056 4.5 7.5 8.25 7.5 12.88C7.5 19.12 16 27.5 16 27.5C16 27.5 24.5 19.12 24.5 12.88C24.5 8.25 20.6944 4.5 16 4.5Z" stroke="white" stroke-width="2.2" stroke-linejoin="round"/>
             <circle cx="16" cy="12.75" r="3.25" fill="white"/>
             <path d="M9 26.5C11.2 25.5 13.5 25 16 25C18.5 25 20.8 25.5 23 26.5" stroke="white" stroke-opacity="0.7" stroke-width="1.8" stroke-linecap="round"/>
@@ -34,7 +34,7 @@
         </span>
         <h1>Férias Pro</h1>
       </div>
-      <button type="button" class="btn ghost small" id="authThemeBtn" title="Alternar Dia/Noite">☀️</button>
+      <button type="button" class="btn ghost icon-only" id="authThemeBtn" title="Alternar Dia/Noite">☀️</button>
     </div>
 
     <div class="seg auth-tabs" id="authModeTabs">
@@ -58,7 +58,7 @@
 
     <div class="auth-divider"><span>ou</span></div>
     <div id="googleBtnWrap" class="google-btn-wrap"></div>
-    <p id="googleConfigHint" class="muted small auth-hint" hidden>Login com Google será exibido aqui assim que <code>GOOGLE_CLIENT_ID</code> for definido no servidor.</p>
+    <p id="googleConfigHint" class="muted small auth-hint" hidden>Login com Google disponível assim que <code>GOOGLE_CLIENT_ID</code> for definido no servidor.</p>
   </div>
 </section>
 
@@ -69,7 +69,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <svg viewBox="0 0 32 32" width="24" height="24" fill="none">
+            <svg viewBox="0 0 32 32" width="20" height="20" fill="none">
               <path d="M16 4.5C11.3056 4.5 7.5 8.25 7.5 12.88C7.5 19.12 16 27.5 16 27.5C16 27.5 24.5 19.12 24.5 12.88C24.5 8.25 20.6944 4.5 16 4.5Z" stroke="white" stroke-width="2.2" stroke-linejoin="round"/>
               <circle cx="16" cy="12.75" r="3.25" fill="white"/>
               <path d="M9 26.5C11.2 25.5 13.5 25 16 25C18.5 25 20.8 25.5 23 26.5" stroke="white" stroke-opacity="0.7" stroke-width="1.8" stroke-linecap="round"/>
@@ -80,39 +80,45 @@
 
         <div class="trip-switcher">
           <select id="tripSelect" aria-label="Selecionar planejamento de férias"></select>
-          <button type="button" class="btn ghost small" id="btnNewTrip" title="Criar novo planejamento de férias">➕ Criar Viagem</button>
+          <button type="button" class="btn ghost small icon-compact" id="btnNewTrip" title="Criar nova viagem">➕</button>
         </div>
       </div>
 
       <div class="actions">
         <button class="btn ghost small invite-pill" id="btnPendingInvites" type="button" hidden>📩 <span id="inviteCount">0</span></button>
-        <button class="btn ghost small" id="btnSyncCalendarTop" type="button" title="Sincronizar todos os eventos com o Google Agenda">📅 <span class="hide-sm">Agenda</span></button>
-        <button class="btn ghost small" id="btnShareTrip" type="button" title="Compartilhar viagem">👥 <span class="hide-sm">Compartilhar</span></button>
+        <button class="btn ai-pill small" id="btnAiPlan" type="button" title="Planejar viagem com IA (Áudio, Imagens e Texto)">✨ <span class="hide-sm">Planejar com IA</span></button>
+        <button class="btn wa-pill small" id="btnSendWhatsApp" type="button" title="Enviar planejamento para o meu WhatsApp">💬 <span class="hide-md">WhatsApp</span></button>
+        <button class="btn ghost small" id="btnSyncCalendarTop" type="button" title="Google Agenda">📅 <span class="hide-md">Agenda</span></button>
+        <button class="btn ghost small" id="btnShareTrip" type="button" title="Compartilhar viagem">👥</button>
         <button class="btn ghost sync-pill" id="syncBadge" type="button" title="Status da sincronização">
           <span class="sync-dot" aria-hidden="true"></span>
-          <span class="sync-text" id="syncText">Sincronizado</span>
+          <span class="sync-text hide-md" id="syncText">Sincronizado</span>
         </button>
-        <button class="btn ghost theme-toggle" id="btnTheme" type="button" title="Alternar Dia / Noite">
-          <span class="theme-icon" id="themeIcon" aria-hidden="true">☀️</span>
-          <span class="theme-label" id="themeLabel">Dia</span>
+        <button class="btn ghost icon-only theme-toggle-mini" id="btnTheme" type="button" title="Alternar modo Dia / Noite" aria-label="Alternar tema Dia/Noite">
+          <span id="themeIcon" aria-hidden="true">☀️</span>
         </button>
-        <button class="btn primary" id="btnAdd" type="button">
+        <button class="btn ghost small" id="btnOpenProfile" type="button" title="Perfil, WhatsApp e Credenciais Google">👤</button>
+        <button class="btn primary small" id="btnAdd" type="button">
           <span aria-hidden="true">➕</span>
-          <span class="btn-text">Nova atividade</span>
+          <span class="btn-text">Atividade</span>
         </button>
         <div class="dropdown">
-          <button class="btn ghost" id="btnMenu" type="button" aria-haspopup="true" aria-expanded="false">⋯</button>
+          <button class="btn ghost small" id="btnMenu" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções">⋯</button>
           <div class="menu" id="menu">
             <div class="menu-user" id="menuUserInfo"></div>
             <hr>
-            <button type="button" id="btnMenuInstall" hidden>📲 Instalar aplicativo</button>
+            <button type="button" id="btnPrintReport">🖨️ Imprimir relatório da viagem</button>
+            <hr>
+            <button type="button" id="btnMenuInstall" hidden>📲 Instalar aplicativo Férias Pro</button>
+            <button type="button" id="btnMenuAiPlan">✨ Planejar com IA (Áudio/Imagens)</button>
+            <button type="button" id="btnMenuWhatsApp">💬 Enviar planejamento p/ meu WhatsApp</button>
+            <button type="button" id="btnMenuProfile">👤 Perfil &amp; Credenciais Google</button>
             <button type="button" id="btnMenuCalendarAll">📅 Enviar férias p/ Google Agenda</button>
             <button type="button" id="btnExportIcs">📆 Baixar Agenda (.ics)</button>
             <button type="button" id="btnExportXlsx">⬇️ Exportar Excel (.xlsx)</button>
             <button type="button" id="btnExportJson">💾 Backup (.json)</button>
             <button type="button" id="btnImportJson">📂 Restaurar backup</button>
             <button type="button" id="btnImportXlsx">📥 Importar planilha original</button>
-            <button type="button" id="btnPrint">🖨️ Imprimir / PDF</button>
             <hr>
             <button type="button" id="btnRenameTrip">✏️ Renomear viagem atual</button>
             <button type="button" id="btnDeleteTrip" class="danger">🗑️ Excluir viagem atual</button>
@@ -132,10 +138,10 @@
   </header>
 
   <main>
-    <!-- CONVITES PENDENTES DE VIAGEM COMPARTILHADA -->
+    <!-- CONVITES PENDENTES -->
     <div id="invitesBanner" class="invites-banner" hidden></div>
 
-    <!-- CRONOGRAMA (1ª ABA / DEFAULT) -->
+    <!-- CRONOGRAMA (1ª ABA) -->
     <section class="view active" id="view-gantt">
       <div class="card gantt-card">
         <div class="gantt-header">
@@ -156,12 +162,12 @@
               <button type="button" class="active" data-zoom="50" title="Médio">M</button>
               <button type="button" data-zoom="66" title="Grande">G</button>
             </div>
-            <button type="button" class="btn ghost small" id="btnGanttSlim" title="Expandir área do calendário no celular">↔️ Foco</button>
+            <button type="button" class="btn ghost small" id="btnPrintGantt" title="Imprimir ou salvar Gantt em PDF / Imagem horizontal">🖨️ Gantt</button>
             <button type="button" class="btn ghost small" id="btnGanttToday" title="Ir para o início ou hoje">🎯 Hoje</button>
           </div>
         </div>
 
-        <p class="muted small gantt-hint">Toque em qualquer barra, ícone ou resumo ao lado direito para editar detalhes, anexar documentos ou enviar ao Google Agenda.</p>
+        <p class="muted small gantt-hint">Toque em qualquer barra ou resumo para editar, anexar arquivos, abrir no Google Agenda ou adicionar ao Google Wallet.</p>
 
         <div class="gantt-wrap" id="ganttWrap">
           <div id="gantt" class="gantt"></div>
@@ -178,16 +184,26 @@
         <div class="card">
           <div class="card-head">
             <h2>Próximos compromissos</h2>
-            <span class="muted small">Clique para editar</span>
+            <div class="inline-actions">
+              <button type="button" class="btn ghost small" id="btnDashAddActivity">➕ Novo item</button>
+            </div>
           </div>
           <ul class="upcoming" id="upcoming"></ul>
         </div>
-        <div class="card">
-          <h2>Composição de custos</h2>
+
+        <div class="card" id="costCompCard">
+          <div class="card-head">
+            <h2>💳 Composição dos custos</h2>
+            <div class="inline-actions">
+              <button type="button" class="btn ghost small" id="btnDashAddTicket">🎟️ + Ingresso/Gasto</button>
+            </div>
+          </div>
+          <div id="costStackedBar" class="stacked-bar" aria-hidden="true"></div>
           <div id="costBars"></div>
           <div id="extraBudgetSummary" class="budget-box"></div>
-          <div class="maps-actions-row">
-            <a class="btn maps" id="mapsLink" target="_blank" rel="noopener">🗺️ Abrir rota completa no Google Maps</a>
+          <div class="maps-actions-row split-actions">
+            <a class="btn maps" id="mapsLink" target="_blank" rel="noopener">🗺️ Abrir rota no Google Maps</a>
+            <button type="button" class="btn wa-pill" id="btnDashWhatsApp">💬 Enviar planejamento p/ meu WhatsApp</button>
           </div>
         </div>
       </div>
@@ -218,9 +234,11 @@
           <div class="filters">
             <input type="search" id="search" placeholder="🔎 Buscar...">
             <select id="filterType"><option value="">Todos os tipos</option></select>
+            <button type="button" class="btn ghost small" id="btnTableAdd">➕ Novo item</button>
+            <button type="button" class="btn primary small" id="btnTablePdf">📄 Baixar Tabela (A4 Horizontal)</button>
           </div>
         </div>
-        <p class="muted small">Células destacadas são editáveis diretamente. Custos extras, passagens, ingressos e hospedagens somam automaticamente ao orçamento.</p>
+        <p class="muted small">Edite células diretamente. Ingressos, passagens aéreas, hospedagens e atividades sincronizam automaticamente com Dashboard, Gantt e Relatório.</p>
         <div class="table-wrap desktop-table-wrap"><table id="mainTable"></table></div>
         <div id="mobileTableCards" class="mobile-cards"></div>
       </div>
@@ -230,24 +248,30 @@
     <section class="view" id="view-params">
       <div class="grid2">
         <div class="card">
-          <h2>🚗 Veículo &amp; Viagem</h2>
+          <div class="card-head">
+            <h2>🚗 Veículo &amp; Viagem</h2>
+            <button type="button" class="btn ai-pill small" id="btnLookupVehicleAI" title="Consultar modelo no Gemini AI caso não esteja no catálogo">⚡ Preencher c/ IA</button>
+          </div>
           <div class="params-form">
             <label class="param-row">
               <span>Nome desta viagem</span>
               <input id="p-planTitle" type="text" placeholder="Ex: Férias Final de Ano 2026">
               <span class="u">nome</span>
             </label>
-            <label class="param-row">
+            <div class="param-row">
               <span>Modelo do carro</span>
-              <input id="p-vehicleName" type="text" placeholder="Ex: BYD Song Plus DM-i">
-              <span class="u">modelo</span>
-            </label>
+              <div class="ac-wrap" style="width:100%">
+                <input id="p-vehicleName" type="text" placeholder="Digite para buscar ou preencher auto..." autocomplete="off">
+                <div class="ac-list" id="ac-vehicle" hidden></div>
+              </div>
+              <span class="u" id="vehicleSourceTag">catálogo auto</span>
+            </div>
             <label class="param-row">
               <span>Motorização</span>
               <select id="p-powertrain">
                 <option value="PHEV">Híbrido Plug-in (PHEV)</option>
                 <option value="HEV">Híbrido Convencional (HEV)</option>
-                <option value="COMBUSTION">Combustão (Flex / Gasolina)</option>
+                <option value="COMBUSTION">Combustão (Flex / Gasolina / Diesel)</option>
                 <option value="BEV">100% Elétrico (BEV)</option>
               </select>
               <span class="u">tipo</span>
@@ -258,62 +282,86 @@
 
         <div class="card">
           <h2>💰 Orçamento Flexível, Hospedagem &amp; Tarifas</h2>
-          <p class="muted small" style="margin-top:-6px">A hospedagem vale para as férias inteiras (ou conforme diárias/atividades), sem vínculo obrigatório com “Período”.</p>
+          <p class="muted small" style="margin-top:-6px">A hospedagem vale para as férias inteiras (ou noites definidas), sem vínculo obrigatório com “Período”.</p>
           <div id="costParamsList" class="params-form"></div>
         </div>
       </div>
 
+      <!-- INGRESSOS, TICKETS E PASSAGENS EM PARÂMETROS (VINCULADOS AO CRONOGRAMA E DASHBOARD) -->
+      <div class="card">
+        <div class="card-head">
+          <h2>🎟️ Ingressos, Tickets, Passagens &amp; Extras da Viagem</h2>
+          <span class="muted small">Tudo lançado aqui entra direto no Cronograma, Gantt e Composição de Custos</span>
+        </div>
+        <form id="paramTicketForm" class="ticket-inline-form">
+          <select id="pt-type" aria-label="Tipo do item">
+            <option value="Ingresso">🎟️ Ingresso / Ticket</option>
+            <option value="Voo">✈️ Voo / Passagem</option>
+            <option value="Passeio">🎢 Passeio / Parque</option>
+            <option value="Evento">★ Evento / Jogo / Show</option>
+            <option value="Hospedagem">🏨 Hospedagem</option>
+            <option value="Restaurante">🍽️ Restaurante</option>
+            <option value="Outro">📌 Outro Gasto</option>
+          </select>
+          <input type="text" id="pt-name" required placeholder="Nome (ex: Ingresso Beto Carrero, Voo BSB-GRU...)">
+          <input type="date" id="pt-start" required aria-label="Data">
+          <input type="number" step="any" min="0" id="pt-cost" placeholder="Valor R$">
+          <input type="text" id="pt-notes" placeholder="Local / observação (opcional)">
+          <button type="submit" class="btn primary small">➕ Adicionar</button>
+        </form>
+        <div id="paramTicketsList" class="param-tickets-list"></div>
+      </div>
+
       <div class="grid2">
         <div class="card">
-          <h2>🗺️ Google Maps, Google Agenda &amp; Paradas</h2>
+          <h2>🤖 IA Gemini, Maps, Agenda &amp; WhatsApp (Central Única)</h2>
           <div id="automationParamsList" class="params-form"></div>
+
+          <div class="gmaps-key-panel">
+            <div class="gmaps-key-head">
+              <strong>✨ Google Gemini AI (Todo o App)</strong>
+              <span class="pill warn" id="geminiStatusBadge">Não configurada</span>
+            </div>
+            <p class="muted small">Salve sua Gemini API Key uma única vez aqui ou em <code>GEMINI_API_KEY</code> na VPS — ativa automaticamente “Planejar com IA”, busca automática de veículos e leitura de ingressos/voos.</p>
+            <div class="key-input-row">
+              <input type="password" id="geminiKeyInput" placeholder="Cole sua Gemini API Key (AIza...)" autocomplete="off">
+              <button type="button" class="btn primary small" id="btnSaveGeminiKey">Salvar IA</button>
+            </div>
+          </div>
 
           <div class="gmaps-key-panel">
             <div class="gmaps-key-head">
               <strong>🔑 Chave Google Maps Platform API</strong>
               <span class="pill" id="gmapsKeyBadge">Não configurada</span>
             </div>
-            <p class="muted small">Ativa cálculo automático de distância, tempo, autocomplete e pedágios oficiais no modal de viagem (e sincroniza com seu celular).</p>
             <div class="key-input-row">
-              <input type="password" id="gmapsKeyInput" placeholder="Cole sua Google Maps API Key aqui..." autocomplete="off">
-              <button type="button" class="btn ghost small" id="btnToggleKey" title="Mostrar/ocultar chave">👁️</button>
+              <input type="password" id="gmapsKeyInput" placeholder="Cole sua Google Maps API Key..." autocomplete="off">
+              <button type="button" class="btn ghost small" id="btnToggleKey" title="Mostrar/ocultar">👁️</button>
               <button type="button" class="btn primary small" id="btnSaveKey">Salvar</button>
             </div>
             <div class="key-actions-row">
               <button type="button" class="btn ghost small" id="btnTestKey">⚡ Testar Maps</button>
               <button type="button" class="btn ghost small" id="btnRecalcAllRoutes">🔄 Recalcular viagens no Maps</button>
-              <button type="button" class="btn ghost small" id="btnReapplyStops">⏱️ Reaplicar paradas padrão</button>
+              <button type="button" class="btn ghost small" id="btnReapplyStops">⏱️ Reaplicar paradas</button>
             </div>
-            <details class="help-details">
-              <summary>❓ Ajuda rápida: como gerar sua chave grátis do Google Maps</summary>
-              <ol class="small muted">
-                <li>Para testar grátis sem cartão, clique em <a href="https://mapsplatform.google.com/maps-demo-key?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Gerar Demo Key</a>, entre com sua conta Google e copie a chave.</li>
-                <li>Para produção, acesse o <a href="https://console.cloud.google.com/google/maps-apis/credentials?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Google Cloud Console</a> e ative <b>Maps JavaScript API</b>, <b>Routes API</b> e <b>Places API (New)</b>.</li>
-                <li>Cole a chave acima e clique em <b>Salvar</b>.</li>
-              </ol>
-            </details>
           </div>
 
           <div class="gmaps-key-panel">
             <div class="gmaps-key-head">
-              <strong>📅 Integração Google Agenda</strong>
+              <strong>📅 Integração Google Agenda &amp; 💳 Google Wallet</strong>
               <span class="pill" id="calBadge">Lembrete dia anterior 09:00</span>
             </div>
-            <p class="muted small">Assine sua agenda automaticamente com 1 clique (sem configuração) ou baixe o arquivo <code>.ics</code> com lembrete no <b>dia anterior às 09:00</b>.</p>
             <div class="key-actions-row">
               <button type="button" class="btn primary small" id="btnSyncAllCalendar">📅 Sincronizar / Assinar Agenda</button>
               <button type="button" class="btn ghost small" id="btnDownloadAllIcs">📆 Baixar .ics</button>
+              <button type="button" class="btn ghost small" id="btnParamProfile">💬 WhatsApp &amp; Wallet</button>
             </div>
             <details class="help-details">
-              <summary>⚙️ Modo avançado: atualização instantânea via API do Google (OAuth)</summary>
+              <summary>⚙️ Modo avançado: API Google Agenda (OAuth Client ID)</summary>
               <div class="key-input-row" style="margin-top:8px">
-                <input type="text" id="calClientIdInput" placeholder="OAuth Client ID Google (opcional se definido no servidor)" autocomplete="off">
+                <input type="text" id="calClientIdInput" placeholder="OAuth Client ID Google" autocomplete="off">
                 <button type="button" class="btn ghost small" id="btnSaveCalClientId">Salvar ID</button>
               </div>
-              <ol class="small muted">
-                <li>No <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>, ative a <b>Google Calendar API</b> e crie um <b>ID do cliente OAuth 2.0 (Web)</b> liberando <code>https://feriaspro.digitalinpulse.com.br</code>.</li>
-                <li>Salve acima (ou em <code>GOOGLE_CLIENT_ID</code> na VPS) para que o botão <b>📅 Agenda</b> peça autorização direto na janela do Google.</li>
-              </ol>
             </details>
           </div>
         </div>
@@ -329,11 +377,11 @@
       </div>
     </section>
 
-    <!-- CHECKLIST -->
+    <!-- CHECKLIST (COM ARRASTAR PRIORIDADE) -->
     <section class="view" id="view-checklist">
       <div class="card">
         <div class="card-head">
-          <h2>Checklist de preparação <span id="checkProgress" class="pill"></span></h2>
+          <h2>Checklist <span id="checkProgress" class="pill"></span></h2>
           <div class="inline-actions">
             <select id="filterChecklist" aria-label="Filtrar checklist">
               <option value="">Todos</option>
@@ -341,9 +389,10 @@
               <option value="Em andamento">Em andamento</option>
               <option value="Concluído">Concluídos</option>
             </select>
-            <button class="btn ghost small" id="btnAddCheck" type="button">➕ Item</button>
+            <button class="btn primary small" id="btnAddCheck" type="button">➕ Item</button>
           </div>
         </div>
+        <p class="muted small">Arraste pelo ícone <b>⋮⋮</b> (ou use ▲ ▼ no celular) para reordenar a prioridade dos itens.</p>
         <div class="progress"><div id="checkBar"></div></div>
         <div class="table-wrap desktop-table-wrap"><table id="checkTable"></table></div>
         <div id="mobileCheckCards" class="mobile-cards"></div>
@@ -352,13 +401,13 @@
   </main>
 </div>
 
-<!-- POP-UP INSTALAR APP (PWA) -->
+<!-- POP-UP / BOTÃO INSTALAR APP (PWA) -->
 <div id="pwaInstallBanner" class="pwa-banner" hidden role="dialog" aria-label="Instalar aplicativo Férias Pro">
   <div class="pwa-banner-inner">
     <img src="icons/icon-192.png" alt="Férias Pro" class="pwa-icon">
     <div class="pwa-text">
-      <strong>Instalar Férias Pro</strong>
-      <span id="pwaPromptDesc" class="muted small">Adicione o app à tela inicial do celular para abrir direto como aplicativo.</span>
+      <strong>📲 Baixar Férias Pro</strong>
+      <span id="pwaPromptDesc" class="muted small">Instale no seu celular para abrir direto como aplicativo com ícone na tela inicial.</span>
     </div>
     <div class="pwa-btns">
       <button type="button" class="btn primary small" id="btnPwaInstall">Baixar App</button>
@@ -375,26 +424,44 @@
       <button type="button" class="icon-btn modal-close" id="btnCloseX" aria-label="Fechar">✕</button>
     </div>
 
+    <!-- ATALHO IA DENTRO DA ATIVIDADE -->
+    <div class="modal-ai-strip">
+      <span>✨ Preencher automático com Gemini IA (texto, print de voo/ingresso/reserva)</span>
+      <div class="inline-actions">
+        <button type="button" class="btn ai-pill small" id="btnActAiUpload">📷 Ler Imagem / Ticket</button>
+        <button type="button" class="btn ghost small" id="btnActAiText">✍️ Descrever</button>
+        <input type="file" id="actAiFile" accept="image/*,audio/*,.pdf" hidden>
+      </div>
+    </div>
+
     <div class="form-grid">
       <label>Tipo de atividade
         <select name="type" id="f-type"></select>
       </label>
-      <label><span id="f-extraCostLabel">Custo / ingresso / diária (R$)</span>
+
+      <label id="f-extraCostWrap"><span id="f-extraCostLabel">Valor / Custo (R$)</span>
         <input type="number" step="any" min="0" name="extraCost" id="f-extraCost" placeholder="0,00">
       </label>
 
       <label class="span2">Nome / Descrição
-        <input name="name" id="f-name" required placeholder="Ex: Viagem SP, Voo BSB-FLN, Hotel Beira Mar, Beto Carrero...">
+        <input name="name" id="f-name" required placeholder="Ex: Viagem SP, Voo BSB-FLN, Ingresso Beto Carrero, Hotel...">
       </label>
 
       <label>Início<input type="date" name="start" id="f-start" required></label>
       <label>Fim<input type="date" name="end" id="f-end"></label>
 
-      <!-- BLOCO ORIGEM/DESTINO PARA VOO (sem carro/pedágio) -->
+      <!-- BLOCO VOO -->
       <div class="flight-only span2 form-grid inner" hidden>
         <label>Aeroporto / Cidade Origem<input id="f-flightFrom" placeholder="Ex: Brasília (BSB)"></label>
-        <label>Aeroporto / Cidade Destino<input id="f-flightTo" placeholder="Ex: Navegantes (NVT)"></label>
+        <label>Aeroporto / Cidade Destino<input id="f-flightTo" placeholder="Ex: Guarulhos (GRU)"></label>
+        <label>Companhia / Nº Voo<input id="f-airline" placeholder="Ex: LATAM LA3450"></label>
+        <label>Localizador / Reserva<input id="f-bookingRef" placeholder="Ex: XYZ987"></label>
       </div>
+
+      <!-- LOCALIZADOR / CÓDIGO PARA INGRESSO / HOSPEDAGEM / EVENTO -->
+      <label class="span2 ref-only" id="f-ticketRefWrap" hidden>Localizador / Código do Ingresso / Reserva
+        <input id="f-ticketRef" placeholder="Opcional — usado também no Passe do Google Wallet">
+      </label>
 
       <!-- BLOCO VIAGEM DE CARRO (GOOGLE MAPS) -->
       <div class="trip-only span2 form-grid inner">
@@ -419,7 +486,7 @@
         <div class="span2 maps-status" id="modalMapsStatus"></div>
 
         <div class="span2 modal-key-box" id="modalKeyBox" hidden>
-          <div class="small">🔑 <strong>Configure sua Google Maps API Key</strong> para calcular distância, duração e pedágio automaticamente:</div>
+          <div class="small">🔑 <strong>Configure sua Google Maps API Key</strong> para calcular rota, duração e pedágio automaticamente:</div>
           <div class="key-input-row">
             <input type="password" id="modalKeyInput" placeholder="Cole sua API Key / Demo Key">
             <button type="button" class="btn primary small" id="btnModalSaveKey">Salvar &amp; Calcular</button>
@@ -474,14 +541,15 @@
         <div id="modalAttachList" class="attach-list"></div>
       </div>
 
-      <!-- GOOGLE AGENDA -->
+      <!-- GOOGLE AGENDA + GOOGLE WALLET (POR ATIVIDADE) -->
       <div class="span2 cal-box">
         <div class="route-head-row">
-          <span class="route-title">📅 Google Agenda <small class="muted">(lembrete dia anterior às <span id="calRemLabel">09:00</span>)</small></span>
+          <span class="route-title">📅 Google Agenda &amp; 💳 Google Wallet <small class="muted">(lembrete <span id="calRemLabel">09:00</span>)</small></span>
           <div class="inline-actions">
-            <button type="button" class="btn ghost small" id="btnCalDirect">Enviar p/ Google Agenda</button>
-            <a class="btn ghost small" id="btnCalLink" target="_blank" rel="noopener">Abrir no Agenda ↗</a>
+            <button type="button" class="btn ghost small" id="btnCalDirect">📅 Enviar p/ Agenda</button>
+            <a class="btn ghost small" id="btnCalLink" target="_blank" rel="noopener">Agenda ↗</a>
             <button type="button" class="btn ghost small" id="btnCalIcs">⬇️ .ics</button>
+            <button type="button" class="btn primary small" id="btnWalletDirect">💳 Adicionar ao Google Wallet</button>
           </div>
         </div>
       </div>
@@ -499,7 +567,129 @@
   </form>
 </dialog>
 
-<!-- MODAL CRIAR NOVA VIAGEM / FÉRIAS -->
+<!-- MODAL PLANEJAR COM IA (ÁUDIO + IMAGENS + DOCUMENTOS -> NOVA VIAGEM) -->
+<dialog id="aiPlanModal">
+  <div class="modal-head">
+    <h2>✨ Planejar Viagem com IA (Gemini)</h2>
+    <button type="button" class="icon-btn modal-close" id="btnCloseAiPlan" aria-label="Fechar">✕</button>
+  </div>
+  <div class="ai-plan-body">
+    <p class="muted small">Fale por áudio, envie fotos/prints (voos, ingressos, documento do carro, hotel) ou escreva seu roteiro — a IA cria uma nova viagem completa com datas, veículo, trajetos e checklist.</p>
+
+    <div id="aiKeyInlineBox" class="gmaps-key-panel" style="margin-top:0" hidden>
+      <strong>🔑 Ative a IA do Google uma única vez</strong>
+      <p class="muted small">Cole sua Gemini API Key (obtida grátis no <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style="color:var(--accent2)">Google AI Studio ↗</a>). Fica salva na sua conta para PC e celular.</p>
+      <div class="key-input-row">
+        <input type="password" id="aiInlineKeyInput" placeholder="AIza...">
+        <button type="button" class="btn primary small" id="btnSaveInlineGemini">Ativar IA</button>
+      </div>
+    </div>
+
+    <div class="ai-media-bar">
+      <button type="button" class="btn primary small" id="btnAiRecordAudio">🎙️ Gravar Áudio</button>
+      <span id="aiRecordTimer" class="pill warn" hidden>● Gravando 0:00</span>
+      <button type="button" class="btn ghost small" id="btnAiUploadMedia">📎 Anexar Imagens / Áudios / PDFs</button>
+      <input type="file" id="aiMediaInput" multiple accept="image/*,audio/*,.pdf" hidden>
+    </div>
+
+    <div id="aiMediaList" class="attach-list"></div>
+
+    <label style="display:grid;gap:6px;font-size:0.84rem;color:var(--muted)">Ou descreva sua viagem (rota, dias, carro, voo, parques, hotel):
+      <textarea id="aiPromptText" rows="4" placeholder="Ex: Vou viajar de 10 a 20 de julho de 2027 com 4 pessoas de Brasília para Gramado usando um Haval H6 PHEV, depois pego voo para Porto Alegre e vou ao Beto Carrero..."></textarea>
+    </label>
+
+    <div id="aiPlanStatus" class="maps-status"></div>
+  </div>
+  <div class="modal-actions">
+    <span class="spacer"></span>
+    <button type="button" class="btn ghost" id="btnCancelAiPlan">Cancelar</button>
+    <button type="button" class="btn ai-pill" id="btnRunAiPlan">✨ Criar Viagem com IA</button>
+  </div>
+</dialog>
+
+<!-- MODAL IMPRIMIR / EXPORTAR GANTT HORIZONTAL -->
+<dialog id="ganttPrintModal">
+  <form id="ganttPrintForm" method="dialog">
+    <div class="modal-head">
+      <h2>🖨️ Imprimir / Exportar Gantt (Horizontal)</h2>
+      <button type="button" class="icon-btn modal-close" id="btnCloseGanttPrint" aria-label="Fechar">✕</button>
+    </div>
+    <p class="muted small">Selecione exatamente o intervalo de datas desejado. Tudo caberá em <b>1 página na horizontal</b> (PDF A4 paisagem ou Imagem PNG).</p>
+    <div id="gpQuickChips" class="gp-chips"></div>
+    <div class="form-grid" style="margin-top:10px">
+      <label>Data inicial<input type="date" id="gp-from" required></label>
+      <label>Data final<input type="date" id="gp-to" required></label>
+    </div>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnGpImage">🖼️ Baixar Imagem (PNG Horizontal)</button>
+      <button type="submit" class="btn primary" id="btnGpPdf">📄 Imprimir / PDF (1 Página Horizontal)</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- MODAL PERFIL, WHATSAPP BRASIL E INTEGRAÇÕES -->
+<dialog id="profileModal">
+  <form id="profileForm" method="dialog">
+    <div class="modal-head">
+      <h2>👤 Meu Perfil &amp; WhatsApp</h2>
+      <button type="button" class="icon-btn modal-close" id="btnCloseProfile" aria-label="Fechar">✕</button>
+    </div>
+    <div class="form-grid">
+      <label class="span2">Nome
+        <input type="text" id="prof-name" required>
+      </label>
+      <div class="span2">
+        <span style="display:block;font-size:0.82rem;color:var(--muted);margin-bottom:5px;font-weight:500">WhatsApp para receber planejamento automático</span>
+        <div class="wa-input-group">
+          <select id="prof-waCountry" aria-label="DDI do país"></select>
+          <input type="tel" id="prof-waNumber" placeholder="(11) 99999-8888" autocomplete="tel-national">
+        </div>
+        <small class="muted">Padrão Brasil (+55): DDD (2 dígitos) + 9 + 8 dígitos. Ex: (61) 99876-5432.</small>
+        <div id="prof-waError" class="auth-error" hidden style="margin-top:6px"></div>
+      </div>
+    </div>
+
+    <details class="help-details" style="margin-top:14px">
+      <summary>🔐 Credenciais unificadas (Google Wallet · Gemini · Maps · Agenda)</summary>
+      <div class="form-grid" style="margin-top:10px">
+        <label class="span2">Gemini API Key (IA em todo o app)
+          <input type="password" id="prof-geminiKey" placeholder="Cole para atualizar/definir (AIza...)" autocomplete="off">
+        </label>
+        <label class="span2">Google Wallet Issuer ID (opcional)
+          <input type="text" id="prof-walletIssuer" placeholder="Ex: 3388000000012345678">
+        </label>
+        <label class="span2">Service Account JSON (Google Wallet API - opcional)
+          <textarea id="prof-walletSa" rows="2" placeholder='{"type":"service_account","client_email":"...","private_key":"..."}'></textarea>
+        </label>
+      </div>
+    </details>
+
+    <div class="modal-actions">
+      <button type="button" class="btn wa-pill" id="btnProfileSendWa">💬 Testar Envio WhatsApp</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnCancelProfile">Fechar</button>
+      <button type="submit" class="btn primary">Salvar Perfil</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- MODAL GOOGLE WALLET / PASSE DIGITAL -->
+<dialog id="walletModal">
+  <div class="modal-head">
+    <h2>💳 Google Wallet &amp; Passe Digital</h2>
+    <button type="button" class="icon-btn modal-close" id="btnCloseWallet" aria-label="Fechar">✕</button>
+  </div>
+  <div id="walletBody" class="cal-sync-body"></div>
+  <canvas id="walletPassCanvas" style="width:100%;border-radius:14px;border:1px solid var(--border);margin-top:10px"></canvas>
+  <div class="modal-actions">
+    <span class="spacer"></span>
+    <button type="button" class="btn ghost" id="btnDownloadPassPng">⬇️ Salvar Passe (Imagem QR)</button>
+    <a class="btn primary" id="btnOpenGoogleWallet" target="_blank" rel="noopener" hidden>💳 Adicionar ao Google Wallet</a>
+  </div>
+</dialog>
+
+<!-- MODAL CRIAR NOVA VIAGEM -->
 <dialog id="newTripModal">
   <form id="newTripForm" method="dialog">
     <div class="modal-head">
@@ -529,7 +719,7 @@
     <h2>👥 Compartilhar Viagem</h2>
     <button type="button" class="icon-btn modal-close" id="btnCloseShare" aria-label="Fechar">✕</button>
   </div>
-  <p class="muted small">Insira o e-mail da pessoa. Quando ela entrar no Férias Pro, receberá o convite para aceitar e visualizar/editar junto com você.</p>
+  <p class="muted small">Insira o e-mail da pessoa para compartilhar este planejamento.</p>
   <form id="shareForm" class="key-input-row" style="margin-bottom:14px">
     <input type="email" id="shareEmail" required placeholder="email@pessoa.com">
     <select id="shareRole" style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px;color:var(--text)">
@@ -611,11 +801,14 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=8"></script>
-<script src="data.js?v=8"></script>
-<script src="maps.js?v=8"></script>
-<script src="calendar.js?v=8"></script>
-<script src="api.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.example.js?v=9"></script>
+<script src="vehicles.js?v=9"></script>
+<script src="countries.js?v=9"></script>
+<script src="data.js?v=9"></script>
+<script src="maps.js?v=9"></script>
+<script src="calendar.js?v=9"></script>
+<script src="report.js?v=9"></script>
+<script src="api.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

@@ -1,13 +1,14 @@
 // Dados iniciais, catálogo uniforme de atividades e fábrica de viagens — Férias Pro
 window.ACTIVITY_TYPES = {
-  Viagem:      { id: "Viagem",      label: "🚗 Viagem (Carro)",       short: "Viagem",      icon: "▶",  cls: "Viagem",      isRoute: true,  costLabel: "Pedágio + combustível + extras" },
-  Voo:         { id: "Voo",         label: "✈️ Voo / Passagem Aérea", short: "Voo",         icon: "✈",  cls: "Voo",         isFlight: true, costLabel: "Passagem aérea / bagagem (R$)" },
-  Hospedagem:  { id: "Hospedagem",  label: "🏨 Hospedagem / Hotel",   short: "Hospedagem",  icon: "🏨", cls: "Hospedagem",  isStay: true,   costLabel: "Diária ou valor total hospedagem (R$)" },
-  Evento:      { id: "Evento",      label: "★ Evento / Jogo / Show",  short: "Evento",      icon: "★",  cls: "Evento",      costLabel: "Ingresso / entrada / custo do evento (R$)" },
-  Passeio:     { id: "Passeio",     label: "🎢 Passeio / Parque",     short: "Passeio",     icon: "🎢", cls: "Passeio",     costLabel: "Ingressos / passeio / atrações (R$)" },
+  Viagem:      { id: "Viagem",      label: "🚗 Viagem (Carro)",       short: "Viagem",      icon: "▶",  cls: "Viagem",      isRoute: true,  hideCostInput: true, costLabel: "Custos extras (R$)" },
+  Voo:         { id: "Voo",         label: "✈️ Voo / Passagem Aérea", short: "Voo",         icon: "✈",  cls: "Voo",         isFlight: true, costLabel: "Valor da passagem aérea / bagagem (R$)" },
+  Hospedagem:  { id: "Hospedagem",  label: "🏨 Hospedagem / Hotel",   short: "Hospedagem",  icon: "🏨", cls: "Hospedagem",  isStay: true,   costLabel: "Valor total ou diárias da hospedagem (R$)" },
+  Ingresso:    { id: "Ingresso",    label: "🎟️ Ingresso / Ticket",    short: "Ingresso",    icon: "🎟", cls: "Ingresso",    isTicket: true, costLabel: "Valor do ingresso / ticket (R$)" },
+  Evento:      { id: "Evento",      label: "★ Evento / Jogo / Show",  short: "Evento",      icon: "★",  cls: "Evento",      costLabel: "Valor do ingresso / custo do evento (R$)" },
+  Passeio:     { id: "Passeio",     label: "🎢 Passeio / Parque",     short: "Passeio",     icon: "🎢", cls: "Passeio",     costLabel: "Valor passeio / parque / atrações (R$)" },
   Restaurante: { id: "Restaurante", label: "🍽️ Restaurante / Lazer",  short: "Restaurante", icon: "🍽", cls: "Restaurante", costLabel: "Reserva / refeição estimada (R$)" },
   "Período":   { id: "Período",     label: "■ Período / Estadia",     short: "Período",     icon: "■",  cls: "Período",     costLabel: "Custo opcional no período (R$)" },
-  Outro:       { id: "Outro",       label: "📌 Outra Atividade",      short: "Outro",       icon: "●",  cls: "Outro",       costLabel: "Custo opcional (R$)" }
+  Outro:       { id: "Outro",       label: "📌 Outra Atividade",      short: "Outro",       icon: "●",  cls: "Outro",       costLabel: "Valor / custo (R$)" }
 };
 
 window.DEFAULT_DATA = {

@@ -4,6 +4,7 @@
   const LOCAL_TRIPS_KEY = "ferias-pro-local-trips-v2";
 
   let serverAvailable = false;
+  let serverCaps = { hasGemini: false, hasMaps: false, hasWallet: false };
   let googleClientId = "";
   let currentUser = null;
   let status = "checking"; // checking | synced | syncing | unauth | offline | local_only
@@ -44,6 +45,11 @@
       if (!r.ok || !r.data?.ok) throw new Error("NO_SERVER");
       serverAvailable = true;
       googleClientId = r.data.googleClientId || "";
+      serverCaps = {
+        hasGemini: Boolean(r.data.hasGemini),
+        hasMaps: Boolean(r.data.hasMaps),
+        hasWallet: Boolean(r.data.hasWallet)
+      };
       const me = await req("/api/auth/me");
       if (me.ok && me.data?.user) {
         currentUser = me.data.user;
@@ -53,7 +59,7 @@
         status = "unauth";
       }
       notify();
-      return { serverAvailable: true, googleClientId, user: currentUser };
+      return { serverAvailable: true, googleClientId, user: currentUser, caps: serverCaps };
     } catch {
       serverAvailable = false;
       status = "local_only";
@@ -257,6 +263,59 @@
     return `${location.origin}/api/calendar/${encodeURIComponent(calToken)}.ics`;
   }
 
+  async function updateProfile(payload) {
+    if (!serverAvailable) {
+      const loc = JSON.parse(localStorage.getItem("ferias-pro-local-profile") || "{}");
+      Object.assign(loc, payload);
+      localStorage.setItem("ferias-pro-local-profile", JSON.stringify(loc));
+      currentUser = Object.assign({}, currentUser || { name: "Viajante", email: "local" }, loc);
+      notify();
+      return { ok: true, user: currentUser };
+    }
+    const r = await req("/api/auth/profile", { method: "PUT", body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao salvar perfil.");
+    currentUser = r.data.user;
+    notify();
+    return r.data;
+  }
+
+  async function saveIntegrations(payload) {
+    if (!serverAvailable) return { ok: true, user: currentUser };
+    const r = await req("/api/integrations", { method: "PUT", body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao salvar credenciais.");
+    currentUser = r.data.user;
+    notify();
+    return r.data;
+  }
+
+  async function aiPlanTrip(payload) {
+    if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
+    const r = await req("/api/ai/plan-trip", { method: "POST", body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error(r.data?.error || r.data?.message || "Falha ao planejar com Gemini.");
+    return r.data.plan;
+  }
+
+  async function aiVehicleSpecs(modelName) {
+    if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
+    const r = await req("/api/ai/vehicle-specs", { method: "POST", body: JSON.stringify({ modelName }) });
+    if (!r.ok) throw new Error(r.data?.error || r.data?.message || "Falha ao consultar veículo.");
+    return r.data.vehicle;
+  }
+
+  async function aiAnalyzeActivity(payload) {
+    if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
+    const r = await req("/api/ai/analyze-activity", { method: "POST", body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error(r.data?.error || r.data?.message || "Falha ao analisar com Gemini.");
+    return r.data.activity;
+  }
+
+  async function signWalletPass(activity, tripName) {
+    if (!serverAvailable) return { ok: true, configured: false };
+    const r = await req("/api/wallet/sign", { method: "POST", body: JSON.stringify({ activity, tripName }) });
+    if (!r.ok) throw new Error(r.data?.error || "Falha ao gerar passe Wallet.");
+    return r.data;
+  }
+
   /* ---------- Local fallback ---------- */
   function getLocalStore() {
     try { return JSON.parse(localStorage.getItem(LOCAL_TRIPS_KEY)) || {}; }
@@ -326,13 +385,24 @@
     attachmentHref,
     rotateCalToken,
     getCalendarFeedUrl,
+    updateProfile,
+    saveIntegrations,
+    aiPlanTrip,
+    aiVehicleSpecs,
+    aiAnalyzeActivity,
+    signWalletPass,
     schedulePush,
     startPolling,
     onStatus,
     getActiveTripId,
     setActiveTripId,
     isServer: () => serverAvailable,
-    getGoogleClientId: () => googleClientId,
+    getServerCaps: () => ({
+      hasGemini: Boolean(serverCaps.hasGemini || currentUser?.integrations?.hasGemini),
+      hasMaps: Boolean(serverCaps.hasMaps || currentUser?.integrations?.hasMaps),
+      hasWallet: Boolean(serverCaps.hasWallet || currentUser?.integrations?.hasWallet)
+    }),
+    getGoogleClientId: () => (currentUser?.integrations?.googleClientId || googleClientId || ""),
     getUser: () => currentUser
   };
 })();
