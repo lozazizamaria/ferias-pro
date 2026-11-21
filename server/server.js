@@ -174,6 +174,12 @@ function validateServerWhatsApp(dial, rawNumber) {
   return { valid: true, dial: cleanDial, localDigits: local, full: `${cleanDial} ${local}`, e164Digits: `${dialDigits}${local}` };
 }
 
+function getServerGoogleClientId() {
+  if (GOOGLE_CLIENT_ID) return GOOGLE_CLIENT_ID;
+  const u = Object.values(db.users).find(usr => usr?.integrations?.googleClientId);
+  return u ? String(u.integrations.googleClientId || "").trim() : "";
+}
+
 function getEffectiveCredentials(user) {
   const integ = (user && user.integrations) || {};
   let saRaw = integ.walletSaJson || ENV_WALLET_SA_JSON;
@@ -187,6 +193,22 @@ function getEffectiveCredentials(user) {
     walletIssuerId: (integ.walletIssuerId || ENV_WALLET_ISSUER_ID || "").trim(),
     walletSaJson: (saRaw || "").trim()
   };
+}
+
+function parseGeminiMediaPart(m) {
+  let raw = String(m?.dataBase64 || "").trim();
+  const b64Idx = raw.indexOf("base64,");
+  if (b64Idx !== -1) {
+    raw = raw.slice(b64Idx + 7);
+  } else {
+    raw = raw.replace(/^data:.*?,/i, "");
+  }
+  raw = raw.replace(/\s+/g, "");
+  let mime = String(m?.mimeType || "image/jpeg").split(";")[0].trim().toLowerCase();
+  if (mime === "audio/x-m4a") mime = "audio/mp4";
+  if (mime === "audio/wave" || mime === "audio/x-wav") mime = "audio/wav";
+  if (!mime || !mime.includes("/")) mime = "application/octet-stream";
+  return raw ? { inlineData: { mimeType: mime, data: raw } } : null;
 }
 
 function maskKeyHint(k) {
@@ -409,11 +431,12 @@ function buildTripIcs(trip) {
 }
 
 async function verifyGoogleIdToken(credential) {
-  if (!GOOGLE_CLIENT_ID) throw new Error("GOOGLE_NOT_CONFIGURED");
+  const cid = getServerGoogleClientId();
+  if (!cid) throw new Error("GOOGLE_NOT_CONFIGURED");
   const resp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
   if (!resp.ok) throw new Error("GOOGLE_TOKEN_INVALID");
   const info = await resp.json();
-  if (info.aud !== GOOGLE_CLIENT_ID) throw new Error("GOOGLE_AUD_MISMATCH");
+  if (info.aud !== cid) throw new Error("GOOGLE_AUD_MISMATCH");
   if (info.email_verified !== "true" && info.email_verified !== true) throw new Error("GOOGLE_EMAIL_UNVERIFIED");
   return info;
 }
@@ -743,7 +766,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true,
         mode: "multi-user",
-        googleClientId: GOOGLE_CLIENT_ID,
+        googleClientId: getServerGoogleClientId(),
         hasGemini: Boolean(ENV_GEMINI_KEY),
         hasMaps: Boolean(ENV_GMAPS_KEY),
         hasWallet: Boolean(ENV_WALLET_ISSUER_ID && (ENV_WALLET_SA_JSON || ENV_WALLET_SA_FILE))
@@ -753,7 +776,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === "/api/auth/config" && req.method === "GET") {
       return sendJson(res, 200, {
         ok: true,
-        googleClientId: GOOGLE_CLIENT_ID,
+        googleClientId: getServerGoogleClientId(),
         hasGemini: Boolean(ENV_GEMINI_KEY),
         hasMaps: Boolean(ENV_GMAPS_KEY),
         hasWallet: Boolean(ENV_WALLET_ISSUER_ID && (ENV_WALLET_SA_JSON || ENV_WALLET_SA_FILE))
@@ -951,6 +974,7 @@ const server = http.createServer(async (req, res) => {
           ownerEmail: user.email,
           updatedAt: t.updatedAt || 0,
           revision: t.revision || 1,
+          sharedCount: db.shares.filter(sh => sh.tripId === t.id && sh.status !== "declined").length,
           count: Array.isArray(t.data?.activities) ? t.data.activities.length : 0
         }));
 
@@ -994,7 +1018,46 @@ const server = http.createServer(async (req, res) => {
         })
         .filter(Boolean);
 
-      return sendJson(res, 200, { ok: true, ownTrips, sharedTrips, pendingShares });
+      const hasSharedTrips = sharedTrips.length > 0 || ownTrips.some(t => (t.sharedCount || 0) > 0);
+      return sendJson(res, 200, { ok: true, ownTrips, sharedTrips, pendingShares, hasSharedTrips });
+    }
+
+    if (pathname === "/api/crossings" && req.method === "GET") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const user = auth.user;
+
+      const ownFull = Object.values(db.trips)
+        .filter(t => t.ownerId === user.id)
+        .map(t => ({
+          id: t.id,
+          name: t.name,
+          role: "owner",
+          isShared: db.shares.some(sh => sh.tripId === t.id && sh.status !== "declined"),
+          ownerName: user.name,
+          ownerEmail: user.email,
+          data: t.data
+        }));
+
+      const sharedFull = db.shares
+        .filter(s => s.status === "accepted" && (s.targetUserId === user.id || s.targetEmail === user.email))
+        .map(s => {
+          const t = db.trips[s.tripId];
+          if (!t) return null;
+          const owner = db.users[t.ownerId];
+          return {
+            id: t.id,
+            name: t.name,
+            role: s.role || "viewer",
+            isShared: true,
+            ownerName: owner ? owner.name : "Usuário",
+            ownerEmail: owner ? owner.email : "",
+            data: t.data
+          };
+        })
+        .filter(Boolean);
+
+      return sendJson(res, 200, { ok: true, trips: [...ownFull, ...sharedFull] });
     }
 
     if (pathname === "/api/trips" && req.method === "POST") {
@@ -1261,10 +1324,8 @@ const server = http.createServer(async (req, res) => {
       }];
       if (Array.isArray(body.media)) {
         body.media.slice(0, 10).forEach(m => {
-          const b64 = String(m.dataBase64 || "").replace(/^data:[^;]+;base64,/, "").trim();
-          if (b64) {
-            parts.push({ inlineData: { mimeType: String(m.mimeType || "image/jpeg"), data: b64 } });
-          }
+          const p = parseGeminiMediaPart(m);
+          if (p) parts.push(p);
         });
       }
       const sysPrompt = `Você é o planejador especialista do aplicativo Férias Pro.
@@ -1360,8 +1421,8 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
       const parts = [{ text: `Extraia dados de atividade/passagem/ingresso/reserva/viagem desta entrada: ${String(body.prompt || "").trim()}` }];
       if (Array.isArray(body.media)) {
         body.media.slice(0, 4).forEach(m => {
-          const b64 = String(m.dataBase64 || "").replace(/^data:[^;]+;base64,/, "").trim();
-          if (b64) parts.push({ inlineData: { mimeType: String(m.mimeType || "image/jpeg"), data: b64 } });
+          const p = parseGeminiMediaPart(m);
+          if (p) parts.push(p);
         });
       }
       try {

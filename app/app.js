@@ -310,8 +310,8 @@ function populateTypeSelectors() {
 }
 
 /* ---------- RENDER ---------- */
-function render() {
-  const s = sorted();
+function render(allSortedOpt) {
+  const s = allSortedOpt || sorted();
   const t = totals();
   renderGantt(s);
   renderTimeline(s);
@@ -320,6 +320,141 @@ function render() {
   renderTable(s, t);
   renderParams();
   renderChecklist();
+}
+
+/* ---------- LINHA FINA DE CIDADES NO GANTT & CRUZAMENTOS ---------- */
+const CITY_PALETTE = [
+  { darkBg: "rgba(16, 185, 129, 0.22)", darkBd: "rgba(16, 185, 129, 0.55)", darkTxt: "#34d399", lightBg: "rgba(16, 185, 129, 0.14)", lightBd: "rgba(16, 185, 129, 0.45)", lightTxt: "#065f46" },
+  { darkBg: "rgba(59, 130, 246, 0.22)", darkBd: "rgba(59, 130, 246, 0.55)", darkTxt: "#60a5fa", lightBg: "rgba(59, 130, 246, 0.14)", lightBd: "rgba(59, 130, 246, 0.45)", lightTxt: "#1e40af" },
+  { darkBg: "rgba(245, 158, 11, 0.22)", darkBd: "rgba(245, 158, 11, 0.55)", darkTxt: "#fbbf24", lightBg: "rgba(245, 158, 11, 0.16)", lightBd: "rgba(217, 119, 6, 0.45)", lightTxt: "#92400e" },
+  { darkBg: "rgba(236, 72, 153, 0.22)", darkBd: "rgba(236, 72, 153, 0.55)", darkTxt: "#f472b6", lightBg: "rgba(236, 72, 153, 0.13)", lightBd: "rgba(219, 39, 119, 0.42)", lightTxt: "#9d174d" },
+  { darkBg: "rgba(139, 92, 246, 0.24)", darkBd: "rgba(139, 92, 246, 0.58)", darkTxt: "#a78bfa", lightBg: "rgba(139, 92, 246, 0.14)", lightBd: "rgba(124, 58, 237, 0.44)", lightTxt: "#5b21b6" },
+  { darkBg: "rgba(6, 182, 212, 0.22)", darkBd: "rgba(6, 182, 212, 0.55)", darkTxt: "#22d3ee", lightBg: "rgba(6, 182, 212, 0.14)", lightBd: "rgba(8, 145, 178, 0.45)", lightTxt: "#155e75" },
+  { darkBg: "rgba(249, 115, 22, 0.22)", darkBd: "rgba(249, 115, 22, 0.55)", darkTxt: "#fb923c", lightBg: "rgba(249, 115, 22, 0.14)", lightBd: "rgba(234, 88, 12, 0.45)", lightTxt: "#9a3412" },
+  { darkBg: "rgba(20, 184, 166, 0.22)", darkBd: "rgba(20, 184, 166, 0.55)", darkTxt: "#2dd4bf", lightBg: "rgba(20, 184, 166, 0.14)", lightBd: "rgba(13, 148, 136, 0.45)", lightTxt: "#115e59" },
+  { darkBg: "rgba(239, 68, 68, 0.22)", darkBd: "rgba(239, 68, 68, 0.55)", darkTxt: "#f87171", lightBg: "rgba(239, 68, 68, 0.13)", lightBd: "rgba(220, 38, 38, 0.42)", lightTxt: "#991b1b" },
+  { darkBg: "rgba(132, 204, 22, 0.22)", darkBd: "rgba(132, 204, 22, 0.55)", darkTxt: "#a3e635", lightBg: "rgba(132, 204, 22, 0.16)", lightBd: "rgba(101, 163, 13, 0.45)", lightTxt: "#3f6212" }
+];
+
+function cleanCityName(raw) {
+  let s = String(raw || "").trim();
+  if (!s) return "";
+  s = s.split(",")[0].trim();
+  s = s.replace(/\s*[-–\/]\s*(BR|[A-Z]{2})\s*$/i, "").trim();
+  s = s.replace(/\s*\([^)]+\)\s*$/i, "").trim();
+  return s;
+}
+
+function normCityKey(name) {
+  return cleanCityName(name)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function formatCityLabel(cityName, spanDays, dayPx) {
+  const clean = cleanCityName(cityName);
+  if (!clean) return "";
+  const maxPx = spanDays * dayPx - 10;
+  if (clean.length * 6.6 <= maxPx) return clean;
+  const words = clean.split(/\s+/).filter(w => w && !/^(de|da|do|das|dos|e)$/i.test(w));
+  if (words.length >= 2) {
+    const abbr = words.map(w => w[0].toUpperCase()).join("");
+    if (abbr.length <= 4) return abbr;
+  }
+  const letters = clean.replace(/[^A-Za-zÀ-ÿ]/g, "");
+  return (letters.slice(0, 3) || clean.slice(0, 3)).toUpperCase() + ".";
+}
+
+function computeDailyCityTimeline(activitiesList, dateISOs) {
+  if (!Array.isArray(activitiesList) || !dateISOs.length) return { dayCities: [], spans: [], colorMap: {} };
+  const travelLegs = activitiesList
+    .filter(a => a && a.start && (a.from || a.to))
+    .slice()
+    .sort((a, b) => {
+      const ae = a.end || a.start, be = b.end || b.start;
+      return ae.localeCompare(be) || a.start.localeCompare(b.start);
+    });
+  if (!travelLegs.length) return { dayCities: [], spans: [], colorMap: {} };
+
+  // Constrói lista completa de datas do início dos trechos até o fim do grid para saber a cidade correta mesmo antes da 1ª data visível
+  const minAll = travelLegs[0].start < dateISOs[0] ? travelLegs[0].start : dateISOs[0];
+  const legsByArrival = new Map();
+  travelLegs.forEach(a => {
+    const arrDate = a.end || a.start;
+    if (!legsByArrival.has(arrDate)) legsByArrival.set(arrDate, []);
+    legsByArrival.get(arrDate).push(a);
+  });
+
+  let currentCity = cleanCityName(travelLegs[0].from) || cleanCityName(travelLegs[0].to);
+  const cityByDate = {};
+  const maxIso = dateISOs[dateISOs.length - 1] > (travelLegs[travelLegs.length - 1].end || travelLegs[travelLegs.length - 1].start)
+    ? dateISOs[dateISOs.length - 1]
+    : (travelLegs[travelLegs.length - 1].end || travelLegs[travelLegs.length - 1].start);
+
+  const curDt = parseD(minAll);
+  const endDt = parseD(maxIso);
+  while (curDt <= endDt) {
+    const iso = fmtISO(curDt);
+    const legsToday = legsByArrival.get(iso);
+    if (legsToday && legsToday.length) {
+      const last = legsToday[legsToday.length - 1];
+      const nextC = cleanCityName(last.to || last.from);
+      if (nextC) currentCity = nextC;
+    }
+    if (currentCity) cityByDate[iso] = currentCity;
+    curDt.setDate(curDt.getDate() + 1);
+  }
+
+  // Cor determinística e exclusiva (por viagem) por cidade normalizada
+  const colorMap = {};
+  const usedSlots = new Set();
+  const assignColor = city => {
+    const k = normCityKey(city);
+    if (!k) return CITY_PALETTE[0];
+    if (colorMap[k]) return colorMap[k];
+    let hash = 0;
+    for (let i = 0; i < k.length; i++) hash = ((hash * 31) + k.charCodeAt(i)) >>> 0;
+    let slot = hash % CITY_PALETTE.length;
+    for (let probe = 0; probe < CITY_PALETTE.length; probe++) {
+      const cand = (slot + probe) % CITY_PALETTE.length;
+      if (!usedSlots.has(cand)) { slot = cand; break; }
+    }
+    usedSlots.add(slot);
+    colorMap[k] = CITY_PALETTE[slot];
+    return colorMap[k];
+  };
+
+  const dayCities = dateISOs.map(iso => {
+    const c = cityByDate[iso] || "";
+    const k = normCityKey(c);
+    if (c) assignColor(c);
+    return { iso, city: c, key: k };
+  });
+
+  const spans = [];
+  dayCities.forEach((dc, idx) => {
+    if (!dc.city) return;
+    const prev = spans[spans.length - 1];
+    if (prev && prev.key === dc.key && prev.startIdx + prev.span === idx) {
+      prev.span++;
+      prev.endIso = dc.iso;
+    } else {
+      spans.push({
+        startIdx: idx,
+        span: 1,
+        city: dc.city,
+        key: dc.key,
+        startIso: dc.iso,
+        endIso: dc.iso,
+        color: assignColor(dc.city)
+      });
+    }
+  });
+
+  return { dayCities, spans, colorMap };
 }
 
 function buildRightSummaryHTML(a) {
@@ -439,9 +574,28 @@ function renderGantt(allSorted) {
     </div>`;
   });
 
+  const dateISOs = dates.map(d => fmtISO(d));
+  const cityTrack = computeDailyCityTimeline(state.activities || [], dateISOs);
+  const hasCityRow = cityTrack.spans.length > 0;
+  if (hasCityRow) {
+    const dark = isDarkTheme();
+    h += `<div class="g-city-corner" style="grid-column:1;grid-row:3" title="Cidade em cada dia">${ganttSlimRail ? "📍" : "📍 Cidade"}</div>`;
+    cityTrack.spans.forEach(sp => {
+      const col = sp.color;
+      const bg = dark ? col.darkBg : col.lightBg;
+      const bd = dark ? col.darkBd : col.lightBd;
+      const txtCol = dark ? col.darkTxt : col.lightTxt;
+      const shortTxt = formatCityLabel(sp.city, sp.span, DW);
+      const tip = `${sp.city}: ${fmtBR(sp.startIso)}${sp.endIso !== sp.startIso ? ` a ${fmtBR(sp.endIso)}` : ""}`;
+      h += `<div class="g-city-span" style="grid-column:${sp.startIdx + 2} / span ${sp.span};grid-row:3" title="${esc(tip)}">
+        <span class="g-city-pill" style="background:${bg};border-color:${bd};color:${txtCol}">${esc(shortTxt)}</span>
+      </div>`;
+    });
+  }
+
   s.forEach((a, rowIdx) => {
     const info = getTypeInfo(a.type);
-    const row = rowIdx + 3;
+    const row = rowIdx + (hasCityRow ? 4 : 3);
     const altCls = rowIdx % 2 ? "alt" : "";
     const subLeft = (a.type === "Viagem" || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus") && (a.from || a.to)
       ? `${a.from || "?"} ➔ ${a.to || "?"}`
@@ -2421,6 +2575,164 @@ function renderTripDropdown() {
       `</optgroup>`;
   }
   sel.innerHTML = h;
+  updateCrossingsMenuVisibility();
+}
+
+function updateCrossingsMenuVisibility() {
+  const btn = $("#btnMenuCrossings");
+  if (!btn) return;
+  const hasShared = Boolean(
+    window.FeriasApi?.isServer() && (
+      tripsCache?.hasSharedTrips ||
+      (tripsCache?.sharedTrips && tripsCache.sharedTrips.length > 0) ||
+      (tripsCache?.ownTrips || []).some(t => (t.sharedCount || 0) > 0)
+    )
+  );
+  btn.hidden = !hasShared;
+}
+
+async function openCrossingsModal() {
+  const modal = $("#crossingsModal");
+  const body = $("#crossingsBody");
+  if (!modal || !body) return;
+  body.innerHTML = `<p class="muted">⏳ Analisando cidades e datas das viagens compartilhadas...</p>`;
+  modal.showModal();
+
+  try {
+    const res = await window.FeriasApi.getCrossings();
+    const trips = Array.isArray(res?.trips) ? res.trips : [];
+    const sharedExist = trips.some(t => t.role !== "owner" || t.isShared);
+    if (trips.length < 2 || !sharedExist) {
+      body.innerHTML = `<p class="muted">É necessário ter ao menos uma viagem compartilhada e duas viagens cadastradas para calcular cruzamentos.</p>`;
+      return;
+    }
+
+    // Descobre intervalo global de datas entre todas as viagens
+    const allStarts = [], allEnds = [];
+    trips.forEach(tr => {
+      (tr.data?.activities || []).forEach(a => {
+        if (a.start) {
+          allStarts.push(a.start);
+          allEnds.push(a.end || a.start);
+        }
+      });
+    });
+    if (!allStarts.length) {
+      body.innerHTML = `<p class="muted">Nenhuma atividade com datas encontrada nas viagens.</p>`;
+      return;
+    }
+    allStarts.sort();
+    allEnds.sort();
+    const minDt = parseD(allStarts[0]);
+    const maxDt = parseD(allEnds[allEnds.length - 1]);
+    const allDates = [];
+    for (let d = new Date(minDt); d <= maxDt; d.setDate(d.getDate() + 1)) {
+      allDates.push(fmtISO(d));
+    }
+
+    // Calcula mapa dia -> cidade + atividades do dia para cada viagem
+    const analyzed = trips.map(tr => {
+      const acts = Array.isArray(tr.data?.activities) ? tr.data.activities : [];
+      const track = computeDailyCityTimeline(acts, allDates);
+      const cityByDay = {};
+      track.dayCities.forEach(dc => { if (dc.key) cityByDay[dc.iso] = dc; });
+      const minT = acts.map(a => a.start).filter(Boolean).sort()[0] || "";
+      const maxT = acts.map(a => a.end || a.start).filter(Boolean).sort().pop() || minT;
+      return {
+        trip: tr,
+        minStart: minT,
+        maxEnd: maxT,
+        cityByDay,
+        spans: track.spans.filter(sp => sp.startIso >= minT && sp.endIso <= maxT),
+        acts
+      };
+    });
+
+    const crossings = [];
+    for (let i = 0; i < analyzed.length; i++) {
+      for (let j = i + 1; j < analyzed.length; j++) {
+        const A = analyzed[i], B = analyzed[j];
+        // Prioriza pares envolvendo pelo menos uma viagem compartilhada ou donos diferentes
+        if (!A.trip.isShared && !B.trip.isShared && A.trip.role === "owner" && B.trip.role === "owner") continue;
+
+        let cur = null;
+        allDates.forEach(iso => {
+          if (A.minStart && (iso < A.minStart || iso > A.maxEnd)) { cur = null; return; }
+          if (B.minStart && (iso < B.minStart || iso > B.maxEnd)) { cur = null; return; }
+          const cA = A.cityByDay[iso];
+          const cB = B.cityByDay[iso];
+          if (cA && cB && cA.key === cB.key) {
+            if (cur && cur.key === cA.key) {
+              cur.endIso = iso;
+              cur.dates.push(iso);
+            } else {
+              cur = { key: cA.key, city: cA.city, startIso: iso, endIso: iso, dates: [iso], A, B };
+              crossings.push(cur);
+            }
+          } else {
+            cur = null;
+          }
+        });
+      }
+    }
+
+    const dark = isDarkTheme();
+    const colorForCity = cityName => {
+      const k = normCityKey(cityName);
+      let h = 0;
+      for (let i = 0; i < k.length; i++) h = ((h * 31) + k.charCodeAt(i)) >>> 0;
+      return CITY_PALETTE[h % CITY_PALETTE.length];
+    };
+
+    let html = "";
+    if (crossings.length) {
+      html += crossings.map(cr => {
+        const col = colorForCity(cr.city);
+        const bg = dark ? col.darkBg : col.lightBg;
+        const bd = dark ? col.darkBd : col.lightBd;
+        const txt = dark ? col.darkTxt : col.lightTxt;
+        const daysCnt = cr.dates.length;
+        const actsA = cr.A.acts.filter(a => a.start <= cr.endIso && (a.end || a.start) >= cr.startIso).map(a => a.name);
+        const actsB = cr.B.acts.filter(a => a.start <= cr.endIso && (a.end || a.start) >= cr.startIso).map(a => a.name);
+        const lblA = `${esc(cr.A.trip.name)}${cr.A.trip.role === "owner" ? " (Sua)" : ` (${esc(cr.A.trip.ownerName)})`}`;
+        const lblB = `${esc(cr.B.trip.name)}${cr.B.trip.role === "owner" ? " (Sua)" : ` (${esc(cr.B.trip.ownerName)})`}`;
+        return `
+        <div class="crossing-card">
+          <div class="crossing-head">
+            <span class="crossing-city-pill" style="background:${bg};border-color:${bd};color:${txt}">📍 ${esc(cr.city)}</span>
+            <span class="pill ok">${daysCnt} dia${daysCnt > 1 ? "s" : ""} juntos!</span>
+          </div>
+          <div class="crossing-dates">📅 ${fmtBR(cr.startIso)}${cr.endIso !== cr.startIso ? ` até ${fmtBR(cr.endIso)}` : ""}</div>
+          <div class="crossing-pair">🤝 <b>${lblA}</b> × <b>${lblB}</b></div>
+          ${(actsA.length || actsB.length) ? `<div class="crossing-acts">Atividades no período: ${esc([...new Set([...actsA, ...actsB])].slice(0, 6).join(" · "))}</div>` : ""}
+        </div>`;
+      }).join("");
+    } else {
+      html += `<div class="crossing-summary-box"><b>Nenhum cruzamento de cidade na mesma data encontrado ainda.</b><span class="muted small">Verifique abaixo em quais cidades e datas cada viagem está programada.</span></div>`;
+    }
+
+    html += `<div class="crossing-summary-box">
+      <strong>🗺️ Resumo de Cidades por Viagem</strong>
+      ${analyzed.map(item => `
+        <div>
+          <div style="font-size:0.84rem;font-weight:700;margin-bottom:4px">
+            ${item.trip.role === "owner" ? "🚗" : "👥"} ${esc(item.trip.name)} <small class="muted">(${esc(item.trip.ownerName)}${item.trip.role === "owner" ? " · Sua" : ""})</small>
+          </div>
+          <div class="crossing-trip-chips">
+            ${item.spans.length
+              ? item.spans.map(sp => {
+                  const col = colorForCity(sp.city);
+                  return `<span class="crossing-city-pill" style="font-size:0.74rem;background:${dark ? col.darkBg : col.lightBg};border-color:${dark ? col.darkBd : col.lightBd};color:${dark ? col.darkTxt : col.lightTxt}">${esc(sp.city)} (${fmtShortBR(sp.startIso)}–${fmtShortBR(sp.endIso)})</span>`;
+                }).join("")
+              : `<span class="muted small">Sem trechos com origem/destino cadastrados</span>`}
+          </div>
+        </div>`).join("")}
+    </div>`;
+
+    body.innerHTML = html;
+  } catch (err) {
+    body.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>`;
+  }
 }
 
 function renderPendingInvites() {
@@ -2483,6 +2795,7 @@ async function openTripById(tripId) {
 async function refreshTripsAndLoad(preferredTripId) {
   tripsCache = await window.FeriasApi.listTrips();
   renderPendingInvites();
+  updateCrossingsMenuVisibility();
 
   let all = [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])];
   if (!all.length) {
@@ -2537,6 +2850,10 @@ async function refreshShareList() {
     b.onclick = async () => {
       await window.FeriasApi.removeShare(activeTrip.id, b.dataset.srem);
       await refreshShareList();
+      if (window.FeriasApi.isServer()) {
+        tripsCache = await window.FeriasApi.listTrips();
+        updateCrossingsMenuVisibility();
+      }
       toast("Acesso removido.");
     };
   });
@@ -2686,10 +3003,21 @@ function showPwaBanner(isIOS) {
 /* ---------- AUTH & BOOT ---------- */
 function setupGoogleSignInButton(clientId) {
   const wrap = $("#googleBtnWrap");
+  const fallbackBtn = $("#btnGoogleLoginFallback");
   const hint = $("#googleConfigHint");
+  if (fallbackBtn) {
+    fallbackBtn.hidden = false;
+    fallbackBtn.onclick = () => {
+      if (clientId && window.google?.accounts?.id) {
+        window.google.accounts.id.prompt();
+      } else {
+        hint.hidden = !hint.hidden;
+      }
+    };
+  }
   if (!clientId) {
     wrap.innerHTML = "";
-    hint.hidden = false;
+    hint.hidden = true;
     return;
   }
   hint.hidden = true;
@@ -2714,6 +3042,7 @@ function setupGoogleSignInButton(clientId) {
       }
     });
     window.google.accounts.id.renderButton(wrap, { theme: isDarkTheme() ? "filled_black" : "outline", size: "large", width: 340, text: "continue_with" });
+    if (fallbackBtn && wrap.children.length > 0) fallbackBtn.hidden = true;
   };
   document.head.appendChild(s);
 }
@@ -2879,11 +3208,19 @@ $("#shareForm").onsubmit = async e => {
     await window.FeriasApi.shareTrip(activeTrip.id, $("#shareEmail").value.trim(), $("#shareRole").value);
     $("#shareEmail").value = "";
     await refreshShareList();
+    if (window.FeriasApi.isServer()) {
+      tripsCache = await window.FeriasApi.listTrips();
+      updateCrossingsMenuVisibility();
+    }
     toast("📩 Convite enviado!");
   } catch (err) {
     toast("❌ " + err.message);
   }
 };
+
+if ($("#btnMenuCrossings")) $("#btnMenuCrossings").onclick = openCrossingsModal;
+if ($("#btnCloseCrossings")) $("#btnCloseCrossings").onclick = () => $("#crossingsModal").close();
+if ($("#btnCrossingsDone")) $("#btnCrossingsDone").onclick = () => $("#crossingsModal").close();
 
 $("#btnPendingInvites").onclick = () => $("#invitesBanner").scrollIntoView({ behavior: "smooth" });
 
@@ -3683,7 +4020,14 @@ function applyExtractedActivityToForm(act) {
 function fileToBase64Obj(file) {
   return new Promise((resolve, reject) => {
     const fr = new FileReader();
-    fr.onload = () => resolve({ fileName: file.name, mimeType: file.type || "image/jpeg", dataBase64: fr.result });
+    fr.onload = () => {
+      const rawUrl = String(fr.result || "");
+      const idx = rawUrl.indexOf("base64,");
+      const cleanBase64 = idx !== -1 ? rawUrl.slice(idx + 7).replace(/\s+/g, "") : rawUrl;
+      let cleanMime = String(file.type || "image/jpeg").split(";")[0].trim().toLowerCase();
+      if (cleanMime === "audio/x-m4a") cleanMime = "audio/mp4";
+      resolve({ fileName: file.name, mimeType: cleanMime || "application/octet-stream", dataBase64: cleanBase64 });
+    };
     fr.onerror = () => reject(new Error("Erro ao ler arquivo."));
     fr.readAsDataURL(file);
   });
@@ -3805,8 +4149,10 @@ $("#btnAiRecordAudio").onclick = async () => {
     aiMediaRecorder.ondataavailable = ev => { if (ev.data.size > 0) aiAudioChunks.push(ev.data); };
     aiMediaRecorder.onstop = async () => {
       stream.getTracks().forEach(t => t.stop());
-      const blob = new Blob(aiAudioChunks, { type: aiMediaRecorder.mimeType || "audio/webm" });
-      const fileObj = await fileToBase64Obj(new File([blob], `planejamento_${Date.now()}.webm`, { type: blob.type }));
+      const cleanMime = String(aiMediaRecorder.mimeType || "audio/webm").split(";")[0].trim() || "audio/webm";
+      const ext = cleanMime.includes("mp4") ? "m4a" : cleanMime.includes("ogg") ? "ogg" : "webm";
+      const blob = new Blob(aiAudioChunks, { type: cleanMime });
+      const fileObj = await fileToBase64Obj(new File([blob], `planejamento_${Date.now()}.${ext}`, { type: cleanMime }));
       aiAttachedMedia.push(fileObj);
       renderAiMediaList();
       toast("🎙️ Áudio gravado e anexado!");

@@ -111,6 +111,13 @@
     return r.data;
   }
 
+  async function getCrossings() {
+    if (!serverAvailable) return { ok: true, trips: [] };
+    const r = await req("/api/crossings");
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao carregar viagens para cruzamento.");
+    return r.data;
+  }
+
   async function createTrip(name, data, gmapsKey = "") {
     if (!serverAvailable) {
       const store = getLocalStore();
@@ -394,6 +401,7 @@
     loginGoogle,
     logout,
     listTrips,
+    getCrossings,
     createTrip,
     getTrip,
     updateTrip,
