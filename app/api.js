@@ -48,7 +48,8 @@
       serverCaps = {
         hasGemini: Boolean(r.data.hasGemini),
         hasMaps: Boolean(r.data.hasMaps),
-        hasWallet: Boolean(r.data.hasWallet)
+        hasWallet: Boolean(r.data.hasWallet),
+        hasEmailSender: Boolean(r.data.hasEmailSender)
       };
       const me = await req("/api/auth/me");
       if (me.ok && me.data?.user) {
@@ -89,6 +90,42 @@
   async function loginGoogle(credential) {
     const r = await req("/api/auth/google", { method: "POST", body: JSON.stringify({ credential }) });
     if (!r.ok) throw new Error(r.data?.error || "Falha no login Google.");
+    currentUser = r.data.user;
+    status = "synced";
+    notify();
+    return r.data;
+  }
+
+  async function changePassword(payload) {
+    if (!serverAvailable) throw new Error("Alteração de senha requer servidor online.");
+    const r = await req("/api/auth/password", { method: "POST", body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error(r.data?.error || "Falha ao atualizar a senha.");
+    currentUser = r.data.user;
+    notify();
+    return r.data;
+  }
+
+  async function forgotPassword(email) {
+    if (!serverAvailable) throw new Error("Recuperação de senha requer servidor online.");
+    const r = await req("/api/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+    if (!r.ok) throw new Error(r.data?.error || "Falha ao enviar e-mail de redefinição.");
+    return r.data;
+  }
+
+  async function validateResetToken(token) {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req(`/api/auth/reset-password/validate?token=${encodeURIComponent(token || "")}`);
+    if (!r.ok) throw new Error(r.data?.error || "Link de redefinição inválido ou expirado.");
+    return r.data;
+  }
+
+  async function resetPassword(token, newPassword, confirmPassword) {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, newPassword, confirmPassword })
+    });
+    if (!r.ok) throw new Error(r.data?.error || "Falha ao redefinir a senha.");
     currentUser = r.data.user;
     status = "synced";
     notify();
@@ -399,6 +436,10 @@
     login,
     register,
     loginGoogle,
+    changePassword,
+    forgotPassword,
+    validateResetToken,
+    resetPassword,
     logout,
     listTrips,
     getCrossings,
@@ -432,7 +473,8 @@
     getServerCaps: () => ({
       hasGemini: Boolean(serverCaps.hasGemini || currentUser?.integrations?.hasGemini),
       hasMaps: Boolean(serverCaps.hasMaps || currentUser?.integrations?.hasMaps),
-      hasWallet: Boolean(serverCaps.hasWallet || currentUser?.integrations?.hasWallet)
+      hasWallet: Boolean(serverCaps.hasWallet || currentUser?.integrations?.hasWallet),
+      hasEmailSender: Boolean(serverCaps.hasEmailSender)
     }),
     getGoogleClientId: () => (currentUser?.integrations?.googleClientId || googleClientId || ""),
     getUser: () => currentUser

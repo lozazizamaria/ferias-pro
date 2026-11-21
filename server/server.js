@@ -1,8 +1,11 @@
 /* ===== Férias Pro — Servidor Completo (Auth, Multi-Viagens, Compartilhamento, Anexos) ===== */
 const http = require("node:http");
 const fs = require("node:fs");
+const net = require("node:net");
+const tls = require("node:tls");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { execFile } = require("node:child_process");
 
 const PORT = parseInt(process.env.PORT || "3080", 10);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -18,8 +21,17 @@ const ENV_GMAPS_KEY = (process.env.GOOGLE_MAPS_API_KEY || "").trim();
 const ENV_WALLET_ISSUER_ID = (process.env.GOOGLE_WALLET_ISSUER_ID || "").trim();
 const ENV_WALLET_SA_JSON = (process.env.GOOGLE_WALLET_SA_JSON || "").trim();
 const ENV_WALLET_SA_FILE = (process.env.GOOGLE_WALLET_SA_FILE || "").trim();
+const SMTP_HOST = (process.env.SMTP_HOST || "").trim();
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
+const SMTP_USER = (process.env.SMTP_USER || "").trim();
+const SMTP_PASS = String(process.env.SMTP_PASS || "");
+const SMTP_FROM = (process.env.SMTP_FROM || SMTP_USER || "no-reply@feriaspro.app").trim();
+const SMTP_SECURE = (process.env.SMTP_SECURE || "").trim().toLowerCase();
+const RESEND_API_KEY = (process.env.RESEND_API_KEY || "").trim();
+const APP_BASE_URL = (process.env.APP_BASE_URL || "").trim().replace(/\/+$/, "");
 const MAX_BODY_BYTES = 32 * 1024 * 1024; // 32 MB (suporta áudios, imagens IA e anexos)
 const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 dias
+const PASS_RESET_TTL_MS = 30 * 60 * 1000; // 30 minutos
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -45,7 +57,7 @@ function ensureDirs() {
 }
 
 function emptyDb() {
-  return { users: {}, sessions: {}, trips: {}, shares: [], attachments: {} };
+  return { users: {}, sessions: {}, trips: {}, shares: [], attachments: {}, passwordResets: {} };
 }
 
 function loadDb() {
@@ -53,7 +65,9 @@ function loadDb() {
   try {
     if (fs.existsSync(DB_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-      return Object.assign(emptyDb(), parsed || {});
+      const merged = Object.assign(emptyDb(), parsed || {});
+      if (!merged.passwordResets || typeof merged.passwordResets !== "object") merged.passwordResets = {};
+      return merged;
     }
   } catch {}
   return emptyDb();
@@ -81,6 +95,53 @@ function verifyPassword(password, storedHash) {
   const actual = crypto.scryptSync(password, salt, 64);
   if (expected.length !== actual.length) return false;
   return crypto.timingSafeEqual(expected, actual);
+}
+
+function validateStrongPassword(password) {
+  const pw = String(password || "");
+  const checks = {
+    length: pw.length >= 8,
+    upper: /[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ]/.test(pw),
+    lower: /[a-záàâãéêíóôõúç]/.test(pw),
+    number: /[0-9]/.test(pw),
+    special: /[^A-Za-zÀ-ÿ0-9\s]/.test(pw)
+  };
+  const missing = [];
+  if (!checks.length) missing.push("mínimo 8 caracteres");
+  if (!checks.upper) missing.push("1 letra maiúscula");
+  if (!checks.lower) missing.push("1 letra minúscula");
+  if (!checks.number) missing.push("1 número");
+  if (!checks.special) missing.push("1 caractere especial (ex: !@#$%)");
+  return {
+    valid: missing.length === 0,
+    checks,
+    error: missing.length ? `Senha fraca: inclua ${missing.join(", ")}.` : ""
+  };
+}
+
+function hashResetToken(rawToken) {
+  return crypto.createHash("sha256").update(String(rawToken || "")).digest("hex");
+}
+
+function pruneExpiredResets() {
+  const now = Date.now();
+  let changed = false;
+  for (const [k, rec] of Object.entries(db.passwordResets || {})) {
+    if (!rec || rec.expiresAt <= now) {
+      delete db.passwordResets[k];
+      changed = true;
+    }
+  }
+  if (changed) saveDb();
+}
+
+function maskEmail(email) {
+  const s = String(email || "");
+  const at = s.indexOf("@");
+  if (at <= 1) return s;
+  const local = s.slice(0, at);
+  const dom = s.slice(at);
+  return `${local[0]}${"*".repeat(Math.min(5, Math.max(2, local.length - 1)))}${dom}`;
 }
 
 function parseCookies(req) {
@@ -226,6 +287,7 @@ function publicUser(u) {
     email: u.email,
     avatar: u.avatar || "",
     hasGoogle: Boolean(u.googleSub),
+    hasPassword: Boolean(u.passwordHash),
     age: u.age ?? "",
     doc: u.doc || "",
     emergencyContact: u.emergencyContact || "",
@@ -439,6 +501,264 @@ async function verifyGoogleIdToken(credential) {
   if (info.aud !== cid) throw new Error("GOOGLE_AUD_MISMATCH");
   if (info.email_verified !== "true" && info.email_verified !== true) throw new Error("GOOGLE_EMAIL_UNVERIFIED");
   return info;
+}
+
+function getAppBaseUrl(req) {
+  if (APP_BASE_URL) return APP_BASE_URL;
+  const rawHost = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+  const safeHost = /^[a-z0-9.-]+(:\d+)?$/i.test(rawHost) ? rawHost : `127.0.0.1:${PORT}`;
+  const rawProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim().toLowerCase();
+  const proto = rawProto === "https" ? "https" : (rawProto === "http" ? "http" : (safeHost.startsWith("127.") || safeHost.startsWith("localhost") ? "http" : "https"));
+  return `${proto}://${safeHost}`;
+}
+
+function getSendmailPath() {
+  for (const p of ["/usr/sbin/sendmail", "/usr/bin/sendmail"]) {
+    try { if (fs.existsSync(p)) return p; } catch {}
+  }
+  return "";
+}
+
+function isEmailTransportConfigured() {
+  return Boolean(RESEND_API_KEY || SMTP_HOST || getSendmailPath());
+}
+
+function extractEmailAddress(str) {
+  const s = String(str || "").trim();
+  const m = s.match(/<([^>\s]+)>/);
+  return (m ? m[1] : s).trim();
+}
+
+function encodeRfc2047(str) {
+  return `=?UTF-8?B?${Buffer.from(String(str || ""), "utf8").toString("base64")}?=`;
+}
+
+function buildMimeEmail({ from, to, subject, text, html }) {
+  const boundary = `=_fp_${crypto.randomBytes(10).toString("hex")}`;
+  const cleanFrom = String(from || "").replace(/[\r\n]+/g, " ").trim();
+  const cleanTo = extractEmailAddress(to);
+  const b64Wrap = s => Buffer.from(String(s || ""), "utf8").toString("base64").replace(/.{1,76}/g, "$&\r\n").trimEnd();
+  return [
+    `From: ${cleanFrom}`,
+    `To: ${cleanTo}`,
+    `Subject: ${encodeRfc2047(subject)}`,
+    `Date: ${new Date().toUTCString()}`,
+    `Message-ID: <${uid("msg.")}@feriaspro.app>`,
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    b64Wrap(text),
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    b64Wrap(html),
+    "",
+    `--${boundary}--`,
+    ""
+  ].join("\r\n");
+}
+
+async function sendSmtpEmail({ host, port, secure, user, pass, from, to, subject, text, html }) {
+  const useImplicitTls = secure === "1" || secure === "true" || (secure !== "0" && secure !== "false" && port === 465);
+  const allowStartTls = secure !== "0" && secure !== "false";
+
+  const makeReader = sock => {
+    let buf = "";
+    let lines = [];
+    let waiter = null;
+    const onData = chunk => {
+      buf += chunk.toString("utf8");
+      const parts = buf.split(/\r?\n/);
+      buf = parts.pop() || "";
+      for (const ln of parts) {
+        if (!ln) continue;
+        lines.push(ln);
+        if (/^\d{3}(?: |$)/.test(ln) && waiter) {
+          const code = parseInt(ln.slice(0, 3), 10);
+          const full = lines.join("\n");
+          lines = [];
+          const w = waiter;
+          waiter = null;
+          w.resolve({ code, text: full });
+        }
+      }
+    };
+    const onErr = err => {
+      if (waiter) {
+        const w = waiter;
+        waiter = null;
+        w.reject(err);
+      }
+    };
+    const onClose = () => {
+      if (waiter) {
+        const w = waiter;
+        waiter = null;
+        w.reject(new Error("Conexão SMTP encerrada inesperadamente."));
+      }
+    };
+    sock.on("data", onData);
+    sock.on("error", onErr);
+    sock.on("close", onClose);
+    return {
+      readReply() {
+        for (let i = 0; i < lines.length; i++) {
+          if (/^\d{3}(?: |$)/.test(lines[i])) {
+            const chunk = lines.slice(0, i + 1);
+            lines = lines.slice(i + 1);
+            return Promise.resolve({ code: parseInt(chunk[i].slice(0, 3), 10), text: chunk.join("\n") });
+          }
+        }
+        return new Promise((resolve, reject) => { waiter = { resolve, reject }; });
+      },
+      detach() {
+        sock.off("data", onData);
+        sock.off("error", onErr);
+        sock.off("close", onClose);
+      }
+    };
+  };
+
+  let sock = await new Promise((resolve, reject) => {
+    const opts = useImplicitTls ? { host, port, servername: host } : { host, port };
+    const s = useImplicitTls ? tls.connect(opts, () => resolve(s)) : net.connect(opts, () => resolve(s));
+    s.setTimeout(15000, () => {
+      s.destroy(new Error("Tempo esgotado conectando ao servidor SMTP."));
+    });
+    s.once("error", reject);
+  });
+
+  let reader = makeReader(sock);
+  const cmd = async (line, expectedCodes) => {
+    if (line !== null) sock.write(line + "\r\n");
+    const r = await reader.readReply();
+    if (!expectedCodes.includes(r.code)) {
+      throw new Error(`Erro SMTP (${r.code}): ${r.text}`);
+    }
+    return r;
+  };
+
+  try {
+    await cmd(null, [220]);
+    let ehlo = await cmd("EHLO ferias-pro.local", [250]);
+
+    if (!useImplicitTls && allowStartTls && /STARTTLS/i.test(ehlo.text)) {
+      await cmd("STARTTLS", [220]);
+      reader.detach();
+      sock = await new Promise((resolve, reject) => {
+        const ts = tls.connect({ socket: sock, servername: host }, () => resolve(ts));
+        ts.setTimeout(15000, () => ts.destroy(new Error("Tempo esgotado no STARTTLS.")));
+        ts.once("error", reject);
+      });
+      reader = makeReader(sock);
+      ehlo = await cmd("EHLO ferias-pro.local", [250]);
+    }
+
+    if (user && pass) {
+      if (/\bAUTH\b[^\n]*\bPLAIN\b/i.test(ehlo.text) && !/\bLOGIN\b/i.test(ehlo.text)) {
+        const authB64 = Buffer.from(`\0${user}\0${pass}`, "utf8").toString("base64");
+        await cmd(`AUTH PLAIN ${authB64}`, [235]);
+      } else {
+        await cmd("AUTH LOGIN", [334]);
+        await cmd(Buffer.from(user, "utf8").toString("base64"), [334]);
+        await cmd(Buffer.from(pass, "utf8").toString("base64"), [235]);
+      }
+    }
+
+    await cmd(`MAIL FROM:<${extractEmailAddress(from)}>`, [250]);
+    await cmd(`RCPT TO:<${extractEmailAddress(to)}>`, [250, 251]);
+    await cmd("DATA", [354]);
+    const mime = buildMimeEmail({ from, to, subject, text, html });
+    const stuffed = mime.replace(/^\./gm, "..");
+    sock.write(stuffed + (stuffed.endsWith("\r\n") ? "" : "\r\n") + ".\r\n");
+    await cmd(null, [250]);
+    try { await cmd("QUIT", [221]); } catch {}
+  } finally {
+    try { reader.detach(); } catch {}
+    try { sock.end(); } catch {}
+  }
+}
+
+async function sendTransactionalEmail({ to, subject, text, html }) {
+  if (RESEND_API_KEY) {
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ from: SMTP_FROM, to: [extractEmailAddress(to)], subject, text, html })
+    });
+    if (!resp.ok) {
+      const errBody = await resp.text().catch(() => "");
+      throw new Error(`Resend HTTP ${resp.status}: ${errBody.slice(0, 200)}`);
+    }
+    return { transport: "resend" };
+  }
+
+  if (SMTP_HOST) {
+    await sendSmtpEmail({
+      host: SMTP_HOST,
+      port: Number.isFinite(SMTP_PORT) && SMTP_PORT > 0 ? SMTP_PORT : 587,
+      secure: SMTP_SECURE,
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+      from: SMTP_FROM,
+      to,
+      subject,
+      text,
+      html
+    });
+    return { transport: "smtp" };
+  }
+
+  const sendmail = getSendmailPath();
+  if (sendmail) {
+    const mime = buildMimeEmail({ from: SMTP_FROM, to, subject, text, html });
+    await new Promise((resolve, reject) => {
+      const child = execFile(sendmail, ["-t", "-i"], err => (err ? reject(err) : resolve()));
+      child.stdin.end(mime);
+    });
+    return { transport: "sendmail" };
+  }
+
+  throw new Error("EMAIL_NOT_CONFIGURED");
+}
+
+function buildResetEmailContent(name, resetUrl) {
+  const safeName = String(name || "Viajante").replace(/[<>&"]/g, "");
+  const text = [
+    `Olá, ${safeName}!`,
+    "",
+    "Recebemos uma solicitação para redefinir sua senha no Férias Pro.",
+    "Acesse o link abaixo para criar uma nova senha forte (válido por 30 minutos):",
+    "",
+    resetUrl,
+    "",
+    "Se você não solicitou esta alteração, pode ignorar este e-mail com segurança."
+  ].join("\n");
+  const html = `
+  <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#f8fafc;color:#0f172a">
+    <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:28px">
+      <h2 style="margin:0 0 12px;color:#1e293b">🔐 Redefinição de Senha — Férias Pro</h2>
+      <p style="margin:0 0 14px;line-height:1.55">Olá, <b>${safeName}</b>!</p>
+      <p style="margin:0 0 20px;line-height:1.55">Recebemos uma solicitação para redefinir sua senha. Clique no botão abaixo para cadastrar uma nova senha forte (link válido por <b>30 minutos</b>):</p>
+      <p style="margin:0 0 22px;text-align:center">
+        <a href="${resetUrl}" style="display:inline-block;padding:12px 24px;border-radius:10px;background:#4f46e5;color:#ffffff;font-weight:700;text-decoration:none">Redefinir minha senha</a>
+      </p>
+      <p style="margin:0 0 8px;font-size:13px;color:#475569">Ou copie e cole este endereço no seu navegador:</p>
+      <p style="margin:0 0 18px;font-size:12px;word-break:break-all;color:#4f46e5">${resetUrl}</p>
+      <hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">
+      <p style="margin:0;font-size:12px;color:#64748b">Se você não pediu esta redefinição, ignore este e-mail — sua conta permanece protegida.</p>
+    </div>
+  </div>`;
+  return { subject: "Férias Pro — Link para redefinir sua senha", text, html };
 }
 
 async function callGeminiJSON(apiKey, parts, systemInstruction) {
@@ -769,7 +1089,8 @@ const server = http.createServer(async (req, res) => {
         googleClientId: getServerGoogleClientId(),
         hasGemini: Boolean(ENV_GEMINI_KEY),
         hasMaps: Boolean(ENV_GMAPS_KEY),
-        hasWallet: Boolean(ENV_WALLET_ISSUER_ID && (ENV_WALLET_SA_JSON || ENV_WALLET_SA_FILE))
+        hasWallet: Boolean(ENV_WALLET_ISSUER_ID && (ENV_WALLET_SA_JSON || ENV_WALLET_SA_FILE)),
+        hasEmailSender: isEmailTransportConfigured()
       });
     }
 
@@ -779,7 +1100,8 @@ const server = http.createServer(async (req, res) => {
         googleClientId: getServerGoogleClientId(),
         hasGemini: Boolean(ENV_GEMINI_KEY),
         hasMaps: Boolean(ENV_GMAPS_KEY),
-        hasWallet: Boolean(ENV_WALLET_ISSUER_ID && (ENV_WALLET_SA_JSON || ENV_WALLET_SA_FILE))
+        hasWallet: Boolean(ENV_WALLET_ISSUER_ID && (ENV_WALLET_SA_JSON || ENV_WALLET_SA_FILE)),
+        hasEmailSender: isEmailTransportConfigured()
       });
     }
 
@@ -789,8 +1111,12 @@ const server = http.createServer(async (req, res) => {
       const name = String(body.name || "").trim();
       const email = String(body.email || "").trim().toLowerCase();
       const password = String(body.password || "");
-      if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 6) {
-        return sendJson(res, 400, { ok: false, error: "Informe nome, e-mail válido e senha com ao menos 6 caracteres." });
+      if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return sendJson(res, 400, { ok: false, error: "Informe nome e um e-mail válido." });
+      }
+      const pwCheck = validateStrongPassword(password);
+      if (!pwCheck.valid) {
+        return sendJson(res, 400, { ok: false, error: pwCheck.error });
       }
       const exists = Object.values(db.users).find(u => u.email === email);
       if (exists) {
@@ -819,6 +1145,9 @@ const server = http.createServer(async (req, res) => {
       const email = String(body.email || "").trim().toLowerCase();
       const password = String(body.password || "");
       const user = Object.values(db.users).find(u => u.email === email);
+      if (user && !user.passwordHash) {
+        return sendJson(res, 401, { ok: false, error: "Esta conta usa login pelo Google e ainda não possui senha. Entre pelo Google ou clique em 'Esqueci minha senha' para criar uma senha." });
+      }
       if (!user || !verifyPassword(password, user.passwordHash)) {
         return sendJson(res, 401, { ok: false, error: "E-mail ou senha inválidos." });
       }
@@ -880,6 +1209,138 @@ const server = http.createServer(async (req, res) => {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
       return sendJson(res, 200, { ok: true, user: publicUser(auth.user) });
+    }
+
+    if (pathname === "/api/auth/password" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const u = auth.user;
+      const body = await readBody(req);
+      const newPassword = String(body.newPassword || "");
+      const oldPassword = String(body.oldPassword || "");
+      const hasConfirm = body.confirmPassword !== undefined;
+      const confirmPassword = String(body.confirmPassword || "");
+
+      if (u.passwordHash) {
+        if (!oldPassword || !verifyPassword(oldPassword, u.passwordHash)) {
+          return sendJson(res, 400, { ok: false, error: "Senha atual incorreta." });
+        }
+        if (confirmPassword !== newPassword) {
+          return sendJson(res, 400, { ok: false, error: "A confirmação da nova senha não confere." });
+        }
+        if (oldPassword === newPassword) {
+          return sendJson(res, 400, { ok: false, error: "A nova senha deve ser diferente da senha atual." });
+        }
+      } else if (hasConfirm && confirmPassword !== newPassword) {
+        return sendJson(res, 400, { ok: false, error: "A confirmação da nova senha não confere." });
+      }
+
+      const pwCheck = validateStrongPassword(newPassword);
+      if (!pwCheck.valid) {
+        return sendJson(res, 400, { ok: false, error: pwCheck.error });
+      }
+
+      u.passwordHash = hashPassword(newPassword);
+      saveDb();
+      return sendJson(res, 200, { ok: true, user: publicUser(u) });
+    }
+
+    if (pathname === "/api/auth/forgot-password" && req.method === "POST") {
+      const body = await readBody(req);
+      const email = String(body.email || "").trim().toLowerCase();
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return sendJson(res, 400, { ok: false, error: "Informe um e-mail válido." });
+      }
+      if (!isEmailTransportConfigured()) {
+        return sendJson(res, 503, {
+          ok: false,
+          error: "Envio de e-mail não configurado neste servidor (configure SMTP_HOST/SMTP_USER/SMTP_PASS ou RESEND_API_KEY). Caso use Google, entre diretamente com o botão Google."
+        });
+      }
+
+      pruneExpiredResets();
+      const user = Object.values(db.users).find(u => u.email === email);
+      const safeOkMsg = "Se este e-mail estiver cadastrado, enviamos um link para redefinir sua senha (válido por 30 minutos). Verifique também a caixa de spam.";
+      if (!user) {
+        return sendJson(res, 200, { ok: true, message: safeOkMsg });
+      }
+
+      // Remove solicitações anteriores do mesmo usuário para manter apenas o link mais recente
+      for (const [k, rec] of Object.entries(db.passwordResets || {})) {
+        if (rec.userId === user.id) delete db.passwordResets[k];
+      }
+      const rawToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = hashResetToken(rawToken);
+      db.passwordResets[tokenHash] = {
+        userId: user.id,
+        email: user.email,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + PASS_RESET_TTL_MS
+      };
+      saveDb();
+
+      const resetUrl = `${getAppBaseUrl(req)}/?resetToken=${encodeURIComponent(rawToken)}`;
+      const msg = buildResetEmailContent(user.name, resetUrl);
+      try {
+        await sendTransactionalEmail({ to: user.email, ...msg });
+        return sendJson(res, 200, { ok: true, message: safeOkMsg });
+      } catch (err) {
+        delete db.passwordResets[tokenHash];
+        saveDb();
+        return sendJson(res, 500, { ok: false, error: "Falha ao enviar o e-mail de redefinição: " + (err.message || err) });
+      }
+    }
+
+    if (pathname === "/api/auth/reset-password/validate" && req.method === "GET") {
+      pruneExpiredResets();
+      const rawToken = url.searchParams.get("token") || "";
+      if (!rawToken) return sendJson(res, 400, { ok: false, error: "Token de redefinição ausente." });
+      const rec = db.passwordResets?.[hashResetToken(rawToken)];
+      const user = rec ? db.users[rec.userId] : null;
+      if (!rec || !user || rec.expiresAt <= Date.now()) {
+        return sendJson(res, 400, { ok: false, error: "Link de redefinição inválido ou expirado. Solicite um novo link." });
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        emailMasked: maskEmail(user.email),
+        hasPassword: Boolean(user.passwordHash)
+      });
+    }
+
+    if (pathname === "/api/auth/reset-password" && req.method === "POST") {
+      pruneExpiredResets();
+      const body = await readBody(req);
+      const rawToken = String(body.token || "");
+      const newPassword = String(body.newPassword || "");
+      const confirmPassword = String(body.confirmPassword || "");
+
+      const tokenHash = hashResetToken(rawToken);
+      const rec = db.passwordResets?.[tokenHash];
+      const user = rec ? db.users[rec.userId] : null;
+      if (!rawToken || !rec || !user || rec.expiresAt <= Date.now()) {
+        return sendJson(res, 400, { ok: false, error: "Link de redefinição inválido ou expirado. Solicite um novo link." });
+      }
+
+      if (newPassword !== confirmPassword) {
+        return sendJson(res, 400, { ok: false, error: "As senhas digitadas não conferem." });
+      }
+      const pwCheck = validateStrongPassword(newPassword);
+      if (!pwCheck.valid) {
+        return sendJson(res, 400, { ok: false, error: pwCheck.error });
+      }
+
+      user.passwordHash = hashPassword(newPassword);
+      for (const [k, r] of Object.entries(db.passwordResets || {})) {
+        if (r.userId === user.id) delete db.passwordResets[k];
+      }
+      // Revoga sessões anteriores e cria uma sessão nova autenticada
+      for (const [sid, s] of Object.entries(db.sessions || {})) {
+        if (s.userId === user.id) delete db.sessions[sid];
+      }
+      linkSharesForUser(user);
+      const sidToken = createSession(user.id);
+      setSessionCookie(req, res, sidToken);
+      return sendJson(res, 200, { ok: true, user: publicUser(user) });
     }
 
     if (pathname === "/api/auth/profile" && req.method === "PUT") {

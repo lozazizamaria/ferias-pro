@@ -3000,7 +3000,87 @@ function showPwaBanner(isIOS) {
   banner.hidden = false;
 }
 
-/* ---------- AUTH & BOOT ---------- */
+/* ---------- AUTH, SENHA FORTE, REDEFINIÇÃO & BOOT ---------- */
+const EYE_OPEN_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_OFF_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+
+function setPasswordFieldVisible(btn, input, show) {
+  if (!input || !btn) return;
+  input.type = show ? "text" : "password";
+  btn.setAttribute("aria-pressed", show ? "true" : "false");
+  btn.setAttribute("aria-label", show ? "Ocultar senha" : "Mostrar senha");
+  btn.innerHTML = show ? EYE_OFF_SVG : EYE_OPEN_SVG;
+}
+
+function initPasswordToggles() {
+  document.querySelectorAll(".pw-toggle").forEach(btn => {
+    btn.onclick = e => {
+      e.preventDefault();
+      const targetId = btn.dataset.pwTarget;
+      const input = targetId ? document.getElementById(targetId) : btn.closest(".password-wrap")?.querySelector("input");
+      if (!input) return;
+      setPasswordFieldVisible(btn, input, input.type === "password");
+    };
+  });
+}
+
+function resetPasswordFieldVisibility(scopeEl) {
+  if (!scopeEl) return;
+  scopeEl.querySelectorAll(".pw-toggle").forEach(btn => {
+    const targetId = btn.dataset.pwTarget;
+    const input = targetId ? document.getElementById(targetId) : btn.closest(".password-wrap")?.querySelector("input");
+    if (input) setPasswordFieldVisible(btn, input, false);
+  });
+}
+
+function validateStrongPasswordClient(password) {
+  const pw = String(password || "");
+  const checks = {
+    length: pw.length >= 8,
+    upper: /[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ]/.test(pw),
+    lower: /[a-záàâãéêíóôõúç]/.test(pw),
+    number: /[0-9]/.test(pw),
+    special: /[^A-Za-zÀ-ÿ0-9\s]/.test(pw)
+  };
+  const missing = [];
+  if (!checks.length) missing.push("mínimo 8 caracteres");
+  if (!checks.upper) missing.push("1 maiúscula");
+  if (!checks.lower) missing.push("1 minúscula");
+  if (!checks.number) missing.push("1 número");
+  if (!checks.special) missing.push("1 caractere especial");
+  return {
+    valid: missing.length === 0,
+    checks,
+    error: missing.length ? `Senha fraca: inclua ${missing.join(", ")}.` : ""
+  };
+}
+
+function renderPasswordRules(sel, pw) {
+  const el = $(sel);
+  if (!el) return;
+  const { checks } = validateStrongPasswordClient(pw);
+  const rules = [
+    [checks.length, "8+ caracteres"],
+    [checks.upper, "Maiúscula"],
+    [checks.lower, "Minúscula"],
+    [checks.number, "Número"],
+    [checks.special, "Especial (!@#$)"]
+  ];
+  el.innerHTML = rules.map(([ok, txt]) => `<span class="pw-rule ${ok ? "ok" : ""}">${ok ? "✓ " : ""}${txt}</span>`).join("");
+}
+
+let activeResetToken = "";
+
+function showAuthPanel(panel) {
+  const loginPanel = $("#authLoginPanel");
+  const forgotBox = $("#forgotBox");
+  const resetBox = $("#resetBox");
+  if (loginPanel) loginPanel.hidden = panel !== "login";
+  if (forgotBox) forgotBox.hidden = panel !== "forgot";
+  if (resetBox) resetBox.hidden = panel !== "reset";
+  resetPasswordFieldVisibility($("#authView"));
+}
+
 function setupGoogleSignInButton(clientId) {
   const wrap = $("#googleBtnWrap");
   const fallbackBtn = $("#btnGoogleLoginFallback");
@@ -3106,6 +3186,7 @@ function updateSyncBadge(info) {
 
 async function boot() {
   initTheme();
+  initPasswordToggles();
   populateTypeSelectors();
   window.FeriasApi.onStatus(updateSyncBadge);
 
@@ -3116,11 +3197,37 @@ async function boot() {
     return;
   }
 
+  const resetToken = new URLSearchParams(location.search).get("resetToken");
+  if (resetToken) {
+    $("#authView").hidden = false;
+    $("#appShell").hidden = true;
+    showAuthPanel("reset");
+    const fb = $("#resetFeedback");
+    const hint = $("#resetEmailHint");
+    const submitBtn = $("#btnResetSubmit");
+    fb.hidden = true;
+    activeResetToken = resetToken;
+    renderPasswordRules("#resetPwChecklist", "");
+    try {
+      const info = await window.FeriasApi.validateResetToken(resetToken);
+      if (hint) hint.textContent = `Redefinindo senha da conta ${info.emailMasked}.`;
+      if (submitBtn) submitBtn.disabled = false;
+    } catch (err) {
+      if (hint) hint.textContent = "";
+      fb.className = "auth-error";
+      fb.textContent = err.message || "Link de redefinição inválido ou expirado.";
+      fb.hidden = false;
+      if (submitBtn) submitBtn.disabled = true;
+    }
+    return;
+  }
+
   if (cfg.user) {
     await enterApp();
   } else {
     $("#authView").hidden = false;
     $("#appShell").hidden = true;
+    showAuthPanel("login");
     setupGoogleSignInButton(cfg.googleClientId);
   }
 }
@@ -3131,13 +3238,117 @@ $("#authThemeBtn").onclick = $("#btnTheme").onclick = () => applyTheme(isDarkThe
 $("#authModeTabs").querySelectorAll("button").forEach(b => {
   b.onclick = () => {
     authMode = b.dataset.amode;
+    const isReg = authMode === "register";
     $("#authModeTabs").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
-    $("#authNameWrap").hidden = authMode !== "register";
-    $("#authName").required = authMode === "register";
-    $("#authSubmitBtn").textContent = authMode === "register" ? "Criar conta e entrar" : "Entrar";
+    $("#authNameWrap").hidden = !isReg;
+    $("#authName").required = isReg;
+    if ($("#authForgotRow")) $("#authForgotRow").hidden = isReg;
+    if ($("#authPwChecklist")) {
+      $("#authPwChecklist").hidden = !isReg;
+      if (isReg) renderPasswordRules("#authPwChecklist", $("#authPassword").value);
+    }
+    $("#authPassword").minLength = isReg ? 8 : 6;
+    $("#authPassword").autocomplete = isReg ? "new-password" : "current-password";
+    $("#authPassword").placeholder = isReg ? "Mín. 8 caracteres (A-Z, a-z, 0-9, !@#)" : "Digite sua senha";
+    $("#authSubmitBtn").textContent = isReg ? "Criar conta e entrar" : "Entrar";
     $("#authError").hidden = true;
   };
 });
+
+$("#authPassword").addEventListener("input", () => {
+  if ($("#authError")) $("#authError").hidden = true;
+  if (authMode === "register") renderPasswordRules("#authPwChecklist", $("#authPassword").value);
+});
+
+if ($("#btnForgotPassword")) {
+  $("#btnForgotPassword").onclick = () => {
+    $("#forgotEmail").value = $("#authEmail").value.trim();
+    $("#forgotFeedback").hidden = true;
+    showAuthPanel("forgot");
+    $("#forgotEmail").focus();
+  };
+}
+
+if ($("#btnBackToLogin")) {
+  $("#btnBackToLogin").onclick = () => {
+    showAuthPanel("login");
+    setupGoogleSignInButton(window.FeriasApi.getGoogleClientId());
+  };
+}
+
+if ($("#forgotForm")) {
+  $("#forgotForm").onsubmit = async e => {
+    e.preventDefault();
+    const fb = $("#forgotFeedback");
+    const btn = $("#btnSendForgot");
+    fb.hidden = true;
+    btn.disabled = true;
+    try {
+      const res = await window.FeriasApi.forgotPassword($("#forgotEmail").value.trim());
+      fb.className = "auth-success";
+      fb.textContent = "📩 " + (res.message || "Link de redefinição enviado para seu e-mail!");
+      fb.hidden = false;
+    } catch (err) {
+      fb.className = "auth-error";
+      fb.textContent = err.message || "Não foi possível enviar o link.";
+      fb.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
+if ($("#resetNewPassword")) {
+  $("#resetNewPassword").addEventListener("input", () => {
+    renderPasswordRules("#resetPwChecklist", $("#resetNewPassword").value);
+  });
+}
+
+if ($("#btnResetBackLogin")) {
+  $("#btnResetBackLogin").onclick = () => {
+    activeResetToken = "";
+    try { history.replaceState(null, "", location.pathname + location.hash); } catch {}
+    showAuthPanel("login");
+    setupGoogleSignInButton(window.FeriasApi.getGoogleClientId());
+  };
+}
+
+if ($("#resetForm")) {
+  $("#resetForm").onsubmit = async e => {
+    e.preventDefault();
+    const fb = $("#resetFeedback");
+    const btn = $("#btnResetSubmit");
+    fb.hidden = true;
+    const newPw = $("#resetNewPassword").value;
+    const confPw = $("#resetConfirmPassword").value;
+    const check = validateStrongPasswordClient(newPw);
+    if (!check.valid) {
+      fb.className = "auth-error";
+      fb.textContent = check.error;
+      fb.hidden = false;
+      return;
+    }
+    if (newPw !== confPw) {
+      fb.className = "auth-error";
+      fb.textContent = "As senhas digitadas não conferem.";
+      fb.hidden = false;
+      return;
+    }
+    btn.disabled = true;
+    try {
+      await window.FeriasApi.resetPassword(activeResetToken, newPw, confPw);
+      activeResetToken = "";
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch {}
+      toast("✅ Senha redefinida com sucesso!");
+      await enterApp();
+    } catch (err) {
+      fb.className = "auth-error";
+      fb.textContent = err.message || "Não foi possível redefinir a senha.";
+      fb.hidden = false;
+      btn.disabled = false;
+    }
+  };
+}
 
 $("#authForm").onsubmit = async e => {
   e.preventDefault();
@@ -3147,6 +3358,12 @@ $("#authForm").onsubmit = async e => {
   const pass = $("#authPassword").value;
   try {
     if (authMode === "register") {
+      const pwCheck = validateStrongPasswordClient(pass);
+      if (!pwCheck.valid) {
+        errEl.textContent = pwCheck.error;
+        errEl.hidden = false;
+        return;
+      }
       const name = $("#authName").value.trim();
       const res = await window.FeriasApi.register(name, email, pass);
       if (res.legacyData && res.legacyData.data) {
@@ -4298,6 +4515,34 @@ function populateCountriesSelect() {
 }
 populateCountriesSelect();
 
+function refreshProfilePasswordSection(u) {
+  const details = $("#profPasswordDetails");
+  if (!details) return;
+  if (!window.FeriasApi?.isServer()) {
+    details.hidden = true;
+    return;
+  }
+  details.hidden = false;
+  const hasPw = Boolean(u?.hasPassword);
+  if ($("#prof-oldPassword")) $("#prof-oldPassword").value = "";
+  if ($("#prof-newPassword")) $("#prof-newPassword").value = "";
+  if ($("#prof-confirmPassword")) $("#prof-confirmPassword").value = "";
+  resetPasswordFieldVisibility($("#profileModal"));
+  renderPasswordRules("#prof-pwChecklist", "");
+
+  if ($("#prof-oldPasswordWrap")) $("#prof-oldPasswordWrap").hidden = !hasPw;
+  if ($("#prof-confirmPasswordWrap")) $("#prof-confirmPasswordWrap").hidden = !hasPw;
+  if ($("#btnProfileForgotPw")) $("#btnProfileForgotPw").hidden = !hasPw;
+  if ($("#prof-pwStatusNote")) {
+    $("#prof-pwStatusNote").textContent = hasPw
+      ? "Sua conta já possui senha cadastrada. Informe a senha atual e digite a nova senha forte duas vezes."
+      : "Sua conta está conectada pelo Google e não possui senha cadastrada (você pode continuar entrando apenas pelo Google). Se desejar, insira uma senha forte opcional abaixo:";
+  }
+  if ($("#btnSaveProfilePassword")) {
+    $("#btnSaveProfilePassword").textContent = hasPw ? "🔑 Alterar Senha" : "🔑 Definir Senha";
+  }
+}
+
 function openProfileModal() {
   const u = window.FeriasApi.getUser() || {};
   $("#prof-name").value = u.name || "";
@@ -4312,6 +4557,8 @@ function openProfileModal() {
   if ($("#prof-city")) $("#prof-city").value = u.city || "";
   if ($("#prof-address")) $("#prof-address").value = u.address || "";
   $("#prof-waError").hidden = true;
+  if ($("#prof-pwFeedback")) $("#prof-pwFeedback").hidden = true;
+  refreshProfilePasswordSection(u);
   $("#prof-geminiKey").value = "";
   $("#prof-walletIssuer").value = u.integrations?.walletIssuerId || "";
   $("#prof-walletSa").value = "";
@@ -4429,6 +4676,96 @@ $("#profileForm").onsubmit = async e => {
     $("#prof-waError").hidden = false;
   }
 };
+
+if ($("#prof-newPassword")) {
+  $("#prof-newPassword").addEventListener("input", () => {
+    renderPasswordRules("#prof-pwChecklist", $("#prof-newPassword").value);
+  });
+}
+
+if ($("#btnSaveProfilePassword")) {
+  $("#btnSaveProfilePassword").onclick = async () => {
+    const u = window.FeriasApi.getUser() || {};
+    const hasPw = Boolean(u.hasPassword);
+    const fb = $("#prof-pwFeedback");
+    const btn = $("#btnSaveProfilePassword");
+    fb.hidden = true;
+
+    const oldPw = $("#prof-oldPassword")?.value || "";
+    const newPw = $("#prof-newPassword")?.value || "";
+    const confPw = $("#prof-confirmPassword")?.value || "";
+
+    if (hasPw && !oldPw) {
+      fb.className = "auth-error span2";
+      fb.textContent = "Informe sua senha atual para alterá-la.";
+      fb.hidden = false;
+      return;
+    }
+    const pwCheck = validateStrongPasswordClient(newPw);
+    if (!pwCheck.valid) {
+      fb.className = "auth-error span2";
+      fb.textContent = pwCheck.error;
+      fb.hidden = false;
+      return;
+    }
+    if (hasPw) {
+      if (newPw !== confPw) {
+        fb.className = "auth-error span2";
+        fb.textContent = "As duas digitações da nova senha não conferem.";
+        fb.hidden = false;
+        return;
+      }
+      if (oldPw === newPw) {
+        fb.className = "auth-error span2";
+        fb.textContent = "A nova senha deve ser diferente da senha atual.";
+        fb.hidden = false;
+        return;
+      }
+    }
+
+    btn.disabled = true;
+    try {
+      const payload = hasPw
+        ? { oldPassword: oldPw, newPassword: newPw, confirmPassword: confPw }
+        : { newPassword: newPw };
+      const res = await window.FeriasApi.changePassword(payload);
+      refreshProfilePasswordSection(res.user);
+      fb.className = "auth-success span2";
+      fb.textContent = hasPw ? "✅ Senha alterada com sucesso!" : "✅ Senha cadastrada com sucesso! Agora você pode entrar com Google ou com e-mail e senha.";
+      fb.hidden = false;
+      toast("✅ Senha atualizada!");
+    } catch (err) {
+      fb.className = "auth-error span2";
+      fb.textContent = err.message || "Erro ao atualizar senha.";
+      fb.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
+if ($("#btnProfileForgotPw")) {
+  $("#btnProfileForgotPw").onclick = async () => {
+    const u = window.FeriasApi.getUser() || {};
+    if (!u.email) return;
+    const fb = $("#prof-pwFeedback");
+    const btn = $("#btnProfileForgotPw");
+    fb.hidden = true;
+    btn.disabled = true;
+    try {
+      const res = await window.FeriasApi.forgotPassword(u.email);
+      fb.className = "auth-success span2";
+      fb.textContent = "📩 " + (res.message || "Link de redefinição enviado para seu e-mail!");
+      fb.hidden = false;
+    } catch (err) {
+      fb.className = "auth-error span2";
+      fb.textContent = err.message || "Não foi possível enviar o link.";
+      fb.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
 
 function sendPlanToMyWhatsApp() {
   const u = window.FeriasApi.getUser();
