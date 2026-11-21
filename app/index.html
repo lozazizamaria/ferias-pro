@@ -3,285 +3,357 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Férias Pro — Planejador Inteligente de Viagens</title>
-<meta name="description" content="Férias Pro: cronograma Gantt interativo, rotas e pedágios automáticos via Google Maps, parâmetros do veículo e dashboard financeiro.">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%236366f1'/%3E%3Cstop offset='100%25' stop-color='%2306b6d4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='18' fill='url(%23g)'/%3E%3Cpath d='M32 14c-7.7 0-14 6.2-14 13.8 0 10.4 14 22.2 14 22.2s14-11.8 14-22.2C46 20.2 39.7 14 32 14zm0 18.8a5 5 0 1 1 0-10 5 5 0 0 1 0 10z' fill='%23fff'/%3E%3C/svg%3E">
+<title>Férias Pro</title>
+<meta name="description" content="Férias Pro: planejamento completo de múltiplas férias com cronograma Gantt, Google Maps, Google Agenda, anexos e compartilhamento.">
+<meta name="theme-color" content="#0b0f1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Férias Pro">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=3">
+<link rel="stylesheet" href="styles.css?v=4">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
 <div class="bg-glow" aria-hidden="true"></div>
 
-<header class="topbar">
-  <div class="topbar-row">
-    <div class="brand">
-      <span class="logo" aria-hidden="true">
-        <svg viewBox="0 0 32 32" width="24" height="24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M16 4.5C11.3056 4.5 7.5 8.25 7.5 12.88C7.5 19.12 16 27.5 16 27.5C16 27.5 24.5 19.12 24.5 12.88C24.5 8.25 20.6944 4.5 16 4.5Z" stroke="white" stroke-width="2.2" stroke-linejoin="round"/>
-          <circle cx="16" cy="12.75" r="3.25" fill="white"/>
-          <path d="M9 26.5C11.2 25.5 13.5 25 16 25C18.5 25 20.8 25.5 23 26.5" stroke="white" stroke-opacity="0.7" stroke-width="1.8" stroke-linecap="round"/>
-        </svg>
-      </span>
-      <h1 id="appBrand">Férias Pro</h1>
+<!-- TELA DE LOGIN / CADASTRO -->
+<section id="authView" class="auth-view" hidden>
+  <div class="auth-card">
+    <div class="auth-top">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="24" height="24" fill="none">
+            <path d="M16 4.5C11.3056 4.5 7.5 8.25 7.5 12.88C7.5 19.12 16 27.5 16 27.5C16 27.5 24.5 19.12 24.5 12.88C24.5 8.25 20.6944 4.5 16 4.5Z" stroke="white" stroke-width="2.2" stroke-linejoin="round"/>
+            <circle cx="16" cy="12.75" r="3.25" fill="white"/>
+            <path d="M9 26.5C11.2 25.5 13.5 25 16 25C18.5 25 20.8 25.5 23 26.5" stroke="white" stroke-opacity="0.7" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <h1>Férias Pro</h1>
+      </div>
+      <button type="button" class="btn ghost small" id="authThemeBtn" title="Alternar Dia/Noite">☀️</button>
     </div>
 
-    <div class="actions">
-      <button class="btn ghost sync-pill" id="syncBadge" type="button" title="Status da sincronização em nuvem">
-        <span class="sync-dot" id="syncDot" aria-hidden="true"></span>
-        <span class="sync-text" id="syncText">Local</span>
-      </button>
-      <button class="btn ghost theme-toggle" id="btnTheme" type="button" title="Alternar modo Dia / Noite" aria-label="Alternar modo Dia ou Noite">
-        <span class="theme-icon" id="themeIcon" aria-hidden="true">☀️</span>
-        <span class="theme-label" id="themeLabel">Dia</span>
-      </button>
-      <button class="btn primary" id="btnAdd" type="button">
-        <span aria-hidden="true">➕</span>
-        <span class="btn-text">Nova atividade</span>
-      </button>
-      <div class="dropdown">
-        <button class="btn ghost" id="btnMenu" type="button" aria-haspopup="true" aria-expanded="false">⋯ <span class="hide-xs">Dados</span></button>
-        <div class="menu" id="menu">
-          <button type="button" id="btnExportXlsx">⬇️ Exportar Excel (.xlsx)</button>
-          <button type="button" id="btnExportJson">💾 Backup (.json)</button>
-          <button type="button" id="btnImportJson">📂 Restaurar backup</button>
-          <button type="button" id="btnImportXlsx">📥 Importar planilha original</button>
-          <button type="button" id="btnPrint">🖨️ Imprimir / PDF</button>
-          <hr>
-          <button type="button" id="btnReset" class="danger">↺ Restaurar dados iniciais</button>
-        </div>
-      </div>
+    <div class="seg auth-tabs" id="authModeTabs">
+      <button type="button" class="active" data-amode="login">Entrar</button>
+      <button type="button" data-amode="register">Criar conta</button>
     </div>
+
+    <form id="authForm" class="auth-form">
+      <label id="authNameWrap" hidden>Seu nome
+        <input type="text" id="authName" placeholder="Ex: Maria" autocomplete="name">
+      </label>
+      <label>E-mail
+        <input type="email" id="authEmail" required placeholder="seu@email.com" autocomplete="email">
+      </label>
+      <label>Senha
+        <input type="password" id="authPassword" required minlength="6" placeholder="Mínimo 6 caracteres" autocomplete="current-password">
+      </label>
+      <div id="authError" class="auth-error" hidden></div>
+      <button type="submit" class="btn primary auth-submit" id="authSubmitBtn">Entrar</button>
+    </form>
+
+    <div class="auth-divider"><span>ou</span></div>
+    <div id="googleBtnWrap" class="google-btn-wrap"></div>
+    <p id="googleConfigHint" class="muted small auth-hint" hidden>Login com Google será exibido aqui assim que <code>GOOGLE_CLIENT_ID</code> for definido no servidor.</p>
   </div>
+</section>
 
-  <nav class="tabs" id="tabs" aria-label="Navegação principal">
-    <button class="tab active" data-view="gantt" id="tab-gantt" type="button">📅 Cronograma</button>
-    <button class="tab" data-view="dashboard" id="tab-dashboard" type="button">📊 Dashboard</button>
-    <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
-    <button class="tab" data-view="params" id="tab-params" type="button">⚙️ Parâmetros</button>
-    <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
-  </nav>
-</header>
-
-<main>
-  <!-- CRONOGRAMA (1ª ABA / DEFAULT) -->
-  <section class="view active" id="view-gantt">
-    <div class="card gantt-card">
-      <div class="gantt-header">
-        <div class="gantt-title-group">
-          <h2 id="ganttPlanTitle">Cronograma</h2>
-          <div class="legend">
-            <span class="chip Viagem">▶ Viagem</span>
-            <span class="chip Evento">★ Evento</span>
-            <span class="chip Período">■ Período</span>
-          </div>
+<!-- APLICATIVO PRINCIPAL -->
+<div id="appShell" hidden>
+  <header class="topbar">
+    <div class="topbar-row">
+      <div class="brand-group">
+        <div class="brand">
+          <span class="logo" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="24" height="24" fill="none">
+              <path d="M16 4.5C11.3056 4.5 7.5 8.25 7.5 12.88C7.5 19.12 16 27.5 16 27.5C16 27.5 24.5 19.12 24.5 12.88C24.5 8.25 20.6944 4.5 16 4.5Z" stroke="white" stroke-width="2.2" stroke-linejoin="round"/>
+              <circle cx="16" cy="12.75" r="3.25" fill="white"/>
+              <path d="M9 26.5C11.2 25.5 13.5 25 16 25C18.5 25 20.8 25.5 23 26.5" stroke="white" stroke-opacity="0.7" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <h1 id="appBrand">Férias Pro</h1>
         </div>
-        <div class="gantt-controls">
-          <div class="seg" id="ganttFilterSeg" role="group" aria-label="Filtrar atividades">
-            <button type="button" class="active" data-gfilter="">Todos</button>
-            <button type="button" data-gfilter="Viagem">Viagens</button>
-            <button type="button" data-gfilter="Evento">Eventos</button>
-            <button type="button" data-gfilter="Período">Períodos</button>
-          </div>
-          <div class="seg" id="ganttModeSeg" role="group" aria-label="Modo de visualização">
-            <button type="button" class="active" data-gmode="gantt">Gantt</button>
-            <button type="button" data-gmode="timeline">Linha do Tempo</button>
-          </div>
-          <div class="seg hide-xs" id="ganttZoomSeg" role="group" aria-label="Zoom do calendário">
-            <button type="button" data-zoom="36" title="Compacto">P</button>
-            <button type="button" class="active" data-zoom="46" title="Normal">M</button>
-            <button type="button" data-zoom="62" title="Expandido">G</button>
-          </div>
-          <button type="button" class="btn ghost small" id="btnGanttToday" title="Rolar para o início ou data atual">🎯 Foco</button>
+
+        <div class="trip-switcher">
+          <select id="tripSelect" aria-label="Selecionar planejamento de férias"></select>
+          <button type="button" class="btn ghost small" id="btnNewTrip" title="Criar novo planejamento de férias">➕ Criar Viagem</button>
         </div>
       </div>
 
-      <p class="muted small gantt-hint">Clique em qualquer evento, barra ou resumo à direita para editar origem, destino e calcular rota. Arraste a barra para mudar a data.</p>
-
-      <div class="gantt-wrap" id="ganttWrap">
-        <div id="gantt" class="gantt"></div>
+      <div class="actions">
+        <button class="btn ghost small invite-pill" id="btnPendingInvites" type="button" hidden>📩 <span id="inviteCount">0</span></button>
+        <button class="btn ghost small" id="btnShareTrip" type="button" title="Compartilhar viagem">👥 <span class="hide-sm">Compartilhar</span></button>
+        <button class="btn ghost sync-pill" id="syncBadge" type="button" title="Status da sincronização">
+          <span class="sync-dot" aria-hidden="true"></span>
+          <span class="sync-text" id="syncText">Sincronizado</span>
+        </button>
+        <button class="btn ghost theme-toggle" id="btnTheme" type="button" title="Alternar Dia / Noite">
+          <span class="theme-icon" id="themeIcon" aria-hidden="true">☀️</span>
+          <span class="theme-label" id="themeLabel">Dia</span>
+        </button>
+        <button class="btn primary" id="btnAdd" type="button">
+          <span aria-hidden="true">➕</span>
+          <span class="btn-text">Nova atividade</span>
+        </button>
+        <div class="dropdown">
+          <button class="btn ghost" id="btnMenu" type="button" aria-haspopup="true" aria-expanded="false">⋯</button>
+          <div class="menu" id="menu">
+            <div class="menu-user" id="menuUserInfo"></div>
+            <hr>
+            <button type="button" id="btnMenuInstall" hidden>📲 Instalar aplicativo</button>
+            <button type="button" id="btnMenuCalendarAll">📅 Enviar férias p/ Google Agenda</button>
+            <button type="button" id="btnExportIcs">📆 Baixar Agenda (.ics)</button>
+            <button type="button" id="btnExportXlsx">⬇️ Exportar Excel (.xlsx)</button>
+            <button type="button" id="btnExportJson">💾 Backup (.json)</button>
+            <button type="button" id="btnImportJson">📂 Restaurar backup</button>
+            <button type="button" id="btnImportXlsx">📥 Importar planilha original</button>
+            <button type="button" id="btnPrint">🖨️ Imprimir / PDF</button>
+            <hr>
+            <button type="button" id="btnRenameTrip">✏️ Renomear viagem atual</button>
+            <button type="button" id="btnDeleteTrip" class="danger">🗑️ Excluir viagem atual</button>
+            <button type="button" id="btnLogout" class="danger">🚪 Sair da conta</button>
+          </div>
+        </div>
       </div>
-      <div id="timelineWrap" class="timeline-wrap" hidden></div>
     </div>
-  </section>
 
-  <!-- DASHBOARD -->
-  <section class="view" id="view-dashboard">
-    <div class="kpis" id="kpis"></div>
+    <nav class="tabs" id="tabs" aria-label="Navegação principal">
+      <button class="tab active" data-view="gantt" id="tab-gantt" type="button">📅 Cronograma</button>
+      <button class="tab" data-view="dashboard" id="tab-dashboard" type="button">📊 Dashboard</button>
+      <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
+      <button class="tab" data-view="params" id="tab-params" type="button">⚙️ Parâmetros</button>
+      <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
+    </nav>
+  </header>
 
-    <div class="grid2">
-      <div class="card">
+  <main>
+    <!-- CONVITES PENDENTES DE VIAGEM COMPARTILHADA -->
+    <div id="invitesBanner" class="invites-banner" hidden></div>
+
+    <!-- CRONOGRAMA (1ª ABA / DEFAULT) -->
+    <section class="view active" id="view-gantt">
+      <div class="card gantt-card">
+        <div class="gantt-header">
+          <div class="gantt-title-group">
+            <h2 id="ganttPlanTitle">Cronograma</h2>
+            <span class="pill" id="tripRoleBadge" hidden>Compartilhada</span>
+          </div>
+          <div class="gantt-controls">
+            <select id="ganttTypeFilter" class="gantt-filter-sel" aria-label="Filtrar tipo no cronograma">
+              <option value="">Todos os tipos</option>
+            </select>
+            <div class="seg" id="ganttModeSeg" role="group" aria-label="Modo de visualização">
+              <button type="button" class="active" data-gmode="gantt">Gantt</button>
+              <button type="button" data-gmode="timeline">Linha do Tempo</button>
+            </div>
+            <div class="seg" id="ganttZoomSeg" role="group" aria-label="Zoom do calendário">
+              <button type="button" data-zoom="38" title="Compacto">P</button>
+              <button type="button" class="active" data-zoom="50" title="Médio">M</button>
+              <button type="button" data-zoom="66" title="Grande">G</button>
+            </div>
+            <button type="button" class="btn ghost small" id="btnGanttSlim" title="Expandir área do calendário no celular">↔️ Foco</button>
+            <button type="button" class="btn ghost small" id="btnGanttToday" title="Ir para o início ou hoje">🎯 Hoje</button>
+          </div>
+        </div>
+
+        <p class="muted small gantt-hint">Toque em qualquer barra, ícone ou resumo ao lado direito para editar detalhes, anexar documentos ou enviar ao Google Agenda.</p>
+
+        <div class="gantt-wrap" id="ganttWrap">
+          <div id="gantt" class="gantt"></div>
+        </div>
+        <div id="timelineWrap" class="timeline-wrap" hidden></div>
+      </div>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section class="view" id="view-dashboard">
+      <div class="kpis" id="kpis"></div>
+
+      <div class="grid2">
+        <div class="card">
+          <div class="card-head">
+            <h2>Próximos compromissos</h2>
+            <span class="muted small">Clique para editar</span>
+          </div>
+          <ul class="upcoming" id="upcoming"></ul>
+        </div>
+        <div class="card">
+          <h2>Composição de custos</h2>
+          <div id="costBars"></div>
+          <div id="extraBudgetSummary" class="budget-box"></div>
+          <div class="maps-actions-row">
+            <a class="btn maps" id="mapsLink" target="_blank" rel="noopener">🗺️ Abrir rota completa no Google Maps</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="dashboardMapCard">
         <div class="card-head">
-          <h2>Próximos compromissos</h2>
-          <span class="muted small">Clique para editar</span>
-        </div>
-        <ul class="upcoming" id="upcoming"></ul>
-      </div>
-      <div class="card">
-        <h2>Composição de custos</h2>
-        <div id="costBars"></div>
-        <div id="extraBudgetSummary" class="budget-box"></div>
-        <div class="maps-actions-row">
-          <a class="btn maps" id="mapsLink" target="_blank" rel="noopener">🗺️ Abrir rota completa no Google Maps</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="card" id="dashboardMapCard">
-      <div class="card-head">
-        <h2>Mapa interativo da rota</h2>
-        <div class="inline-actions">
+          <h2>Mapa interativo da rota</h2>
           <button type="button" class="btn ghost small" id="btnRenderFullMap">🗺️ Carregar mapa completo</button>
         </div>
-      </div>
-      <p class="muted small" id="dashboardMapHint">Visualize todos os trechos conectados diretamente com a Google Maps Platform.</p>
-      <div id="dashboardMapContainer" class="map-box" hidden></div>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <h2>Distância e custo por trecho</h2>
-        <span class="muted small">Clique em um trecho para editar</span>
-      </div>
-      <div id="tripBars" class="tripbars"></div>
-    </div>
-  </section>
-
-  <!-- TABELA -->
-  <section class="view" id="view-table">
-    <div class="card">
-      <div class="card-head">
-        <h2>Tabela completa</h2>
-        <div class="filters">
-          <input type="search" id="search" placeholder="🔎 Buscar...">
-          <select id="filterType">
-            <option value="">Todos os tipos</option>
-            <option>Viagem</option>
-            <option>Evento</option>
-            <option>Período</option>
-          </select>
-        </div>
-      </div>
-      <p class="muted small">Células destacadas são editáveis diretamente. Ao alterar direção ou parâmetros, paradas e totais recalculam automaticamente.</p>
-      <div class="table-wrap desktop-table-wrap"><table id="mainTable"></table></div>
-      <div id="mobileTableCards" class="mobile-cards"></div>
-    </div>
-  </section>
-
-  <!-- PARÂMETROS -->
-  <section class="view" id="view-params">
-    <div class="grid2">
-      <div class="card">
-        <h2>🚗 Veículo &amp; Consumo</h2>
-        <div class="params-form">
-          <label class="param-row">
-            <span>Nome do planejamento</span>
-            <input id="p-planTitle" type="text" placeholder="Ex: Férias 2026/2027">
-            <span class="u">título</span>
-          </label>
-          <label class="param-row">
-            <span>Modelo do carro</span>
-            <input id="p-vehicleName" type="text" placeholder="Ex: BYD Song Plus DM-i">
-            <span class="u">modelo</span>
-          </label>
-          <label class="param-row">
-            <span>Motorização</span>
-            <select id="p-powertrain">
-              <option value="PHEV">Híbrido Plug-in (PHEV)</option>
-              <option value="HEV">Híbrido Convencional (HEV)</option>
-              <option value="COMBUSTION">Combustão (Flex / Gasolina)</option>
-              <option value="BEV">100% Elétrico (BEV)</option>
-            </select>
-            <span class="u">tipo</span>
-          </label>
-        </div>
-        <div id="vehicleParamsList" class="params-form"></div>
-      </div>
-
-      <div class="card">
-        <h2>⛽ Combustível, Pedágio &amp; Orçamento</h2>
-        <div id="costParamsList" class="params-form"></div>
-      </div>
-    </div>
-
-    <div class="grid2">
-      <div class="card">
-        <h2>🗺️ Google Maps, Rotas &amp; Paradas</h2>
-        <div id="automationParamsList" class="params-form"></div>
-
-        <div class="gmaps-key-panel">
-          <div class="gmaps-key-head">
-            <strong>Chave Google Maps Platform API</strong>
-            <span class="pill" id="gmapsKeyBadge">Não configurada</span>
-          </div>
-          <p class="muted small">Necessária para cálculo automático de distância, duração em tempo real, autocomplete e pedágios oficiais. Salva apenas no seu navegador.</p>
-          <div class="key-input-row">
-            <input type="password" id="gmapsKeyInput" placeholder="Cole sua Google Maps API Key aqui..." autocomplete="off">
-            <button type="button" class="btn ghost small" id="btnToggleKey" title="Mostrar/ocultar chave">👁️</button>
-            <button type="button" class="btn primary small" id="btnSaveKey">Salvar</button>
-          </div>
-          <div class="key-actions-row">
-            <button type="button" class="btn ghost small" id="btnTestKey">⚡ Testar conexão</button>
-            <button type="button" class="btn ghost small" id="btnRecalcAllRoutes">🔄 Recalcular todas as viagens via Maps</button>
-            <button type="button" class="btn ghost small" id="btnReapplyStops">⏱️ Reaplicar paradas padrão</button>
-          </div>
-          <p class="muted small key-links">
-            Sem chave? <a href="https://mapsplatform.google.com/maps-demo-key?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Gerar Demo Key gratuita</a> ·
-            <a href="https://console.cloud.google.com/google/maps-apis/credentials?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Google Cloud Console</a> (habilitar Maps JS, Routes e Places API).
-          </p>
-        </div>
-
-        <div class="gmaps-key-panel">
-          <div class="gmaps-key-head">
-            <strong>☁️ Sincronização na Nuvem (VPS)</strong>
-            <span class="pill" id="syncParamBadge">Verificando...</span>
-          </div>
-          <p class="muted small">Mantém suas alterações (cronograma, parâmetros, checklist e chave Maps) sincronizadas automaticamente entre PC e celular.</p>
-          <div class="key-input-row">
-            <input type="password" id="syncTokenInput" placeholder="PIN / Código de sincronização da VPS" autocomplete="off">
-            <button type="button" class="btn ghost small" id="btnToggleSyncToken" title="Mostrar/ocultar PIN">👁️</button>
-            <button type="button" class="btn primary small" id="btnSaveSyncToken">Conectar</button>
-          </div>
-          <div class="key-actions-row">
-            <button type="button" class="btn ghost small" id="btnSyncPull">⬇️ Puxar da VPS</button>
-            <button type="button" class="btn ghost small" id="btnSyncPush">⬆️ Enviar para VPS</button>
-          </div>
-        </div>
+        <p class="muted small" id="dashboardMapHint"></p>
+        <div id="dashboardMapContainer" class="map-box" hidden></div>
       </div>
 
       <div class="card">
         <div class="card-head">
-          <h2>📈 Simulação de cenários</h2>
-          <button class="btn ghost small" id="btnAddScenario" type="button">➕ Cenário</button>
+          <h2>Distância e custo por trecho</h2>
+          <span class="muted small">Clique para editar</span>
         </div>
-        <div id="scenarios"></div>
-        <p class="muted small">*Total = Gasolina + Pedágios + Recargas elétricas das viagens ativas.</p>
+        <div id="tripBars" class="tripbars"></div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- CHECKLIST -->
-  <section class="view" id="view-checklist">
-    <div class="card">
-      <div class="card-head">
-        <h2>Checklist de preparação <span id="checkProgress" class="pill"></span></h2>
-        <div class="inline-actions">
-          <select id="filterChecklist" aria-label="Filtrar checklist">
-            <option value="">Todos</option>
-            <option value="Pendente">Pendentes</option>
-            <option value="Em andamento">Em andamento</option>
-            <option value="Concluído">Concluídos</option>
-          </select>
-          <button class="btn ghost small" id="btnAddCheck" type="button">➕ Item</button>
+    <!-- TABELA -->
+    <section class="view" id="view-table">
+      <div class="card">
+        <div class="card-head">
+          <h2>Tabela completa</h2>
+          <div class="filters">
+            <input type="search" id="search" placeholder="🔎 Buscar...">
+            <select id="filterType"><option value="">Todos os tipos</option></select>
+          </div>
+        </div>
+        <p class="muted small">Células destacadas são editáveis diretamente. Custos extras, passagens, ingressos e hospedagens somam automaticamente ao orçamento.</p>
+        <div class="table-wrap desktop-table-wrap"><table id="mainTable"></table></div>
+        <div id="mobileTableCards" class="mobile-cards"></div>
+      </div>
+    </section>
+
+    <!-- PARÂMETROS -->
+    <section class="view" id="view-params">
+      <div class="grid2">
+        <div class="card">
+          <h2>🚗 Veículo &amp; Viagem</h2>
+          <div class="params-form">
+            <label class="param-row">
+              <span>Nome desta viagem</span>
+              <input id="p-planTitle" type="text" placeholder="Ex: Férias Final de Ano 2026">
+              <span class="u">nome</span>
+            </label>
+            <label class="param-row">
+              <span>Modelo do carro</span>
+              <input id="p-vehicleName" type="text" placeholder="Ex: BYD Song Plus DM-i">
+              <span class="u">modelo</span>
+            </label>
+            <label class="param-row">
+              <span>Motorização</span>
+              <select id="p-powertrain">
+                <option value="PHEV">Híbrido Plug-in (PHEV)</option>
+                <option value="HEV">Híbrido Convencional (HEV)</option>
+                <option value="COMBUSTION">Combustão (Flex / Gasolina)</option>
+                <option value="BEV">100% Elétrico (BEV)</option>
+              </select>
+              <span class="u">tipo</span>
+            </label>
+          </div>
+          <div id="vehicleParamsList" class="params-form"></div>
+        </div>
+
+        <div class="card">
+          <h2>💰 Orçamento Flexível, Hospedagem &amp; Tarifas</h2>
+          <p class="muted small" style="margin-top:-6px">A hospedagem vale para as férias inteiras (ou conforme diárias/atividades), sem vínculo obrigatório com “Período”.</p>
+          <div id="costParamsList" class="params-form"></div>
         </div>
       </div>
-      <div class="progress"><div id="checkBar"></div></div>
-      <div class="table-wrap desktop-table-wrap"><table id="checkTable"></table></div>
-      <div id="mobileCheckCards" class="mobile-cards"></div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>🗺️ Google Maps, Google Agenda &amp; Paradas</h2>
+          <div id="automationParamsList" class="params-form"></div>
+
+          <div class="gmaps-key-panel">
+            <div class="gmaps-key-head">
+              <strong>🔑 Chave Google Maps Platform API</strong>
+              <span class="pill" id="gmapsKeyBadge">Não configurada</span>
+            </div>
+            <p class="muted small">Ativa cálculo automático de distância, tempo, autocomplete e pedágios oficiais no modal de viagem (e sincroniza com seu celular).</p>
+            <div class="key-input-row">
+              <input type="password" id="gmapsKeyInput" placeholder="Cole sua Google Maps API Key aqui..." autocomplete="off">
+              <button type="button" class="btn ghost small" id="btnToggleKey" title="Mostrar/ocultar chave">👁️</button>
+              <button type="button" class="btn primary small" id="btnSaveKey">Salvar</button>
+            </div>
+            <div class="key-actions-row">
+              <button type="button" class="btn ghost small" id="btnTestKey">⚡ Testar Maps</button>
+              <button type="button" class="btn ghost small" id="btnRecalcAllRoutes">🔄 Recalcular viagens no Maps</button>
+              <button type="button" class="btn ghost small" id="btnReapplyStops">⏱️ Reaplicar paradas padrão</button>
+            </div>
+            <details class="help-details">
+              <summary>❓ Ajuda rápida: como gerar sua chave grátis do Google Maps</summary>
+              <ol class="small muted">
+                <li>Para testar grátis sem cartão, clique em <a href="https://mapsplatform.google.com/maps-demo-key?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Gerar Demo Key</a>, entre com sua conta Google e copie a chave.</li>
+                <li>Para produção, acesse o <a href="https://console.cloud.google.com/google/maps-apis/credentials?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Google Cloud Console</a> e ative <b>Maps JavaScript API</b>, <b>Routes API</b> e <b>Places API (New)</b>.</li>
+                <li>Cole a chave acima e clique em <b>Salvar</b>.</li>
+              </ol>
+            </details>
+          </div>
+
+          <div class="gmaps-key-panel">
+            <div class="gmaps-key-head">
+              <strong>📅 Integração Google Agenda</strong>
+              <span class="pill" id="calBadge">Lembrete dia anterior 09:00</span>
+            </div>
+            <p class="muted small">Por padrão, todo evento/viagem exportado cria um lembrete no <b>dia anterior às 09:00</b> (horário ajustável acima).</p>
+            <div class="key-actions-row">
+              <button type="button" class="btn primary small" id="btnSyncAllCalendar">📅 Enviar todas para Google Agenda</button>
+              <button type="button" class="btn ghost small" id="btnDownloadAllIcs">📆 Baixar arquivo .ics</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>📈 Simulação de cenários</h2>
+            <button class="btn ghost small" id="btnAddScenario" type="button">➕ Cenário</button>
+          </div>
+          <div id="scenarios"></div>
+          <p class="muted small">*Total = Gasolina + Pedágios + Recargas elétricas das viagens de carro.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHECKLIST -->
+    <section class="view" id="view-checklist">
+      <div class="card">
+        <div class="card-head">
+          <h2>Checklist de preparação <span id="checkProgress" class="pill"></span></h2>
+          <div class="inline-actions">
+            <select id="filterChecklist" aria-label="Filtrar checklist">
+              <option value="">Todos</option>
+              <option value="Pendente">Pendentes</option>
+              <option value="Em andamento">Em andamento</option>
+              <option value="Concluído">Concluídos</option>
+            </select>
+            <button class="btn ghost small" id="btnAddCheck" type="button">➕ Item</button>
+          </div>
+        </div>
+        <div class="progress"><div id="checkBar"></div></div>
+        <div class="table-wrap desktop-table-wrap"><table id="checkTable"></table></div>
+        <div id="mobileCheckCards" class="mobile-cards"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- POP-UP INSTALAR APP (PWA) -->
+<div id="pwaInstallBanner" class="pwa-banner" hidden role="dialog" aria-label="Instalar aplicativo Férias Pro">
+  <div class="pwa-banner-inner">
+    <img src="icons/icon-192.png" alt="Férias Pro" class="pwa-icon">
+    <div class="pwa-text">
+      <strong>Instalar Férias Pro</strong>
+      <span id="pwaPromptDesc" class="muted small">Adicione o app à tela inicial do celular para abrir direto como aplicativo.</span>
     </div>
-  </section>
-</main>
+    <div class="pwa-btns">
+      <button type="button" class="btn primary small" id="btnPwaInstall">Baixar App</button>
+      <button type="button" class="btn ghost small" id="btnPwaDismiss">Agora não</button>
+    </div>
+  </div>
+</div>
 
 <!-- MODAL EDITAR / NOVA ATIVIDADE -->
 <dialog id="modal">
@@ -292,29 +364,32 @@
     </div>
 
     <div class="form-grid">
-      <label>Tipo
-        <select name="type" id="f-type">
-          <option>Viagem</option>
-          <option>Evento</option>
-          <option>Período</option>
-        </select>
+      <label>Tipo de atividade
+        <select name="type" id="f-type"></select>
       </label>
-      <label>Custo extra / diárias / ingresso (R$)
+      <label><span id="f-extraCostLabel">Custo / ingresso / diária (R$)</span>
         <input type="number" step="any" min="0" name="extraCost" id="f-extraCost" placeholder="0,00">
       </label>
 
-      <label class="span2">Nome / Trecho
-        <input name="name" id="f-name" required placeholder="Ex: Viagem SP ou Beto Carrero">
+      <label class="span2">Nome / Descrição
+        <input name="name" id="f-name" required placeholder="Ex: Viagem SP, Voo BSB-FLN, Hotel Beira Mar, Beto Carrero...">
       </label>
 
       <label>Início<input type="date" name="start" id="f-start" required></label>
       <label>Fim<input type="date" name="end" id="f-end"></label>
 
+      <!-- BLOCO ORIGEM/DESTINO PARA VOO (sem carro/pedágio) -->
+      <div class="flight-only span2 form-grid inner" hidden>
+        <label>Aeroporto / Cidade Origem<input id="f-flightFrom" placeholder="Ex: Brasília (BSB)"></label>
+        <label>Aeroporto / Cidade Destino<input id="f-flightTo" placeholder="Ex: Navegantes (NVT)"></label>
+      </div>
+
+      <!-- BLOCO VIAGEM DE CARRO (GOOGLE MAPS) -->
       <div class="trip-only span2 form-grid inner">
         <div class="span2 route-head-row">
           <span class="route-title">🗺️ Rota automática (Google Maps)</span>
           <div class="inline-actions">
-            <button type="button" class="btn ghost small" id="btnSwapRoute" title="Inverter origem e destino">⇄ Inverter</button>
+            <button type="button" class="btn ghost small" id="btnSwapRoute" title="Inverter">⇄ Inverter</button>
             <button type="button" class="btn primary small" id="btnCalcMaps">⚡ Calcular rota</button>
           </div>
         </div>
@@ -332,14 +407,14 @@
         <div class="span2 maps-status" id="modalMapsStatus"></div>
 
         <div class="span2 modal-key-box" id="modalKeyBox" hidden>
-          <div class="small">🔑 <strong>Configure sua Google Maps API Key</strong> para calcular km, duração e pedágios automaticamente:</div>
+          <div class="small">🔑 <strong>Configure sua Google Maps API Key</strong> para calcular distância, duração e pedágio automaticamente:</div>
           <div class="key-input-row">
             <input type="password" id="modalKeyInput" placeholder="Cole sua API Key / Demo Key">
             <button type="button" class="btn primary small" id="btnModalSaveKey">Salvar &amp; Calcular</button>
           </div>
           <div class="muted small">
-            <a href="https://mapsplatform.google.com/maps-demo-key?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Obter Demo Key gratuita</a> ·
-            <a id="modalMapsExternal" target="_blank" rel="noopener">Abrir este trecho no Google Maps ↗</a>
+            <a href="https://mapsplatform.google.com/maps-demo-key?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Obter Demo Key grátis</a> ·
+            <a id="modalMapsExternal" target="_blank" rel="noopener">Abrir rota no Google Maps ↗</a>
           </div>
         </div>
 
@@ -349,7 +424,7 @@
         <div class="field-box">
           <div class="lbl-row">
             <label for="f-stops">Paradas (qtd)</label>
-            <button type="button" class="link-btn" id="btnAutoStops" title="Aplicar regra padrão">↺ Auto</button>
+            <button type="button" class="link-btn" id="btnAutoStops">↺ Auto</button>
           </div>
           <input type="number" min="0" name="stops" id="f-stops">
         </div>
@@ -374,6 +449,31 @@
         <div class="span2 modal-map-wrap" id="modalMapWrap" hidden></div>
       </div>
 
+      <!-- ANEXOS / DOCUMENTOS -->
+      <div class="span2 attach-box">
+        <div class="route-head-row">
+          <span class="route-title">📎 Documentos &amp; Comprovantes</span>
+          <div class="inline-actions">
+            <button type="button" class="btn ghost small" id="btnAttachFile">📄 Anexar arquivo</button>
+            <button type="button" class="btn ghost small" id="btnAttachLink">🔗 Link</button>
+          </div>
+        </div>
+        <input type="file" id="f-attachInput" multiple accept=".pdf,image/*,.doc,.docx,.txt" hidden>
+        <div id="modalAttachList" class="attach-list"></div>
+      </div>
+
+      <!-- GOOGLE AGENDA -->
+      <div class="span2 cal-box">
+        <div class="route-head-row">
+          <span class="route-title">📅 Google Agenda <small class="muted">(lembrete dia anterior às <span id="calRemLabel">09:00</span>)</small></span>
+          <div class="inline-actions">
+            <button type="button" class="btn ghost small" id="btnCalDirect">Enviar p/ Google Agenda</button>
+            <a class="btn ghost small" id="btnCalLink" target="_blank" rel="noopener">Abrir no Agenda ↗</a>
+            <button type="button" class="btn ghost small" id="btnCalIcs">⬇️ .ics</button>
+          </div>
+        </div>
+      </div>
+
       <label class="span2">Observações<textarea name="notes" id="f-notes" rows="2"></textarea></label>
     </div>
 
@@ -387,34 +487,57 @@
   </form>
 </dialog>
 
-<dialog id="syncModal">
-  <form id="syncForm" method="dialog">
+<!-- MODAL CRIAR NOVA VIAGEM / FÉRIAS -->
+<dialog id="newTripModal">
+  <form id="newTripForm" method="dialog">
     <div class="modal-head">
-      <h2>☁️ Conectar Sincronização</h2>
-      <button type="button" class="icon-btn modal-close" id="btnCloseSyncModal" aria-label="Fechar">✕</button>
+      <h2>✈️ Criar Nova Viagem / Férias</h2>
+      <button type="button" class="icon-btn modal-close" id="btnCloseNewTrip" aria-label="Fechar">✕</button>
     </div>
-    <p class="muted small">Digite o código (PIN) configurado na sua VPS para sincronizar PC e celular automaticamente.</p>
     <div class="form-grid">
-      <label class="span2">PIN / Código de sincronização
-        <input type="password" id="syncModalInput" placeholder="Digite o código da VPS" autocomplete="current-password" required>
+      <label class="span2">Nome das férias / viagem
+        <input id="nt-name" required placeholder="Ex: Férias Julho 2027, Feriado Carnaval...">
+      </label>
+      <label class="span2" style="flex-direction:row;align-items:center;gap:10px;color:var(--text)">
+        <input type="checkbox" id="nt-copyVehicle" checked style="width:18px;height:18px">
+        <span>Manter parâmetros do meu carro atual neste novo planejamento</span>
       </label>
     </div>
     <div class="modal-actions">
       <span class="spacer"></span>
-      <button type="button" class="btn ghost" id="btnCancelSyncModal">Cancelar</button>
-      <button type="submit" class="btn primary">Conectar e Sincronizar</button>
+      <button type="button" class="btn ghost" id="btnCancelNewTrip">Cancelar</button>
+      <button type="submit" class="btn primary">Criar do zero</button>
     </div>
   </form>
+</dialog>
+
+<!-- MODAL COMPARTILHAR VIAGEM -->
+<dialog id="shareModal">
+  <div class="modal-head">
+    <h2>👥 Compartilhar Viagem</h2>
+    <button type="button" class="icon-btn modal-close" id="btnCloseShare" aria-label="Fechar">✕</button>
+  </div>
+  <p class="muted small">Insira o e-mail da pessoa. Quando ela entrar no Férias Pro, receberá o convite para aceitar e visualizar/editar junto com você.</p>
+  <form id="shareForm" class="key-input-row" style="margin-bottom:14px">
+    <input type="email" id="shareEmail" required placeholder="email@pessoa.com">
+    <select id="shareRole" style="background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:8px;color:var(--text)">
+      <option value="editor">Pode editar</option>
+      <option value="viewer">Só visualizar</option>
+    </select>
+    <button type="submit" class="btn primary small">Convidar</button>
+  </form>
+  <div id="shareList" class="share-list"></div>
 </dialog>
 
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=2"></script>
-<script src="data.js?v=2"></script>
-<script src="maps.js?v=2"></script>
-<script src="sync.js?v=2"></script>
-<script src="app.js?v=2"></script>
+<script src="config.example.js?v=4"></script>
+<script src="data.js?v=4"></script>
+<script src="maps.js?v=4"></script>
+<script src="calendar.js?v=4"></script>
+<script src="api.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

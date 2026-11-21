@@ -1,7 +1,8 @@
 /* ===== Férias Pro — Aplicação Principal ===== */
-const KEY = "ferias-pro-state-v1";
-const LEGACY_KEY = "ferias-planner-v1";
+const LEGACY_KEY_1 = "ferias-pro-state-v1";
+const LEGACY_KEY_2 = "ferias-planner-v1";
 const THEME_KEY = "ferias-pro-theme";
+const PWA_DISMISS_KEY = "ferias-pro-pwa-dismissed";
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -13,10 +14,22 @@ const MON = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out
 const MON_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 let ganttFilter = "";
-let ganttMode = "gantt"; // gantt | timeline
-let ganttZoom = window.innerWidth < 720 ? 38 : 46;
+let ganttMode = "gantt";
+let ganttZoom = window.innerWidth < 720 ? 50 : 48;
+let ganttSlimRail = window.innerWidth < 720;
 let checklistFilter = "";
-let state = load();
+
+let tripsCache = { ownTrips: [], sharedTrips: [], pendingShares: [] };
+let activeTrip = null; // { id, name, role, ownerName, ... }
+let state = migrateState(clone(window.DEFAULT_DATA));
+let authMode = "login";
+let deferredInstallPrompt = null;
+
+function getTypeInfo(type) {
+  return (window.ACTIVITY_TYPES && window.ACTIVITY_TYPES[type]) || {
+    id: type || "Outro", label: type || "Outro", short: type || "Outro", icon: "•", cls: "Outro", costLabel: "Custo (R$)"
+  };
+}
 
 function migrateState(raw) {
   const def = clone(window.DEFAULT_DATA);
@@ -26,65 +39,53 @@ function migrateState(raw) {
     vehicle: Object.assign({}, def.vehicle, s.vehicle || {}),
     params: Object.assign({}, def.params, s.params || {}),
     scenarios: Array.isArray(s.scenarios) && s.scenarios.length ? s.scenarios : def.scenarios,
-    activities: Array.isArray(s.activities) ? s.activities : def.activities,
-    checklist: Array.isArray(s.checklist) ? s.checklist : def.checklist
+    activities: Array.isArray(s.activities) ? s.activities : [],
+    checklist: Array.isArray(s.checklist) ? s.checklist : []
   };
   merged.activities.forEach(a => {
     if (!a.id) a.id = uid();
     if (!a.end) a.end = a.start;
     if (a.extraCost == null) a.extraCost = 0;
+    if (!Array.isArray(a.attachments)) a.attachments = [];
     if (a.type === "Viagem" && a.charges == null) a.charges = merged.params.defaultCharges ?? 1;
   });
   merged.checklist.forEach(c => { if (!c.id) c.id = uid(); });
   return merged;
 }
 
-function seed() {
-  return migrateState(clone(window.DEFAULT_DATA));
-}
-
-function load() {
-  try {
-    const raw = localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.activities)) return migrateState(parsed);
-    }
-  } catch {}
-  return seed();
-}
-
 function save(msg, skipRender = false) {
-  localStorage.setItem(KEY, JSON.stringify(state));
-  if (window.FeriasSync) {
-    window.FeriasSync.schedulePush(() => ({
-      stateObj: state,
-      gmapsKey: window.FeriasMaps ? window.FeriasMaps.getKey() : ""
+  if (activeTrip && activeTrip.role === "viewer") {
+    toast("👁️ Viagem compartilhada somente para visualização.");
+    return;
+  }
+  if (activeTrip) {
+    window.FeriasApi.schedulePush(activeTrip.id, () => ({
+      name: state.title || activeTrip.name,
+      data: state,
+      gmapsKey: window.FeriasMaps ? window.FeriasMaps.getKey() : "",
+      updatedAt: Date.now()
     }));
   }
   if (!skipRender) render();
   if (msg) toast(msg);
 }
 
-/* ---------- tema Dia / Noite ---------- */
+/* ---------- TEMA DIA / NOITE ---------- */
 function applyTheme(theme) {
   const t = theme === "light" ? "light" : "dark";
   document.documentElement.setAttribute("data-theme", t);
   localStorage.setItem(THEME_KEY, t);
-  const icon = $("#themeIcon");
-  const lbl = $("#themeLabel");
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", t === "dark" ? "#0b0f1a" : "#f1f5f9");
+  const icon = $("#themeIcon"), lbl = $("#themeLabel"), authBtn = $("#authThemeBtn");
   if (icon) icon.textContent = t === "dark" ? "☀️" : "🌙";
   if (lbl) lbl.textContent = t === "dark" ? "Dia" : "Noite";
+  if (authBtn) authBtn.textContent = t === "dark" ? "☀️" : "🌙";
 }
-function initTheme() {
-  const saved = localStorage.getItem(THEME_KEY);
-  applyTheme(saved === "light" ? "light" : "dark");
-}
-function isDarkTheme() {
-  return document.documentElement.getAttribute("data-theme") !== "light";
-}
+function isDarkTheme() { return document.documentElement.getAttribute("data-theme") !== "light"; }
+function initTheme() { applyTheme(localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark"); }
 
-/* ---------- utils ---------- */
+/* ---------- UTILS ---------- */
 const parseD = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
 const fmtISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fmtBR = s => s ? s.split("-").reverse().join("/") : "";
@@ -101,8 +102,16 @@ const parseHM = s => {
   return Math.round(parseFloat(s.replace(",", ".")) * 60) || 0;
 };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const label = a => a.type === "Viagem" && (a.from || a.to) ? `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})` : a.name;
+const label = a => (a.type === "Viagem" || a.type === "Voo") && (a.from || a.to) ? `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})` : a.name;
 const sorted = () => [...state.activities].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+
+function toast(m) {
+  const t = $("#toast");
+  t.textContent = m;
+  t.classList.add("show");
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove("show"), 2600);
+}
 
 function computeAutoStops(driveMinutes) {
   const intervalMin = Math.max(30, (Number(state.params.stopIntervalHours) || 4) * 60);
@@ -121,9 +130,7 @@ function calc(a, kmLOverride) {
 
   if (pt === "BEV") {
     r.ev = +a.km;
-    r.hev = 0;
-    const kwh = (r.ev / 100) * (v.bevKwhPer100 || 18);
-    r.charge = kwh * (v.kwhPrice || 0);
+    r.charge = ((r.ev / 100) * (v.bevKwhPer100 || 18)) * (v.kwhPrice || 0);
   } else if (pt === "PHEV") {
     r.ev = Math.min(+a.km, (v.evRange || 0) * ch);
     r.hev = Math.max(0, +a.km - r.ev);
@@ -131,12 +138,9 @@ function calc(a, kmLOverride) {
     r.fuel = r.liters * (v.fuelPrice || 0);
     r.charge = ch * (v.kwhPerCharge || 0) * (v.kwhPrice || 0);
   } else {
-    // HEV or COMBUSTION
-    r.ev = 0;
     r.hev = +a.km;
     r.liters = r.hev / (kmLOverride || v.hevKmL || 14);
     r.fuel = r.liters * (v.fuelPrice || 0);
-    r.charge = 0;
   }
 
   r.toll = +a.toll || 0;
@@ -151,8 +155,9 @@ function totals(kmLOverride) {
   const t = {
     km: 0, drive: 0, stopTime: 0, stops: 0, ev: 0, hev: 0, liters: 0,
     fuel: 0, charge: 0, toll: 0, total: 0, tanks: 0, trips: 0,
-    activitiesExtra: 0, lodgingCost: 0, foodCost: 0, contingencyCost: 0,
-    grandTotal: 0, totalDays: 0, periodDays: 0
+    flightsCost: 0, lodgingActCost: 0, otherActCost: 0, activitiesExtra: 0,
+    lodgingParamCost: 0, lodgingNights: 0, foodCost: 0, otherFixedBudget: 0,
+    contingencyCost: 0, grandTotal: 0, totalDays: 0
   };
 
   if (s.length) {
@@ -162,8 +167,12 @@ function totals(kmLOverride) {
   }
 
   state.activities.forEach(a => {
-    t.activitiesExtra += +a.extraCost || 0;
-    if (a.type === "Período") t.periodDays += days(a);
+    const ex = +a.extraCost || 0;
+    t.activitiesExtra += ex;
+    if (a.type === "Voo") t.flightsCost += ex;
+    else if (a.type === "Hospedagem") t.lodgingActCost += ex;
+    else t.otherActCost += ex;
+
     if (a.type === "Viagem") {
       const c = calc(a, kmLOverride);
       t.trips++;
@@ -176,23 +185,40 @@ function totals(kmLOverride) {
   });
 
   const p = state.params;
-  t.lodgingCost = t.periodDays * (+p.dailyLodging || 0);
+  // Hospedagem flexível por todas as noites das férias (ou número personalizado), NÃO atrelada a "Período"
+  const autoNights = Math.max(0, t.totalDays - 1);
+  t.lodgingNights = p.lodgingNightsOverride != null && p.lodgingNightsOverride !== "" && Number(p.lodgingNightsOverride) >= 0
+    ? Number(p.lodgingNightsOverride)
+    : autoNights;
+  t.lodgingParamCost = t.lodgingNights * (+p.lodgingPerNight || 0);
   t.foodCost = t.totalDays * Math.max(1, +p.travelers || 1) * (+p.dailyFoodPerPerson || 0);
-  const sub = t.total + t.activitiesExtra + t.lodgingCost + t.foodCost;
+  t.otherFixedBudget = +p.otherFixedBudget || 0;
+
+  const sub = t.total + t.activitiesExtra + t.lodgingParamCost + t.foodCost + t.otherFixedBudget;
   t.contingencyCost = sub * ((+p.contingencyPct || 0) / 100);
   t.grandTotal = sub + t.contingencyCost;
   return t;
 }
 
-function toast(m) {
-  const t = $("#toast");
-  t.textContent = m;
-  t.classList.add("show");
-  clearTimeout(t._t);
-  t._t = setTimeout(() => t.classList.remove("show"), 2600);
+/* ---------- POPULATE TYPE SELECTORS ---------- */
+function populateTypeSelectors() {
+  const types = Object.values(window.ACTIVITY_TYPES);
+  const fType = $("#f-type");
+  if (fType) fType.innerHTML = types.map(t => `<option value="${t.id}">${t.label}</option>`).join("");
+
+  const optsAll = `<option value="">Todos os tipos</option>` + types.map(t => `<option value="${t.id}">${t.short}</option>`).join("");
+  if ($("#ganttTypeFilter")) {
+    $("#ganttTypeFilter").innerHTML = optsAll;
+    $("#ganttTypeFilter").value = ganttFilter;
+  }
+  if ($("#filterType")) {
+    const cur = $("#filterType").value;
+    $("#filterType").innerHTML = optsAll;
+    $("#filterType").value = cur;
+  }
 }
 
-/* ---------- render geral ---------- */
+/* ---------- RENDER ---------- */
 function render() {
   const s = sorted();
   const t = totals();
@@ -200,42 +226,45 @@ function render() {
   renderTimeline(s);
   renderDashboard(s, t);
   renderTable(s, t);
-  renderParams(t);
+  renderParams();
   renderChecklist();
 }
 
-/* ---------- GANTT REDESIGNED ---------- */
 function buildRightSummaryHTML(a) {
+  const info = getTypeInfo(a.type);
+  const attCount = Array.isArray(a.attachments) ? a.attachments.length : 0;
+  const attBadge = attCount ? `<span class="g-summary-meta">📎 ${attCount}</span>` : "";
+
   if (a.type === "Viagem") {
     const c = calc(a);
     const routeTxt = (a.from || a.to) ? `${esc(a.from || "?")} ➔ ${esc(a.to || "?")}` : "";
     const parts = [];
     if (a.km) parts.push(`${num(a.km)} km`);
-    if (a.drive) parts.push(hmHuman(a.drive) + (a.stopTime ? ` + ${hmHuman(a.stopTime)} par.` : ""));
+    if (a.drive) parts.push(hmHuman(a.drive) + (a.stopTime ? ` + ${hmHuman(a.stopTime)}` : ""));
     if (a.toll) parts.push(`Ped. ${money(a.toll)}`);
     return `
-      <div class="g-summary Viagem" data-id="${a.id}" title="Clique para editar ${esc(label(a))}">
+      <div class="g-summary ${info.cls}" data-id="${a.id}">
         <span class="g-summary-title">${esc(a.name)}</span>
         ${routeTxt ? `<span class="g-summary-meta">${routeTxt}</span>` : ""}
         ${parts.length ? `<span class="g-summary-badge">${parts.join(" · ")}</span>` : ""}
-        <span class="g-summary-meta">${money(c.total)}</span>
+        <span class="g-summary-meta">${money(c.total + c.extra)}</span>
+        ${attBadge}
       </div>`;
   }
-  if (a.type === "Período") {
-    const d = days(a);
-    const sub = a.notes ? esc(a.notes) : `${fmtShortBR(a.start)} a ${fmtShortBR(a.end || a.start)}`;
-    return `
-      <div class="g-summary Período" data-id="${a.id}" title="Clique para editar ${esc(a.name)}">
-        <span class="g-summary-title">${esc(a.name)}</span>
-        <span class="g-summary-badge">${d} dia${d > 1 ? "s" : ""}</span>
-        <span class="g-summary-meta">${sub}</span>
-      </div>`;
-  }
+
+  const d = days(a);
+  const metaParts = [];
+  if (a.from || a.to) metaParts.push(`${a.from || "?"} ➔ ${a.to || "?"}`);
+  if (a.extraCost > 0) metaParts.push(money(a.extraCost));
+  if (a.notes) metaParts.push(a.notes);
+  const badgeTxt = d > 1 ? `${d} dias` : fmtShortBR(a.start);
+
   return `
-    <div class="g-summary Evento" data-id="${a.id}" title="Clique para editar ${esc(a.name)}">
+    <div class="g-summary ${info.cls}" data-id="${a.id}">
       <span class="g-summary-title">${esc(a.name)}</span>
-      <span class="g-summary-badge">${fmtShortBR(a.start)}</span>
-      ${a.notes ? `<span class="g-summary-meta">${esc(a.notes)}</span>` : ""}
+      <span class="g-summary-badge">${badgeTxt}</span>
+      ${metaParts.length ? `<span class="g-summary-meta">${esc(metaParts.join(" · "))}</span>` : ""}
+      ${attBadge}
     </div>`;
 }
 
@@ -246,22 +275,37 @@ function renderGantt(allSorted) {
   const planTitle = $("#ganttPlanTitle");
   if (planTitle) planTitle.textContent = state.title || "Cronograma";
 
+  const roleBadge = $("#tripRoleBadge");
+  if (roleBadge) {
+    if (activeTrip && activeTrip.role !== "owner") {
+      roleBadge.textContent = `Compartilhada (${activeTrip.ownerName || "outro usuário"})`;
+      roleBadge.hidden = false;
+    } else {
+      roleBadge.hidden = true;
+    }
+  }
+
   wrap.hidden = ganttMode !== "gantt";
   tlWrap.hidden = ganttMode !== "timeline";
   if (ganttMode !== "gantt") return;
 
   const s = ganttFilter ? allSorted.filter(a => a.type === ganttFilter) : allSorted;
+  g.classList.toggle("slim-rail", ganttSlimRail);
+
   if (!s.length) {
     g.style.gridTemplateColumns = "1fr";
-    g.innerHTML = `<p class="muted" style="padding:24px">Nenhuma atividade encontrada para o filtro atual.</p>`;
+    g.innerHTML = `<div style="padding:28px;text-align:center">
+      <p class="muted">Nenhuma atividade cadastrada ainda nesta viagem.</p>
+      <button type="button" class="btn primary" onclick="openModal()">➕ Adicionar primeira atividade</button>
+    </div>`;
     return;
   }
 
   const DW = ganttZoom;
-  const nameW = window.innerWidth < 720 ? 148 : 265;
+  const nameW = ganttSlimRail ? 48 : (window.innerWidth < 720 ? 156 : 260);
   const minTs = parseD(s[0].start).getTime() - 2 * DAY;
   const maxS = s.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, s[0].start);
-  const trailingDays = window.innerWidth < 720 ? 9 : 14; // espaço para resumo à direita sem cortar
+  const trailingDays = window.innerWidth < 720 ? 10 : 14;
   const n = Math.round((parseD(maxS) - minTs) / DAY) + trailingDays;
   const todayISO = fmtISO(new Date());
 
@@ -274,7 +318,6 @@ function renderGantt(allSorted) {
     dates.push(d);
   }
 
-  // Agrupamento de meses para cabeçalho superior
   const monthSpans = [];
   dates.forEach((d, idx) => {
     const key = `${d.getFullYear()}-${d.getMonth()}`;
@@ -283,7 +326,7 @@ function renderGantt(allSorted) {
     else monthSpans.push({ key, label: `${MON_FULL[d.getMonth()]} ${d.getFullYear()}`, startCol: idx + 2, span: 1 });
   });
 
-  let h = `<div class="g-corner">Atividade</div>`;
+  let h = `<div class="g-corner">${ganttSlimRail ? "Tipo" : "Atividade"}</div>`;
 
   monthSpans.forEach(ms => {
     h += `<div class="g-month-head" style="grid-column:${ms.startCol} / span ${ms.span};grid-row:1">${ms.label}</div>`;
@@ -298,16 +341,16 @@ function renderGantt(allSorted) {
     </div>`;
   });
 
-  const typeIcon = { Viagem: "▶", Evento: "★", "Período": "■" };
   s.forEach((a, rowIdx) => {
+    const info = getTypeInfo(a.type);
     const row = rowIdx + 3;
     const altCls = rowIdx % 2 ? "alt" : "";
-    const subLeft = a.type === "Viagem" && (a.from || a.to)
+    const subLeft = (a.type === "Viagem" || a.type === "Voo") && (a.from || a.to)
       ? `${a.from || "?"} ➔ ${a.to || "?"}`
       : `${fmtShortBR(a.start)}${days(a) > 1 ? ` · ${days(a)}d` : ""}`;
 
     h += `<div class="g-name ${altCls}" style="grid-column:1;grid-row:${row}" data-id="${a.id}" title="${esc(label(a))}">
-      <span class="g-type-dot ${a.type}">${typeIcon[a.type] || "•"}</span>
+      <span class="g-type-dot ${info.cls}">${info.icon}</span>
       <div class="g-name-txt">
         <div class="g-name-title">${esc(a.name)}</div>
         <div class="g-name-sub">${esc(subLeft)}</div>
@@ -323,16 +366,13 @@ function renderGantt(allSorted) {
       const isToday = fmtISO(d) === todayISO;
       let inner = "";
       if (i === off) {
-        const barW = Math.max(24, len * DW - 6);
-        const insideTxt = a.type === "Viagem"
-          ? (len > 1 ? `▶ ${num(a.km)} km` : "▶")
-          : a.type === "Período"
-            ? `${len} dia${len > 1 ? "s" : ""}`
-            : (len > 1 ? `★ ${len}d` : "★");
-        const resizeHandle = a.type === "Período" || len > 1 ? `<span class="g-resize" data-resize="${a.id}" title="Arraste para alterar duração"></span>` : "";
+        const barW = Math.max(28, len * DW - 6);
+        const insideTxt = len > 1 ? `${info.icon} ${len}d` : info.icon;
+        const resizeHandle = len > 1 || a.type === "Período" || a.type === "Hospedagem"
+          ? `<span class="g-resize" data-resize="${a.id}" title="Arraste para alterar duração"></span>` : "";
         inner = `
           <div class="g-event-wrap" style="left:3px">
-            <div class="g-bar ${a.type} ${len === 1 ? "single-day" : ""}" data-id="${a.id}" style="width:${barW}px">
+            <div class="g-bar ${info.cls} ${len === 1 ? "single-day" : ""}" data-id="${a.id}" style="width:${barW}px">
               <span>${insideTxt}</span>${resizeHandle}
             </div>
             ${buildRightSummaryHTML(a)}
@@ -353,7 +393,6 @@ function renderGantt(allSorted) {
 function bindDrag(bar) {
   bar.onpointerdown = e => {
     if (e.target.closest("[data-resize]")) return;
-    // Em touch, clique simples abre modal sem arrastar acidentalmente durante scroll
     if (e.pointerType === "touch") {
       const x0 = e.clientX, y0 = e.clientY;
       bar.onpointerup = ev => {
@@ -416,7 +455,7 @@ function bindResize(handle) {
     handle.onpointermove = ev => {
       dd = Math.round((ev.clientX - x0) / DW);
       const newLen = Math.max(1, origLen + dd);
-      bar.style.width = `${Math.max(24, newLen * DW - 6)}px`;
+      bar.style.width = `${Math.max(28, newLen * DW - 6)}px`;
     };
     handle.onpointerup = () => {
       handle.onpointermove = handle.onpointerup = null;
@@ -437,18 +476,20 @@ function renderTimeline(allSorted) {
     return;
   }
   tl.innerHTML = s.map(a => {
+    const info = getTypeInfo(a.type);
     const d = parseD(a.start);
     const c = calc(a);
+    const attCount = Array.isArray(a.attachments) ? a.attachments.length : 0;
     const meta = a.type === "Viagem"
-      ? `${a.from || "?"} ➔ ${a.to || "?"} · ${num(a.km)} km · ${hmHuman(a.drive)}${a.stopTime ? ` (+${hmHuman(a.stopTime)} par.)` : ""} · Ped. ${money(a.toll)} · Total ${money(c.total)}`
-      : `${days(a)} dia(s)${a.notes ? ` · ${a.notes}` : ""}`;
+      ? `${a.from || "?"} ➔ ${a.to || "?"} · ${num(a.km)} km · ${hmHuman(a.drive)}${a.stopTime ? ` (+${hmHuman(a.stopTime)} par.)` : ""} · Ped. ${money(a.toll)} · Total ${money(c.total + c.extra)}`
+      : `${days(a)} dia(s)${a.extraCost ? ` · ${money(a.extraCost)}` : ""}${a.notes ? ` · ${a.notes}` : ""}`;
     return `
-      <div class="tl-item ${a.type}" data-id="${a.id}">
+      <div class="tl-item ${info.cls}" data-id="${a.id}">
         <div class="date-badge"><b>${d.getDate()}</b>${MON[d.getMonth()]}</div>
         <div class="tl-body">
           <div class="tl-top">
-            <span class="tl-title">${esc(a.name)}</span>
-            <span class="chip ${a.type}">${a.type}</span>
+            <span class="tl-title">${info.icon} ${esc(a.name)} ${attCount ? `<small class="muted">📎 ${attCount}</small>` : ""}</span>
+            <span class="chip ${info.cls}">${esc(info.short)}</span>
           </div>
           <div class="tl-meta">${WD[d.getDay()]} · ${fmtBR(a.start)}${days(a) > 1 ? ` até ${fmtBR(a.end)}` : ""}</div>
           <div class="tl-meta">${esc(meta)}</div>
@@ -465,14 +506,14 @@ function renderDashboard(s, t) {
   const doneChk = state.checklist.filter(c => c.status === "Concluído").length;
 
   const k = [
-    ["Distância total", `${num(t.km)} km`, `${t.trips} trechos ativos`, "var(--trip)"],
+    ["Distância total", `${num(t.km)} km`, `${t.trips} trechos de carro`, "var(--trip)"],
     ["Tempo na estrada", hmHuman(t.drive + t.stopTime), `Direção ${hmHuman(t.drive)} + ${t.stops} par. (${hmHuman(t.stopTime)})`, "var(--accent)"],
     ["Combustível estimado", `${num(t.liters, 1)} L`, `${num(t.tanks, 1)} tanques (${state.vehicle.tank} L)`, "var(--event)"],
     ["Custo combustível", money(t.fuel), avg ? `Média geral ${num(avg, 1)} km/L` : "Modo elétrico", "#fb7185"],
     ["Pedágios + recargas EV", money(t.toll + t.charge), `Ped. ${money(t.toll)} + EV ${money(t.charge)}`, "var(--period)"],
-    ["Custo deslocamento", money(t.total), "Combustível + pedágios + EV", "var(--ok)"],
+    ["Deslocamento carro", money(t.total), "Combustível + pedágios + EV", "var(--ok)"],
     ["Total geral das férias", money(t.grandTotal), `${num(state.params.travelers || 1)} viajante(s) · ${money(perPerson)}/pessoa`, "#06b6d4"],
-    ["Checklist preparação", `${doneChk}/${state.checklist.length}`, `${state.checklist.length ? Math.round(doneChk / state.checklist.length * 100) : 0}% concluído`, "#f59e0b"]
+    ["Checklist", `${doneChk}/${state.checklist.length}`, `${state.checklist.length ? Math.round(doneChk / state.checklist.length * 100) : 0}% concluído`, "#f59e0b"]
   ];
 
   $("#kpis").innerHTML = k.map(([l, v, sub, c]) =>
@@ -483,50 +524,51 @@ function renderDashboard(s, t) {
   let up = s.filter(a => (a.end || a.start) >= today);
   if (!up.length) up = s;
   $("#upcoming").innerHTML = up.slice(0, 12).map(a => {
+    const info = getTypeInfo(a.type);
     const d = parseD(a.start);
     const diff = Math.round((d - parseD(today)) / DAY);
     const sub = a.type === "Viagem"
       ? `${num(a.km)} km · ${hmHuman(calc(a).time)} · ${money(calc(a).total)}`
-      : `${days(a)} dia(s)${a.notes ? ` · ${a.notes}` : ""}`;
+      : `${days(a)} dia(s)${a.extraCost ? ` · ${money(a.extraCost)}` : ""}${a.notes ? ` · ${a.notes}` : ""}`;
     return `<li data-id="${a.id}">
       <div class="date-badge"><b>${d.getDate()}</b>${MON[d.getMonth()]}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label(a))}</div>
         <div class="muted small">${WD[d.getDay()]} · ${esc(sub)}${diff >= 0 ? ` · em ${diff}d` : ""}</div>
       </div>
-      <span class="chip ${a.type}">${a.type}</span>
+      <span class="chip ${info.cls}">${esc(info.short)}</span>
     </li>`;
   }).join("") || `<li class="muted">Sem atividades</li>`;
   $("#upcoming").querySelectorAll("li[data-id]").forEach(li => li.onclick = () => openModal(li.dataset.id));
 
+  const lodgingAll = t.lodgingParamCost + t.lodgingActCost;
+  const foodAndFixed = t.foodCost + t.otherFixedBudget + t.contingencyCost;
   const parts = [
     ["Gasolina / Combustível", t.fuel, "linear-gradient(90deg,#fb7185,#f5b544)"],
     ["Pedágios", t.toll, "linear-gradient(90deg,#a78bfa,#7c5cff)"],
     ["Recargas EV", t.charge, "linear-gradient(90deg,#34d399,#22d3ee)"]
   ];
-  const extrasTotal = t.activitiesExtra + t.lodgingCost + t.foodCost + t.contingencyCost;
-  if (extrasTotal > 0) parts.push(["Hospedagem, alimentação & extras", extrasTotal, "linear-gradient(90deg,#38bdf8,#6366f1)"]);
-  const denom = extrasTotal > 0 ? t.grandTotal : t.total;
+  if (t.flightsCost > 0) parts.push(["Passagens Aéreas / Voos", t.flightsCost, "linear-gradient(90deg,#38bdf8,#0284c7)"]);
+  if (lodgingAll > 0) parts.push(["Hospedagem", lodgingAll, "linear-gradient(90deg,#10b981,#0d9488)"]);
+  if (t.otherActCost > 0) parts.push(["Ingressos, Parques, Jogos & Extras", t.otherActCost, "linear-gradient(90deg,#f472b6,#9333ea)"]);
+  if (foodAndFixed > 0) parts.push(["Alimentação, Fixos & Reserva", foodAndFixed, "linear-gradient(90deg,#fb923c,#ef4444)"]);
 
+  const denom = t.grandTotal || t.total || 1;
   $("#costBars").innerHTML = parts.map(([n, v, g]) => `
     <div class="bar-row">
-      <div class="top"><span>${n}</span><span><b>${money(v)}</b> · ${denom ? num(v / denom * 100) : 0}%</span></div>
-      <div class="bar"><div style="width:${denom ? (v / denom * 100) : 0}%;background:${g}"></div></div>
+      <div class="top"><span>${n}</span><span><b>${money(v)}</b> · ${t.grandTotal ? num(v / denom * 100) : 0}%</span></div>
+      <div class="bar"><div style="width:${t.grandTotal ? (v / denom * 100) : 0}%;background:${g}"></div></div>
     </div>`).join("");
 
   const extraBox = $("#extraBudgetSummary");
-  if (extrasTotal > 0) {
-    const lines = [];
-    if (t.lodgingCost > 0) lines.push(`<div>Hospedagem (${t.periodDays}d): <b>${money(t.lodgingCost)}</b></div>`);
-    if (t.foodCost > 0) lines.push(`<div>Alimentação (${t.totalDays}d × ${state.params.travelers}p): <b>${money(t.foodCost)}</b></div>`);
-    if (t.activitiesExtra > 0) lines.push(`<div>Extras nas atividades: <b>${money(t.activitiesExtra)}</b></div>`);
-    if (t.contingencyCost > 0) lines.push(`<div>Reserva (${state.params.contingencyPct}%): <b>${money(t.contingencyCost)}</b></div>`);
-    extraBox.innerHTML = lines.join("");
-    extraBox.hidden = false;
-  } else {
-    extraBox.innerHTML = "";
-    extraBox.hidden = true;
-  }
+  const lines = [];
+  if (t.lodgingParamCost > 0) lines.push(`<div>Hospedagem por diária (${t.lodgingNights} noites): <b>${money(t.lodgingParamCost)}</b></div>`);
+  if (t.lodgingActCost > 0) lines.push(`<div>Hospedagens lançadas no cronograma: <b>${money(t.lodgingActCost)}</b></div>`);
+  if (t.foodCost > 0) lines.push(`<div>Alimentação (${t.totalDays}d × ${state.params.travelers}p): <b>${money(t.foodCost)}</b></div>`);
+  if (t.otherFixedBudget > 0) lines.push(`<div>Outros gastos fixos: <b>${money(t.otherFixedBudget)}</b></div>`);
+  if (t.contingencyCost > 0) lines.push(`<div>Margem reserva (${state.params.contingencyPct}%): <b>${money(t.contingencyCost)}</b></div>`);
+  extraBox.innerHTML = lines.join("");
+  extraBox.hidden = lines.length === 0;
 
   const trips = s.filter(a => a.type === "Viagem");
   const mx = Math.max(1, ...trips.map(a => +a.km || 0));
@@ -537,7 +579,7 @@ function renderDashboard(s, t) {
         <span>${num(a.km)} km · ${hmHuman(calc(a).time)} · <b>${money(calc(a).total)}</b></span>
       </div>
       <div class="bar"><div style="width:${(+a.km || 0) / mx * 100}%;background:linear-gradient(90deg,#06b6d4,#6366f1)"></div></div>
-    </div>`).join("") || `<p class="muted">Nenhuma viagem cadastrada.</p>`;
+    </div>`).join("") || `<p class="muted">Nenhuma viagem de carro cadastrada.</p>`;
   $("#tripBars").querySelectorAll(".bar-row[data-id]").forEach(row => row.onclick = () => openModal(row.dataset.id));
 
   const ml = $("#mapsLink");
@@ -553,10 +595,10 @@ function renderDashboard(s, t) {
   const btnMap = $("#btnRenderFullMap");
   const hint = $("#dashboardMapHint");
   if (!window.FeriasMaps.hasKey()) {
-    hint.innerHTML = `Configure sua Google Maps API Key na aba <b>Parâmetros</b> para visualizar a rota interativa completa com pedágios e trechos aqui.`;
+    hint.innerHTML = `Configure sua Google Maps API Key na aba <b>Parâmetros</b> para desenhar o trajeto interativo completo aqui.`;
     btnMap.disabled = true;
   } else {
-    hint.textContent = "Clique em 'Carregar mapa completo' para desenhar todos os trechos conectados no mapa interativo.";
+    hint.textContent = "Clique em 'Carregar mapa completo' para visualizar todos os trechos conectados.";
     btnMap.disabled = false;
   }
 }
@@ -566,23 +608,25 @@ function renderTable(s, t) {
   const q = ($("#search").value || "").toLowerCase();
   const ft = $("#filterType").value;
   const rows = s.filter(a => (!ft || a.type === ft) && (!q || (label(a) + " " + (a.notes || "")).toLowerCase().includes(q)));
+  const allTypes = Object.keys(window.ACTIVITY_TYPES);
 
   const ed = (a, f, type = "text", cls = "") =>
     `<td class="ed ${cls}"><input data-id="${a.id}" data-f="${f}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(f === "drive" || f === "stopTime" ? (a.type === "Viagem" ? hm(a[f]) : "") : a[f] ?? "")}"></td>`;
   const typeSel = a =>
-    `<td class="ed"><select data-id="${a.id}" data-f="type">${["Viagem", "Evento", "Período"].map(o => `<option ${o === a.type ? "selected" : ""}>${o}</option>`).join("")}</select></td>`;
+    `<td class="ed"><select data-id="${a.id}" data-f="type">${allTypes.map(o => `<option ${o === a.type ? "selected" : ""}>${o}</option>`).join("")}</select></td>`;
 
   let h = `<thead><tr>
     <th>#</th><th>Tipo</th><th>Início</th><th>Fim</th><th>Dia</th><th>Atividade</th>
     <th>Origem</th><th>Destino</th><th>Dias</th><th>Km</th><th>Direção</th><th>Paradas</th>
     <th>T. Paradas</th><th>Tempo Total</th><th>Recargas</th><th>Km EV</th><th>Km HEV</th>
-    <th>Gas. (L)</th><th>Custo Gas.</th><th>Custo EV</th><th>Pedágio</th><th>Extras</th>
-    <th>Custo Viagem</th><th>Tanques</th><th>Observações</th><th>Ações</th>
+    <th>Gas. (L)</th><th>Custo Gas.</th><th>Custo EV</th><th>Pedágio</th><th>Extras / Custo</th>
+    <th>Total Item</th><th>Tanques</th><th>Observações</th><th>Ações</th>
   </tr></thead><tbody>`;
 
   rows.forEach((a, i) => {
     const c = calc(a);
     const v = a.type === "Viagem";
+    const routeCols = (v || a.type === "Voo");
     h += `<tr>
       <td>${i + 1}</td>
       ${typeSel(a)}
@@ -590,7 +634,7 @@ function renderTable(s, t) {
       ${ed(a, "end", "date")}
       <td>${WD[parseD(a.start).getDay()]}</td>
       ${ed(a, "name", "text", "wide")}
-      ${v ? ed(a, "from") + ed(a, "to") : "<td></td><td></td>"}
+      ${routeCols ? ed(a, "from") + ed(a, "to") : "<td></td><td></td>"}
       <td class="num">${days(a)}</td>
       ${v ? ed(a, "km", "number") + ed(a, "drive") + ed(a, "stops", "number") + ed(a, "stopTime") : "<td></td><td></td><td></td><td></td>"}
       <td class="num">${v ? hm(c.time) : ""}</td>
@@ -602,7 +646,7 @@ function renderTable(s, t) {
       <td class="num">${v ? money(c.charge) : ""}</td>
       ${v ? ed(a, "toll", "number") : "<td></td>"}
       ${ed(a, "extraCost", "number")}
-      <td class="num"><b>${v ? money(c.total) : money(c.extra)}</b></td>
+      <td class="num"><b>${money(c.total + c.extra)}</b></td>
       <td class="num">${v ? num(c.tanks, 2) : ""}</td>
       ${ed(a, "notes", "text", "wide")}
       <td>
@@ -614,7 +658,7 @@ function renderTable(s, t) {
   });
 
   h += `</tbody><tfoot><tr>
-    <td colspan="9">TOTAL (${t.trips} viagens)</td>
+    <td colspan="9">TOTAL (${t.trips} viagens de carro)</td>
     <td class="num">${num(t.km)}</td>
     <td class="num">${hm(t.drive)}</td>
     <td class="num">${t.stops}</td>
@@ -628,7 +672,7 @@ function renderTable(s, t) {
     <td class="num">${money(t.charge)}</td>
     <td class="num">${money(t.toll)}</td>
     <td class="num">${money(t.activitiesExtra)}</td>
-    <td class="num">${money(t.total)}</td>
+    <td class="num">${money(t.total + t.activitiesExtra)}</td>
     <td class="num">${num(t.tanks, 2)}</td>
     <td colspan="2">${t.liters ? `Média ${num(t.km / t.liters, 1)} km/L` : ""}</td>
   </tr></tfoot>`;
@@ -644,11 +688,9 @@ function renderTable(s, t) {
       if (f === "drive" || f === "stopTime") val = parseHM(val);
       else if (el.type === "number") val = val === "" ? 0 : parseFloat(val);
       a[f] = val;
-
       if (f === "start" && (!a.end || a.end < a.start)) a.end = a.start;
       if (f === "end" && a.end < a.start) a.start = a.end;
       if (f === "type" && val === "Viagem" && a.charges == null) a.charges = state.params.defaultCharges ?? 1;
-      // Regra automática de paradas ao editar direção na tabela
       if (f === "drive" && a.type === "Viagem") {
         const auto = computeAutoStops(val);
         a.stops = auto.stops;
@@ -662,15 +704,15 @@ function renderTable(s, t) {
   tb.querySelectorAll("[data-del]").forEach(b => { b.onclick = () => delActivity(b.dataset.del); });
   tb.querySelectorAll("[data-gmaps]").forEach(b => { b.onclick = () => recalcSingleTripById(b.dataset.gmaps); });
 
-  // Cards mobile responsivos
   const mc = $("#mobileTableCards");
   mc.innerHTML = rows.map(a => {
+    const info = getTypeInfo(a.type);
     const c = calc(a);
     const v = a.type === "Viagem";
     return `<div class="m-card" data-id="${a.id}">
       <div class="m-card-head">
-        <strong>${esc(label(a))}</strong>
-        <span class="chip ${a.type}">${a.type}</span>
+        <strong>${info.icon} ${esc(label(a))}</strong>
+        <span class="chip ${info.cls}">${esc(info.short)}</span>
       </div>
       <div class="m-card-grid">
         <div><span class="muted">Data:</span> ${fmtBR(a.start)}${days(a) > 1 ? ` - ${fmtShortBR(a.end)}` : ""}</div>
@@ -679,9 +721,9 @@ function renderTable(s, t) {
           <div><span class="muted">Distância:</span> <b>${num(a.km)} km</b></div>
           <div><span class="muted">Tempo:</span> ${hmHuman(a.drive)} + ${hmHuman(a.stopTime)} (${a.stops}p)</div>
           <div><span class="muted">Pedágio:</span> ${money(a.toll)}</div>
-          <div><span class="muted">Total:</span> <b>${money(c.total)}</b></div>
+          <div><span class="muted">Total:</span> <b>${money(c.total + c.extra)}</b></div>
         ` : `
-          <div><span class="muted">Extras:</span> ${money(c.extra)}</div>
+          <div><span class="muted">Custo:</span> <b>${money(c.extra)}</b></div>
           <div><span class="muted">Notas:</span> ${esc(a.notes || "-")}</div>
         `}
       </div>
@@ -699,28 +741,26 @@ function renderTable(s, t) {
 
 /* ---------- PARÂMETROS & CENÁRIOS ---------- */
 const VEHICLE_PARAM_DEFS = [
-  ["evRange", "Autonomia elétrica útil (por carga)", "km", "evRange"],
-  ["hevKmL", "Consumo médio rodoviário (HEV/Gas.)", "km/L", "hevKmL"],
-  ["bevKwhPer100", "Consumo elétrico (se 100% BEV)", "kWh/100km", "bevKwhPer100"],
-  ["tank", "Capacidade do tanque", "litros", "tank"],
-  ["battery", "Capacidade nominal da bateria", "kWh", "battery"],
-  ["kwhPerCharge", "Energia útil por recarga (20–100%)", "kWh", "kwhPerCharge"]
+  ["evRange", "Autonomia elétrica útil (por carga)", "km"],
+  ["hevKmL", "Consumo médio rodoviário (HEV/Gas.)", "km/L"],
+  ["bevKwhPer100", "Consumo elétrico (se 100% BEV)", "kWh/100km"],
+  ["tank", "Capacidade do tanque", "litros"],
+  ["battery", "Capacidade nominal da bateria", "kWh"],
+  ["kwhPerCharge", "Energia útil por recarga (20–100%)", "kWh"]
 ];
 
 const COST_PARAM_DEFS = [
   { group: "vehicle", key: "fuelPrice", label: "Preço médio da gasolina", unit: "R$ / litro", type: "number" },
   { group: "vehicle", key: "kwhPrice", label: "Tarifa média de energia elétrica", unit: "R$ / kWh", type: "number" },
   { group: "params", key: "tollPass", label: "Tag de pedágio (Google Maps)", unit: "passe", type: "select", options: [
-    ["BR_SEM_PARAR", "Sem Parar"],
-    ["BR_VELOE", "Veloe"],
-    ["BR_CONECTCAR", "ConectCar"],
-    ["BR_TAGGY", "Taggy"],
-    ["BR_MOVE_MAIS", "Move Mais"],
-    ["", "Dinheiro / Sem Tag"]
+    ["BR_SEM_PARAR", "Sem Parar"], ["BR_VELOE", "Veloe"], ["BR_CONECTCAR", "ConectCar"],
+    ["BR_TAGGY", "Taggy"], ["BR_MOVE_MAIS", "Move Mais"], ["", "Dinheiro / Sem Tag"]
   ]},
   { group: "params", key: "travelers", label: "Número de viajantes", unit: "pessoas", type: "number" },
-  { group: "params", key: "dailyLodging", label: "Hospedagem estimada (dias de período)", unit: "R$ / dia", type: "number" },
+  { group: "params", key: "lodgingPerNight", label: "Hospedagem média por noite (férias)", unit: "R$ / noite", type: "number" },
+  { group: "params", key: "lodgingNightsOverride", label: "Qtd. de noites (vazio = duração das férias)", unit: "noites (opcional)", type: "number", allowEmpty: true },
   { group: "params", key: "dailyFoodPerPerson", label: "Alimentação estimada por pessoa", unit: "R$ / dia", type: "number" },
+  { group: "params", key: "otherFixedBudget", label: "Outros gastos fixos avulsos", unit: "R$ (extras)", type: "number" },
   { group: "params", key: "contingencyPct", label: "Margem para imprevistos", unit: "%", type: "number" }
 ];
 
@@ -728,6 +768,7 @@ const AUTO_PARAM_DEFS = [
   { key: "stopIntervalHours", label: "Intervalo padrão para paradas", unit: "horas (padrão 4h)", type: "number" },
   { key: "stopDurationMin", label: "Duração padrão de cada parada", unit: "min (padrão 60m = 1h)", type: "number" },
   { key: "defaultCharges", label: "Recargas EV padrão por viagem", unit: "qtd", type: "number" },
+  { key: "calendarReminderTime", label: "Lembrete Google Agenda (dia anterior)", unit: "horário (09:00)", type: "time" },
   { key: "trafficAware", label: "Considerar trânsito ao vivo no Maps", unit: "TRAFFIC_AWARE", type: "checkbox" },
   { key: "avoidTolls", label: "Evitar pedágios quando possível", unit: "rota alternativa", type: "checkbox" },
   { key: "avoidHighways", label: "Evitar rodovias", unit: "rota local", type: "checkbox" },
@@ -735,9 +776,7 @@ const AUTO_PARAM_DEFS = [
 ];
 
 function renderParams() {
-  const ptEl = $("#p-planTitle");
-  const vnEl = $("#p-vehicleName");
-  const pwEl = $("#p-powertrain");
+  const ptEl = $("#p-planTitle"), vnEl = $("#p-vehicleName"), pwEl = $("#p-powertrain");
   if (document.activeElement !== ptEl) ptEl.value = state.title || "";
   if (document.activeElement !== vnEl) vnEl.value = state.vehicle.name || "";
   if (document.activeElement !== pwEl) pwEl.value = state.vehicle.powertrain || "PHEV";
@@ -758,7 +797,7 @@ function renderParams() {
         </select><span class="u">${d.unit}</span></label>`;
     }
     return `<label class="param-row"><span>${d.label}</span>
-      <input type="number" step="any" min="0" data-grp="${d.group}" data-k="${d.key}" value="${val ?? 0}">
+      <input type="number" step="any" min="0" data-grp="${d.group}" data-k="${d.key}" ${d.allowEmpty ? 'placeholder="Auto"' : ""} value="${val ?? (d.allowEmpty ? "" : 0)}">
       <span class="u">${d.unit}</span></label>`;
   }).join("");
 
@@ -767,6 +806,11 @@ function renderParams() {
     if (d.type === "checkbox") {
       return `<label class="param-row"><span>${d.label}</span>
         <input type="checkbox" data-pk="${d.key}" ${val ? "checked" : ""}>
+        <span class="u">${d.unit}</span></label>`;
+    }
+    if (d.type === "time") {
+      return `<label class="param-row"><span>${d.label}</span>
+        <input type="time" data-pk="${d.key}" value="${val || "09:00"}">
         <span class="u">${d.unit}</span></label>`;
     }
     return `<label class="param-row"><span>${d.label}</span>
@@ -779,18 +823,20 @@ function renderParams() {
   });
   $("#costParamsList").querySelectorAll("[data-grp]").forEach(i => {
     i.onchange = () => {
-      state[i.dataset.grp][i.dataset.k] = i.tagName === "SELECT" ? i.value : (parseFloat(i.value) || 0);
-      save("⚙️ Parâmetro atualizado");
+      const def = COST_PARAM_DEFS.find(x => x.key === i.dataset.k);
+      if (i.tagName === "SELECT") state[i.dataset.grp][i.dataset.k] = i.value;
+      else if (def?.allowEmpty && i.value === "") state[i.dataset.grp][i.dataset.k] = null;
+      else state[i.dataset.grp][i.dataset.k] = parseFloat(i.value) || 0;
+      save("⚙️ Orçamento atualizado");
     };
   });
   $("#automationParamsList").querySelectorAll("[data-pk]").forEach(i => {
     i.onchange = () => {
-      state.params[i.dataset.pk] = i.type === "checkbox" ? i.checked : (parseFloat(i.value) || 0);
+      state.params[i.dataset.pk] = i.type === "checkbox" ? i.checked : (i.type === "time" ? (i.value || "09:00") : (parseFloat(i.value) || 0));
       save("⚙️ Regra atualizada");
     };
   });
 
-  // Google Maps Key UI
   const keyInput = $("#gmapsKeyInput");
   if (document.activeElement !== keyInput) keyInput.value = window.FeriasMaps.getKey();
   const badge = $("#gmapsKeyBadge");
@@ -802,10 +848,8 @@ function renderParams() {
     badge.className = "pill warn";
   }
 
-  const syncTokInp = $("#syncTokenInput");
-  if (syncTokInp && document.activeElement !== syncTokInp && window.FeriasSync) {
-    syncTokInp.value = window.FeriasSync.getToken();
-  }
+  const remTime = state.params.calendarReminderTime || "09:00";
+  if ($("#calBadge")) $("#calBadge").textContent = `Lembrete dia anterior ${remTime}`;
 
   renderScenarios();
 }
@@ -821,7 +865,7 @@ function renderScenarios() {
     h += `<div class="scen">
       <div class="scen-top">
         <input class="scen-name" data-s="${sc.id}" data-k="name" value="${esc(sc.name)}" aria-label="Nome do cenário">
-        <button type="button" class="icon-btn" data-sdel="${sc.id}" title="Excluir cenário" aria-label="Excluir cenário">🗑️</button>
+        <button type="button" class="icon-btn" data-sdel="${sc.id}" title="Excluir cenário">🗑️</button>
       </div>
       <div class="scen-metrics">
         <label class="scen-metric"><span>km/L</span><input data-s="${sc.id}" data-k="kmL" type="number" step="any" value="${sc.kmL ?? ""}" placeholder="${state.vehicle.hevKmL}"></label>
@@ -906,32 +950,66 @@ function renderChecklist() {
   bindEvents(mc);
 }
 
-/* ---------- MODAL + AUTOMATIZAÇÃO GOOGLE MAPS & PARADAS ---------- */
+/* ---------- MODAL ATIVIDADE + MAPS + ANEXOS + AGENDA ---------- */
 let editing = null;
+let modalDraftId = "";
+let modalAttachments = [];
 let stopsManualOverride = false;
 let lastRouteKey = "";
 let acFromCtrl = null;
 let acToCtrl = null;
 
 function initAutocompleteControllers() {
-  if (!acFromCtrl) {
-    acFromCtrl = window.FeriasMaps.attachAutocomplete($("#f-from"), $("#ac-from"), () => maybeAutoComputeRoute(true));
+  if (!acFromCtrl) acFromCtrl = window.FeriasMaps.attachAutocomplete($("#f-from"), $("#ac-from"), () => maybeAutoComputeRoute(true));
+  if (!acToCtrl) acToCtrl = window.FeriasMaps.attachAutocomplete($("#f-to"), $("#ac-to"), () => maybeAutoComputeRoute(true));
+}
+
+function renderModalAttachments() {
+  const list = $("#modalAttachList");
+  if (!modalAttachments.length) {
+    list.innerHTML = `<div class="muted small">Nenhum documento anexado.</div>`;
+    return;
   }
-  if (!acToCtrl) {
-    acToCtrl = window.FeriasMaps.attachAutocomplete($("#f-to"), $("#ac-to"), () => maybeAutoComputeRoute(true));
-  }
+  list.innerHTML = modalAttachments.map((att, idx) => {
+    const href = att.url ? att.url : window.FeriasApi.attachmentHref(att);
+    const sizeTxt = att.size ? ` (${Math.max(1, Math.round(att.size / 1024))} KB)` : " (Link)";
+    return `<div class="attach-item">
+      <a href="${esc(href)}" target="_blank" rel="noopener">📄 ${esc(att.fileName || att.name || "Documento")}${sizeTxt}</a>
+      <button type="button" class="icon-btn" data-attdel="${idx}" title="Remover anexo">🗑️</button>
+    </div>`;
+  }).join("");
+
+  list.querySelectorAll("[data-attdel]").forEach(btn => {
+    btn.onclick = async () => {
+      const idx = parseInt(btn.dataset.attdel, 10);
+      const att = modalAttachments[idx];
+      if (att && att.id && !att.url) {
+        await window.FeriasApi.deleteAttachment(att.id).catch(() => {});
+      }
+      modalAttachments.splice(idx, 1);
+      renderModalAttachments();
+      toast("Anexo removido.");
+    };
+  });
 }
 
 function updateModalPreview() {
-  const box = $("#modalTripCalcPreview");
-  const type = $("#f-type").value;
-  if (type !== "Viagem") { box.innerHTML = ""; return; }
   const a = readForm();
+  const box = $("#modalTripCalcPreview");
+  const info = getTypeInfo(a.type);
+  $("#f-extraCostLabel").textContent = info.costLabel || "Custo (R$)";
+  $("#calRemLabel").textContent = state.params.calendarReminderTime || "09:00";
+  $("#btnCalLink").href = window.FeriasCalendar.buildGoogleCalendarTemplateUrl(a, state.title);
+
+  if (a.type !== "Viagem") {
+    box.innerHTML = "";
+    return;
+  }
   const c = calc(a);
   box.innerHTML = `
     <span><b>Tempo total:</b> ${hmHuman(c.time)} (${hmHuman(a.drive)} dir. + ${hmHuman(a.stopTime)} par.)</span>
     <span><b>EV / HEV:</b> ${num(c.ev)} / ${num(c.hev)} km (${num(c.liters, 1)} L)</span>
-    <span><b>Total trecho:</b> ${money(c.total)} (Gas. ${money(c.fuel)} + Ped. ${money(c.toll)} + EV ${money(c.charge)})</span>
+    <span><b>Total trecho:</b> ${money(c.total + c.extra)}</span>
   `;
   const ext = $("#modalMapsExternal");
   if (ext) ext.href = window.FeriasMaps.buildLegUrl(a.from, a.to);
@@ -961,17 +1039,14 @@ function applyAutoStopsToForm(force = false) {
 async function computeModalRoute(force = false) {
   const from = $("#f-from").value.trim();
   const to = $("#f-to").value.trim();
-  if (!from || !to) {
-    if (force) toast("Preencha Origem e Destino primeiro.");
-    return;
-  }
+  if (!from || !to) { if (force) toast("Preencha Origem e Destino."); return; }
 
   const ext = $("#modalMapsExternal");
   if (ext) ext.href = window.FeriasMaps.buildLegUrl(from, to);
 
   if (!window.FeriasMaps.hasKey()) {
     updateModalMapsUI();
-    if (force) toast("Configure sua Google Maps API Key abaixo para calcular automaticamente.");
+    if (force) toast("Configure sua Google Maps API Key abaixo.");
     return;
   }
 
@@ -996,8 +1071,6 @@ async function computeModalRoute(force = false) {
     lastRouteKey = routeKey;
     $("#f-km").value = res.km;
     $("#f-drive").value = hm(res.driveMinutes);
-
-    // Regra automática: 1 parada a cada 4h (1h cada), respeitando parâmetros
     stopsManualOverride = false;
     applyAutoStopsToForm(true);
 
@@ -1007,18 +1080,11 @@ async function computeModalRoute(force = false) {
     } else {
       $("#tollSourceTag").textContent = "⚠️ Tarifa não informada";
     }
-
-    if (!$("#f-charges").value) {
-      $("#f-charges").value = state.params.defaultCharges ?? 1;
-    }
-
-    // Sugere nome se estiver vazio
-    if (!$("#f-name").value.trim()) {
-      $("#f-name").value = `Viagem ${to.split(",")[0].trim()}`;
-    }
+    if (!$("#f-charges").value) $("#f-charges").value = state.params.defaultCharges ?? 1;
+    if (!$("#f-name").value.trim()) $("#f-name").value = `Viagem ${to.split(",")[0].trim()}`;
 
     statusEl.innerHTML = `
-      <span>✅ <b>Google Maps:</b> ${res.description ? `via ${esc(res.description)} · ` : ""}${num(res.km)} km · ${hmHuman(res.driveMinutes)}${res.toll.tollKnown ? ` · Pedágio ${money(res.toll.tollCost)}` : " · Rota c/ pedágio (valor não retornado)"}</span>
+      <span>✅ <b>Google Maps:</b> ${res.description ? `via ${esc(res.description)} · ` : ""}${num(res.km)} km · ${hmHuman(res.driveMinutes)}${res.toll.tollKnown ? ` · Pedágio ${money(res.toll.tollCost)}` : " · Rota c/ pedágio"}</span>
       <a href="${window.FeriasMaps.buildLegUrl(from, to)}" target="_blank" rel="noopener" style="color:var(--accent2)">Ver no Maps ↗</a>
     `;
 
@@ -1026,11 +1092,11 @@ async function computeModalRoute(force = false) {
     mapWrap.hidden = false;
     await window.FeriasMaps.renderRouteOnMap(mapWrap, res.route, isDarkTheme());
     updateModalPreview();
-    toast("🗺️ Distância, duração, paradas e pedágio atualizados!");
+    toast("🗺️ Rota, paradas e pedágio atualizados!");
   } catch (err) {
     statusEl.innerHTML = `<span>❌ Erro Google Maps: ${esc(err.message || err)}</span>
       <a href="${window.FeriasMaps.buildLegUrl(from, to)}" target="_blank" rel="noopener" style="color:var(--accent2)">Abrir no Maps ↗</a>`;
-    if (force) toast("Não foi possível calcular via Google Maps.");
+    if (force) toast("Erro ao calcular rota no Google Maps.");
   } finally {
     btn.disabled = false;
   }
@@ -1038,18 +1104,18 @@ async function computeModalRoute(force = false) {
 
 function maybeAutoComputeRoute(force = false) {
   if ($("#f-type").value !== "Viagem") return;
-  if ($("#f-from").value.trim() && $("#f-to").value.trim()) {
-    computeModalRoute(force);
-  }
+  if ($("#f-from").value.trim() && $("#f-to").value.trim()) computeModalRoute(force);
 }
 
-function openModal(id) {
+window.openModal = function (id) {
   initAutocompleteControllers();
   const a = id
     ? state.activities.find(x => x.id === id)
-    : { type: "Viagem", start: fmtISO(new Date()), charges: state.params.defaultCharges ?? 1, extraCost: 0 };
+    : { type: "Viagem", start: fmtISO(new Date()), charges: state.params.defaultCharges ?? 1, extraCost: 0, attachments: [] };
 
   editing = id || null;
+  modalDraftId = id || uid();
+  modalAttachments = clone(a.attachments || []);
   stopsManualOverride = false;
   lastRouteKey = a.from && a.to ? `${a.from.trim()}=>${a.to.trim()}` : "";
   acFromCtrl.clearSelected();
@@ -1060,6 +1126,8 @@ function openModal(id) {
   for (const k of ["type", "name", "start", "end", "from", "to", "km", "stops", "toll", "charges", "extraCost", "notes"]) {
     if (f.elements[k]) f.elements[k].value = a[k] ?? "";
   }
+  $("#f-flightFrom").value = a.type === "Voo" ? (a.from || "") : "";
+  $("#f-flightTo").value = a.type === "Voo" ? (a.to || "") : "";
   f.elements.drive.value = a.drive ? hm(a.drive) : "";
   f.elements.stopTime.value = a.stopTime != null && a.type === "Viagem" && id ? hm(a.stopTime) : "";
 
@@ -1071,12 +1139,16 @@ function openModal(id) {
 
   toggleTrip();
   updateModalMapsUI();
+  renderModalAttachments();
   updateModalPreview();
   $("#modal").showModal();
-}
+};
 
 function toggleTrip() {
-  $(".trip-only").style.display = $("#f-type").value === "Viagem" ? "" : "none";
+  const t = $("#f-type").value;
+  $(".trip-only").hidden = t !== "Viagem";
+  $(".trip-only").style.display = t === "Viagem" ? "" : "none";
+  $(".flight-only").hidden = t !== "Voo";
   updateModalPreview();
 }
 
@@ -1089,7 +1161,8 @@ function readForm() {
     start: e.start.value,
     end: e.end.value || e.start.value,
     extraCost: n("extraCost") || 0,
-    notes: e.notes.value
+    notes: e.notes.value,
+    attachments: clone(modalAttachments)
   };
   if (a.end < a.start) a.end = a.start;
   if (a.type === "Viagem") {
@@ -1103,6 +1176,9 @@ function readForm() {
       toll: n("toll") || 0,
       charges: n("charges") ?? (state.params.defaultCharges ?? 1)
     });
+  } else if (a.type === "Voo") {
+    a.from = $("#f-flightFrom").value.trim();
+    a.to = $("#f-flightTo").value.trim();
   }
   return a;
 }
@@ -1118,18 +1194,10 @@ async function recalcSingleTripById(id) {
   const a = state.activities.find(x => x.id === id);
   if (!a || a.type !== "Viagem") return;
   if (!a.from || !a.to) return toast("Defina Origem e Destino primeiro.");
-  if (!window.FeriasMaps.hasKey()) {
-    toast("Configure sua Google Maps API Key na aba Parâmetros.");
-    return openModal(id);
-  }
+  if (!window.FeriasMaps.hasKey()) { toast("Configure sua Google Maps API Key em Parâmetros."); return openModal(id); }
   toast(`🗺️ Calculando ${a.from} ➔ ${a.to}...`);
   try {
-    const res = await window.FeriasMaps.computeTripRoute({
-      origin: a.from,
-      destination: a.to,
-      params: state.params,
-      vehicle: state.vehicle
-    });
+    const res = await window.FeriasMaps.computeTripRoute({ origin: a.from, destination: a.to, params: state.params, vehicle: state.vehicle });
     a.km = res.km;
     a.drive = res.driveMinutes;
     const auto = computeAutoStops(res.driveMinutes);
@@ -1143,9 +1211,7 @@ async function recalcSingleTripById(id) {
 }
 
 async function recalcAllTripsWithMaps() {
-  if (!window.FeriasMaps.hasKey()) {
-    return toast("Cole e salve sua Google Maps API Key primeiro.");
-  }
+  if (!window.FeriasMaps.hasKey()) return toast("Cole e salve sua Google Maps API Key primeiro.");
   const trips = state.activities.filter(a => a.type === "Viagem" && a.from && a.to);
   if (!trips.length) return toast("Nenhuma viagem com Origem e Destino.");
   const btn = $("#btnRecalcAllRoutes");
@@ -1153,12 +1219,7 @@ async function recalcAllTripsWithMaps() {
   let ok = 0;
   for (const a of trips) {
     try {
-      const res = await window.FeriasMaps.computeTripRoute({
-        origin: a.from,
-        destination: a.to,
-        params: state.params,
-        vehicle: state.vehicle
-      });
+      const res = await window.FeriasMaps.computeTripRoute({ origin: a.from, destination: a.to, params: state.params, vehicle: state.vehicle });
       a.km = res.km;
       a.drive = res.driveMinutes;
       const auto = computeAutoStops(res.driveMinutes);
@@ -1170,6 +1231,146 @@ async function recalcAllTripsWithMaps() {
   }
   btn.disabled = false;
   save(`🗺️ ${ok}/${trips.length} viagens atualizadas pelo Google Maps!`);
+}
+
+/* ---------- MULTI-VIAGENS, COMPARTILHAMENTO & CONVITES ---------- */
+function renderTripDropdown() {
+  const sel = $("#tripSelect");
+  if (!sel) return;
+  const own = tripsCache.ownTrips || [];
+  const shared = tripsCache.sharedTrips || [];
+
+  let h = "";
+  if (own.length) {
+    h += `<optgroup label="Minhas Férias">` +
+      own.map(t => `<option value="${t.id}" ${activeTrip && activeTrip.id === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("") +
+      `</optgroup>`;
+  }
+  if (shared.length) {
+    h += `<optgroup label="Compartilhadas comigo">` +
+      shared.map(t => `<option value="${t.id}" ${activeTrip && activeTrip.id === t.id ? "selected" : ""}>👥 ${esc(t.name)} (${esc(t.ownerName)})</option>`).join("") +
+      `</optgroup>`;
+  }
+  sel.innerHTML = h;
+}
+
+function renderPendingInvites() {
+  const pend = tripsCache.pendingShares || [];
+  const btn = $("#btnPendingInvites");
+  const banner = $("#invitesBanner");
+  if (btn) {
+    btn.hidden = pend.length === 0;
+    $("#inviteCount").textContent = String(pend.length);
+  }
+  if (!banner) return;
+  if (!pend.length) {
+    banner.hidden = true;
+    banner.innerHTML = "";
+    return;
+  }
+  banner.hidden = false;
+  banner.innerHTML = pend.map(p => `
+    <div class="invite-card">
+      <div>
+        <strong>📩 Convite de viagem compartilhada</strong>
+        <div class="small muted">${esc(p.ownerName)} (${esc(p.ownerEmail)}) compartilhou <b>"${esc(p.tripName)}"</b> com você.</div>
+      </div>
+      <div class="inline-actions">
+        <button type="button" class="btn primary small" data-inv-accept="${p.id}" data-trip="${p.tripId}">✅ Aceitar</button>
+        <button type="button" class="btn ghost small" data-inv-decline="${p.id}">✕ Recusar</button>
+      </div>
+    </div>`).join("");
+
+  banner.querySelectorAll("[data-inv-accept]").forEach(b => {
+    b.onclick = async () => {
+      await window.FeriasApi.respondShare(b.dataset.invAccept, "accept");
+      toast("✅ Viagem aceita e adicionada à sua lista!");
+      await refreshTripsAndLoad(b.dataset.trip);
+    };
+  });
+  banner.querySelectorAll("[data-inv-decline]").forEach(b => {
+    b.onclick = async () => {
+      await window.FeriasApi.respondShare(b.dataset.invDecline, "decline");
+      toast("Convite recusado.");
+      await refreshTripsAndLoad();
+    };
+  });
+}
+
+async function openTripById(tripId) {
+  const res = await window.FeriasApi.getTrip(tripId);
+  if (!res || !res.trip) return;
+  activeTrip = res.trip;
+  window.FeriasApi.setActiveTripId(activeTrip.id);
+  state = migrateState(res.trip.data);
+  state.title = res.trip.name || state.title;
+  if (res.trip.gmapsKey && window.FeriasMaps && res.trip.gmapsKey !== window.FeriasMaps.getKey()) {
+    window.FeriasMaps.setKey(res.trip.gmapsKey);
+  }
+  renderTripDropdown();
+  render();
+}
+
+async function refreshTripsAndLoad(preferredTripId) {
+  tripsCache = await window.FeriasApi.listTrips();
+  renderPendingInvites();
+
+  let all = [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])];
+  if (!all.length) {
+    // Se ainda não há nenhuma viagem na conta, cria a 1ª viagem padrão
+    let initialData = clone(window.DEFAULT_DATA);
+    try {
+      const leg = localStorage.getItem(LEGACY_KEY_1) || localStorage.getItem(LEGACY_KEY_2);
+      if (leg) initialData = migrateState(JSON.parse(leg));
+    } catch {}
+    const created = await window.FeriasApi.createTrip(initialData.title || "Férias Final de Ano 2026", initialData, window.FeriasMaps.getKey());
+    tripsCache = await window.FeriasApi.listTrips();
+    all = [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])];
+    preferredTripId = created.id;
+  }
+
+  const targetId = preferredTripId && all.some(t => t.id === preferredTripId)
+    ? preferredTripId
+    : (all.some(t => t.id === window.FeriasApi.getActiveTripId()) ? window.FeriasApi.getActiveTripId() : all[0].id);
+
+  await openTripById(targetId);
+}
+
+async function openShareModal() {
+  if (!activeTrip) return;
+  if (!window.FeriasApi.isServer()) {
+    return toast("Compartilhamento requer login no servidor da VPS.");
+  }
+  if (activeTrip.role !== "owner") {
+    return toast("Apenas o criador da viagem pode gerenciar compartilhamentos.");
+  }
+  await refreshShareList();
+  $("#shareModal").showModal();
+}
+
+async function refreshShareList() {
+  const { shares } = await window.FeriasApi.getTrip(activeTrip.id);
+  const box = $("#shareList");
+  if (!shares || !shares.length) {
+    box.innerHTML = `<p class="muted small">Esta viagem ainda não foi compartilhada com ninguém.</p>`;
+    return;
+  }
+  const stLabel = { pending: "Aguardando aceite", accepted: "Aceito", declined: "Recusado" };
+  box.innerHTML = shares.map(s => `
+    <div class="share-row">
+      <div>
+        <strong>${esc(s.targetEmail)}</strong>
+        <div class="muted small">${s.role === "viewer" ? "Só visualizar" : "Pode editar"} · <b>${stLabel[s.status] || s.status}</b></div>
+      </div>
+      <button type="button" class="icon-btn" data-srem="${s.id}" title="Remover acesso">🗑️</button>
+    </div>`).join("");
+  box.querySelectorAll("[data-srem]").forEach(b => {
+    b.onclick = async () => {
+      await window.FeriasApi.removeShare(activeTrip.id, b.dataset.srem);
+      await refreshShareList();
+      toast("Acesso removido.");
+    };
+  });
 }
 
 /* ---------- IMPORT / EXPORT ---------- */
@@ -1190,80 +1391,45 @@ function exportXlsx() {
     const c = calc(a);
     const v = a.type === "Viagem";
     return {
-      "#": i + 1,
-      Tipo: a.type,
-      Início: fmtBR(a.start),
-      Fim: fmtBR(a.end),
-      "Dia Sem.": WD[parseD(a.start).getDay()],
-      Atividade: label(a),
-      Dias: days(a),
-      "Distância (km)": v ? a.km : "",
-      "Direção": v ? hm(a.drive) : "",
-      Paradas: v ? a.stops : "",
-      "Tempo Paradas": v ? hm(a.stopTime) : "",
-      "Tempo Total": v ? hm(c.time) : "",
-      "Km EV": v ? +c.ev.toFixed(1) : "",
-      "Km HEV": v ? +c.hev.toFixed(1) : "",
-      "Gasolina (L)": v ? +c.liters.toFixed(2) : "",
-      "Custo Gasolina": v ? +c.fuel.toFixed(2) : "",
-      "Custo Recarga": v ? +c.charge.toFixed(2) : "",
-      Pedágio: v ? a.toll : "",
-      Extras: +a.extraCost || 0,
-      "Custo Viagem": v ? +c.total.toFixed(2) : "",
-      Tanques: v ? +c.tanks.toFixed(2) : "",
-      Observações: a.notes || ""
+      "#": i + 1, Tipo: a.type, Início: fmtBR(a.start), Fim: fmtBR(a.end),
+      "Dia Sem.": WD[parseD(a.start).getDay()], Atividade: label(a), Dias: days(a),
+      "Distância (km)": v ? a.km : "", "Direção": v ? hm(a.drive) : "", Paradas: v ? a.stops : "",
+      "Tempo Paradas": v ? hm(a.stopTime) : "", "Tempo Total": v ? hm(c.time) : "",
+      "Km EV": v ? +c.ev.toFixed(1) : "", "Km HEV": v ? +c.hev.toFixed(1) : "",
+      "Gasolina (L)": v ? +c.liters.toFixed(2) : "", "Custo Gasolina": v ? +c.fuel.toFixed(2) : "",
+      "Custo Recarga": v ? +c.charge.toFixed(2) : "", Pedágio: v ? a.toll : "",
+      Extras: +a.extraCost || 0, "Total Item": +(c.total + c.extra).toFixed(2),
+      Tanques: v ? +c.tanks.toFixed(2) : "", Observações: a.notes || ""
     };
   });
-  rows.push({
-    Atividade: "TOTAL (viagens)",
-    "Distância (km)": t.km,
-    "Tempo Total": hm(t.drive + t.stopTime),
-    "Gasolina (L)": +t.liters.toFixed(2),
-    "Custo Gasolina": +t.fuel.toFixed(2),
-    "Custo Recarga": +t.charge.toFixed(2),
-    Pedágio: t.toll,
-    Extras: t.activitiesExtra,
-    "Custo Viagem": +t.total.toFixed(2),
-    Tanques: +t.tanks.toFixed(2)
-  });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Tabela Completa");
-
   const par = VEHICLE_PARAM_DEFS.map(([k, l, u]) => ({ Parâmetro: l, Valor: state.vehicle[k], Unidade: u }));
   COST_PARAM_DEFS.forEach(d => par.push({ Parâmetro: d.label, Valor: state[d.group][d.key], Unidade: d.unit }));
-  par.push({}, ...state.scenarios.map(sc => {
-    const kl = sc.kmL || state.vehicle.hevKmL;
-    const tt = totals(kl);
-    return { Parâmetro: "Cenário: " + sc.name, Valor: kl, Unidade: `Gasolina ${money(tt.fuel)} · Total ${money(tt.total)}` };
-  }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(par), "Resumo & Parâmetros");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(state.checklist.map((c, i) => ({
     "#": i + 1, Categoria: c.cat, Item: c.item, Prioridade: c.prio, Status: c.status, Notas: c.notes
   }))), "Checklist");
-  XLSX.writeFile(wb, `Ferias_Pro_${fmtISO(new Date())}.xlsx`);
+  XLSX.writeFile(wb, `${(state.title || "Ferias_Pro").replace(/[^\w\-]+/g, "_")}.xlsx`);
   toast("⬇️ Excel exportado");
 }
 
 async function importXlsx(file) {
   if (!window.XLSX) return toast("Biblioteca Excel não carregou");
   const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
-  const g = wb.Sheets["Cronograma Gantt"];
-  const tb = wb.Sheets["Tabela Completa"];
-  const rs = wb.Sheets["Resumo & Dashboard"];
+  const g = wb.Sheets["Cronograma Gantt"], tb = wb.Sheets["Tabela Completa"], rs = wb.Sheets["Resumo & Dashboard"];
   if (!g) return toast("Aba 'Cronograma Gantt' não encontrada");
 
   const v = (sh, ref) => sh && sh[ref] ? sh[ref].v : null;
-  const toISO = d => d instanceof Date
-    ? fmtISO(new Date(d.getTime() + 12 * 3600e3))
+  const toISO = d => d instanceof Date ? fmtISO(new Date(d.getTime() + 12 * 3600e3))
     : (typeof d === "number" ? fmtISO(new Date(Math.round((d - 25569) * DAY) + 12 * 3600e3)) : null);
-  const toMin = x => x instanceof Date
-    ? x.getUTCHours() * 60 + x.getUTCMinutes() + Math.round(x.getUTCSeconds() / 60)
+  const toMin = x => x instanceof Date ? x.getUTCHours() * 60 + x.getUTCMinutes() + Math.round(x.getUTCSeconds() / 60)
     : typeof x === "number" ? Math.round(x * 1440) : parseHM(x);
 
   const acts = [];
   for (let r = 7; r <= 60; r++) {
     const name = v(g, "C" + r);
     if (!name) continue;
-    const a = { id: uid(), type: v(g, "B" + r) || "Evento", name: String(name), start: toISO(v(g, "D" + r)), end: toISO(v(g, "E" + r)), extraCost: 0 };
+    const a = { id: uid(), type: v(g, "B" + r) || "Evento", name: String(name), start: toISO(v(g, "D" + r)), end: toISO(v(g, "E" + r)), extraCost: 0, attachments: [] };
     if (!a.start) continue;
     a.end = a.end || a.start;
     const tr = r - 2;
@@ -1272,12 +1438,8 @@ async function importXlsx(file) {
       const m = a.name.match(/^(.*?)\s*\((.*?)\s*➔\s*(.*?)\)\s*$/);
       if (m) { a.name = m[1]; a.from = m[2] === "BSB" ? "Brasília" : m[2]; a.to = m[3]; }
       Object.assign(a, {
-        km: +v(tb, "H" + tr) || null,
-        drive: toMin(v(tb, "I" + tr)),
-        stops: +v(tb, "J" + tr) || 0,
-        stopTime: toMin(v(tb, "K" + tr)),
-        toll: +v(tb, "R" + tr) || 0,
-        charges: state.params.defaultCharges ?? 1
+        km: +v(tb, "H" + tr) || null, drive: toMin(v(tb, "I" + tr)), stops: +v(tb, "J" + tr) || 0,
+        stopTime: toMin(v(tb, "K" + tr)), toll: +v(tb, "R" + tr) || 0, charges: state.params.defaultCharges ?? 1
       });
     }
     acts.push(a);
@@ -1293,7 +1455,255 @@ async function importXlsx(file) {
   save(`📥 ${acts.length} atividades importadas`);
 }
 
+/* ---------- PWA INSTALL POP-UP ---------- */
+function setupPwaInstall() {
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  }
+  const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  if (isStandalone) return;
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const dismissedAt = Number(localStorage.getItem(PWA_DISMISS_KEY) || 0);
+  const recentlyDismissed = Date.now() - dismissedAt < 3 * DAY;
+
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    $("#btnMenuInstall").hidden = false;
+    if (!recentlyDismissed) showPwaBanner(false);
+  });
+
+  if (isIOS && !recentlyDismissed) {
+    setTimeout(() => showPwaBanner(true), 1200);
+  }
+
+  $("#btnPwaInstall").onclick = async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const res = await deferredInstallPrompt.userChoice;
+      if (res.outcome === "accepted") $("#pwaInstallBanner").hidden = true;
+      deferredInstallPrompt = null;
+    } else if (isIOS) {
+      alert("No iPhone/iPad: toque no botão Compartilhar (quadrado com seta para cima) na barra do Safari e escolha 'Adicionar à Tela de Início'.");
+      $("#pwaInstallBanner").hidden = true;
+    }
+  };
+
+  $("#btnMenuInstall").onclick = () => $("#btnPwaInstall").click();
+  $("#btnPwaDismiss").onclick = () => {
+    localStorage.setItem(PWA_DISMISS_KEY, String(Date.now()));
+    $("#pwaInstallBanner").hidden = true;
+  };
+}
+
+function showPwaBanner(isIOS) {
+  const banner = $("#pwaInstallBanner");
+  if (!banner || $("#appShell").hidden) return;
+  if (isIOS) {
+    $("#pwaPromptDesc").textContent = "Toque em Compartilhar (⬆️) e 'Adicionar à Tela de Início' para baixar o app Férias Pro.";
+    $("#btnPwaInstall").textContent = "Como instalar";
+  } else {
+    $("#pwaPromptDesc").textContent = "Baixe o aplicativo Férias Pro no celular ou computador com ícone na tela inicial.";
+    $("#btnPwaInstall").textContent = "Baixar App";
+  }
+  banner.hidden = false;
+}
+
+/* ---------- AUTH & BOOT ---------- */
+function setupGoogleSignInButton(clientId) {
+  const wrap = $("#googleBtnWrap");
+  const hint = $("#googleConfigHint");
+  if (!clientId) {
+    wrap.innerHTML = "";
+    hint.hidden = false;
+    return;
+  }
+  hint.hidden = true;
+  const s = document.createElement("script");
+  s.src = "https://accounts.google.com/gsi/client";
+  s.async = true;
+  s.onload = () => {
+    if (!window.google?.accounts?.id) return;
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback: async resp => {
+        try {
+          const res = await window.FeriasApi.loginGoogle(resp.credential);
+          if (res.legacyData && res.legacyData.data) {
+            await window.FeriasApi.createTrip(res.legacyData.data.title || "Férias Final de Ano 2026", res.legacyData.data, res.legacyData.gmapsKey || "");
+          }
+          await enterApp();
+        } catch (err) {
+          $("#authError").textContent = err.message;
+          $("#authError").hidden = false;
+        }
+      }
+    });
+    window.google.accounts.id.renderButton(wrap, { theme: isDarkTheme() ? "filled_black" : "outline", size: "large", width: 340, text: "continue_with" });
+  };
+  document.head.appendChild(s);
+}
+
+function updateUserMenu() {
+  const u = window.FeriasApi.getUser();
+  const box = $("#menuUserInfo");
+  if (u) {
+    box.innerHTML = `<strong>${esc(u.name)}</strong><span>${esc(u.email)}</span>`;
+    $("#btnLogout").hidden = false;
+  } else {
+    box.innerHTML = `<strong>Modo Offline</strong><span>Somente este aparelho</span>`;
+    $("#btnLogout").hidden = true;
+  }
+}
+
+async function enterApp() {
+  $("#authView").hidden = true;
+  $("#appShell").hidden = false;
+  updateUserMenu();
+  await refreshTripsAndLoad();
+  setupPwaInstall();
+
+  window.FeriasApi.startPolling(
+    () => activeTrip?.id,
+    full => {
+      activeTrip = full.trip;
+      state = migrateState(full.trip.data);
+      state.title = full.trip.name || state.title;
+      if (full.trip.gmapsKey && window.FeriasMaps && full.trip.gmapsKey !== window.FeriasMaps.getKey()) {
+        window.FeriasMaps.setKey(full.trip.gmapsKey);
+      }
+      renderTripDropdown();
+      render();
+    },
+    list => {
+      tripsCache = list;
+      renderTripDropdown();
+      renderPendingInvites();
+    }
+  );
+}
+
+function updateSyncBadge(info) {
+  const pill = $("#syncBadge"), txt = $("#syncText");
+  if (!pill || !txt) return;
+  pill.setAttribute("data-status", info.status);
+  const map = { checking: "Conectando...", synced: "Sincronizado", syncing: "Salvando...", offline: "Sem rede", local_only: "Local", unauth: "Desconectado" };
+  txt.textContent = map[info.status] || "Local";
+}
+
+async function boot() {
+  initTheme();
+  populateTypeSelectors();
+  window.FeriasApi.onStatus(updateSyncBadge);
+
+  const cfg = await window.FeriasApi.initServer();
+  if (!cfg.serverAvailable) {
+    // Fallback offline sem servidor
+    await enterApp();
+    return;
+  }
+
+  if (cfg.user) {
+    await enterApp();
+  } else {
+    $("#authView").hidden = false;
+    $("#appShell").hidden = true;
+    setupGoogleSignInButton(cfg.googleClientId);
+  }
+}
+
 /* ---------- EVENTOS ---------- */
+$("#authThemeBtn").onclick = $("#btnTheme").onclick = () => applyTheme(isDarkTheme() ? "light" : "dark");
+
+$("#authModeTabs").querySelectorAll("button").forEach(b => {
+  b.onclick = () => {
+    authMode = b.dataset.amode;
+    $("#authModeTabs").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+    $("#authNameWrap").hidden = authMode !== "register";
+    $("#authName").required = authMode === "register";
+    $("#authSubmitBtn").textContent = authMode === "register" ? "Criar conta e entrar" : "Entrar";
+    $("#authError").hidden = true;
+  };
+});
+
+$("#authForm").onsubmit = async e => {
+  e.preventDefault();
+  const errEl = $("#authError");
+  errEl.hidden = true;
+  const email = $("#authEmail").value.trim();
+  const pass = $("#authPassword").value;
+  try {
+    if (authMode === "register") {
+      const name = $("#authName").value.trim();
+      const res = await window.FeriasApi.register(name, email, pass);
+      if (res.legacyData && res.legacyData.data) {
+        await window.FeriasApi.createTrip(res.legacyData.data.title || "Férias Final de Ano 2026", res.legacyData.data, res.legacyData.gmapsKey || "");
+      }
+    } else {
+      await window.FeriasApi.login(email, pass);
+    }
+    await enterApp();
+  } catch (err) {
+    errEl.textContent = err.message || "Erro na autenticação.";
+    errEl.hidden = false;
+  }
+};
+
+$("#btnLogout").onclick = async () => {
+  await window.FeriasApi.logout();
+  location.reload();
+};
+
+$("#tripSelect").onchange = e => openTripById(e.target.value);
+$("#btnNewTrip").onclick = () => { $("#nt-name").value = ""; $("#newTripModal").showModal(); };
+$("#btnCloseNewTrip").onclick = $("#btnCancelNewTrip").onclick = () => $("#newTripModal").close();
+$("#newTripForm").onsubmit = async e => {
+  e.preventDefault();
+  const name = $("#nt-name").value.trim();
+  if (!name) return;
+  const copyVeh = $("#nt-copyVehicle").checked;
+  const data = window.createBlankTripData(name, copyVeh ? state.vehicle : null);
+  const created = await window.FeriasApi.createTrip(name, data, window.FeriasMaps.getKey());
+  $("#newTripModal").close();
+  await refreshTripsAndLoad(created.id);
+  toast(`✈️ Viagem "${name}" criada!`);
+};
+
+$("#btnRenameTrip").onclick = async () => {
+  if (!activeTrip) return;
+  const n = prompt("Novo nome para estas férias:", state.title || activeTrip.name);
+  if (!n || !n.trim()) return;
+  state.title = n.trim();
+  activeTrip.name = state.title;
+  save("✏️ Viagem renomeada");
+  await refreshTripsAndLoad(activeTrip.id);
+};
+
+$("#btnDeleteTrip").onclick = async () => {
+  if (!activeTrip || activeTrip.role !== "owner") return toast("Apenas o criador pode excluir esta viagem.");
+  if (!confirm(`Excluir permanentemente "${state.title}" e todos os anexos?`)) return;
+  await window.FeriasApi.deleteTrip(activeTrip.id);
+  toast("🗑️ Viagem excluída");
+  await refreshTripsAndLoad();
+};
+
+$("#btnShareTrip").onclick = openShareModal;
+$("#btnCloseShare").onclick = () => $("#shareModal").close();
+$("#shareForm").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    await window.FeriasApi.shareTrip(activeTrip.id, $("#shareEmail").value.trim(), $("#shareRole").value);
+    $("#shareEmail").value = "";
+    await refreshShareList();
+    toast("📩 Convite enviado!");
+  } catch (err) {
+    toast("❌ " + err.message);
+  }
+};
+
+$("#btnPendingInvites").onclick = () => $("#invitesBanner").scrollIntoView({ behavior: "smooth" });
+
 document.querySelectorAll(".tab").forEach(b => {
   b.onclick = () => {
     document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === b));
@@ -1301,10 +1711,8 @@ document.querySelectorAll(".tab").forEach(b => {
   };
 });
 
-$("#btnTheme").onclick = () => applyTheme(isDarkTheme() ? "light" : "dark");
 $("#btnAdd").onclick = () => openModal();
-$("#btnCloseX").onclick = () => $("#modal").close();
-$("#btnCancel").onclick = () => $("#modal").close();
+$("#btnCloseX").onclick = $("#btnCancel").onclick = () => $("#modal").close();
 $("#f-type").onchange = toggleTrip;
 
 $("#btnSwapRoute").onclick = () => {
@@ -1320,37 +1728,90 @@ $("#btnSwapRoute").onclick = () => {
 $("#btnCalcMaps").onclick = () => computeModalRoute(true);
 $("#f-from").addEventListener("blur", () => setTimeout(() => maybeAutoComputeRoute(false), 220));
 $("#f-to").addEventListener("blur", () => setTimeout(() => maybeAutoComputeRoute(false), 220));
-
-$("#f-drive").addEventListener("input", () => {
-  applyAutoStopsToForm(false);
-  updateModalPreview();
-});
+$("#f-drive").addEventListener("input", () => { applyAutoStopsToForm(false); updateModalPreview(); });
 $("#f-stops").addEventListener("input", () => { stopsManualOverride = true; updateModalPreview(); });
 $("#f-stopTime").addEventListener("input", () => { stopsManualOverride = true; updateModalPreview(); });
-["#f-km", "#f-toll", "#f-charges", "#f-extraCost"].forEach(sel => {
+["#f-km", "#f-toll", "#f-charges", "#f-extraCost", "#f-name", "#f-start", "#f-end", "#f-flightFrom", "#f-flightTo"].forEach(sel => {
   $(sel).addEventListener("input", updateModalPreview);
 });
 
-$("#btnAutoStops").onclick = () => {
-  stopsManualOverride = false;
-  applyAutoStopsToForm(true);
-  toast("⏱️ Paradas recalculadas pela regra padrão!");
+$("#btnAutoStops").onclick = () => { stopsManualOverride = false; applyAutoStopsToForm(true); toast("⏱️ Paradas recalculadas!"); };
+
+$("#btnAttachFile").onclick = () => $("#f-attachInput").click();
+$("#f-attachInput").onchange = async e => {
+  const files = [...e.target.files];
+  if (!files.length) return;
+  for (const file of files) {
+    try {
+      toast(`📎 Enviando ${file.name}...`);
+      const att = await window.FeriasApi.uploadAttachment(activeTrip.id, modalDraftId, file);
+      modalAttachments.push(att);
+      renderModalAttachments();
+      toast(`✅ "${file.name}" anexado!`);
+    } catch (err) {
+      toast("❌ " + err.message);
+    }
+  }
+  e.target.value = "";
+};
+
+$("#btnAttachLink").onclick = () => {
+  const url = prompt("Cole o link do documento / comprovante / ingresso (https://...):");
+  if (!url || !url.trim()) return;
+  const name = prompt("Nome do documento:", "Comprovante / Link") || "Documento";
+  modalAttachments.push({ id: uid(), fileName: name.trim(), url: url.trim(), uploadedAt: Date.now() });
+  renderModalAttachments();
+};
+
+$("#btnCalDirect").onclick = async () => {
+  const cid = window.FeriasApi.getGoogleClientId();
+  if (!cid) {
+    window.open($("#btnCalLink").href, "_blank", "noopener");
+    return toast("Abrindo Google Agenda com dados preenchidos (defina GOOGLE_CLIENT_ID para envio direto por API).");
+  }
+  try {
+    const a = readForm();
+    await window.FeriasCalendar.syncActivitiesToGoogleCalendar([a], state.title, cid, state.params.calendarReminderTime);
+    toast("📅 Evento + lembrete (09:00 dia anterior) criados no Google Agenda!");
+  } catch (err) {
+    toast("❌ " + (err.message || err));
+  }
+};
+
+$("#btnCalIcs").onclick = () => {
+  const a = readForm();
+  window.FeriasCalendar.downloadIcs([a], a.name || state.title, state.params.calendarReminderTime);
+  toast("📆 Arquivo .ics baixado (com lembrete 09:00 do dia anterior)!");
+};
+
+async function syncAllToGoogleCalendar() {
+  const cid = window.FeriasApi.getGoogleClientId();
+  if (!cid) {
+    window.FeriasCalendar.downloadIcs(sorted(), state.title, state.params.calendarReminderTime);
+    return toast("📆 Arquivo .ics completo baixado para importar no Google Agenda (lembretes 09:00 dia anterior)!");
+  }
+  try {
+    const n = await window.FeriasCalendar.syncActivitiesToGoogleCalendar(sorted(), state.title, cid, state.params.calendarReminderTime);
+    toast(`📅 ${n} atividades sincronizadas com seu Google Agenda!`);
+  } catch (err) {
+    toast("❌ " + (err.message || err));
+  }
+}
+
+$("#btnSyncAllCalendar").onclick = $("#btnMenuCalendarAll").onclick = syncAllToGoogleCalendar;
+$("#btnDownloadAllIcs").onclick = $("#btnExportIcs").onclick = () => {
+  window.FeriasCalendar.downloadIcs(sorted(), state.title, state.params.calendarReminderTime);
+  toast("📆 Agenda .ics das férias baixada!");
 };
 
 $("#btnModalSaveKey").onclick = () => {
   const val = $("#modalKeyInput").value.trim();
   if (!val) return toast("Cole uma chave válida.");
   const { needsReload } = window.FeriasMaps.setKey(val);
-  if (window.FeriasSync) {
-    window.FeriasSync.push(state, val);
-  }
+  save();
   updateModalMapsUI();
   renderParams();
-  if (needsReload) {
-    toast("Chave salva! Recarregando para ativar...");
-    setTimeout(() => location.reload(), 600);
-    return;
-  }
+  if (needsReload) { toast("Recarregando..."); setTimeout(() => location.reload(), 600); return; }
   computeModalRoute(true);
 };
 
@@ -1363,7 +1824,7 @@ $("#form").onsubmit = e => {
     for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges"]) delete o[k];
     Object.assign(o, a);
   } else {
-    state.activities.push({ id: uid(), ...a });
+    state.activities.push({ id: modalDraftId || uid(), ...a });
   }
   $("#modal").close();
   save(editing ? "✔️ Atividade atualizada" : "➕ Atividade adicionada");
@@ -1379,16 +1840,12 @@ $("#btnDuplicate").onclick = () => {
 };
 
 // Gantt controls
-$("#ganttFilterSeg").querySelectorAll("button").forEach(b => {
-  b.onclick = () => {
-    ganttFilter = b.dataset.gfilter;
-    $("#ganttFilterSeg").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
-    const s = sorted();
-    renderGantt(s);
-    renderTimeline(s);
-  };
-});
-
+$("#ganttTypeFilter").onchange = e => {
+  ganttFilter = e.target.value;
+  const s = sorted();
+  renderGantt(s);
+  renderTimeline(s);
+};
 $("#ganttModeSeg").querySelectorAll("button").forEach(b => {
   b.onclick = () => {
     ganttMode = b.dataset.gmode;
@@ -1398,90 +1855,73 @@ $("#ganttModeSeg").querySelectorAll("button").forEach(b => {
     renderTimeline(s);
   };
 });
-
 $("#ganttZoomSeg").querySelectorAll("button").forEach(b => {
   b.onclick = () => {
-    ganttZoom = parseInt(b.dataset.zoom, 10) || 46;
+    ganttZoom = parseInt(b.dataset.zoom, 10) || 50;
     $("#ganttZoomSeg").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
     renderGantt(sorted());
   };
 });
-
+$("#btnGanttSlim").onclick = () => {
+  ganttSlimRail = !ganttSlimRail;
+  renderGantt(sorted());
+};
 $("#btnGanttToday").onclick = () => {
   const wrap = $("#ganttWrap");
   const todayHead = wrap.querySelector(".g-head.today");
-  if (todayHead) {
-    wrap.scrollTo({ left: Math.max(0, todayHead.offsetLeft - 300), behavior: "smooth" });
-  } else {
-    wrap.scrollTo({ left: 0, behavior: "smooth" });
-  }
+  wrap.scrollTo({ left: todayHead ? Math.max(0, todayHead.offsetLeft - 180) : 0, behavior: "smooth" });
 };
 
-// Dashboard full interactive map
 $("#btnRenderFullMap").onclick = async () => {
   const trips = sorted().filter(a => a.type === "Viagem" && a.from && a.to);
   if (!trips.length) return toast("Nenhuma viagem com origem/destino.");
   const pts = [];
-  trips.forEach(a => {
-    if (a.from && pts[pts.length - 1] !== a.from) pts.push(a.from);
-    if (a.to && pts[pts.length - 1] !== a.to) pts.push(a.to);
-  });
+  trips.forEach(a => { if (a.from && pts[pts.length - 1] !== a.from) pts.push(a.from); if (a.to && pts[pts.length - 1] !== a.to) pts.push(a.to); });
   if (pts.length < 2) return;
   const container = $("#dashboardMapContainer");
   container.hidden = false;
   container.innerHTML = `<div style="display:grid;place-items:center;height:100%" class="muted">⏳ Carregando rota completa no Google Maps...</div>`;
   try {
     const res = await window.FeriasMaps.computeTripRoute({
-      origin: pts[0],
-      destination: pts[pts.length - 1],
-      intermediates: pts.slice(1, -1).slice(0, 23),
-      params: state.params,
-      vehicle: state.vehicle
+      origin: pts[0], destination: pts[pts.length - 1], intermediates: pts.slice(1, -1).slice(0, 23),
+      params: state.params, vehicle: state.vehicle
     });
     await window.FeriasMaps.renderRouteOnMap(container, res.route, isDarkTheme());
   } catch (err) {
-    container.innerHTML = `<div style="display:grid;place-items:center;height:100%;padding:16px" class="muted">❌ Erro ao renderizar mapa: ${esc(err.message || err)}</div>`;
+    container.innerHTML = `<div style="display:grid;place-items:center;height:100%;padding:16px" class="muted">❌ ${esc(err.message || err)}</div>`;
   }
 };
 
-// Parâmetros bindings
-$("#p-planTitle").onchange = e => { state.title = e.target.value.trim() || "Férias"; save("⚙️ Título atualizado"); };
+// Parâmetros
+$("#p-planTitle").onchange = e => {
+  state.title = e.target.value.trim() || "Férias";
+  if (activeTrip) activeTrip.name = state.title;
+  renderTripDropdown();
+  save("⚙️ Nome da viagem atualizado");
+};
 $("#p-vehicleName").onchange = e => { state.vehicle.name = e.target.value.trim() || "Veículo"; save("⚙️ Modelo atualizado"); };
 $("#p-powertrain").onchange = e => { state.vehicle.powertrain = e.target.value; save("⚙️ Motorização atualizada"); };
 
-$("#btnToggleKey").onclick = () => {
-  const inp = $("#gmapsKeyInput");
-  inp.type = inp.type === "password" ? "text" : "password";
-};
+$("#btnToggleKey").onclick = () => { const inp = $("#gmapsKeyInput"); inp.type = inp.type === "password" ? "text" : "password"; };
 $("#btnSaveKey").onclick = () => {
   const { saved, needsReload } = window.FeriasMaps.setKey($("#gmapsKeyInput").value);
-  if (window.FeriasSync) {
-    window.FeriasSync.push(state, window.FeriasMaps.getKey());
-  }
+  save();
   renderParams();
   renderDashboard(sorted(), totals());
-  if (needsReload) {
-    toast("Chave atualizada! Recarregando página...");
-    setTimeout(() => location.reload(), 600);
-  } else {
-    toast(saved ? "🔑 Chave Google Maps salva!" : "Chave removida.");
-  }
+  if (needsReload) { toast("Recarregando..."); setTimeout(() => location.reload(), 600); }
+  else toast(saved ? "🔑 Chave salva e sincronizada!" : "Chave removida.");
 };
 $("#btnTestKey").onclick = async () => {
   const val = $("#gmapsKeyInput").value.trim();
   if (!val) return toast("Informe uma Google Maps API Key.");
   const { needsReload } = window.FeriasMaps.setKey(val);
-  if (needsReload) {
-    toast("Recarregando com a nova chave...");
-    setTimeout(() => location.reload(), 600);
-    return;
-  }
-  toast("⚡ Testando conexão com Google Maps Routes API...");
+  if (needsReload) { toast("Recarregando..."); setTimeout(() => location.reload(), 600); return; }
+  toast("⚡ Testando Google Maps Routes API...");
   try {
     const r = await window.FeriasMaps.testApiKey(val);
-    toast(`✅ Conexão OK! Rota SP ➔ Campinas: ${r.km} km · ${hmHuman(r.driveMinutes)}`);
+    toast(`✅ Conexão OK! SP ➔ Campinas: ${r.km} km · ${hmHuman(r.driveMinutes)}`);
+    save();
     renderParams();
-    renderDashboard(sorted(), totals());
   } catch (err) {
     toast(`❌ Falha na chave: ${err.message || err}`);
   }
@@ -1497,20 +1937,13 @@ $("#btnReapplyStops").onclick = () => {
       count++;
     }
   });
-  save(`⏱️ Regra padrão reaplicada em ${count} viagem(ns)!`);
+  save(`⏱️ Paradas reaplicadas em ${count} viagem(ns)!`);
 };
 
-// Table & Checklist & Menu
 $("#search").oninput = $("#filterType").onchange = () => renderTable(sorted(), totals());
 $("#filterChecklist").onchange = e => { checklistFilter = e.target.value; renderChecklist(); };
-$("#btnAddScenario").onclick = () => {
-  state.scenarios.push({ id: uid(), name: "Novo cenário", kmL: state.vehicle.hevKmL });
-  save("➕ Cenário adicionado");
-};
-$("#btnAddCheck").onclick = () => {
-  state.checklist.push({ id: uid(), cat: "Geral", item: "Novo item", prio: "Média", status: "Pendente", notes: "" });
-  save("➕ Item adicionado ao checklist");
-};
+$("#btnAddScenario").onclick = () => { state.scenarios.push({ id: uid(), name: "Novo cenário", kmL: state.vehicle.hevKmL }); save("➕ Cenário adicionado"); };
+$("#btnAddCheck").onclick = () => { state.checklist.push({ id: uid(), cat: "Geral", item: "Novo item", prio: "Média", status: "Pendente", notes: "" }); save("➕ Item adicionado"); };
 
 $("#btnMenu").onclick = e => {
   e.stopPropagation();
@@ -1524,7 +1957,7 @@ document.addEventListener("click", () => {
 
 $("#btnExportXlsx").onclick = exportXlsx;
 $("#btnExportJson").onclick = () => {
-  download(`ferias_pro_backup_${fmtISO(new Date())}.json`, new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
+  download(`${(state.title || "ferias_pro").replace(/[^\w\-]+/g, "_")}.json`, new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
   toast("💾 Backup salvo");
 };
 $("#btnImportJson").onclick = () => $("#fileJson").click();
@@ -1539,155 +1972,15 @@ $("#fileJson").onchange = async e => {
     if (!Array.isArray(d.activities)) throw new Error("inválido");
     state = migrateState(d);
     save("📂 Backup restaurado");
-  } catch {
-    toast("Arquivo JSON inválido");
-  }
+  } catch { toast("Arquivo JSON inválido"); }
   e.target.value = "";
 };
-
 $("#fileXlsx").onchange = async e => {
   const f = e.target.files[0];
   if (f) await importXlsx(f).catch(() => toast("Erro ao ler planilha"));
   e.target.value = "";
 };
 
-$("#btnReset").onclick = () => {
-  if (confirm("Restaurar os dados iniciais da planilha? Suas alterações serão perdidas.")) {
-    state = seed();
-    save("↺ Dados restaurados");
-  }
-};
+window.addEventListener("resize", () => { if (ganttMode === "gantt") renderGantt(sorted()); });
 
-window.addEventListener("resize", () => {
-  if (ganttMode === "gantt") renderGantt(sorted());
-});
-
-/* ---------- SINCRONIZAÇÃO VPS ---------- */
-let syncRunCheck = null;
-
-function updateSyncUI(info) {
-  const pill = $("#syncBadge");
-  const txt = $("#syncText");
-  const pBadge = $("#syncParamBadge");
-  if (!pill || !txt) return;
-
-  pill.setAttribute("data-status", info.status);
-  const labels = {
-    checking: "Conectando...",
-    synced: "Sincronizado",
-    syncing: "Salvando...",
-    auth_required: "PIN necessário",
-    offline: "Sem conexão",
-    local_only: "Local"
-  };
-  txt.textContent = labels[info.status] || "Local";
-
-  if (pBadge) {
-    const pLabels = {
-      checking: ["Verificando...", "pill"],
-      synced: [`Conectado (rev. ${info.serverRevision})`, "pill"],
-      syncing: ["Sincronizando...", "pill"],
-      auth_required: ["PIN necessário", "pill warn"],
-      offline: ["Sem conexão com VPS", "pill warn"],
-      local_only: ["Modo local (sem API)", "pill warn"]
-    };
-    const [pt, pc] = pLabels[info.status] || ["Modo local", "pill warn"];
-    pBadge.textContent = pt;
-    pBadge.className = pc;
-  }
-}
-
-function initSync() {
-  if (!window.FeriasSync) return;
-  const getPayload = () => ({
-    stateObj: state,
-    gmapsKey: window.FeriasMaps ? window.FeriasMaps.getKey() : ""
-  });
-
-  window.FeriasSync.onStatus(updateSyncUI);
-
-  syncRunCheck = window.FeriasSync.startAutoPoll((remoteState, remoteGmapsKey) => {
-    state = migrateState(remoteState);
-    localStorage.setItem(KEY, JSON.stringify(state));
-    if (remoteGmapsKey && window.FeriasMaps && remoteGmapsKey !== window.FeriasMaps.getKey()) {
-      window.FeriasMaps.setKey(remoteGmapsKey);
-    }
-    render();
-  }, getPayload);
-
-  $("#syncBadge").onclick = async () => {
-    const res = await window.FeriasSync.pull();
-    if (res.reason === "auth_required") {
-      $("#syncModalInput").value = window.FeriasSync.getToken();
-      $("#syncModal").showModal();
-      return;
-    }
-    if (res.reason === "local_only") {
-      toast("💾 Modo local ativo (servidor de sincronização não detectado).");
-      return;
-    }
-    if (syncRunCheck) await syncRunCheck();
-    toast("☁️ Sincronização verificada!");
-  };
-
-  $("#btnCloseSyncModal").onclick = () => $("#syncModal").close();
-  $("#btnCancelSyncModal").onclick = () => $("#syncModal").close();
-  $("#syncForm").onsubmit = async e => {
-    e.preventDefault();
-    const tok = $("#syncModalInput").value.trim();
-    if (!tok) return;
-    window.FeriasSync.setToken(tok);
-    const res = await window.FeriasSync.pull();
-    if (res.ok) {
-      $("#syncModal").close();
-      if (syncRunCheck) await syncRunCheck();
-      renderParams();
-      toast("☁️ Conectado e sincronizado com a VPS!");
-    } else if (res.reason === "auth_required") {
-      toast("❌ PIN incorreto.");
-    } else {
-      toast("⚠️ Não foi possível conectar à VPS.");
-    }
-  };
-
-  $("#btnToggleSyncToken").onclick = () => {
-    const inp = $("#syncTokenInput");
-    inp.type = inp.type === "password" ? "text" : "password";
-  };
-
-  $("#btnSaveSyncToken").onclick = async () => {
-    window.FeriasSync.setToken($("#syncTokenInput").value);
-    const res = await window.FeriasSync.pull();
-    if (res.ok) {
-      if (syncRunCheck) await syncRunCheck();
-      toast("☁️ Conectado à VPS!");
-    } else if (res.reason === "auth_required") {
-      toast("❌ PIN incorreto.");
-    } else if (res.reason === "local_only") {
-      toast("Modo local (servidor /api não ativo neste endereço).");
-    }
-  };
-
-  $("#btnSyncPull").onclick = async () => {
-    const res = await window.FeriasSync.pull();
-    if (!res.ok) return toast(res.reason === "auth_required" ? "Informe o PIN da VPS primeiro." : "Servidor indisponível.");
-    if (res.data.empty) return toast("VPS ainda sem dados salvos.");
-    state = migrateState(res.data.state);
-    localStorage.setItem(KEY, JSON.stringify(state));
-    window.FeriasSync.setMeta({ updatedAt: res.data.updatedAt, dirty: false });
-    if (res.data.gmapsKey && window.FeriasMaps) window.FeriasMaps.setKey(res.data.gmapsKey);
-    render();
-    toast("⬇️ Dados carregados da VPS!");
-  };
-
-  $("#btnSyncPush").onclick = async () => {
-    window.FeriasSync.setMeta({ updatedAt: Date.now(), dirty: true });
-    const res = await window.FeriasSync.push(state, window.FeriasMaps ? window.FeriasMaps.getKey() : "");
-    if (res.ok) toast("⬆️ Dados enviados para a VPS!");
-    else toast(res.reason === "auth_required" ? "Informe o PIN da VPS primeiro." : "Falha ao enviar para VPS.");
-  };
-}
-
-initTheme();
-render();
-initSync();
+boot();
