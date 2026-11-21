@@ -14,7 +14,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=4">
+<link rel="stylesheet" href="styles.css?v=6">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -86,6 +86,7 @@
 
       <div class="actions">
         <button class="btn ghost small invite-pill" id="btnPendingInvites" type="button" hidden>📩 <span id="inviteCount">0</span></button>
+        <button class="btn ghost small" id="btnSyncCalendarTop" type="button" title="Sincronizar todos os eventos com o Google Agenda">📅 <span class="hide-sm">Agenda</span></button>
         <button class="btn ghost small" id="btnShareTrip" type="button" title="Compartilhar viagem">👥 <span class="hide-sm">Compartilhar</span></button>
         <button class="btn ghost sync-pill" id="syncBadge" type="button" title="Status da sincronização">
           <span class="sync-dot" aria-hidden="true"></span>
@@ -295,14 +296,26 @@
 
           <div class="gmaps-key-panel">
             <div class="gmaps-key-head">
-              <strong>📅 Integração Google Agenda</strong>
+              <strong>📅 Integração Google Agenda (Sincronização Inteligente)</strong>
               <span class="pill" id="calBadge">Lembrete dia anterior 09:00</span>
             </div>
-            <p class="muted small">Por padrão, todo evento/viagem exportado cria um lembrete no <b>dia anterior às 09:00</b> (horário ajustável acima).</p>
-            <div class="key-actions-row">
-              <button type="button" class="btn primary small" id="btnSyncAllCalendar">📅 Enviar todas para Google Agenda</button>
-              <button type="button" class="btn ghost small" id="btnDownloadAllIcs">📆 Baixar arquivo .ics</button>
+            <p class="muted small">Cada atividade recebe uma tag única (<code>extendedProperties</code>): eventos alterados são atualizados no lugar, novos são criados e excluídos são removidos sem duplicar. Lembrete padrão no <b>dia anterior às 09:00</b>.</p>
+            <div class="key-input-row">
+              <input type="text" id="calClientIdInput" placeholder="OAuth Client ID Google (opcional se definido no servidor)" autocomplete="off">
+              <button type="button" class="btn ghost small" id="btnSaveCalClientId">Salvar ID</button>
             </div>
+            <div class="key-actions-row">
+              <button type="button" class="btn primary small" id="btnSyncAllCalendar">📅 Sincronizar tudo c/ Google Agenda</button>
+              <button type="button" class="btn ghost small" id="btnDownloadAllIcs">📆 Baixar .ics inteligente</button>
+            </div>
+            <details class="help-details">
+              <summary>❓ Como ativar o envio direto 1-clique para sua Google Agenda</summary>
+              <ol class="small muted">
+                <li>No <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>, ative a <b>Google Calendar API</b>.</li>
+                <li>Crie um <b>ID do cliente OAuth 2.0 (Aplicativo da Web)</b> liberando a origem do seu site (ex.: <code>https://feriaspro.digitalinpulse.com.br</code>).</li>
+                <li>Cole o <b>Client ID</b> acima e clique em <b>Salvar ID</b> (ou defina em <code>GOOGLE_CLIENT_ID</code> no servidor).</li>
+              </ol>
+            </details>
           </div>
         </div>
 
@@ -529,15 +542,29 @@
   <div id="shareList" class="share-list"></div>
 </dialog>
 
+<!-- MODAL SINCRONIZAÇÃO GOOGLE AGENDA -->
+<dialog id="calSyncModal">
+  <div class="modal-head">
+    <h2>📅 Sincronizar Google Agenda</h2>
+    <button type="button" class="icon-btn modal-close" id="btnCloseCalSync" aria-label="Fechar">✕</button>
+  </div>
+  <div id="calSyncBody" class="cal-sync-body"></div>
+  <div class="modal-actions">
+    <span class="spacer"></span>
+    <button type="button" class="btn ghost" id="btnCalSyncIcs">📆 Baixar .ics (UID único)</button>
+    <button type="button" class="btn primary" id="btnCalSyncNow">📅 Sincronizar Agora</button>
+  </div>
+</dialog>
+
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=5"></script>
-<script src="data.js?v=5"></script>
-<script src="maps.js?v=5"></script>
-<script src="calendar.js?v=5"></script>
-<script src="api.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="config.example.js?v=6"></script>
+<script src="data.js?v=6"></script>
+<script src="maps.js?v=6"></script>
+<script src="calendar.js?v=6"></script>
+<script src="api.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

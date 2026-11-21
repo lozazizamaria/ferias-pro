@@ -850,6 +850,10 @@ function renderParams() {
 
   const remTime = state.params.calendarReminderTime || "09:00";
   if ($("#calBadge")) $("#calBadge").textContent = `Lembrete dia anterior ${remTime}`;
+  const cidInput = $("#calClientIdInput");
+  if (cidInput && document.activeElement !== cidInput) {
+    cidInput.value = getEffectiveGoogleClientId();
+  }
 
   renderScenarios();
 }
@@ -1763,16 +1767,84 @@ $("#btnAttachLink").onclick = () => {
   renderModalAttachments();
 };
 
+function getEffectiveGoogleClientId() {
+  return (
+    (window.FeriasApi && window.FeriasApi.getGoogleClientId()) ||
+    (state.params && state.params.googleClientId) ||
+    localStorage.getItem("ferias-pro-gcal-client-id") ||
+    ""
+  ).trim();
+}
+
+function setLocalGoogleClientId(cid) {
+  const clean = (cid || "").trim();
+  state.params.googleClientId = clean;
+  if (clean) localStorage.setItem("ferias-pro-gcal-client-id", clean);
+  else localStorage.removeItem("ferias-pro-gcal-client-id");
+}
+
+async function executeSmartCalendarSync() {
+  const cid = getEffectiveGoogleClientId();
+  const body = $("#calSyncBody");
+  const btnNow = $("#btnCalSyncNow");
+  const acts = sorted();
+  const rem = state.params.calendarReminderTime || "09:00";
+  const tid = activeTrip?.id || "default";
+
+  if (!cid) {
+    body.innerHTML = `
+      <p class="muted">A sincronização inteligente usa uma <b>tag única por atividade</b> (<code>extendedProperties</code>) para atualizar eventos alterados e remover os excluídos sem duplicar sua agenda.</p>
+      <label class="field-box">
+        <span>Cole seu OAuth Client ID do Google (Web) para ativar envio direto:</span>
+        <input type="text" id="calModalClientId" placeholder="123456-abc.apps.googleusercontent.com" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:9px 11px;color:var(--text-strong);width:100%">
+      </label>
+      <p class="muted small">Ou baixe agora o arquivo <b>.ics inteligente</b> (com UID único por evento e lembrete às <b>${esc(rem)}</b> do dia anterior).</p>`;
+    btnNow.textContent = "Salvar ID e Sincronizar";
+    return;
+  }
+
+  btnNow.disabled = true;
+  btnNow.textContent = "Sincronizando...";
+  body.innerHTML = `<p>⏳ Conectando com sua Google Agenda e comparando <b>${acts.length}</b> atividade(s) pela tag única...</p>`;
+  try {
+    const res = await window.FeriasCalendar.smartSyncTrip(acts, state.title, cid, rem, tid, true);
+    body.innerHTML = `
+      <p>✅ <b>Sincronização concluída</b> para <b>${esc(state.title)}</b> (lembrete no dia anterior às <b>${esc(rem)}</b>):</p>
+      <div class="cal-sync-stats">
+        <div class="cal-stat"><b>${res.created}</b><span class="muted small">Criados</span></div>
+        <div class="cal-stat"><b>${res.updated}</b><span class="muted small">Atualizados</span></div>
+        <div class="cal-stat"><b>${res.deleted}</b><span class="muted small">Removidos</span></div>
+        <div class="cal-stat"><b>${res.unchanged}</b><span class="muted small">Sem alteração</span></div>
+      </div>
+      <p class="muted small">Se você alterar datas, nomes ou excluir eventos no Férias Pro e clicar em Agenda novamente, apenas as mudanças serão aplicadas.</p>`;
+    btnNow.textContent = "🔄 Sincronizar Novamente";
+    toast(`📅 Agenda: ${res.created} criados · ${res.updated} atualizados · ${res.deleted} removidos`);
+  } catch (err) {
+    body.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>
+      <p class="muted small">Você também pode usar o botão <b>Baixar .ics (UID único)</b> abaixo para importar manualmente.</p>`;
+    btnNow.textContent = "Tentar Novamente";
+  } finally {
+    btnNow.disabled = false;
+  }
+}
+
+function openSmartCalendarModal() {
+  const modal = $("#calSyncModal");
+  modal.showModal();
+  executeSmartCalendarSync();
+}
+
 $("#btnCalDirect").onclick = async () => {
-  const cid = window.FeriasApi.getGoogleClientId();
+  const cid = getEffectiveGoogleClientId();
   if (!cid) {
     window.open($("#btnCalLink").href, "_blank", "noopener");
-    return toast("Abrindo Google Agenda com dados preenchidos (defina GOOGLE_CLIENT_ID para envio direto por API).");
+    return toast("Abrindo Google Agenda com dados preenchidos.");
   }
   try {
     const a = readForm();
-    await window.FeriasCalendar.syncActivitiesToGoogleCalendar([a], state.title, cid, state.params.calendarReminderTime);
-    toast("📅 Evento + lembrete (09:00 dia anterior) criados no Google Agenda!");
+    if (editing) a.id = editing;
+    const res = await window.FeriasCalendar.syncSingleActivity(a, state.title, cid, state.params.calendarReminderTime, activeTrip?.id || "default");
+    toast(`📅 Google Agenda: ${res.created ? "evento criado" : res.updated ? "evento atualizado" : "já atualizado"}!`);
   } catch (err) {
     toast("❌ " + (err.message || err));
   }
@@ -1780,28 +1852,29 @@ $("#btnCalDirect").onclick = async () => {
 
 $("#btnCalIcs").onclick = () => {
   const a = readForm();
-  window.FeriasCalendar.downloadIcs([a], a.name || state.title, state.params.calendarReminderTime);
+  if (editing) a.id = editing;
+  window.FeriasCalendar.downloadIcs([a], a.name || state.title, state.params.calendarReminderTime, activeTrip?.id || "local");
   toast("📆 Arquivo .ics baixado (com lembrete 09:00 do dia anterior)!");
 };
 
-async function syncAllToGoogleCalendar() {
-  const cid = window.FeriasApi.getGoogleClientId();
-  if (!cid) {
-    window.FeriasCalendar.downloadIcs(sorted(), state.title, state.params.calendarReminderTime);
-    return toast("📆 Arquivo .ics completo baixado para importar no Google Agenda (lembretes 09:00 dia anterior)!");
+$("#btnSyncCalendarTop").onclick = $("#btnSyncAllCalendar").onclick = $("#btnMenuCalendarAll").onclick = openSmartCalendarModal;
+$("#btnCloseCalSync").onclick = () => $("#calSyncModal").close();
+$("#btnCalSyncIcs").onclick = $("#btnDownloadAllIcs").onclick = $("#btnExportIcs").onclick = () => {
+  window.FeriasCalendar.downloadIcs(sorted(), state.title, state.params.calendarReminderTime, activeTrip?.id || "local");
+  toast("📆 Agenda .ics inteligente baixada!");
+};
+$("#btnCalSyncNow").onclick = () => {
+  const inp = $("#calModalClientId");
+  if (inp && inp.value.trim()) {
+    setLocalGoogleClientId(inp.value.trim());
+    save();
+    renderParams();
   }
-  try {
-    const n = await window.FeriasCalendar.syncActivitiesToGoogleCalendar(sorted(), state.title, cid, state.params.calendarReminderTime);
-    toast(`📅 ${n} atividades sincronizadas com seu Google Agenda!`);
-  } catch (err) {
-    toast("❌ " + (err.message || err));
-  }
-}
-
-$("#btnSyncAllCalendar").onclick = $("#btnMenuCalendarAll").onclick = syncAllToGoogleCalendar;
-$("#btnDownloadAllIcs").onclick = $("#btnExportIcs").onclick = () => {
-  window.FeriasCalendar.downloadIcs(sorted(), state.title, state.params.calendarReminderTime);
-  toast("📆 Agenda .ics das férias baixada!");
+  executeSmartCalendarSync();
+};
+$("#btnSaveCalClientId").onclick = () => {
+  setLocalGoogleClientId($("#calClientIdInput").value);
+  save("📅 Client ID Google Agenda salvo!");
 };
 
 $("#btnModalSaveKey").onclick = () => {

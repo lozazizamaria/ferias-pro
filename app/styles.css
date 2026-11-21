@@ -996,7 +996,14 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
   .param-row .u { display: none; }
 }
 
+.cal-sync-body { display: grid; gap: 12px; font-size: 0.88rem; }
+.cal-sync-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.cal-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px; text-align: center; }
+.cal-stat b { display: block; font-size: 1.25rem; color: var(--text-strong); }
+
 @media (max-width: 720px) {
+  .actions { gap: 5px; }
+  .actions .btn { padding: 6px 9px; min-height: 36px; font-size: 0.85rem; }
   .key-actions-row .btn { white-space: normal; text-align: center; flex: 1 1 auto; }
   .topbar { padding: 10px 14px; gap: 8px; }
   .brand h1 { font-size: 1.15rem; }
@@ -1166,7 +1173,14 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
 .pwa-text { flex: 1; min-width: 170px; display: grid; gap: 2px; }
 .pwa-btns { display: flex; gap: 6px; margin-left: auto; }
 
+.cal-sync-body { display: grid; gap: 12px; font-size: 0.88rem; }
+.cal-sync-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.cal-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px; text-align: center; }
+.cal-stat b { display: block; font-size: 1.25rem; color: var(--text-strong); }
+
 @media (max-width: 720px) {
+  .actions { gap: 5px; }
+  .actions .btn { padding: 6px 9px; min-height: 36px; font-size: 0.85rem; }
   .brand-group { width: 100%; justify-content: space-between; }
   .trip-switcher { width: 100%; }
   .trip-switcher select { flex: 1; max-width: none; font-size: 16px; }

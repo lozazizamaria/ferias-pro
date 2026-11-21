@@ -1,8 +1,13 @@
-/* ===== Integração Google Agenda (OAuth API + .ics + Link Direto) — Férias Pro ===== */
+/* ===== Integração Inteligente Google Agenda (Smart Diff Sync + .ics UID) — Férias Pro ===== */
 (function () {
   const SCOPE = "https://www.googleapis.com/auth/calendar.events";
+  const BASE_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
   let tokenClient = null;
+  let tokenClientId = "";
   let accessToken = "";
+  let tokenExpiresAt = 0;
+  let pendingResolve = null;
+  let pendingReject = null;
   let gsiLoadedPromise = null;
 
   function loadGsiScript() {
@@ -26,7 +31,6 @@
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
   }
 
-  // Calcula minutos antes da meia-noite do dia de início para disparar às 09:00 do dia anterior (padrão = 900 min = 15h)
   function reminderMinutesBeforeMidnight(timeStr = "09:00") {
     const [hh, mm] = String(timeStr || "09:00").split(":").map(Number);
     const targetMin = (isFinite(hh) ? hh : 9) * 60 + (isFinite(mm) ? mm : 0);
@@ -34,23 +38,29 @@
   }
 
   function formatActivitySummary(a) {
-    if (a.type === "Viagem" && (a.from || a.to)) {
-      return `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`;
-    }
-    if (a.type === "Voo" && (a.from || a.to)) {
-      return `✈️ ${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`;
-    }
+    if (a.type === "Viagem" && (a.from || a.to)) return `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`;
+    if (a.type === "Voo" && (a.from || a.to)) return `✈️ ${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`;
     return a.name;
   }
 
-  function formatActivityDescription(a, tripName) {
+  function formatActivityDescription(a, tripName, tag) {
     const lines = [`Planejamento: ${tripName || "Férias Pro"}`, `Tipo: ${a.type}`];
     if (a.from || a.to) lines.push(`Trecho: ${a.from || "?"} ➔ ${a.to || "?"}`);
     if (a.km) lines.push(`Distância: ${a.km} km`);
     if (a.toll) lines.push(`Pedágio: R$ ${Number(a.toll).toFixed(2)}`);
     if (a.extraCost) lines.push(`Custo previsto: R$ ${Number(a.extraCost).toFixed(2)}`);
     if (a.notes) lines.push(`Notas: ${a.notes}`);
+    if (tag) lines.push(`\n[Férias Pro • ${tag}]`);
     return lines.join("\n");
+  }
+
+  function simpleHash(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(36);
   }
 
   function buildGoogleCalendarTemplateUrl(a, tripName) {
@@ -70,7 +80,7 @@
       .replace(/;/g, "\\;");
   }
 
-  function buildIcsContent(activities, tripName, reminderTime = "09:00") {
+  function buildIcsContent(activities, tripName, reminderTime = "09:00", tripId = "local") {
     const [hh, mm] = String(reminderTime || "09:00").split(":").map(x => String(parseInt(x, 10) || 0).padStart(2, "0"));
     const minsBefore = reminderMinutesBeforeMidnight(reminderTime);
     const lines = [
@@ -82,19 +92,21 @@
     ];
 
     const nowStamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+    const seq = Math.floor(Date.now() / 1000) % 100000000;
 
     activities.forEach(a => {
       if (!a.start) return;
       const summary = formatActivitySummary(a);
-      const desc = formatActivityDescription(a, tripName);
+      const uidBase = `${tripId}-${a.id || simpleHash(summary + a.start)}`;
+      const desc = formatActivityDescription(a, tripName, uidBase);
       const dtStart = a.start.replace(/-/g, "");
       const dtEnd = addDaysISO(a.end || a.start, 1).replace(/-/g, "");
       const prevDay = addDaysISO(a.start, -1).replace(/-/g, "");
 
-      // 1) Evento principal na data da atividade + VALARM no dia anterior às 09:00
       lines.push(
         "BEGIN:VEVENT",
-        `UID:${a.id || Math.random().toString(36).slice(2)}@feriaspro`,
+        `UID:${uidBase}-main@feriaspro.app`,
+        `SEQUENCE:${seq}`,
         `DTSTAMP:${nowStamp}`,
         `DTSTART;VALUE=DATE:${dtStart}`,
         `DTEND;VALUE=DATE:${dtEnd}`,
@@ -108,10 +120,10 @@
         "END:VEVENT"
       );
 
-      // 2) Lembrete explícito no dia anterior às 09:00 com o nome da atividade
       lines.push(
         "BEGIN:VEVENT",
-        `UID:${a.id || Math.random().toString(36).slice(2)}-rem@feriaspro`,
+        `UID:${uidBase}-rem@feriaspro.app`,
+        `SEQUENCE:${seq}`,
         `DTSTAMP:${nowStamp}`,
         `DTSTART:${prevDay}T${hh}${mm}00`,
         `DTEND:${prevDay}T${hh}${String(Math.min(59, (parseInt(mm, 10) || 0) + 15)).padStart(2, "0")}00`,
@@ -130,8 +142,8 @@
     return lines.join("\r\n");
   }
 
-  function downloadIcs(activities, tripName, reminderTime = "09:00") {
-    const ics = buildIcsContent(activities, tripName, reminderTime);
+  function downloadIcs(activities, tripName, reminderTime = "09:00", tripId = "local") {
+    const ics = buildIcsContent(activities, tripName, reminderTime, tripId);
     const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
     const u = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -143,18 +155,28 @@
 
   async function requestCalendarAccessToken(clientId) {
     if (!clientId) throw new Error("NO_GOOGLE_CLIENT_ID");
+    if (accessToken && tokenClientId === clientId && Date.now() < tokenExpiresAt) {
+      return accessToken;
+    }
     await loadGsiScript();
     return new Promise((resolve, reject) => {
-      if (!tokenClient) {
-        tokenClient = google.accounts.oauth2.initTokenClient({
+      pendingResolve = resolve;
+      pendingReject = reject;
+      if (!tokenClient || tokenClientId !== clientId) {
+        tokenClientId = clientId;
+        tokenClient = window.google.accounts.oauth2.initTokenClient({
           client_id: clientId,
           scope: SCOPE,
           callback: resp => {
+            const res = pendingResolve;
+            const rej = pendingReject;
+            pendingResolve = pendingReject = null;
             if (resp && resp.access_token) {
               accessToken = resp.access_token;
-              resolve(accessToken);
-            } else {
-              reject(new Error(resp?.error || "Autorização Google Agenda negada."));
+              tokenExpiresAt = Date.now() + ((Number(resp.expires_in) || 3500) - 120) * 1000;
+              if (res) res(accessToken);
+            } else if (rej) {
+              rej(new Error(resp?.error || "Autorização Google Agenda negada."));
             }
           }
         });
@@ -163,25 +185,67 @@
     });
   }
 
-  async function syncActivitiesToGoogleCalendar(activities, tripName, clientId, reminderTime = "09:00") {
-    const token = await requestCalendarAccessToken(clientId);
+  async function gcalFetch(url, token, opts = {}) {
+    const res = await fetch(url, {
+      ...opts,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...(opts.headers || {})
+      }
+    });
+    if (res.status === 204 || res.status === 404 || res.status === 410) return { status: res.status, data: null };
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.error?.message || `Google Agenda HTTP ${res.status}`);
+    }
+    return { status: res.status, data };
+  }
+
+  async function listExistingTripEvents(token, tripId) {
+    const map = new Map();
+    let pageToken = "";
+    do {
+      const params = new URLSearchParams({
+        privateExtendedProperty: `feriasProTripId=${tripId}`,
+        maxResults: "250",
+        singleEvents: "false",
+        showDeleted: "false"
+      });
+      if (pageToken) params.set("pageToken", pageToken);
+      const { data } = await gcalFetch(`${BASE_URL}?${params}`, token);
+      if (data?.items) {
+        data.items.forEach(ev => {
+          const tag = ev.extendedProperties?.private?.feriasProTag;
+          if (tag && ev.status !== "cancelled") {
+            map.set(tag, ev);
+          }
+        });
+      }
+      pageToken = data?.nextPageToken || "";
+    } while (pageToken);
+    return map;
+  }
+
+  function buildDesiredEvents(activities, tripName, tripId, reminderTime) {
     const minsBefore = reminderMinutesBeforeMidnight(reminderTime);
     const [hh, mm] = String(reminderTime || "09:00").split(":").map(x => String(parseInt(x, 10) || 0).padStart(2, "0"));
-    const tzOffset = "-03:00";
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo";
+    const desired = [];
 
-    let created = 0;
-    for (const a of activities) {
-      if (!a.start) continue;
+    activities.forEach(a => {
+      if (!a.start) return;
       const summary = formatActivitySummary(a);
-      const description = formatActivityDescription(a, tripName);
       const endExclusive = addDaysISO(a.end || a.start, 1);
       const prevDay = addDaysISO(a.start, -1);
+      const actId = a.id || simpleHash(summary + a.start);
 
-      // Evento principal com notificação às 09:00 do dia anterior
-      const mainEvent = {
+      const tagMain = `fp_${tripId}_${actId}_main`;
+      const descMain = formatActivityDescription(a, tripName, tagMain);
+      const payloadMain = {
         summary,
-        description,
-        location: a.to || a.from || undefined,
+        description: descMain,
+        location: a.to || a.from || "",
         start: { date: a.start },
         end: { date: endExclusive },
         reminders: {
@@ -192,46 +256,98 @@
           ]
         }
       };
+      const hashMain = simpleHash(JSON.stringify(payloadMain));
+      payloadMain.extendedProperties = {
+        private: {
+          feriasProTag: tagMain,
+          feriasProTripId: String(tripId),
+          feriasProActivityId: String(actId),
+          feriasProKind: "main",
+          feriasProHash: hashMain
+        }
+      };
+      desired.push({ tag: tagMain, hash: hashMain, payload: payloadMain });
 
-      const r1 = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(mainEvent)
-      });
-      if (!r1.ok) throw new Error("Erro ao criar evento no Google Agenda.");
-
-      // Lembrete explícito às 09:00 do dia anterior com o nome da atividade
-      const remEvent = {
+      const tagRem = `fp_${tripId}_${actId}_rem`;
+      const descRem = formatActivityDescription(a, tripName, tagRem);
+      const endRemMin = Math.min(59, (parseInt(mm, 10) || 0) + 15);
+      const payloadRem = {
         summary: `🔔 Lembrete amanhã: ${summary}`,
-        description,
-        start: { dateTime: `${prevDay}T${hh}:${mm}:00${tzOffset}` },
-        end: { dateTime: `${prevDay}T${hh}:${String(Math.min(59, (parseInt(mm, 10) || 0) + 15)).padStart(2, "0")}:00${tzOffset}` },
+        description: descRem,
+        location: a.to || a.from || "",
+        start: { dateTime: `${prevDay}T${hh}:${mm}:00`, timeZone: tz },
+        end: { dateTime: `${prevDay}T${hh}:${String(endRemMin).padStart(2, "0")}:00`, timeZone: tz },
         reminders: {
           useDefault: false,
           overrides: [{ method: "popup", minutes: 0 }]
         }
       };
+      const hashRem = simpleHash(JSON.stringify(payloadRem));
+      payloadRem.extendedProperties = {
+        private: {
+          feriasProTag: tagRem,
+          feriasProTripId: String(tripId),
+          feriasProActivityId: String(actId),
+          feriasProKind: "rem",
+          feriasProHash: hashRem
+        }
+      };
+      desired.push({ tag: tagRem, hash: hashRem, payload: payloadRem });
+    });
 
-      await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(remEvent)
-      });
+    return desired;
+  }
 
-      created++;
+  // Sincronização inteligente: cria novos, atualiza alterados (PATCH) e remove excluídos (DELETE)
+  async function smartSyncTrip(activities, tripName, clientId, reminderTime = "09:00", tripId = "default", deleteOrphans = true) {
+    const token = await requestCalendarAccessToken(clientId);
+    const existingByTag = await listExistingTripEvents(token, String(tripId));
+    const desired = buildDesiredEvents(activities, tripName, String(tripId), reminderTime);
+
+    let created = 0, updated = 0, deleted = 0, unchanged = 0;
+    const seenTags = new Set();
+
+    for (const item of desired) {
+      seenTags.add(item.tag);
+      const existing = existingByTag.get(item.tag);
+      if (!existing) {
+        await gcalFetch(BASE_URL, token, { method: "POST", body: JSON.stringify(item.payload) });
+        created++;
+      } else {
+        const remoteHash = existing.extendedProperties?.private?.feriasProHash;
+        if (remoteHash === item.hash) {
+          unchanged++;
+        } else {
+          await gcalFetch(`${BASE_URL}/${encodeURIComponent(existing.id)}`, token, {
+            method: "PATCH",
+            body: JSON.stringify(item.payload)
+          });
+          updated++;
+        }
+      }
     }
-    return created;
+
+    if (deleteOrphans) {
+      for (const [tag, existing] of existingByTag.entries()) {
+        if (!seenTags.has(tag)) {
+          await gcalFetch(`${BASE_URL}/${encodeURIComponent(existing.id)}`, token, { method: "DELETE" });
+          deleted++;
+        }
+      }
+    }
+
+    return { created, updated, deleted, unchanged, totalActivities: activities.length };
+  }
+
+  // Sincronização unitária (cria ou atualiza apenas 1 atividade sem deletar as outras)
+  async function syncSingleActivity(activity, tripName, clientId, reminderTime = "09:00", tripId = "default") {
+    return smartSyncTrip([activity], tripName, clientId, reminderTime, tripId, false);
   }
 
   window.FeriasCalendar = {
     buildGoogleCalendarTemplateUrl,
     downloadIcs,
-    syncActivitiesToGoogleCalendar
+    smartSyncTrip,
+    syncSingleActivity
   };
 })();
