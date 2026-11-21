@@ -91,14 +91,20 @@
     }
   }
 
-  function parseTollMoney(tollInfo) {
-    if (!tollInfo) return { hasTolls: false, tollKnown: true, tollCost: 0, currency: "BRL" };
-    const prices = tollInfo.estimatedPrices || tollInfo.estimatedPrice || [];
+  function parseTollMoney(tollInfo, legs) {
+    let info = tollInfo;
+    if (!info && Array.isArray(legs)) {
+      const legPrices = legs.flatMap(l => l.travelAdvisory?.tollInfo?.estimatedPrices || l.travelAdvisory?.tollInfo?.estimatedPrice || []);
+      if (legPrices.length) info = { estimatedPrices: legPrices };
+    }
+    if (!info) return { hasTolls: false, tollKnown: true, tollCost: 0, currency: "BRL" };
+    const prices = info.estimatedPrices || info.estimatedPrice || [];
     if (!prices.length) {
       return { hasTolls: true, tollKnown: false, tollCost: null, currency: "BRL" };
     }
-    const brl = prices.filter(p => (p.currencyCode || p.currency || "BRL") === "BRL");
-    const list = brl.length ? brl : prices;
+    const norm = prices.map(p => (p && typeof p.toJSON === "function" ? p.toJSON() : p));
+    const brl = norm.filter(p => (p.currencyCode || p.currency || "BRL") === "BRL");
+    const list = brl.length ? brl : norm;
     let total = 0;
     let currency = "BRL";
     for (const p of list) {
@@ -140,7 +146,7 @@
         "distanceMeters",
         "durationMillis",
         "staticDurationMillis",
-        "travelAdvisory.tollInfo",
+        "travelAdvisory",
         "description",
         "legs",
         "path",
@@ -165,7 +171,7 @@
     const km = Math.round((route.distanceMeters || 0) / 1000);
     const ms = route.durationMillis ?? route.staticDurationMillis ?? 0;
     const driveMinutes = Math.round(ms / 60000);
-    const toll = parseTollMoney(route.travelAdvisory?.tollInfo);
+    const toll = parseTollMoney(route.travelAdvisory?.tollInfo, route.legs);
 
     return {
       km,
