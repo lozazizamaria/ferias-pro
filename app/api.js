@@ -245,6 +245,18 @@
     return `/api/attachments/${encodeURIComponent(att.id)}`;
   }
 
+  async function rotateCalToken(tripId) {
+    if (!serverAvailable) return "";
+    const r = await req(`/api/trips/${encodeURIComponent(tripId)}/cal-token`, { method: "POST" });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao gerar link.");
+    return r.data.calToken;
+  }
+
+  function getCalendarFeedUrl(calToken) {
+    if (!calToken) return "";
+    return `${location.origin}/api/calendar/${encodeURIComponent(calToken)}.ics`;
+  }
+
   /* ---------- Local fallback ---------- */
   function getLocalStore() {
     try { return JSON.parse(localStorage.getItem(LOCAL_TRIPS_KEY)) || {}; }
@@ -312,6 +324,8 @@
     uploadAttachment,
     deleteAttachment,
     attachmentHref,
+    rotateCalToken,
+    getCalendarFeedUrl,
     schedulePush,
     startPolling,
     onStatus,

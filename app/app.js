@@ -1813,20 +1813,70 @@ async function executeSmartCalendarSync() {
   const tid = activeTrip?.id || "default";
 
   if (!cid) {
+    btnNow.hidden = true;
+    const feedUrl = activeTrip?.calToken ? window.FeriasApi.getCalendarFeedUrl(activeTrip.calToken) : "";
+    const webcalUrl = feedUrl ? feedUrl.replace(/^https?:\/\//i, "webcal://") : "";
+    const gcalSubscribeUrl = webcalUrl ? `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}` : "";
+    const isLocalHost = location.hostname === "127.0.0.1" || location.hostname === "localhost";
+
     body.innerHTML = `
-      <p class="muted">A sincronização inteligente usa uma <b>tag única por atividade</b> (<code>extendedProperties</code>) para atualizar eventos alterados e remover os excluídos sem duplicar sua agenda.</p>
-      <label class="field-box">
-        <span>Cole seu OAuth Client ID do Google (Web) para ativar envio direto:</span>
-        <input type="text" id="calModalClientId" placeholder="123456-abc.apps.googleusercontent.com" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:9px 11px;color:var(--text-strong);width:100%">
-      </label>
-      <p class="muted small">Ou baixe agora o arquivo <b>.ics inteligente</b> (com UID único por evento e lembrete às <b>${esc(rem)}</b> do dia anterior).</p>`;
-    btnNow.textContent = "Salvar ID e Sincronizar";
+      ${feedUrl ? `
+        <div class="gmaps-key-panel" style="margin-top:0">
+          <strong>1️⃣ Assinar Calendário Automático (1 clique · sem configurar nada)</strong>
+          <p class="muted small">Assine uma única vez: todas as viagens, eventos e lembretes (dia anterior às <b>${esc(rem)}</b>) são publicados pela sua VPS e atualizam sozinhos na sua agenda.</p>
+          <div class="key-actions-row">
+            <a class="btn primary small" href="${esc(gcalSubscribeUrl)}" target="_blank" rel="noopener">📅 Assinar no Google Agenda</a>
+            <a class="btn ghost small" href="${esc(webcalUrl)}">🍎 Assinar no iPhone / Mac</a>
+            <button type="button" class="btn ghost small" id="btnCopyCalFeed">📋 Copiar link</button>
+          </div>
+          ${isLocalHost ? `<p class="muted small">💡 A assinatura automática por link funciona quando acessado pelo seu domínio público (<code>https://feriaspro.digitalinpulse.com.br</code>).</p>` : `<p class="muted small">ℹ️ O Google Agenda atualiza assinaturas externas periodicamente. Para atualização no mesmo segundo, use o arquivo <code>.ics</code> abaixo ou o modo API.</p>`}
+        </div>
+      ` : ""}
+
+      <div class="gmaps-key-panel" style="margin-top:0">
+        <strong>2️⃣ Importar / Atualizar na hora (.ics inteligente)</strong>
+        <p class="muted small">Baixe o arquivo e importe no Google Agenda — cada evento tem ID único para atualizar sem duplicar.</p>
+        <div class="key-actions-row">
+          <a class="btn ghost small" href="https://calendar.google.com/calendar/u/0/r/settings/export" target="_blank" rel="noopener">📂 Abrir Importador do Google Agenda ↗</a>
+        </div>
+      </div>
+
+      <details class="help-details">
+        <summary>⚡ Modo instantâneo com botão "Autorizar Google" (opcional)</summary>
+        <div style="display:grid;gap:8px;margin-top:8px">
+          <p class="muted small">Se você quiser que o app peça permissão na janela do Google e envie/altere/apague em 1 segundo, cole o <b>OAuth Client ID</b> (configurado 1 única vez):</p>
+          <div class="key-input-row">
+            <input type="text" id="calModalClientId" placeholder="123456-abc.apps.googleusercontent.com" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:9px 11px;color:var(--text-strong);width:100%">
+            <button type="button" class="btn primary small" id="btnModalConnectGcal">Ativar e Sincronizar</button>
+          </div>
+        </div>
+      </details>`;
+
+    const copyBtn = $("#btnCopyCalFeed");
+    if (copyBtn && feedUrl) {
+      copyBtn.onclick = async () => {
+        try { await navigator.clipboard.writeText(feedUrl); toast("📋 Link do calendário copiado!"); }
+        catch { prompt("Copie o link do calendário:", feedUrl); }
+      };
+    }
+    const modalBtn = $("#btnModalConnectGcal");
+    if (modalBtn) {
+      modalBtn.onclick = () => {
+        const val = ($("#calModalClientId")?.value || "").trim();
+        if (!val) return toast("Cole o OAuth Client ID do Google.");
+        setLocalGoogleClientId(val);
+        save();
+        renderParams();
+        executeSmartCalendarSync();
+      };
+    }
     return;
   }
 
+  btnNow.hidden = false;
   btnNow.disabled = true;
   btnNow.textContent = "Sincronizando...";
-  body.innerHTML = `<p>⏳ Conectando com sua Google Agenda e comparando <b>${acts.length}</b> atividade(s) pela tag única...</p>`;
+  body.innerHTML = `<p>⏳ Abrindo autorização da sua conta Google e comparando <b>${acts.length}</b> atividade(s)...</p>`;
   try {
     const res = await window.FeriasCalendar.smartSyncTrip(acts, state.title, cid, rem, tid, true);
     body.innerHTML = `
@@ -1842,7 +1892,7 @@ async function executeSmartCalendarSync() {
     toast(`📅 Agenda: ${res.created} criados · ${res.updated} atualizados · ${res.deleted} removidos`);
   } catch (err) {
     body.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>
-      <p class="muted small">Você também pode usar o botão <b>Baixar .ics (UID único)</b> abaixo para importar manualmente.</p>`;
+      <p class="muted small">Você também pode usar o botão <b>Baixar .ics agora</b> abaixo para importar na hora.</p>`;
     btnNow.textContent = "Tentar Novamente";
   } finally {
     btnNow.disabled = false;

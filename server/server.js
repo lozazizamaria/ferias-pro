@@ -233,6 +233,97 @@ function safeFileName(name) {
   return String(name || "documento").replace(/[^\w.\-() ]+/g, "_").slice(0, 120) || "documento";
 }
 
+function addDaysISO(iso, delta) {
+  const [y, m, d] = String(iso || "").split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const dt = new Date(y, m - 1, d + delta);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+function escapeIcsText(txt) {
+  return String(txt || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\r?\n/g, "\\n")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;");
+}
+
+function buildTripIcs(trip) {
+  const data = trip.data || {};
+  const tripName = trip.name || data.title || "Férias Pro";
+  const activities = Array.isArray(data.activities) ? data.activities : [];
+  const remTime = data.params?.calendarReminderTime || "09:00";
+  const [hh, mm] = String(remTime).split(":").map(x => String(parseInt(x, 10) || 0).padStart(2, "0"));
+  const minsBefore = Math.max(60, 24 * 60 - ((parseInt(hh, 10) || 9) * 60 + (parseInt(mm, 10) || 0)));
+  const seq = trip.revision || 1;
+  const stamp = new Date(trip.updatedAt || Date.now()).toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Ferias Pro//VPS Feed//PT-BR",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    `X-WR-CALNAME:${escapeIcsText("Férias Pro — " + tripName)}`,
+    "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+    "X-PUBLISHED-TTL:PT1H"
+  ];
+
+  activities.forEach(a => {
+    if (!a || !a.start) return;
+    const summary = (a.type === "Viagem" || a.type === "Voo") && (a.from || a.to)
+      ? `${a.type === "Voo" ? "✈️ " : ""}${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`
+      : a.name;
+    const descParts = [`Planejamento: ${tripName}`, `Tipo: ${a.type}`];
+    if (a.from || a.to) descParts.push(`Trecho: ${a.from || "?"} ➔ ${a.to || "?"}`);
+    if (a.km) descParts.push(`Distância: ${a.km} km`);
+    if (a.toll) descParts.push(`Pedágio: R$ ${Number(a.toll).toFixed(2)}`);
+    if (a.extraCost) descParts.push(`Custo: R$ ${Number(a.extraCost).toFixed(2)}`);
+    if (a.notes) descParts.push(`Notas: ${a.notes}`);
+    const desc = descParts.join("\n");
+
+    const uidBase = `${trip.id}-${a.id || crypto.createHash("md5").update(summary + a.start).digest("hex").slice(0, 8)}`;
+    const dtStart = a.start.replace(/-/g, "");
+    const dtEnd = addDaysISO(a.end || a.start, 1).replace(/-/g, "");
+    const prevDay = addDaysISO(a.start, -1).replace(/-/g, "");
+    const endRemMin = Math.min(59, (parseInt(mm, 10) || 0) + 15);
+
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:${uidBase}-main@feriaspro.app`,
+      `SEQUENCE:${seq}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${dtStart}`,
+      `DTEND;VALUE=DATE:${dtEnd}`,
+      `SUMMARY:${escapeIcsText(summary)}`,
+      `DESCRIPTION:${escapeIcsText(desc)}`,
+      "BEGIN:VALARM",
+      "ACTION:DISPLAY",
+      `DESCRIPTION:${escapeIcsText("Lembrete Férias Pro: " + summary)}`,
+      `TRIGGER:-PT${minsBefore}M`,
+      "END:VALARM",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      `UID:${uidBase}-rem@feriaspro.app`,
+      `SEQUENCE:${seq}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${prevDay}T${hh}${mm}00`,
+      `DTEND:${prevDay}T${hh}${String(endRemMin).padStart(2, "0")}00`,
+      `SUMMARY:${escapeIcsText("🔔 Lembrete amanhã: " + summary)}`,
+      `DESCRIPTION:${escapeIcsText(desc)}`,
+      "BEGIN:VALARM",
+      "ACTION:DISPLAY",
+      `DESCRIPTION:${escapeIcsText("Amanhã: " + summary)}`,
+      "TRIGGER:-PT0M",
+      "END:VALARM",
+      "END:VEVENT"
+    );
+  });
+
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+
 async function verifyGoogleIdToken(credential) {
   if (!GOOGLE_CLIENT_ID) throw new Error("GOOGLE_NOT_CONFIGURED");
   const resp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
@@ -440,6 +531,7 @@ const server = http.createServer(async (req, res) => {
         id: tripId,
         name,
         ownerId: auth.user.id,
+        calToken: crypto.randomBytes(18).toString("hex"),
         createdAt: now,
         updatedAt: now,
         revision: 1,
@@ -460,6 +552,10 @@ const server = http.createServer(async (req, res) => {
       if (!access) return sendJson(res, 403, { ok: false, error: "Sem permissão nesta viagem." });
 
       if (req.method === "GET") {
+        if (!trip.calToken) {
+          trip.calToken = crypto.randomBytes(18).toString("hex");
+          saveDb();
+        }
         const owner = db.users[trip.ownerId];
         const shares = db.shares
           .filter(s => s.tripId === trip.id)
@@ -478,6 +574,7 @@ const server = http.createServer(async (req, res) => {
             ownerId: trip.ownerId,
             ownerName: owner ? owner.name : "",
             role: access,
+            calToken: trip.calToken,
             updatedAt: trip.updatedAt || 0,
             revision: trip.revision || 1,
             gmapsKey: trip.gmapsKey || "",
@@ -667,6 +764,36 @@ const server = http.createServer(async (req, res) => {
         saveDb();
         return sendJson(res, 200, { ok: true });
       }
+    }
+
+    /* ---------- CALENDAR FEED (.ics ASSINÁVEL) ---------- */
+    const calTokenRotateMatch = pathname.match(/^\/api\/trips\/([a-zA-Z0-9_]+)\/cal-token$/);
+    if (calTokenRotateMatch && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const trip = db.trips[calTokenRotateMatch[1]];
+      if (!trip) return sendJson(res, 404, { ok: false, error: "Viagem não encontrada." });
+      if (trip.ownerId !== auth.user.id) return sendJson(res, 403, { ok: false, error: "Sem permissão." });
+      trip.calToken = crypto.randomBytes(18).toString("hex");
+      saveDb();
+      return sendJson(res, 200, { ok: true, calToken: trip.calToken });
+    }
+
+    const calFeedMatch = pathname.match(/^\/api\/calendar\/([a-f0-9]{16,64})\.ics$/i);
+    if (calFeedMatch && req.method === "GET") {
+      const token = calFeedMatch[1];
+      const trip = Object.values(db.trips).find(t => t.calToken === token);
+      if (!trip) {
+        res.writeHead(404);
+        return res.end("Calendar not found");
+      }
+      const ics = buildTripIcs(trip);
+      res.writeHead(200, {
+        "Content-Type": "text/calendar; charset=utf-8",
+        "Content-Disposition": `inline; filename="ferias_pro_${trip.id}.ics"`,
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+      });
+      return res.end(ics);
     }
 
     if (SERVE_STATIC && req.method === "GET") {
