@@ -316,6 +316,14 @@
     return r.data;
   }
 
+  async function epaVehicles(params) {
+    if (!serverAvailable) throw new Error("OFFLINE");
+    const qs = new URLSearchParams(params).toString();
+    const r = await req(`/api/vehicles/epa?${qs}`);
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao consultar catálogo online.");
+    return r.data;
+  }
+
   /* ---------- Local fallback ---------- */
   function getLocalStore() {
     try { return JSON.parse(localStorage.getItem(LOCAL_TRIPS_KEY)) || {}; }
@@ -391,6 +399,7 @@
     aiVehicleSpecs,
     aiAnalyzeActivity,
     signWalletPass,
+    epaVehicles,
     schedulePush,
     startPolling,
     onStatus,

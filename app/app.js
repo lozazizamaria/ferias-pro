@@ -2306,11 +2306,15 @@ function setupVehicleCombobox() {
   if (!inp || !list || !window.FeriasVehicles) return;
 
   const renderMatches = q => {
-    const matches = window.FeriasVehicles.search(q, 10);
-    if (!matches.length) { list.hidden = true; list.innerHTML = ""; return; }
+    const matches = window.FeriasVehicles.search(q, 24);
+    if (!matches.length) {
+      list.innerHTML = `<div class="ac-item" style="cursor:default">Nenhum no catálogo rápido — use <b>🌐 Explorar 1984–2026</b> abaixo ou <b>⚡ Preencher c/ IA</b>.</div>`;
+      list.hidden = false;
+      return;
+    }
     list.innerHTML = matches.map(v => `
       <button type="button" class="ac-item" data-vid="${esc(v.id)}">
-        <b>${esc(v.name)}</b> <span class="muted small">· ${esc(v.powertrain)} · ${v.hevKmL ? v.hevKmL + " km/L" : v.evRange + " km EV"}</span>
+        <b>${esc(v.name)}</b> <span class="muted small">· ${esc(v.category || v.powertrain)} · ${v.hevKmL ? v.hevKmL + " km/L" : v.evRange + " km EV"}</span>
       </button>`).join("");
     list.hidden = false;
     list.querySelectorAll("[data-vid]").forEach(btn => {
@@ -2328,6 +2332,79 @@ function setupVehicleCombobox() {
   inp.addEventListener("blur", () => setTimeout(() => { list.hidden = true; }, 180));
 }
 setupVehicleCombobox();
+
+function setupEpaVehicleBrowser() {
+  const det = $("#epaBrowserDetails");
+  const ySel = $("#epaYear"), mSel = $("#epaMake"), mdSel = $("#epaModel"), oSel = $("#epaOption");
+  const btn = $("#btnApplyEpaVehicle"), st = $("#epaStatus");
+  if (!det || !ySel) return;
+
+  let loadedYears = false;
+  const fillSelect = (sel, items, placeholder) => {
+    sel.innerHTML = `<option value="">${placeholder}</option>` +
+      items.map(it => `<option value="${esc(it.value ?? it)}">${esc(it.text ?? it)}</option>`).join("");
+  };
+
+  det.addEventListener("toggle", () => {
+    if (!det.open || loadedYears) return;
+    loadedYears = true;
+    const yrs = [];
+    for (let y = 2026; y >= 1984; y--) yrs.push(String(y));
+    fillSelect(ySel, yrs, "Ano...");
+    ySel.value = "2024";
+    ySel.dispatchEvent(new Event("change"));
+  });
+
+  ySel.onchange = async () => {
+    fillSelect(mSel, [], "Carregando marcas...");
+    fillSelect(mdSel, [], "Selecione a marca...");
+    fillSelect(oSel, [], "Selecione o modelo...");
+    try {
+      const r = await window.FeriasApi.epaVehicles({ action: "makes", year: ySel.value });
+      fillSelect(mSel, r.items || [], "Escolha a marca...");
+      st.textContent = `${(r.items || []).length} marcas em ${ySel.value}`;
+    } catch {
+      fillSelect(mSel, [], "Sem acesso online ao catálogo EPA");
+    }
+  };
+
+  mSel.onchange = async () => {
+    if (!mSel.value) return;
+    fillSelect(mdSel, [], "Carregando modelos...");
+    fillSelect(oSel, [], "Selecione o modelo...");
+    try {
+      const r = await window.FeriasApi.epaVehicles({ action: "models", year: ySel.value, make: mSel.value });
+      fillSelect(mdSel, r.items || [], "Escolha o modelo...");
+      st.textContent = `${(r.items || []).length} modelos de ${mSel.value}`;
+    } catch {}
+  };
+
+  mdSel.onchange = async () => {
+    if (!mdSel.value) return;
+    fillSelect(oSel, [], "Carregando versões...");
+    try {
+      const r = await window.FeriasApi.epaVehicles({ action: "options", year: ySel.value, make: mSel.value, model: mdSel.value });
+      fillSelect(oSel, r.items || [], "Escolha motor/versão...");
+      if ((r.items || []).length === 1) oSel.value = r.items[0].value;
+    } catch {}
+  };
+
+  btn.onclick = async () => {
+    const vid = oSel.value;
+    if (!vid) return toast("Selecione Ano, Marca, Modelo e Versão.");
+    st.textContent = "⏳ Buscando consumo oficial...";
+    try {
+      const r = await window.FeriasApi.epaVehicles({ action: "spec", id: vid });
+      if (r.vehicle) {
+        applyVehicleSpecToState(r.vehicle, "EPA 1984–2026");
+        st.textContent = `✅ ${r.vehicle.name} aplicado!`;
+      }
+    } catch (err) {
+      st.textContent = "❌ " + (err.message || err);
+    }
+  };
+}
+setupEpaVehicleBrowser();
 
 $("#btnLookupVehicleAI").onclick = async () => {
   const model = $("#p-vehicleName").value.trim();
@@ -2454,26 +2531,33 @@ async function openWalletPassForCurrentActivity() {
   const modal = $("#walletModal");
   const body = $("#walletBody");
   const openBtn = $("#btnOpenGoogleWallet");
+  const setupDet = $("#walletSetupDetails");
   openBtn.hidden = true;
-  body.innerHTML = `<p class="muted small">⏳ Gerando passe digital...</p>`;
-  window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
-  modal.showModal();
 
   try {
     const res = await window.FeriasApi.signWalletPass(a, state.title);
     if (res.configured && res.saveUrl) {
+      // Abre diretamente o Google Wallet para o usuário autorizar e salvar na hora
+      window.open(res.saveUrl, "_blank", "noopener");
       openBtn.href = res.saveUrl;
       openBtn.hidden = false;
-      body.innerHTML = `<p>✅ <b>Pronto para salvar na sua Google Wallet!</b> Toque em <b>Adicionar ao Google Wallet</b> para autorizar no seu celular ou baixe o Passe QR abaixo.</p>`;
-    } else {
-      body.innerHTML = `
-        <p>🎟️ <b>Passe Digital gerado com QR Code!</b> Salve a imagem abaixo no celular para check-in offline.</p>
-        <p class="muted small">Para habilitar também o botão direto da nuvem <code>pay.google.com</code> (Google Wallet API), adicione seu <b>Issuer ID</b> e <b>Service Account JSON</b> uma única vez em <b>👤 Perfil ➔ Credenciais</b>.</p>`;
+      if (setupDet) setupDet.hidden = true;
+      body.innerHTML = `<p>✅ <b>Google Wallet aberto!</b> Autorize na janela do Google Wallet que abriu (ou toque em <b>💳 Autorizar no Google Wallet</b> abaixo).</p>`;
+      window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
+      modal.showModal();
+      return;
     }
+    if (setupDet) setupDet.hidden = false;
+    body.innerHTML = `
+      <p>📲 <b>Cartão pronto para sua Carteira!</b> Baixe a imagem QR abaixo (<b>⬇️ Salvar Passe QR</b>), abra o aplicativo <b>Google Wallet</b> e toque em <b>"+ Adicionar à Carteira ➔ Tudo o mais / Foto"</b>.</p>
+      <p class="muted small">Se preferir abrir direto sem passar pela galeria, ative o emissor único abaixo (1 vez no servidor).</p>`;
   } catch (err) {
+    if (setupDet) setupDet.hidden = false;
     body.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>
-      <p class="muted small">Você ainda pode salvar a imagem do Passe Digital com QR Code abaixo.</p>`;
+      <p class="muted small">Você ainda pode salvar a imagem QR e importar direto pelo app Google Wallet.</p>`;
   }
+  window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
+  modal.showModal();
 }
 
 $("#btnWalletDirect").onclick = openWalletPassForCurrentActivity;
@@ -2486,6 +2570,26 @@ $("#btnDownloadPassPng").onclick = () => {
   a.click();
   toast("🖼️ Passe QR salvo!");
 };
+if ($("#btnWalletPickFile")) {
+  $("#btnWalletPickFile").onclick = () => $("#walletInlineJsonFile").click();
+  $("#walletInlineJsonFile").onchange = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const issuer = $("#walletIssuerInline").value.trim();
+    if (!issuer) { e.target.value = ""; return toast("Informe o Issuer ID do Google Wallet primeiro."); }
+    try {
+      const jsonStr = await f.text();
+      await window.FeriasApi.saveIntegrations({ walletIssuerId: issuer, walletSaJson: jsonStr });
+      $("#walletFileStatus").textContent = "✅ Ativado! Reabrindo Google Wallet...";
+      toast("✅ Google Wallet 1-clique ativado!");
+      $("#walletModal").close();
+      openWalletPassForCurrentActivity();
+    } catch (err) {
+      $("#walletFileStatus").textContent = "❌ " + (err.message || err);
+    }
+    e.target.value = "";
+  };
+}
 
 /* ---------- IA GEMINI NA ATIVIDADE (PRINT DE VOO / TICKET / TEXTO) ---------- */
 function applyExtractedActivityToForm(act) {
@@ -2796,6 +2900,16 @@ function openProfileModal() {
 
 $("#btnOpenProfile").onclick = $("#btnMenuProfile").onclick = $("#btnParamProfile").onclick = openProfileModal;
 $("#btnCloseProfile").onclick = $("#btnCancelProfile").onclick = () => $("#profileModal").close();
+if ($("#btnProfPickWalletJson")) {
+  $("#btnProfPickWalletJson").onclick = () => $("#prof-walletJsonFile").click();
+  $("#prof-walletJsonFile").onchange = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    $("#prof-walletSa").value = await f.text();
+    toast("📂 Chave .json carregada! Clique em Salvar Perfil.");
+    e.target.value = "";
+  };
+}
 $("#prof-waCountry").onchange = () => {
   const d = $("#prof-waCountry").value;
   $("#prof-waNumber").placeholder = d === "+55" ? "(11) 99999-8888" : "Número com código de área";

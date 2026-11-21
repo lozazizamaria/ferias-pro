@@ -14,7 +14,7 @@
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=10">
+<link rel="stylesheet" href="styles.css?v=11">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -261,11 +261,32 @@
             <div class="param-row">
               <span>Modelo do carro</span>
               <div class="ac-wrap" style="width:100%">
-                <input id="p-vehicleName" type="text" placeholder="Digite para buscar ou preencher auto..." autocomplete="off">
+                <input id="p-vehicleName" type="text" placeholder="Busque clássico, flex, diesel, SUV, híbrido ou EV..." autocomplete="off">
                 <div class="ac-list" id="ac-vehicle" hidden></div>
               </div>
               <span class="u" id="vehicleSourceTag">catálogo auto</span>
             </div>
+            <details class="help-details" id="epaBrowserDetails" style="margin:2px 0 6px">
+              <summary>🌐 Explorar banco completo por Ano / Marca / Modelo (1984–2026)</summary>
+              <div class="form-grid" style="margin-top:8px">
+                <label>Ano
+                  <select id="epaYear"></select>
+                </label>
+                <label>Marca
+                  <select id="epaMake"><option value="">Selecione...</option></select>
+                </label>
+                <label>Modelo
+                  <select id="epaModel"><option value="">Selecione a marca...</option></select>
+                </label>
+                <label>Versão / Motor
+                  <select id="epaOption"><option value="">Selecione o modelo...</option></select>
+                </label>
+                <div class="span2 key-actions-row">
+                  <button type="button" class="btn primary small" id="btnApplyEpaVehicle">✅ Preencher veículo selecionado</button>
+                  <span class="muted small" id="epaStatus">Carrega dados oficiais EPA (45.000+ versões) e converte p/ km/L</span>
+                </div>
+              </div>
+            </details>
             <label class="param-row">
               <span>Motorização</span>
               <select id="p-powertrain">
@@ -659,9 +680,14 @@
         <label class="span2">Google Wallet Issuer ID (opcional)
           <input type="text" id="prof-walletIssuer" placeholder="Ex: 3388000000012345678">
         </label>
-        <label class="span2">Service Account JSON (Google Wallet API - opcional)
-          <textarea id="prof-walletSa" rows="2" placeholder='{"type":"service_account","client_email":"...","private_key":"..."}'></textarea>
-        </label>
+        <div class="span2" style="display:grid;gap:6px">
+          <div class="route-head-row">
+            <span style="font-size:0.82rem;color:var(--muted);font-weight:500">Chave JSON Google Cloud (Google Wallet)</span>
+            <button type="button" class="btn ghost small" id="btnProfPickWalletJson">📂 Selecionar arquivo .json</button>
+            <input type="file" id="prof-walletJsonFile" accept=".json,application/json" hidden>
+          </div>
+          <textarea id="prof-walletSa" rows="2" placeholder="Ou cole o JSON da Service Account aqui..."></textarea>
+        </div>
       </div>
     </details>
 
@@ -682,10 +708,23 @@
   </div>
   <div id="walletBody" class="cal-sync-body"></div>
   <canvas id="walletPassCanvas" style="width:100%;border-radius:14px;border:1px solid var(--border);margin-top:10px"></canvas>
+  <details class="help-details" id="walletSetupDetails" style="margin-top:12px" hidden>
+    <summary>⚙️ Ativar abertura automática no app Google Wallet (configuração única do dono)</summary>
+    <div style="display:grid;gap:8px;margin-top:8px">
+      <p class="muted small">Por segurança do Google, passes diretos (<code>pay.google.com/gp/v/save</code>) exigem um <b>Issuer ID</b> gratuito (<a href="https://pay.google.com/business/console" target="_blank" rel="noopener" style="color:var(--accent2)">Pay &amp; Wallet Console ↗</a>) + arquivo <code>.json</code> da Service Account — configurado uma única vez:</p>
+      <input type="text" id="walletIssuerInline" placeholder="Issuer ID (ex: 3388000000012345678)" style="background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:8px 10px;color:var(--text-strong)">
+      <div class="key-actions-row">
+        <button type="button" class="btn ghost small" id="btnWalletPickFile">📂 Carregar arquivo .json do Google</button>
+        <input type="file" id="walletInlineJsonFile" accept=".json,application/json" hidden>
+        <span class="muted small" id="walletFileStatus"></span>
+      </div>
+    </div>
+  </details>
   <div class="modal-actions">
+    <a class="btn ghost" id="btnOpenWalletApp" href="https://wallet.google.com/" target="_blank" rel="noopener">📱 Abrir Google Wallet ↗</a>
     <span class="spacer"></span>
-    <button type="button" class="btn ghost" id="btnDownloadPassPng">⬇️ Salvar Passe (Imagem QR)</button>
-    <a class="btn primary" id="btnOpenGoogleWallet" target="_blank" rel="noopener" hidden>💳 Adicionar ao Google Wallet</a>
+    <button type="button" class="btn ghost" id="btnDownloadPassPng">⬇️ Salvar Passe QR</button>
+    <a class="btn primary" id="btnOpenGoogleWallet" target="_blank" rel="noopener" hidden>💳 Autorizar no Google Wallet</a>
   </div>
 </dialog>
 
@@ -801,14 +840,14 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=9"></script>
-<script src="vehicles.js?v=9"></script>
-<script src="countries.js?v=9"></script>
-<script src="data.js?v=9"></script>
-<script src="maps.js?v=9"></script>
-<script src="calendar.js?v=9"></script>
-<script src="report.js?v=9"></script>
-<script src="api.js?v=9"></script>
-<script src="app.js?v=10"></script>
+<script src="config.example.js?v=11"></script>
+<script src="vehicles.js?v=11"></script>
+<script src="countries.js?v=11"></script>
+<script src="data.js?v=11"></script>
+<script src="maps.js?v=11"></script>
+<script src="calendar.js?v=11"></script>
+<script src="report.js?v=11"></script>
+<script src="api.js?v=11"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

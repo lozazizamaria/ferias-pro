@@ -461,7 +461,8 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
   const genericObj = {
     id: objectId,
     classId,
-    genericType: isFlight ? "GENERIC_TYPE_UNSPECIFIED" : "GENERIC_TYPE_UNSPECIFIED",
+    state: "ACTIVE",
+    genericType: "GENERIC_TYPE_UNSPECIFIED",
     hexBackgroundColor: "#4f46e5",
     cardTitle: { defaultValue: { language: "pt-BR", value: `Férias Pro · ${tripName || "Viagem"}` } },
     header: { defaultValue: { language: "pt-BR", value: activity.name || "Reserva" } },
@@ -473,8 +474,8 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
     textModulesData: [
       { id: "data", header: "Data", body: activity.end && activity.end !== activity.start ? `${activity.start} a ${activity.end}` : (activity.start || "-") },
       ...(activity.from || activity.to ? [{ id: "rota", header: "Trecho / Local", body: `${activity.from || ""} -> ${activity.to || ""}` }] : []),
-      ...(activity.bookingRef ? [{ id: "reserva", header: "Localizador / Reserva", body: String(activity.bookingRef) }] : []),
-      ...(activity.notes ? [{ id: "notas", header: "Notas", body: String(activity.notes).slice(0, 200) }] : [])
+      ...(activity.bookingRef ? [{ id: "reserva", header: "Localizador", body: String(activity.bookingRef) }] : []),
+      ...(activity.notes ? [{ id: "notas", header: "Notas", body: String(activity.notes).slice(0, 180) }] : [])
     ]
   };
 
@@ -485,6 +486,7 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
     iat: Math.floor(Date.now() / 1000),
     origins: originHost ? [originHost] : [],
     payload: {
+      genericClasses: [{ id: classId, issuerName: "Férias Pro", reviewStatus: "UNDER_REVIEW" }],
       genericObjects: [genericObj]
     }
   };
@@ -1126,6 +1128,72 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
         return sendJson(res, 200, { ok: true, activity });
       } catch (err) {
         return sendJson(res, 502, { ok: false, error: err.message || "Erro ao analisar atividade com IA." });
+      }
+    }
+
+    /* ---------- BANCO ONLINE DE VEÍCULOS (EPA FuelEconomy.gov 1984–2026) ---------- */
+    if (pathname === "/api/vehicles/epa" && req.method === "GET") {
+      const action = url.searchParams.get("action") || "makes";
+      const year = url.searchParams.get("year") || "2024";
+      const make = url.searchParams.get("make") || "";
+      const model = url.searchParams.get("model") || "";
+      const vid = url.searchParams.get("id") || "";
+      try {
+        const hdrs = { Accept: "application/json" };
+        const normArr = x => Array.isArray(x) ? x : (x ? [x] : []);
+        if (action === "years") {
+          const r = await fetch("https://www.fueleconomy.gov/ws/rest/vehicle/menu/year", { headers: hdrs });
+          const j = await r.json();
+          return sendJson(res, 200, { ok: true, items: normArr(j.menuItem) });
+        }
+        if (action === "makes") {
+          const r = await fetch(`https://www.fueleconomy.gov/ws/rest/vehicle/menu/make?year=${encodeURIComponent(year)}`, { headers: hdrs });
+          const j = await r.json();
+          return sendJson(res, 200, { ok: true, items: normArr(j.menuItem) });
+        }
+        if (action === "models") {
+          if (!make) return sendJson(res, 200, { ok: true, items: [] });
+          const r = await fetch(`https://www.fueleconomy.gov/ws/rest/vehicle/menu/model?year=${encodeURIComponent(year)}&make=${encodeURIComponent(make)}`, { headers: hdrs });
+          const j = await r.json();
+          return sendJson(res, 200, { ok: true, items: normArr(j.menuItem) });
+        }
+        if (action === "options") {
+          if (!make || !model) return sendJson(res, 200, { ok: true, items: [] });
+          const r = await fetch(`https://www.fueleconomy.gov/ws/rest/vehicle/menu/options?year=${encodeURIComponent(year)}&make=${encodeURIComponent(make)}&model=${encodeURIComponent(model)}`, { headers: hdrs });
+          const j = await r.json();
+          return sendJson(res, 200, { ok: true, items: normArr(j.menuItem) });
+        }
+        if (action === "spec" && vid) {
+          const r = await fetch(`https://www.fueleconomy.gov/ws/rest/vehicle/${encodeURIComponent(vid)}`, { headers: hdrs });
+          const v = await r.json();
+          const ft = String(v.fuelType1 || v.fuelType || "").toLowerCase();
+          const atv = String(v.atvType || "").toLowerCase();
+          const isBev = atv === "ev" || ft.includes("electricity") && !v.fuelType2;
+          const isPhev = atv.includes("plug");
+          const isHev = atv.includes("hybrid") && !isPhev;
+          const mpgHwy = Number(v.highway08 || v.highwayA08 || v.comb08 || 28);
+          const kmL = isBev ? 0 : Math.round(mpgHwy * 0.425144 * 10) / 10;
+          const evMiles = Number(v.range || v.rangeA || 0);
+          const evKm = Math.round(evMiles * 1.60934);
+          const cls = String(v.VClass || "").toLowerCase();
+          const estTank = isBev ? 0 : (cls.includes("truck") || cls.includes("van") ? 80 : cls.includes("suv") ? 60 : cls.includes("compact") ? 48 : 55);
+          return sendJson(res, 200, {
+            ok: true,
+            vehicle: {
+              name: `${v.make} ${v.model} (${v.year}${v.displ ? " " + v.displ + "L" : ""})`,
+              powertrain: isBev ? "BEV" : isPhev ? "PHEV" : isHev ? "HEV" : "COMBUSTION",
+              hevKmL: kmL,
+              evRange: evKm,
+              tank: estTank,
+              battery: isBev ? 65 : isPhev ? 16 : isHev ? 1.5 : 0,
+              kwhPerCharge: isBev ? 52 : isPhev ? 13 : 0,
+              bevKwhPer100: Number(v.combE) > 0 ? Math.round(Number(v.combE) * 0.621371 * 10) / 10 : 18
+            }
+          });
+        }
+        return sendJson(res, 400, { ok: false, error: "Ação inválida." });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: "Falha ao consultar catálogo EPA: " + (err.message || err) });
       }
     }
 
