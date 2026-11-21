@@ -204,6 +204,13 @@ function publicUser(u) {
     email: u.email,
     avatar: u.avatar || "",
     hasGoogle: Boolean(u.googleSub),
+    age: u.age ?? "",
+    doc: u.doc || "",
+    emergencyContact: u.emergencyContact || "",
+    cep: u.cep || "",
+    address: u.address || "",
+    city: u.city || "",
+    state: u.state || "",
     whatsappCountry: u.whatsappCountry || "+55",
     whatsappNumber: u.whatsappNumber || "",
     whatsappFull: u.whatsappFull || "",
@@ -858,6 +865,28 @@ const server = http.createServer(async (req, res) => {
       const body = await readBody(req);
       const u = auth.user;
       if (typeof body.name === "string" && body.name.trim()) u.name = body.name.trim().slice(0, 80);
+      if (typeof body.email === "string") {
+        const nextEmail = body.email.trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+          return sendJson(res, 400, { ok: false, error: "Informe um e-mail válido." });
+        }
+        const conflict = Object.values(db.users).find(other => other.id !== u.id && other.email === nextEmail);
+        if (conflict) {
+          return sendJson(res, 409, { ok: false, error: "Este e-mail já está em uso por outra conta." });
+        }
+        u.email = nextEmail;
+        linkSharesForUser(u);
+      }
+      if (body.age !== undefined) {
+        const rawAge = String(body.age ?? "").trim();
+        u.age = rawAge ? Math.max(1, Math.min(120, parseInt(rawAge, 10) || 0)) || "" : "";
+      }
+      if (body.doc !== undefined) u.doc = String(body.doc || "").trim().slice(0, 40);
+      if (body.emergencyContact !== undefined) u.emergencyContact = String(body.emergencyContact || "").trim().slice(0, 120);
+      if (body.cep !== undefined) u.cep = String(body.cep || "").trim().slice(0, 20);
+      if (body.address !== undefined) u.address = String(body.address || "").trim().slice(0, 180);
+      if (body.city !== undefined) u.city = String(body.city || "").trim().slice(0, 80);
+      if (body.state !== undefined) u.state = String(body.state || "").trim().toUpperCase().slice(0, 10);
       if (body.whatsappCountry !== undefined || body.whatsappNumber !== undefined) {
         const dial = String(body.whatsappCountry || u.whatsappCountry || "+55").trim();
         const raw = String(body.whatsappNumber || "").trim();

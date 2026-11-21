@@ -2762,11 +2762,17 @@ async function enterApp() {
 }
 
 function updateSyncBadge(info) {
-  const pill = $("#syncBadge"), txt = $("#syncText");
-  if (!pill || !txt) return;
+  const pill = $("#syncBadge"), txt = $("#syncText"), menuSync = $("#menuSyncStatus");
+  if (!pill) return;
   pill.setAttribute("data-status", info.status);
-  const map = { checking: "Conectando...", synced: "Sincronizado", syncing: "Salvando...", offline: "Sem rede", local_only: "Local", unauth: "Desconectado" };
-  txt.textContent = map[info.status] || "Local";
+  const map = { checking: "Conectando...", synced: "Sincronizado na nuvem", syncing: "Salvando...", offline: "Sem rede", local_only: "Local", unauth: "Desconectado" };
+  const labelTxt = map[info.status] || "Local";
+  if (txt) txt.textContent = labelTxt;
+  pill.title = `Status: ${labelTxt}`;
+  if (menuSync) {
+    const dot = info.status === "synced" ? "🟢" : (info.status === "syncing" ? "🔵" : "🟡");
+    menuSync.textContent = `${dot} ${labelTxt}`;
+  }
 }
 
 async function boot() {
@@ -2865,7 +2871,7 @@ $("#btnDeleteTrip").onclick = async () => {
   await refreshTripsAndLoad();
 };
 
-$("#btnShareTrip").onclick = openShareModal;
+if ($("#btnShareTrip")) $("#btnShareTrip").onclick = openShareModal;
 $("#btnCloseShare").onclick = () => $("#shareModal").close();
 $("#shareForm").onsubmit = async e => {
   e.preventDefault();
@@ -3098,7 +3104,8 @@ $("#btnCalIcs").onclick = () => {
   toast("📆 Arquivo .ics baixado (com lembrete 09:00 do dia anterior)!");
 };
 
-$("#btnSyncCalendarTop").onclick = $("#btnSyncAllCalendar").onclick = $("#btnMenuCalendarAll").onclick = openSmartCalendarModal;
+if ($("#btnSyncCalendarTop")) $("#btnSyncCalendarTop").onclick = openSmartCalendarModal;
+$("#btnSyncAllCalendar").onclick = $("#btnMenuCalendarAll").onclick = openSmartCalendarModal;
 $("#btnCloseCalSync").onclick = () => $("#calSyncModal").close();
 $("#btnCalSyncIcs").onclick = $("#btnDownloadAllIcs").onclick = $("#btnExportIcs").onclick = () => {
   window.FeriasCalendar.downloadIcs(sorted(), state.title, state.params.calendarReminderTime, activeTrip?.id || "local");
@@ -3948,8 +3955,16 @@ populateCountriesSelect();
 function openProfileModal() {
   const u = window.FeriasApi.getUser() || {};
   $("#prof-name").value = u.name || "";
+  if ($("#prof-email")) $("#prof-email").value = u.email || "";
   $("#prof-waCountry").value = u.whatsappCountry || "+55";
   $("#prof-waNumber").value = u.whatsappNumber ? window.FeriasCountries.formatPhoneMask(u.whatsappCountry || "+55", u.whatsappNumber) : "";
+  if ($("#prof-age")) $("#prof-age").value = u.age || "";
+  if ($("#prof-doc")) $("#prof-doc").value = u.doc || "";
+  if ($("#prof-emergencyContact")) $("#prof-emergencyContact").value = u.emergencyContact || "";
+  if ($("#prof-cep")) $("#prof-cep").value = u.cep || "";
+  if ($("#prof-state")) $("#prof-state").value = u.state || "";
+  if ($("#prof-city")) $("#prof-city").value = u.city || "";
+  if ($("#prof-address")) $("#prof-address").value = u.address || "";
   $("#prof-waError").hidden = true;
   $("#prof-geminiKey").value = "";
   $("#prof-walletIssuer").value = u.integrations?.walletIssuerId || "";
@@ -3957,8 +3972,27 @@ function openProfileModal() {
   $("#profileModal").showModal();
 }
 
-$("#btnOpenProfile").onclick = $("#btnMenuProfile").onclick = $("#btnParamProfile").onclick = openProfileModal;
+if ($("#btnOpenProfile")) $("#btnOpenProfile").onclick = openProfileModal;
+$("#btnMenuProfile").onclick = $("#btnParamProfile").onclick = openProfileModal;
+if ($("#syncBadge")) $("#syncBadge").onclick = () => toast($("#menuSyncStatus")?.textContent || "🟢 Sincronizado na nuvem");
 $("#btnCloseProfile").onclick = $("#btnCancelProfile").onclick = () => $("#profileModal").close();
+
+if ($("#prof-cep")) {
+  $("#prof-cep").addEventListener("blur", async () => {
+    const clean = $("#prof-cep").value.replace(/\D/g, "");
+    if (clean.length !== 8) return;
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${clean}/json/`);
+      const d = await r.json();
+      if (!d || d.erro) return;
+      if ($("#prof-city") && !$("#prof-city").value) $("#prof-city").value = d.localidade || "";
+      if ($("#prof-state") && !$("#prof-state").value) $("#prof-state").value = d.uf || "";
+      if ($("#prof-address") && !$("#prof-address").value && d.logradouro) {
+        $("#prof-address").value = `${d.logradouro}${d.bairro ? ", " + d.bairro : ""}`;
+      }
+    } catch {}
+  });
+}
 if ($("#btnProfPickWalletJson")) {
   $("#btnProfPickWalletJson").onclick = () => $("#prof-walletJsonFile").click();
   $("#prof-walletJsonFile").onchange = async e => {
@@ -3981,20 +4015,47 @@ $("#prof-waNumber").addEventListener("input", () => {
 
 async function saveProfileAndCredentials() {
   const name = $("#prof-name").value.trim();
+  const email = ($("#prof-email")?.value || "").trim().toLowerCase();
   const dial = $("#prof-waCountry").value;
   const rawWa = $("#prof-waNumber").value.trim();
   const errEl = $("#prof-waError");
   errEl.hidden = true;
 
-  if (rawWa) {
-    const check = window.FeriasCountries.validateWhatsApp(dial, rawWa);
-    if (!check.valid) {
-      errEl.textContent = check.error;
-      errEl.hidden = false;
-      return false;
-    }
+  if (!name) {
+    errEl.textContent = "Informe seu nome completo.";
+    errEl.hidden = false;
+    return false;
   }
-  await window.FeriasApi.updateProfile({ name, whatsappCountry: dial, whatsappNumber: rawWa });
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errEl.textContent = "Informe um e-mail válido.";
+    errEl.hidden = false;
+    return false;
+  }
+  if (!rawWa) {
+    errEl.textContent = "O telefone / WhatsApp é obrigatório no perfil.";
+    errEl.hidden = false;
+    return false;
+  }
+  const check = window.FeriasCountries.validateWhatsApp(dial, rawWa);
+  if (!check.valid) {
+    errEl.textContent = check.error;
+    errEl.hidden = false;
+    return false;
+  }
+
+  await window.FeriasApi.updateProfile({
+    name,
+    email,
+    whatsappCountry: dial,
+    whatsappNumber: rawWa,
+    age: $("#prof-age")?.value?.trim() || "",
+    doc: $("#prof-doc")?.value?.trim() || "",
+    emergencyContact: $("#prof-emergencyContact")?.value?.trim() || "",
+    cep: $("#prof-cep")?.value?.trim() || "",
+    state: $("#prof-state")?.value?.trim() || "",
+    city: $("#prof-city")?.value?.trim() || "",
+    address: $("#prof-address")?.value?.trim() || ""
+  });
   const gk = $("#prof-geminiKey").value.trim();
   const wi = $("#prof-walletIssuer").value.trim();
   const wsa = $("#prof-walletSa").value.trim();
@@ -4044,7 +4105,8 @@ function sendPlanToMyWhatsApp() {
   toast(`💬 Abrindo WhatsApp para ${check.fullDisplay}...`);
 }
 
-$("#btnSendWhatsApp").onclick = $("#btnMenuWhatsApp").onclick = $("#btnDashWhatsApp").onclick = sendPlanToMyWhatsApp;
+if ($("#btnSendWhatsApp")) $("#btnSendWhatsApp").onclick = sendPlanToMyWhatsApp;
+$("#btnMenuWhatsApp").onclick = $("#btnDashWhatsApp").onclick = sendPlanToMyWhatsApp;
 $("#btnProfileSendWa").onclick = async () => {
   try {
     const ok = await saveProfileAndCredentials();

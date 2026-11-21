@@ -28,6 +28,10 @@
 }
 
 * { box-sizing: border-box; }
+html, body {
+  max-width: 100%;
+  overflow-x: clip;
+}
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
@@ -35,12 +39,11 @@ body {
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
-  overflow-x: hidden;
 }
 
 .lp-glow {
   position: fixed;
-  inset: -30% -10% auto;
+  inset: 0 0 auto;
   height: 75vh;
   background: radial-gradient(ellipse at 30% 25%, rgba(79, 70, 229, 0.24), transparent 60%),
               radial-gradient(ellipse at 75% 20%, rgba(34, 211, 238, 0.16), transparent 55%);
@@ -225,7 +228,7 @@ body {
 /* Pillars strip */
 .lp-pillars {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr));
   gap: 12px;
   margin: 34px 0 60px;
 }
@@ -234,6 +237,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 15px;
   padding: 15px 16px;
+  min-width: 0;
 }
 .lp-pillar strong {
   display: block;
@@ -255,7 +259,7 @@ body {
 }
 .lp-sec-head h2 {
   margin: 0 0 10px;
-  font-size: clamp(1.6rem, 3.2vw, 2.35rem);
+  font-size: clamp(1.5rem, 3.2vw, 2.35rem);
   color: var(--text-strong);
   line-height: 1.18;
 }
@@ -263,10 +267,14 @@ body {
 
 .lp-split {
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   gap: 38px;
   align-items: center;
   margin-bottom: 58px;
+}
+.lp-split > *, .lp-bento > *, .lp-steps > *, .lp-faq > * {
+  min-width: 0;
+  max-width: 100%;
 }
 .lp-split.reverse .lp-split-media { order: -1; }
 .lp-split-badge {
@@ -281,8 +289,8 @@ body {
 [data-theme="light"] .lp-split-badge { color: #0284c7; }
 .lp-split h3 {
   margin: 0 0 12px;
-  font-size: clamp(1.35rem, 2.4vw, 1.85rem);
-  line-height: 1.22;
+  font-size: clamp(1.3rem, 2.4vw, 1.85rem);
+  line-height: 1.24;
   color: var(--text-strong);
 }
 .lp-split p { margin: 0 0 14px; }
@@ -291,19 +299,24 @@ body {
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 9px;
+  gap: 10px;
 }
 .lp-list li {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
+  display: block;
+  position: relative;
+  padding-left: 24px;
   font-size: 0.95rem;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 .lp-list li::before {
   content: "✓";
+  position: absolute;
+  left: 0;
+  top: 0;
   color: var(--ok);
   font-weight: 800;
-  flex-shrink: 0;
 }
 .lp-split-media {
   border-radius: 20px;
@@ -321,7 +334,7 @@ body {
 /* Bento Grid of All Modules */
 .lp-bento {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 16px;
 }
 .lp-card {
