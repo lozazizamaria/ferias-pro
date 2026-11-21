@@ -20,12 +20,33 @@ let ganttSlimRail = window.innerWidth < 720;
 let checklistFilter = "";
 let financeFilter = "all";
 let activeFinanceDate = "";
+let finExpanded = false;
 
 let tripsCache = { ownTrips: [], sharedTrips: [], pendingShares: [] };
 let activeTrip = null; // { id, name, role, ownerName, ... }
 let state = migrateState(clone(window.DEFAULT_DATA));
 let authMode = "login";
 let deferredInstallPrompt = null;
+let prefetchedPkpass = null;
+let pwaPromptWaiters = [];
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const menuBtn = $("#btnMenuInstall");
+  if (menuBtn) menuBtn.hidden = false;
+  pwaPromptWaiters.forEach(fn => { try { fn(e); } catch {} });
+});
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  const b = $("#pwaInstallBanner");
+  const m = $("#btnMenuInstall");
+  if (b) b.hidden = true;
+  if (m) m.hidden = true;
+});
 
 function getTypeInfo(type) {
   return (window.ACTIVITY_TYPES && window.ACTIVITY_TYPES[type]) || {
@@ -627,30 +648,7 @@ function renderDashboard(s, t) {
   }).join("") || `<li class="muted">Sem atividades</li>`;
   $("#upcoming").querySelectorAll("li[data-id]").forEach(li => li.onclick = () => openModal(li.dataset.id));
 
-  const parts = t.costBreakdown || [];
-  const denom = t.grandTotal || t.total || 1;
-  const stackedEl = $("#costStackedBar");
-  if (stackedEl) {
-    stackedEl.innerHTML = parts
-      .filter(p => p.value > 0)
-      .map(p => `<div class="stacked-seg" style="width:${(p.value / denom * 100).toFixed(2)}%;background:${p.color || p.gradient}" title="${esc(p.label)}: ${money(p.value)}"></div>`)
-      .join("");
-  }
-  $("#costBars").innerHTML = parts.map(p => `
-    <div class="bar-row">
-      <div class="top"><span>${esc(p.label)}</span><span><b>${money(p.value)}</b> · ${t.grandTotal ? num(p.value / denom * 100) : 0}%</span></div>
-      <div class="bar"><div style="width:${t.grandTotal ? Math.min(100, (p.value / denom * 100)) : 0}%;background:${p.gradient}"></div></div>
-    </div>`).join("") || `<p class="muted small">Nenhum custo lançado ainda.</p>`;
-
-  const extraBox = $("#extraBudgetSummary");
-  const lines = [];
-  if (t.lodgingParamCost > 0) lines.push(`<div>Hospedagem por diária (${t.lodgingNights} noites): <b>${money(t.lodgingParamCost)}</b></div>`);
-  if (t.lodgingActCost > 0) lines.push(`<div>Hospedagens lançadas no cronograma: <b>${money(t.lodgingActCost)}</b></div>`);
-  if (t.foodCost > 0) lines.push(`<div>Alimentação (${t.totalDays}d × ${state.params.travelers}p): <b>${money(t.foodCost)}</b></div>`);
-  if (t.otherFixedBudget > 0) lines.push(`<div>Outros gastos fixos: <b>${money(t.otherFixedBudget)}</b></div>`);
-  if (t.contingencyCost > 0) lines.push(`<div>Margem reserva (${state.params.contingencyPct}%): <b>${money(t.contingencyCost)}</b></div>`);
-  extraBox.innerHTML = lines.join("");
-  extraBox.hidden = lines.length === 0;
+  renderCostCompositionInto($("#costStackedBar"), $("#costBars"), $("#extraBudgetSummary"), t);
 
   const trips = s.filter(a => a.type === "Viagem");
   const mx = Math.max(1, ...trips.map(a => +a.km || 0));
@@ -685,6 +683,34 @@ function renderDashboard(s, t) {
   } else {
     hint.textContent = "Clique em 'Carregar mapa completo' para visualizar todos os trechos conectados.";
     btnMap.disabled = false;
+  }
+}
+
+function renderCostCompositionInto(stackedEl, barsEl, extraBox, t) {
+  const parts = t.costBreakdown || [];
+  const denom = t.grandTotal || t.total || 1;
+  if (stackedEl) {
+    stackedEl.innerHTML = parts
+      .filter(p => p.value > 0)
+      .map(p => `<div class="stacked-seg" style="width:${(p.value / denom * 100).toFixed(2)}%;background:${p.color || p.gradient}" title="${esc(p.label)}: ${money(p.value)}"></div>`)
+      .join("");
+  }
+  if (barsEl) {
+    barsEl.innerHTML = parts.map(p => `
+      <div class="bar-row">
+        <div class="top"><span>${esc(p.label)}</span><span><b>${money(p.value)}</b> · ${t.grandTotal ? num(p.value / denom * 100) : 0}%</span></div>
+        <div class="bar"><div style="width:${t.grandTotal ? Math.min(100, (p.value / denom * 100)) : 0}%;background:${p.gradient}"></div></div>
+      </div>`).join("") || `<p class="muted small">Nenhum custo lançado ainda.</p>`;
+  }
+  if (extraBox) {
+    const lines = [];
+    if (t.lodgingParamCost > 0) lines.push(`<div>Hospedagem por diária (${t.lodgingNights} noites): <b>${money(t.lodgingParamCost)}</b></div>`);
+    if (t.lodgingActCost > 0) lines.push(`<div>Hospedagens lançadas no cronograma: <b>${money(t.lodgingActCost)}</b></div>`);
+    if (t.foodCost > 0) lines.push(`<div>Alimentação (${t.totalDays}d × ${state.params.travelers}p): <b>${money(t.foodCost)}</b></div>`);
+    if (t.otherFixedBudget > 0) lines.push(`<div>Outros gastos fixos: <b>${money(t.otherFixedBudget)}</b></div>`);
+    if (t.contingencyCost > 0) lines.push(`<div>Margem reserva (${state.params.contingencyPct}%): <b>${money(t.contingencyCost)}</b></div>`);
+    extraBox.innerHTML = lines.join("");
+    extraBox.hidden = lines.length === 0;
   }
 }
 
@@ -786,22 +812,22 @@ function computeFinancialTimeline(s, t) {
         if (c.fuel > 0) {
           const amt = c.fuel / nDays;
           cell.cats.fuel += amt;
-          cell.items.push({ cat: "fuel", icon: "⛽", label: `Combustível (${a.name || "Viagem"})`, amount: amt });
+          cell.items.push({ key: `${a.id}:fuel`, checkable: true, cat: "fuel", icon: "⛽", label: `Combustível (${a.name || "Viagem"})`, amount: amt });
         }
         if (c.toll > 0) {
           const amt = c.toll / nDays;
           cell.cats.tollEv += amt;
-          cell.items.push({ cat: "tollEv", icon: "🛣️", label: `Pedágio (${a.name || "Viagem"})`, amount: amt });
+          cell.items.push({ key: `${a.id}:toll`, checkable: true, cat: "tollEv", icon: "🛣️", label: `Pedágio (${a.name || "Viagem"})`, amount: amt });
         }
         if (c.charge > 0) {
           const amt = c.charge / nDays;
           cell.cats.tollEv += amt;
-          cell.items.push({ cat: "tollEv", icon: "⚡", label: `Recarga EV (${a.name || "Viagem"})`, amount: amt });
+          cell.items.push({ key: `${a.id}:charge`, checkable: true, cat: "tollEv", icon: "⚡", label: `Recarga EV (${a.name || "Viagem"})`, amount: amt });
         }
         if (c.extra > 0) {
           const amt = c.extra / nDays;
           cell.cats.specificOther += amt;
-          cell.items.push({ cat: "specificOther", icon: "🚗", label: `Extras viagem (${a.name || "Viagem"})`, amount: amt });
+          cell.items.push({ key: `${a.id}:extra`, checkable: true, cat: "specificOther", icon: "🚗", label: `Extras viagem (${a.name || "Viagem"})`, amount: amt });
         }
       } else {
         const ex = +a.extraCost || 0;
@@ -809,10 +835,12 @@ function computeFinancialTimeline(s, t) {
           const amt = ex / nDays;
           if (a.type === "Hospedagem") {
             cell.cats.lodging += amt;
-            cell.items.push({ cat: "lodging", icon: "🏨", label: a.name || "Hospedagem", amount: amt });
+            cell.items.push({ key: `${a.id}:act`, checkable: true, cat: "lodging", icon: "🏨", label: a.name || "Hospedagem", amount: amt });
           } else {
             cell.cats.specificOther += amt;
             cell.items.push({
+              key: `${a.id}:act`,
+              checkable: true,
               cat: "specificOther",
               icon: info.icon || "🎟️",
               label: tktNote ? `${a.name} (${tktNote})` : (a.name || info.short),
@@ -834,31 +862,56 @@ function computeFinancialTimeline(s, t) {
   daysList.forEach(d => {
     if (foodPerDay > 0) {
       d.cats.linear += foodPerDay;
-      d.items.push({ cat: "linear", icon: "🍽️", label: "Alimentação (rateio diário)", amount: foodPerDay });
+      d.items.push({ key: "param:food", checkable: false, cat: "linear", icon: "🍽️", label: "Alimentação (rateio diário)", amount: foodPerDay });
     }
     if (lodgPerDay > 0) {
       d.cats.lodging += lodgPerDay;
-      d.items.push({ cat: "lodging", icon: "🏨", label: "Hospedagem diária (rateio)", amount: lodgPerDay });
+      d.items.push({ key: "param:lodging", checkable: true, cat: "lodging", icon: "🏨", label: "Hospedagem diária (Parâmetros)", amount: lodgPerDay });
     }
     if (fixedPerDay > 0) {
       d.cats.linear += fixedPerDay;
-      d.items.push({ cat: "linear", icon: "📦", label: "Outros gastos fixos (rateio)", amount: fixedPerDay });
+      d.items.push({ key: "param:fixed", checkable: false, cat: "linear", icon: "📦", label: "Outros gastos fixos (rateio)", amount: fixedPerDay });
     }
     if (contPerDay > 0) {
       d.cats.linear += contPerDay;
-      d.items.push({ cat: "linear", icon: "🛟", label: `Reserva ${state.params.contingencyPct || 0}% (rateio)`, amount: contPerDay });
+      d.items.push({ key: "param:cont", checkable: false, cat: "linear", icon: "🛟", label: `Reserva ${state.params.contingencyPct || 0}% (rateio)`, amount: contPerDay });
     }
     d.plannedBase = d.cats.fuel + d.cats.tollEv + d.cats.specificOther + d.cats.lodging + d.cats.linear;
 
     const rec = records[d.iso];
-    if (rec && ((rec.spent !== null && rec.spent !== undefined && rec.spent !== "") || (Array.isArray(rec.entries) && rec.entries.length > 0))) {
-      d.hasActual = true;
+    if (rec && typeof rec === "object") {
+      const checkedMap = rec.checkedPlanned && typeof rec.checkedPlanned === "object" ? rec.checkedPlanned : {};
+      let checkedCount = 0;
+      let checkedSum = 0;
+      d.items.forEach(it => {
+        if (!it.checkable) return;
+        const st = checkedMap[it.key];
+        const isChk = Boolean(st && st.checked);
+        const hasCustom = st && st.actualAmount !== null && st.actualAmount !== undefined && st.actualAmount !== "";
+        const actualAmt = hasCustom ? Math.max(0, Number(st.actualAmount) || 0) : it.amount;
+        it.checked = isChk;
+        it.actualAmount = actualAmt;
+        it.editedAmount = hasCustom && Math.abs(actualAmt - it.amount) > 0.005;
+        if (isChk) {
+          checkedCount++;
+          checkedSum += actualAmt;
+        }
+      });
+      d.checkedCount = checkedCount;
+      d.checkedSum = checkedSum;
       d.actualEntries = Array.isArray(rec.entries) ? clone(rec.entries) : [];
+      d.entriesSum = d.actualEntries.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
       d.actualNote = rec.note || "";
-      if (rec.spent !== null && rec.spent !== undefined && rec.spent !== "") {
+
+      if (rec.manualTotalOverride && rec.spent !== null && rec.spent !== undefined && rec.spent !== "") {
+        d.hasActual = true;
         d.actualSpent = Math.max(0, Number(rec.spent) || 0);
-      } else {
-        d.actualSpent = d.actualEntries.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+      } else if (checkedCount > 0 || d.actualEntries.length > 0) {
+        d.hasActual = true;
+        d.actualSpent = checkedSum + d.entriesSum;
+      } else if (rec.spent !== null && rec.spent !== undefined && rec.spent !== "") {
+        d.hasActual = true;
+        d.actualSpent = Math.max(0, Number(rec.spent) || 0);
       }
     }
   });
@@ -934,14 +987,26 @@ function renderFinance(s, t) {
   if (fCont) fCont.value = state.params.contingencyPct || 0;
   if (fSav) fSav.value = state.finance?.savingsGoal || 0;
 
-  // Destaca preset ativo
-  const activePct = data.plannedTotal > 0 ? Math.round((data.savingsGoal / data.plannedTotal) * 100) : 0;
+  // Destaca preset ativo e percentual personalizado
+  const exactPct = data.plannedTotal > 0 ? (data.savingsGoal / data.plannedTotal) * 100 : 0;
+  const activePct = Math.round(exactPct);
+  let matchedPreset = false;
   document.querySelectorAll(".fin-save-preset").forEach(btn => {
     const pct = Number(btn.dataset.savepct || 0);
-    btn.classList.toggle("active", (pct === 0 && data.savingsGoal === 0) || (pct > 0 && Math.abs(activePct - pct) <= 1 && data.savingsGoal > 0));
+    const isMatch = (pct === 0 && data.savingsGoal === 0) || (pct > 0 && Math.abs(exactPct - pct) <= 0.4 && data.savingsGoal > 0);
+    if (isMatch && pct > 0) matchedPreset = true;
+    btn.classList.toggle("active", isMatch);
   });
+  const customPctInp = $("#fin-savingsPctCustom");
+  const customPctWrap = $("#finCustomPctWrap");
+  if (customPctInp && document.activeElement !== customPctInp) {
+    customPctInp.value = data.savingsGoal > 0 ? Number(exactPct.toFixed(1)) : "";
+  }
+  if (customPctWrap) {
+    customPctWrap.classList.toggle("active", data.savingsGoal > 0 && !matchedPreset);
+  }
 
-  // KPIs
+  // KPIs principais (4)
   const varLabel = data.loggedCount === 0
     ? "Nenhum dia lançado ainda"
     : (data.varianceSoFar > 0.05
@@ -952,7 +1017,7 @@ function renderFinance(s, t) {
 
   const kpis = [
     ["Planejado Base", money(data.plannedTotal), `${data.daysList.length} dia(s) · ${num(state.params.travelers || 1)} viajante(s)`, "var(--accent2)"],
-    ["Orçamento Alvo", money(data.effectiveCeiling), data.savingsGoal > 0 ? `Economia alvo: -${money(data.savingsGoal)}` : "Sem corte definido (Base)", "#10b981"],
+    ["Orçamento Alvo", money(data.effectiveCeiling), data.savingsGoal > 0 ? `Economia alvo: -${money(data.savingsGoal)} (${num(exactPct, 1)}%)` : "Sem corte definido (Base)", "#10b981"],
     ["Já Executado (Real)", money(data.sumActualLogged), `${data.loggedCount}/${data.daysList.length} dias · ${varLabel}`, data.varianceSoFar > 0.05 ? "#fb7185" : "#34d399"],
     ["Saldo & Média Restante", data.remainingCount ? `${money(data.avgRemainingPerDay)}/dia` : (data.overBudgetBy > 0 ? `-${money(data.overBudgetBy)}` : money(data.remainingCeiling)),
       data.remainingCount ? `${money(data.remainingCeiling)} livres em ${data.remainingCount} dia(s)` : "Todos os dias lançados", data.overBudgetBy > 0 ? "#fb7185" : "#f59e0b"]
@@ -960,6 +1025,36 @@ function renderFinance(s, t) {
   kpisEl.innerHTML = kpis.map(([l, v, sub, c]) =>
     `<div class="kpi" style="--c:${c}"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`
   ).join("");
+
+  // Detalhamento expansível (todos os cards financeiros + composição de custos)
+  const expSec = $("#finExpandedSection");
+  const expBtn = $("#btnFinExpandAll");
+  if (expSec) expSec.hidden = !finExpanded;
+  if (expBtn) {
+    expBtn.setAttribute("aria-expanded", String(finExpanded));
+    expBtn.textContent = finExpanded
+      ? "▴ Recolher cards detalhados e composição dos custos"
+      : "▾ Ampliar todos os cards e composição dos custos";
+  }
+  const extraKpisEl = $("#finExtraKpis");
+  if (extraKpisEl) {
+    const avg = t.liters ? t.km / t.liters : 0;
+    const perPerson = t.grandTotal / Math.max(1, +state.params.travelers || 1);
+    const extraCards = [
+      ["Distância total", `${num(t.km)} km`, `${t.trips} trecho(s) de carro`, "var(--trip)"],
+      ["Custo combustível", money(t.fuel), avg ? `${num(t.liters, 1)} L · Média ${num(avg, 1)} km/L` : "Modo elétrico", "#fb7185"],
+      ["Pedágios + recargas EV", money(t.toll + t.charge), `Ped. ${money(t.toll)} + EV ${money(t.charge)}`, "var(--period)"],
+      ["Deslocamento carro", money(t.total), "Combustível + pedágios + EV", "var(--ok)"],
+      ["Voos, Ingressos & Lazer", money(t.flightsCost + t.otherActCost), "Lançados no cronograma", "#38bdf8"],
+      ["Hospedagens (Total)", money(t.lodgingParamCost + t.lodgingActCost), `${t.lodgingNights} noites + reservas`, "#10b981"],
+      ["Alimentação & Fixos/Res.", money(t.foodCost + t.otherFixedBudget + t.contingencyCost), `Alim. ${money(t.foodCost)} · Fix/Res ${money(t.otherFixedBudget + t.contingencyCost)}`, "#fb923c"],
+      ["Total por viajante", money(perPerson), `${num(state.params.travelers || 1)} viajante(s) · Alvo ${money(data.effectiveCeiling / Math.max(1, +state.params.travelers || 1))}`, "#06b6d4"]
+    ];
+    extraKpisEl.innerHTML = extraCards.map(([l, v, sub, c]) =>
+      `<div class="kpi" style="--c:${c}"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`
+    ).join("");
+  }
+  renderCostCompositionInto($("#finCostStackedBar"), $("#finCostBars"), $("#finExtraBudgetSummary"), t);
 
   // Banner de redistribuição dinâmica
   const banner = $("#finRedistBanner");
@@ -1082,9 +1177,17 @@ function renderFinance(s, t) {
       }
 
       const actTags = d.activities.map(a => `<span class="fin-act-tag">${a.icon} ${esc(a.name)}</span>`).join("");
-      const itemsHtml = d.items.map(it =>
-        `<span class="fin-cost-chip">${it.icon} ${esc(it.label)}: <b>${money(it.amount)}</b></span>`
-      ).join("") || `<span class="muted small">Sem custos lançados para este dia.</span>`;
+      const itemsHtml = d.items.map(it => {
+        if (!it.checkable) {
+          return `<span class="fin-cost-chip">${it.icon} ${esc(it.label)}: <b>${money(it.amount)}</b></span>`;
+        }
+        const dispAmt = it.checked ? (it.actualAmount ?? it.amount) : it.amount;
+        const diffMark = it.checked && it.editedAmount ? ` <small class="muted">(prev. ${money(it.amount)})</small>` : "";
+        return `<label class="fin-cost-chip fin-cost-chk${it.checked ? " checked" : ""}" title="Marcar este gasto previsto como realizado">
+          <input type="checkbox" data-fchk-day="${d.iso}" data-fchk-key="${esc(it.key)}" data-fchk-amt="${dispAmt}"${it.checked ? " checked" : ""}>
+          <span>${it.icon} ${esc(it.label)}: <b>${money(dispAmt)}</b>${diffMark}</span>
+        </label>`;
+      }).join("") || `<span class="muted small">Sem custos lançados para este dia.</span>`;
 
       const redistBadge = !d.hasActual && Math.abs(d.redistDelta) > 0.5
         ? ` <small style="color:${d.redistDelta < 0 ? "#f59e0b" : "#34d399"}">(${d.redistDelta > 0 ? "+" : ""}${money(d.redistDelta)} redist.)</small>`
@@ -1137,15 +1240,121 @@ function renderFinance(s, t) {
     listEl.querySelectorAll("[data-finlog]").forEach(b => {
       b.onclick = () => openFinanceDayModal(b.dataset.finlog);
     });
+    listEl.querySelectorAll("input[data-fchk-key]").forEach(chk => {
+      chk.onchange = () => {
+        const dayIso = chk.dataset.fchkDay;
+        const itemKey = chk.dataset.fchkKey;
+        const defAmt = Math.max(0, Number(chk.dataset.fchkAmt) || 0);
+        if (!state.finance) state.finance = { savingsGoal: 0, dailyRecords: {} };
+        if (!state.finance.dailyRecords) state.finance.dailyRecords = {};
+        const rec = state.finance.dailyRecords[dayIso] || { checkedPlanned: {}, entries: [], note: "" };
+        if (!rec.checkedPlanned) rec.checkedPlanned = {};
+        const prev = rec.checkedPlanned[itemKey] || {};
+        rec.checkedPlanned[itemKey] = {
+          checked: chk.checked,
+          actualAmount: prev.actualAmount != null ? prev.actualAmount : defAmt
+        };
+        rec.manualTotalOverride = false;
+        const anyChecked = Object.values(rec.checkedPlanned).some(v => v && v.checked);
+        const hasEntries = Array.isArray(rec.entries) && rec.entries.length > 0;
+        if (!anyChecked && !hasEntries && !rec.note) {
+          delete state.finance.dailyRecords[dayIso];
+        } else {
+          state.finance.dailyRecords[dayIso] = rec;
+        }
+        save(chk.checked ? "✅ Gasto previsto marcado como realizado!" : "↩️ Item desmarcado!");
+      };
+    });
   }
 }
 
 let modalFinEntries = [];
+let modalFinPlanned = [];
+let modalFinManualTotal = false;
+
+function recalcFinModalTotal(forceSyncInput = true) {
+  const checkedSum = modalFinPlanned
+    .filter(p => p.checked)
+    .reduce((sum, p) => sum + (Math.max(0, Number(p.actualAmount) || 0)), 0);
+  const entriesSum = modalFinEntries.reduce((sum, r) => sum + (Math.max(0, Number(r.amount) || 0)), 0);
+  const combined = Math.round((checkedSum + entriesSum) * 100) / 100;
+  const hasAny = modalFinPlanned.some(p => p.checked) || modalFinEntries.length > 0;
+
+  const calcBar = $("#finModalCalcBar");
+  if (calcBar) {
+    calcBar.innerHTML = `Previstos marcados: <b>${money(checkedSum)}</b> + Extras manuais: <b>${money(entriesSum)}</b> = Total automático: <b>${money(combined)}</b>`;
+  }
+  if (forceSyncInput && !modalFinManualTotal) {
+    $("#finDayTotalInput").value = hasAny ? combined.toFixed(2) : "";
+  }
+  return { checkedSum, entriesSum, combined, hasAny };
+}
+
+function renderFinModalPlanned() {
+  const box = $("#finModalPlannedBox");
+  if (!box) return;
+  if (!modalFinPlanned.length) {
+    box.innerHTML = `<div class="muted small">Não há gastos específicos previstos (ingressos, combustível, pedágios, passagens) para este dia.</div>`;
+    return;
+  }
+  box.innerHTML = `<div class="route-head-row"><strong>✅ Gastos Previstos neste Dia</strong><span class="muted small">Marque se realizado ou clique em ✏️ p/ alterar o valor</span></div>` +
+    modalFinPlanned.map((it, i) => `
+      <div class="fin-planned-row${it.checked ? " is-checked" : ""}" data-fpi="${i}">
+        <label class="fin-planned-chk-lbl">
+          <input type="checkbox" data-fp="chk"${it.checked ? " checked" : ""}>
+          <div style="min-width:0">
+            <div class="fin-planned-name">${it.icon} ${esc(it.label)}</div>
+            <div class="fin-planned-orig">Previsto: ${money(it.plannedAmount)}</div>
+          </div>
+        </label>
+        <div class="fin-planned-right">
+          ${it.isEditing
+            ? `<input type="number" step="0.01" min="0" class="fin-planned-edit-input" data-fp="amt" value="${Number(it.actualAmount).toFixed(2)}" aria-label="Valor real">`
+            : `<span class="fin-planned-val">${money(it.actualAmount)}</span>`}
+          <button type="button" class="icon-btn" data-fp="edit" title="Editar valor real deste item">✏️</button>
+        </div>
+      </div>`).join("");
+
+  box.querySelectorAll('input[data-fp="chk"]').forEach(chk => {
+    chk.onchange = () => {
+      const idx = parseInt(chk.closest(".fin-planned-row").dataset.fpi, 10);
+      modalFinPlanned[idx].checked = chk.checked;
+      modalFinManualTotal = false;
+      chk.closest(".fin-planned-row").classList.toggle("is-checked", chk.checked);
+      recalcFinModalTotal(true);
+    };
+  });
+  box.querySelectorAll('button[data-fp="edit"]').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.closest(".fin-planned-row").dataset.fpi, 10);
+      modalFinPlanned[idx].isEditing = !modalFinPlanned[idx].isEditing;
+      renderFinModalPlanned();
+      if (modalFinPlanned[idx].isEditing) {
+        const inp = box.querySelector(`.fin-planned-row[data-fpi="${idx}"] input[data-fp="amt"]`);
+        if (inp) { inp.focus(); inp.select(); }
+      }
+    };
+  });
+  box.querySelectorAll('input[data-fp="amt"]').forEach(inp => {
+    inp.oninput = () => {
+      const idx = parseInt(inp.closest(".fin-planned-row").dataset.fpi, 10);
+      modalFinPlanned[idx].actualAmount = Math.max(0, parseFloat(inp.value) || 0);
+      modalFinPlanned[idx].checked = true;
+      modalFinManualTotal = false;
+      const row = inp.closest(".fin-planned-row");
+      const chk = row.querySelector('input[data-fp="chk"]');
+      if (chk) chk.checked = true;
+      row.classList.add("is-checked");
+      recalcFinModalTotal(true);
+    };
+  });
+}
+
 function renderFinModalEntries() {
   const box = $("#finModalEntriesRows");
   if (!box) return;
   if (!modalFinEntries.length) {
-    box.innerHTML = `<p class="muted small">Nenhum item separado lançado (ou preencha apenas o total abaixo).</p>`;
+    box.innerHTML = `<p class="muted small">Nenhum gasto manual extra lançado neste dia.</p>`;
     return;
   }
   const cats = ["Alimentação", "Combustível", "Pedágio", "Ingresso/Lazer", "Hospedagem", "Compras/Outro"];
@@ -1161,16 +1370,16 @@ function renderFinModalEntries() {
     el.oninput = () => {
       const idx = parseInt(el.closest(".fin-entry-row").dataset.fi, 10);
       modalFinEntries[idx][el.dataset.fe] = el.dataset.fe === "amount" ? (el.value === "" ? "" : parseFloat(el.value) || 0) : el.value;
-      const sum = modalFinEntries.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-      $("#finDayTotalInput").value = sum > 0 ? sum.toFixed(2) : "";
+      modalFinManualTotal = false;
+      recalcFinModalTotal(true);
     };
   });
   box.querySelectorAll("[data-frem]").forEach(btn => {
     btn.onclick = () => {
       modalFinEntries.splice(parseInt(btn.dataset.frem, 10), 1);
       renderFinModalEntries();
-      const sum = modalFinEntries.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-      $("#finDayTotalInput").value = modalFinEntries.length ? sum.toFixed(2) : "";
+      modalFinManualTotal = false;
+      recalcFinModalTotal(true);
     };
   });
 }
@@ -1187,13 +1396,40 @@ function openFinanceDayModal(iso) {
   const targetVal = dayObj.hasActual ? dayObj.goalTarget : dayObj.adjustedTarget;
   $("#finModalSummary").innerHTML = `
     <div><b>Previsto original do dia:</b> ${money(dayObj.plannedBase)}</div>
-    <div><b>Meta atual p/ este dia (c/ economia e redistribuição):</b> <span style="color:var(--accent2);font-weight:700">${money(targetVal)}</span></div>
-    <div class="muted small">${dayObj.items.map(it => `${it.icon} ${it.label}: ${money(it.amount)}`).join(" · ")}</div>`;
+    <div><b>Meta atual p/ este dia (c/ economia e redistribuição):</b> <span style="color:var(--accent2);font-weight:700">${money(targetVal)}</span></div>`;
 
   const rec = (state.finance && state.finance.dailyRecords && state.finance.dailyRecords[iso]) || {};
+  const checkedMap = rec.checkedPlanned && typeof rec.checkedPlanned === "object" ? rec.checkedPlanned : {};
+  modalFinPlanned = dayObj.items
+    .filter(it => it.checkable)
+    .map(it => {
+      const st = checkedMap[it.key];
+      const hasCustom = st && st.actualAmount !== null && st.actualAmount !== undefined && st.actualAmount !== "";
+      return {
+        key: it.key,
+        icon: it.icon,
+        label: it.label,
+        plannedAmount: it.amount,
+        checked: Boolean(st && st.checked),
+        actualAmount: hasCustom ? Math.max(0, Number(st.actualAmount) || 0) : it.amount,
+        isEditing: false
+      };
+    });
+
   modalFinEntries = Array.isArray(rec.entries) ? clone(rec.entries) : [];
+  modalFinManualTotal = Boolean(rec.manualTotalOverride);
+  renderFinModalPlanned();
   renderFinModalEntries();
-  $("#finDayTotalInput").value = dayObj.hasActual ? dayObj.actualSpent.toFixed(2) : "";
+
+  if (rec.manualTotalOverride && rec.spent != null && rec.spent !== "") {
+    $("#finDayTotalInput").value = Number(rec.spent).toFixed(2);
+    recalcFinModalTotal(false);
+  } else {
+    const res = recalcFinModalTotal(true);
+    if (!res.hasAny && dayObj.hasActual) {
+      $("#finDayTotalInput").value = dayObj.actualSpent.toFixed(2);
+    }
+  }
   $("#finDayNoteInput").value = rec.note || "";
   $("#btnFinClearDay").hidden = !dayObj.hasActual;
   $("#financeDayModal").showModal();
@@ -2047,6 +2283,7 @@ window.openModal = function (idOrOpts) {
   updateModalMapsUI();
   renderModalAttachments();
   updateModalPreview();
+  prefetchModalWalletPass();
   $("#modal").showModal();
 };
 
@@ -2389,9 +2626,6 @@ async function importXlsx(file) {
 
 /* ---------- PWA INSTALL POP-UP ---------- */
 function setupPwaInstall() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
-  }
   const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
   if (isStandalone) return;
 
@@ -2402,23 +2636,24 @@ function setupPwaInstall() {
 
   $("#btnMenuInstall").hidden = false;
 
-  window.addEventListener("beforeinstallprompt", e => {
-    e.preventDefault();
-    deferredInstallPrompt = e;
+  pwaPromptWaiters.push(() => {
     $("#btnMenuInstall").hidden = false;
     if (!recentlyDismissed) showPwaBanner(false);
   });
 
-  if (isMobile && !recentlyDismissed) {
+  if (deferredInstallPrompt && !recentlyDismissed) {
+    showPwaBanner(false);
+  } else if (isMobile && !recentlyDismissed) {
     setTimeout(() => showPwaBanner(isIOS), 700);
   }
 
   $("#btnPwaInstall").onclick = async () => {
     if (deferredInstallPrompt) {
-      deferredInstallPrompt.prompt();
-      const res = await deferredInstallPrompt.userChoice;
-      if (res.outcome === "accepted") $("#pwaInstallBanner").hidden = true;
+      const promptEv = deferredInstallPrompt;
       deferredInstallPrompt = null;
+      await promptEv.prompt();
+      const res = await promptEv.userChoice.catch(() => ({ outcome: "dismissed" }));
+      if (res && res.outcome === "accepted") $("#pwaInstallBanner").hidden = true;
     } else if (isIOS) {
       alert("No iPhone/iPad: toque no botão Compartilhar (quadrado com seta ⬆️) no Safari e escolha 'Adicionar à Tela de Início' para instalar o Férias Pro em tela cheia.");
       $("#pwaInstallBanner").hidden = true;
@@ -3260,10 +3495,36 @@ $("#btnReapplyStops").onclick = () => {
 };
 
 /* ---------- GOOGLE WALLET / PASSE POR ATIVIDADE ---------- */
-function triggerPkpassOpen(url, filename) {
+function walletActSig(a) {
+  return [a.id || "", a.type || "", a.name || "", a.start || "", a.end || "", a.extraCost || 0, a.bookingRef || "", a.from || "", a.to || ""].join("|");
+}
+
+function prefetchModalWalletPass() {
+  prefetchedPkpass = null;
+  if (!window.FeriasApi || !window.FeriasApi.isServer() || !window.FeriasApi.createPkpassUrl) return;
+  if (window.FeriasApi.getServerCaps && window.FeriasApi.getServerCaps().hasWallet) return;
+  const a = readForm();
+  a.id = editing || modalDraftId || uid();
+  if (!a.name) return;
+  const sig = walletActSig(a);
+  window.FeriasApi.createPkpassUrl(a, state.title)
+    .then(pk => {
+      if (pk && pk.pkpassUrl) prefetchedPkpass = { sig, pkpassUrl: pk.pkpassUrl, filename: pk.filename };
+    })
+    .catch(() => {});
+}
+
+function triggerPkpassOpen(url) {
+  const fullUrl = new URL(url, window.location.origin).href;
+  const isAndroid = /android/i.test(navigator.userAgent);
+  if (isAndroid && fullUrl.startsWith("https://")) {
+    const cleanHostPath = fullUrl.replace(/^https:\/\//, "");
+    const intentUrl = `intent://${cleanHostPath}#Intent;scheme=https;action=android.intent.action.VIEW;type=application/vnd.apple.pkpass;package=com.google.android.apps.walletnfcrel;S.browser_fallback_url=${encodeURIComponent(fullUrl)};end`;
+    window.location.href = intentUrl;
+    return;
+  }
   const link = document.createElement("a");
-  link.href = url;
-  if (filename) link.download = filename;
+  link.href = fullUrl;
   link.style.display = "none";
   document.body.appendChild(link);
   link.click();
@@ -3284,6 +3545,28 @@ async function openWalletPassForCurrentActivity() {
   openBtn.hidden = true;
   if (pkBtn) pkBtn.hidden = true;
 
+  const sig = walletActSig(a);
+  const hasServerWallet = Boolean(window.FeriasApi.getServerCaps && window.FeriasApi.getServerCaps().hasWallet);
+
+  // Caminho instantâneo síncrono dentro do clique (evita bloqueio do gesto pelo navegador)
+  if (!hasServerWallet && prefetchedPkpass && prefetchedPkpass.sig === sig) {
+    const pk = prefetchedPkpass;
+    prefetchedPkpass = null;
+    triggerPkpassOpen(pk.pkpassUrl);
+    if (pkBtn) {
+      pkBtn.href = pk.pkpassUrl;
+      pkBtn.removeAttribute("download");
+      pkBtn.hidden = false;
+    }
+    if (setupDet) setupDet.hidden = false;
+    body.innerHTML = `
+      <p>✅ <b>Passe enviado direto para o Google Wallet!</b> Caso o app não abra na hora, toque em <b>💳 Abrir Passe (.pkpass) no Google Wallet</b> abaixo ou salve o Passe QR.</p>`;
+    window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
+    modal.showModal();
+    prefetchModalWalletPass();
+    return;
+  }
+
   try {
     const res = await window.FeriasApi.signWalletPass(a, state.title);
     if (res.configured && res.saveUrl) {
@@ -3300,16 +3583,16 @@ async function openWalletPassForCurrentActivity() {
     if (window.FeriasApi.isServer() && window.FeriasApi.createPkpassUrl) {
       const pk = await window.FeriasApi.createPkpassUrl(a, state.title);
       if (pk && pk.pkpassUrl) {
-        triggerPkpassOpen(pk.pkpassUrl, pk.filename);
+        triggerPkpassOpen(pk.pkpassUrl);
         if (pkBtn) {
           pkBtn.href = pk.pkpassUrl;
-          pkBtn.download = pk.filename || "passe_ferias_pro.pkpass";
+          pkBtn.removeAttribute("download");
           pkBtn.hidden = false;
         }
         if (setupDet) setupDet.hidden = false;
         body.innerHTML = `
-          <p>✅ <b>Passe (.pkpass) pronto!</b> No celular Android, toque em <b>Abrir / Google Wallet</b> na notificação (ou toque no botão azul abaixo) para importar automaticamente na sua Carteira do Google.</p>
-          <p class="muted small">Você também pode salvar o cartão visual QR abaixo caso prefira.</p>`;
+          <p>✅ <b>Passe enviado para o Google Wallet!</b> Caso o navegador peça confirmação, toque em <b>Abrir</b> (ou no botão azul abaixo).</p>
+          <p class="muted small">Você também pode salvar o cartão visual QR ou ativar o link direto online (Issuer ID) abaixo.</p>`;
         window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
         modal.showModal();
         return;
@@ -3864,6 +4147,28 @@ if ($("#fin-savingsGoal")) {
   };
 }
 
+if ($("#fin-savingsPctCustom")) {
+  $("#fin-savingsPctCustom").onchange = () => {
+    const pct = Math.max(0, Math.min(100, parseFloat($("#fin-savingsPctCustom").value) || 0));
+    if (!state.finance) state.finance = { savingsGoal: 0, dailyRecords: {} };
+    const t = totals();
+    state.finance.savingsGoal = pct > 0 ? Math.round((t.grandTotal || 0) * (pct / 100) * 100) / 100 : 0;
+    save(pct > 0 ? `🎯 Meta de economia personalizada (-${num(pct, 1)}%) aplicada` : "🎯 Economia personalizada zerada");
+  };
+}
+
+if ($("#btnFinExpandAll")) {
+  $("#btnFinExpandAll").onclick = () => {
+    finExpanded = !finExpanded;
+    const sec = $("#finExpandedSection");
+    if (sec) sec.hidden = !finExpanded;
+    $("#btnFinExpandAll").setAttribute("aria-expanded", String(finExpanded));
+    $("#btnFinExpandAll").textContent = finExpanded
+      ? "▴ Recolher cards detalhados e composição dos custos"
+      : "▾ Ampliar todos os cards e composição dos custos";
+  };
+}
+
 document.querySelectorAll(".fin-save-preset").forEach(btn => {
   btn.onclick = () => {
     const pct = Number(btn.dataset.savepct || 0);
@@ -3904,6 +4209,19 @@ if ($("#btnFinClearDay")) {
     save("🧹 Lançamento do dia removido — orçamento reequilibrado!");
   };
 }
+if ($("#finDayTotalInput")) {
+  $("#finDayTotalInput").oninput = () => {
+    const raw = $("#finDayTotalInput").value.trim();
+    const res = recalcFinModalTotal(false);
+    if (raw === "") {
+      modalFinManualTotal = false;
+    } else {
+      const typed = Math.round((parseFloat(raw) || 0) * 100) / 100;
+      modalFinManualTotal = Math.abs(typed - res.combined) > 0.01 || !res.hasAny;
+    }
+  };
+}
+
 if ($("#financeDayForm")) {
   $("#financeDayForm").onsubmit = e => {
     e.preventDefault();
@@ -3914,23 +4232,39 @@ if ($("#financeDayForm")) {
     const cleanEntries = modalFinEntries
       .map(en => ({ cat: en.cat || "Alimentação", desc: String(en.desc || "").trim(), amount: Math.max(0, Number(en.amount) || 0) }))
       .filter(en => en.desc || en.amount > 0);
+
+    const checkedPlanned = {};
+    let anyChecked = false;
+    modalFinPlanned.forEach(it => {
+      if (it.checked || Math.abs(it.actualAmount - it.plannedAmount) > 0.005) {
+        checkedPlanned[it.key] = {
+          checked: Boolean(it.checked),
+          actualAmount: Math.round(Math.max(0, Number(it.actualAmount) || 0) * 100) / 100
+        };
+        if (it.checked) anyChecked = true;
+      }
+    });
+
     const totalRaw = $("#finDayTotalInput").value.trim();
     const note = $("#finDayNoteInput").value.trim();
 
-    if (totalRaw === "" && !cleanEntries.length) {
+    if (totalRaw === "" && !cleanEntries.length && !anyChecked && !note) {
       delete state.finance.dailyRecords[activeFinanceDate];
       $("#financeDayModal").close();
       save("🧹 Dia voltou para o status previsto");
       return;
     }
 
+    const res = recalcFinModalTotal(false);
     const spentVal = totalRaw !== ""
       ? Math.max(0, parseFloat(totalRaw) || 0)
-      : cleanEntries.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      : res.combined;
 
     state.finance.dailyRecords[activeFinanceDate] = {
-      spent: Math.round(spentVal * 100) / 100,
+      checkedPlanned,
       entries: cleanEntries,
+      manualTotalOverride: Boolean(modalFinManualTotal),
+      spent: Math.round(spentVal * 100) / 100,
       note
     };
     $("#financeDayModal").close();

@@ -1468,7 +1468,7 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
       }
       res.writeHead(200, {
         "Content-Type": "application/vnd.apple.pkpass",
-        "Content-Disposition": `attachment; filename="${item.filename}"`,
+        "Content-Disposition": `inline; filename="${item.filename}"`,
         "Content-Length": item.buf.length,
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff"

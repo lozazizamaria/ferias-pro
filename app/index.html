@@ -15,7 +15,7 @@
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="styles.css?v=14">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -232,6 +232,23 @@
     <section class="view" id="view-finance">
       <div class="kpis fin-kpis" id="finKpis"></div>
 
+      <div class="fin-expand-bar">
+        <button type="button" class="fin-expand-btn" id="btnFinExpandAll" aria-expanded="false">▾ Ampliar todos os cards e composição dos custos</button>
+      </div>
+
+      <div id="finExpandedSection" class="fin-expanded-section" hidden>
+        <div class="kpis fin-kpis" id="finExtraKpis"></div>
+        <div class="card" id="finCostCompCard" style="margin-bottom:14px">
+          <div class="card-head">
+            <h2>💳 Composição detalhada dos custos</h2>
+            <span class="muted small">Ordenado do maior para o menor</span>
+          </div>
+          <div id="finCostStackedBar" class="stacked-bar" aria-hidden="true"></div>
+          <div id="finCostBars"></div>
+          <div id="finExtraBudgetSummary" class="budget-box"></div>
+        </div>
+      </div>
+
       <div class="card fin-controls-card">
         <div class="card-head">
           <div>
@@ -243,6 +260,11 @@
             <button type="button" class="btn ghost small fin-save-preset" data-savepct="5">-5% Econ.</button>
             <button type="button" class="btn ghost small fin-save-preset" data-savepct="10">-10% Econ.</button>
             <button type="button" class="btn ghost small fin-save-preset" data-savepct="15">-15% Econ.</button>
+            <label class="fin-custom-pct-wrap" id="finCustomPctWrap" title="Digite qualquer % de economia desejada (ex: 20, 25, 30)">
+              <span>-%</span>
+              <input type="number" step="1" min="0" max="100" id="fin-savingsPctCustom" placeholder="Personalizado" aria-label="Percentual personalizado de economia">
+              <small>%</small>
+            </label>
           </div>
         </div>
 
@@ -966,18 +988,22 @@
 
     <div id="finModalSummary" class="fin-modal-summary"></div>
 
+    <div id="finModalPlannedBox" class="fin-modal-planned"></div>
+
     <div class="fin-modal-entries">
       <div class="route-head-row">
-        <strong>🧾 Lançamentos detalhados do dia (opcional)</strong>
+        <strong>🧾 Gastos extras / manuais do dia (alimentação, compras, etc.)</strong>
         <button type="button" class="btn ghost small" id="btnFinAddEntry">➕ Adicionar gasto</button>
       </div>
       <div id="finModalEntriesRows" class="tickets-rows"></div>
-      <p class="muted small" id="finEntriesHint">Adicione gastos individuais (ex: Almoço, Posto, Estacionamento) ou digite diretamente o total gasto no campo abaixo.</p>
+      <p class="muted small" id="finEntriesHint">Marque acima os gastos previstos realizados (ou clique em ✏️ para ajustar o valor) e lance aqui extras manuais do dia.</p>
     </div>
 
-    <div class="form-grid" style="margin-top:10px">
+    <div id="finModalCalcBar" class="fin-modal-calc"></div>
+
+    <div class="form-grid" style="margin-top:8px">
       <label class="span2">💳 Total real gasto neste dia (R$)
-        <input type="number" step="0.01" min="0" id="finDayTotalInput" placeholder="Ex: 245,00 (deixe vazio p/ marcar como não lançado)">
+        <input type="number" step="0.01" min="0" id="finDayTotalInput" placeholder="Calculado pelos checks/extras ou digite o total...">
       </label>
       <label class="span2">📝 Observação do dia
         <input type="text" id="finDayNoteInput" placeholder="Ex: Posto na saída, almoço em família, economizamos no jantar...">
@@ -997,14 +1023,14 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=13"></script>
-<script src="vehicles.js?v=13"></script>
-<script src="countries.js?v=13"></script>
-<script src="data.js?v=13"></script>
-<script src="maps.js?v=13"></script>
-<script src="calendar.js?v=13"></script>
-<script src="report.js?v=13"></script>
-<script src="api.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="config.example.js?v=14"></script>
+<script src="vehicles.js?v=14"></script>
+<script src="countries.js?v=14"></script>
+<script src="data.js?v=14"></script>
+<script src="maps.js?v=14"></script>
+<script src="calendar.js?v=14"></script>
+<script src="report.js?v=14"></script>
+<script src="api.js?v=14"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>
