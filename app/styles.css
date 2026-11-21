@@ -141,7 +141,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   min-width: 0;
 }
 
-.trip-switcher select {
+.trip-switcher select,
+.trip-switcher .msel-trigger {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -149,12 +150,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
   color: var(--text-strong);
   font-weight: 600;
   font-size: 0.78rem;
-  max-width: 170px;
+  max-width: 185px;
   min-height: 28px;
   outline: none;
   text-overflow: ellipsis;
 }
-.trip-switcher select:focus { border-color: var(--accent); }
+.trip-switcher select:focus,
+.trip-switcher .msel-trigger:focus-visible { border-color: var(--accent); }
 .trip-switcher .icon-compact { width: 28px; height: 28px; min-height: 28px; font-size: 0.78rem; }
 
 @media (min-width: 1850px) {
@@ -1352,6 +1354,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
 }
 
+.gantt-header { position: relative; z-index: 15; }
 .gantt-filter-sel {
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -1360,6 +1363,150 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
   font-size: 0.82rem;
   color: var(--text);
   min-height: 32px;
+}
+
+/* MULTI-SELECT CHECKBOX DROPDOWN (TIPOS & VIAGENS) */
+.msel-host { display: inline-flex; position: relative; min-width: 0; }
+.msel { position: relative; display: inline-flex; width: 100%; min-width: 0; }
+.msel.open { z-index: 75; }
+.msel-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  min-height: 32px;
+  cursor: pointer;
+  max-width: 220px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.msel-trigger:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+.msel-trigger.is-multi { border-color: var(--accent); background: rgba(124, 92, 255, 0.12); color: var(--text-strong); }
+.msel-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; text-align: left; }
+.msel-caret { font-size: 0.72rem; opacity: 0.75; flex-shrink: 0; }
+
+.msel-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 245px;
+  max-width: min(320px, 90vw);
+  max-height: 350px;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border-strong);
+  border-radius: 13px;
+  padding: 6px;
+  box-shadow: var(--shadow);
+  z-index: 80;
+  display: grid;
+  gap: 3px;
+  animation: pop 0.14s ease;
+}
+.msel-menu[hidden] { display: none; }
+.msel-menu.align-right { left: auto; right: 0; }
+
+.msel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+.msel-act {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+.msel-act:hover { background: var(--surface-hover); border-color: var(--accent); }
+.msel-group {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 6px 8px 2px;
+}
+.msel-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+.msel-opt:hover { background: var(--surface-hover); }
+.msel-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  font-size: 0.84rem;
+  color: var(--text);
+  font-weight: 500;
+}
+.msel-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.msel-txt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.msel-only {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.msel-only:hover {
+  border-color: var(--accent);
+  color: var(--accent2);
+  background: var(--surface);
+}
+
+.trip-tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border: 1px solid color-mix(in srgb, var(--tc, var(--accent2)) 42%, transparent);
+  background: color-mix(in srgb, var(--tc, var(--accent2)) 14%, transparent);
+  color: var(--tc, var(--accent2));
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .attach-box, .cal-box {
@@ -1640,7 +1787,11 @@ tr.chk-row.dragging-row, .m-card.dragging-row { opacity: 0.45; }
   .topbar { padding: 8px 12px; gap: 6px; }
   .brand-group { width: 100%; justify-content: space-between; flex-wrap: nowrap; }
   .trip-switcher { flex: 1; justify-content: flex-end; min-width: 0; }
-  .trip-switcher select { flex: 1; max-width: 145px; font-size: 0.76rem; padding: 3px 6px; min-height: 28px; }
+  .trip-switcher select,
+  .trip-switcher .msel-host { flex: 1; max-width: 155px; min-width: 0; }
+  .trip-switcher .msel-trigger { width: 100%; max-width: 155px; font-size: 0.76rem; padding: 3px 6px; min-height: 28px; }
+  .gantt-controls .msel-trigger,
+  .filters .msel-trigger { max-width: 175px; }
   .actions { width: 100%; justify-content: flex-end; gap: 5px; }
   .actions .btn { padding: 5px 9px; min-height: 32px; font-size: 0.82rem; }
   .actions .sync-dot-only { width: 28px; height: 28px; min-height: 28px; padding: 0; }

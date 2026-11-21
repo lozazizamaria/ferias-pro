@@ -13,7 +13,17 @@ const WD = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const MON = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const MON_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-let ganttFilter = "";
+const SELECTED_TRIPS_KEY = "ferias-pro-selected-trips";
+let ganttFilterTypes = new Set(Object.keys(window.ACTIVITY_TYPES || {}));
+let tableFilterTypes = new Set(Object.keys(window.ACTIVITY_TYPES || {}));
+let selectedTripIds = [];
+let loadedTripsMap = new Map();
+const actOriginMap = new WeakMap();
+const MULTI_TRIP_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#06b6d4", "#a78bfa"];
+let ganttTypeMsel = null;
+let tableTypeMsel = null;
+let tripMultiMsel = null;
+let editingTripRef = null;
 let ganttMode = "gantt";
 let ganttZoom = window.innerWidth < 720 ? 50 : 48;
 let ganttSlimRail = window.innerWidth < 720;
@@ -85,21 +95,72 @@ function migrateState(raw) {
   return merged;
 }
 
-function save(msg, skipRender = false) {
-  if (activeTrip && activeTrip.role === "viewer") {
-    toast("👁️ Viagem compartilhada somente para visualização.");
-    return;
+function getSelectedTrips() {
+  const list = selectedTripIds.map(id => loadedTripsMap.get(id)).filter(Boolean);
+  if (!list.length && activeTrip) {
+    if (!loadedTripsMap.has(activeTrip.id)) loadedTripsMap.set(activeTrip.id, activeTrip);
+    activeTrip.data = state;
+    return [activeTrip];
   }
-  if (activeTrip) {
-    window.FeriasApi.schedulePush(activeTrip.id, () => ({
-      name: state.title || activeTrip.name,
-      data: state,
-      gmapsKey: window.FeriasMaps ? window.FeriasMaps.getKey() : "",
+  return list;
+}
+
+function isMultiTripMode() {
+  return getSelectedTrips().length > 1;
+}
+
+function getActivityMeta(a) {
+  return a ? (actOriginMap.get(a) || null) : null;
+}
+
+function getTripBadgeHTML(a) {
+  if (!isMultiTripMode()) return "";
+  const meta = getActivityMeta(a);
+  if (!meta?.tripName) return "";
+  const col = MULTI_TRIP_COLORS[(meta.colorIdx || 0) % MULTI_TRIP_COLORS.length];
+  return `<span class="trip-tag-pill" style="--tc:${col}" title="Viagem: ${esc(meta.tripName)}">${esc(meta.tripName)}</span>`;
+}
+
+function findActivityContext(id) {
+  const trips = getSelectedTrips();
+  for (const tr of trips) {
+    const acts = tr?.data?.activities || [];
+    const act = acts.find(x => x.id === id);
+    if (act) return { trip: tr, data: tr.data, activity: act };
+  }
+  const fallback = (state.activities || []).find(x => x.id === id);
+  return fallback ? { trip: activeTrip, data: state, activity: fallback } : null;
+}
+
+function saveTripRecord(targetTrip, msg, skipRender = false) {
+  const tr = targetTrip || activeTrip;
+  if (tr && tr.role === "viewer") {
+    toast("👁️ Viagem compartilhada somente para visualização.");
+    if (!skipRender) render();
+    return false;
+  }
+  if (tr) {
+    tr.data = tr === activeTrip ? state : tr.data;
+    tr.name = tr.data.title || tr.name;
+    const payloadFn = () => ({
+      name: tr.data.title || tr.name,
+      data: tr.data,
+      gmapsKey: tr === activeTrip && window.FeriasMaps ? window.FeriasMaps.getKey() : (tr.gmapsKey || ""),
       updatedAt: Date.now()
-    }));
+    });
+    if (!activeTrip || tr.id === activeTrip.id) {
+      window.FeriasApi.schedulePush(tr.id, payloadFn);
+    } else {
+      window.FeriasApi.updateTrip(tr.id, payloadFn()).catch(() => {});
+    }
   }
   if (!skipRender) render();
   if (msg) toast(msg);
+  return true;
+}
+
+function save(msg, skipRender = false) {
+  return saveTripRecord(activeTrip, msg, skipRender);
 }
 
 /* ---------- TEMA DIA / NOITE ---------- */
@@ -134,7 +195,40 @@ const parseHM = s => {
 };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const label = a => (a.type === "Viagem" || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus") && (a.from || a.to) ? `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})` : a.name;
-const sorted = () => [...state.activities].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+const sorted = () => {
+  const trips = getSelectedTrips();
+  if (trips.length <= 1) {
+    const tr = trips[0] || activeTrip;
+    const acts = tr?.data?.activities || state.activities || [];
+    acts.forEach(a => actOriginMap.set(a, {
+      tripId: tr?.id || "",
+      tripName: tr?.name || state.title,
+      role: tr?.role || "owner",
+      vehicle: tr?.data?.vehicle || state.vehicle,
+      params: tr?.data?.params || state.params,
+      tripRef: tr,
+      colorIdx: 0
+    }));
+    return [...acts].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+  }
+  const all = [];
+  trips.forEach((tr, idx) => {
+    const acts = tr?.data?.activities || [];
+    acts.forEach(a => {
+      actOriginMap.set(a, {
+        tripId: tr.id,
+        tripName: tr.data?.title || tr.name,
+        role: tr.role || "owner",
+        vehicle: tr.data?.vehicle || state.vehicle,
+        params: tr.data?.params || state.params,
+        tripRef: tr,
+        colorIdx: idx % MULTI_TRIP_COLORS.length
+      });
+      all.push(a);
+    });
+  });
+  return all.sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+};
 
 function toast(m) {
   const t = $("#toast");
@@ -151,8 +245,10 @@ function computeAutoStops(driveMinutes) {
   return { stops, stopTime: stops * stopDur };
 }
 
-function calc(a, kmLOverride) {
-  const v = state.vehicle;
+function calc(a, kmLOverride, tripOverride) {
+  const meta = !tripOverride ? actOriginMap.get(a) : null;
+  const v = tripOverride?.vehicle || meta?.vehicle || state.vehicle;
+  const p = tripOverride?.params || meta?.params || state.params;
   const r = { ev: 0, hev: 0, liters: 0, fuel: 0, charge: 0, toll: 0, total: 0, extra: +a.extraCost || 0, tanks: 0, time: 0, isCarpool: false };
   if (a.type !== "Viagem") return r;
   r.time = (+a.drive || 0) + (+a.stopTime || 0);
@@ -166,7 +262,7 @@ function calc(a, kmLOverride) {
     return r;
   }
 
-  const ch = a.charges ?? state.params.defaultCharges ?? 1;
+  const ch = a.charges ?? p.defaultCharges ?? 1;
   const pt = v.powertrain || "PHEV";
 
   if (pt === "BEV") {
@@ -198,8 +294,22 @@ function formatTicketsNote(a) {
   return `${totalQty} un. (${valid.map(t => `${t.qty}× ${money(t.unitPrice)}`).join(" + ")})`;
 }
 
-function totals(kmLOverride) {
-  const s = sorted();
+const COST_CATEGORY_STYLES = {
+  Voo: { label: "Passagens Aéreas / Voos", color: "#38bdf8", gradient: "linear-gradient(90deg,#38bdf8,#0284c7)" },
+  Trem: { label: "Passagens de Trem", color: "#14b8a6", gradient: "linear-gradient(90deg,#14b8a6,#0284c7)" },
+  "Ônibus": { label: "Passagens de Ônibus", color: "#f59e0b", gradient: "linear-gradient(90deg,#f59e0b,#d97706)" },
+  Viagem_Extra: { label: "Extras em Viagens de Carro", color: "#6366f1", gradient: "linear-gradient(90deg,#6366f1,#22d3ee)" },
+  Hospedagem: { label: "Hospedagem", color: "#10b981", gradient: "linear-gradient(90deg,#10b981,#0d9488)" },
+  Ingresso: { label: "Ingressos & Tickets", color: "#c084fc", gradient: "linear-gradient(90deg,#8b5cf6,#ec4899)" },
+  Evento: { label: "Eventos / Jogos / Shows", color: "#f59e0b", gradient: "linear-gradient(90deg,#f59e0b,#e11d48)" },
+  Passeio: { label: "Passeios & Parques", color: "#f472b6", gradient: "linear-gradient(90deg,#f472b6,#9333ea)" },
+  Restaurante: { label: "Restaurantes & Lazer", color: "#fb923c", gradient: "linear-gradient(90deg,#fb923c,#dc2626)" },
+  "Período": { label: "Estadias / Períodos", color: "#a78bfa", gradient: "linear-gradient(90deg,#7c3aed,#4338ca)" },
+  Outro: { label: "Outros Gastos de Atividades", color: "#94a3b8", gradient: "linear-gradient(90deg,#64748b,#475569)" }
+};
+
+function computeSingleTripTotals(tripData, kmLOverride) {
+  const acts = [...(tripData.activities || [])].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
   const t = {
     km: 0, drive: 0, stopTime: 0, stops: 0, ev: 0, hev: 0, liters: 0,
     fuel: 0, charge: 0, toll: 0, total: 0, tanks: 0, trips: 0,
@@ -208,28 +318,14 @@ function totals(kmLOverride) {
     contingencyCost: 0, grandTotal: 0, totalDays: 0
   };
 
-  if (s.length) {
-    const min = s[0].start;
-    const max = s.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, min);
+  if (acts.length) {
+    const min = acts[0].start;
+    const max = acts.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, min);
     t.totalDays = days({ start: min, end: max });
   }
 
-  const COST_CATEGORY_STYLES = {
-    Voo: { label: "Passagens Aéreas / Voos", color: "#38bdf8", gradient: "linear-gradient(90deg,#38bdf8,#0284c7)" },
-    Trem: { label: "Passagens de Trem", color: "#14b8a6", gradient: "linear-gradient(90deg,#14b8a6,#0284c7)" },
-    "Ônibus": { label: "Passagens de Ônibus", color: "#f59e0b", gradient: "linear-gradient(90deg,#f59e0b,#d97706)" },
-    Viagem_Extra: { label: "Extras em Viagens de Carro", color: "#6366f1", gradient: "linear-gradient(90deg,#6366f1,#22d3ee)" },
-    Hospedagem: { label: "Hospedagem", color: "#10b981", gradient: "linear-gradient(90deg,#10b981,#0d9488)" },
-    Ingresso: { label: "Ingressos & Tickets", color: "#c084fc", gradient: "linear-gradient(90deg,#8b5cf6,#ec4899)" },
-    Evento: { label: "Eventos / Jogos / Shows", color: "#f59e0b", gradient: "linear-gradient(90deg,#f59e0b,#e11d48)" },
-    Passeio: { label: "Passeios & Parques", color: "#f472b6", gradient: "linear-gradient(90deg,#f472b6,#9333ea)" },
-    Restaurante: { label: "Restaurantes & Lazer", color: "#fb923c", gradient: "linear-gradient(90deg,#fb923c,#dc2626)" },
-    "Período": { label: "Estadias / Períodos", color: "#a78bfa", gradient: "linear-gradient(90deg,#7c3aed,#4338ca)" },
-    Outro: { label: "Outros Gastos de Atividades", color: "#94a3b8", gradient: "linear-gradient(90deg,#64748b,#475569)" }
-  };
   const extraBuckets = {};
-
-  state.activities.forEach(a => {
+  acts.forEach(a => {
     const ex = +a.extraCost || 0;
     t.activitiesExtra += ex;
     if (a.type === "Voo") t.flightsCost += ex;
@@ -242,7 +338,7 @@ function totals(kmLOverride) {
     }
 
     if (a.type === "Viagem") {
-      const c = calc(a, kmLOverride);
+      const c = calc(a, kmLOverride, tripData);
       t.trips++;
       t.km += +a.km || 0;
       t.drive += +a.drive || 0;
@@ -252,7 +348,7 @@ function totals(kmLOverride) {
     }
   });
 
-  const p = state.params;
+  const p = tripData.params || {};
   const autoNights = Math.max(0, t.totalDays - 1);
   t.lodgingNights = p.lodgingNightsOverride != null && p.lodgingNightsOverride !== "" && Number(p.lodgingNightsOverride) >= 0
     ? Number(p.lodgingNightsOverride)
@@ -265,7 +361,6 @@ function totals(kmLOverride) {
   t.contingencyCost = sub * ((+p.contingencyPct || 0) / 100);
   t.grandTotal = sub + t.contingencyCost;
 
-  // Monta composição dinâmica ordenada do MAIOR custo para o MENOR (escalonando de cima para baixo)
   const costBreakdown = [];
   if (t.fuel > 0) costBreakdown.push({ id: "fuel", label: "Gasolina / Combustível", value: t.fuel, color: "#fb7185", gradient: "linear-gradient(90deg,#fb7185,#f5b544)" });
   if (t.toll > 0) costBreakdown.push({ id: "toll", label: "Pedágios", value: t.toll, color: "#a78bfa", gradient: "linear-gradient(90deg,#a78bfa,#7c5cff)" });
@@ -291,22 +386,292 @@ function totals(kmLOverride) {
   return t;
 }
 
-/* ---------- POPULATE TYPE SELECTORS ---------- */
+function totals(kmLOverride) {
+  const trips = getSelectedTrips();
+  if (trips.length <= 1) {
+    return computeSingleTripTotals(trips[0]?.data || state, kmLOverride);
+  }
+  const merged = {
+    km: 0, drive: 0, stopTime: 0, stops: 0, ev: 0, hev: 0, liters: 0,
+    fuel: 0, charge: 0, toll: 0, total: 0, tanks: 0, trips: 0,
+    flightsCost: 0, lodgingActCost: 0, otherActCost: 0, activitiesExtra: 0,
+    lodgingParamCost: 0, lodgingNights: 0, foodCost: 0, otherFixedBudget: 0,
+    contingencyCost: 0, grandTotal: 0, totalDays: 0, costBreakdown: []
+  };
+  const bucketMap = new Map();
+  trips.forEach(tr => {
+    const one = computeSingleTripTotals(tr.data, kmLOverride);
+    for (const k of [
+      "km", "drive", "stopTime", "stops", "ev", "hev", "liters",
+      "fuel", "charge", "toll", "total", "tanks", "trips",
+      "flightsCost", "lodgingActCost", "otherActCost", "activitiesExtra",
+      "lodgingParamCost", "lodgingNights", "foodCost", "otherFixedBudget",
+      "contingencyCost", "grandTotal", "totalDays"
+    ]) {
+      merged[k] += one[k] || 0;
+    }
+    one.costBreakdown.forEach(b => {
+      const prev = bucketMap.get(b.id);
+      if (prev) prev.value += b.value;
+      else bucketMap.set(b.id, { ...b });
+    });
+  });
+  merged.costBreakdown = [...bucketMap.values()].sort((a, b) => b.value - a.value);
+  return merged;
+}
+
+/* ---------- COMPONENTE COMPARTILHADO MULTI-SELECT & TIPOS ---------- */
+const openMultiSelects = new Set();
+let multiSelectGlobalBound = false;
+function bindMultiSelectGlobalClose() {
+  if (multiSelectGlobalBound) return;
+  multiSelectGlobalBound = true;
+  document.addEventListener("click", () => {
+    openMultiSelects.forEach(c => c.close());
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") openMultiSelects.forEach(c => c.close());
+  });
+}
+
+function createMultiSelect(hostEl, cfg = {}) {
+  if (!hostEl) return null;
+  bindMultiSelectGlobalClose();
+  let items = [];
+  let selectedSet = new Set();
+  const minSel = cfg.minSelected ?? 0;
+
+  hostEl.innerHTML = `<div class="msel">
+    <button type="button" class="msel-trigger" aria-haspopup="listbox" aria-expanded="false">
+      <span class="msel-label"></span>
+      <span class="msel-caret" aria-hidden="true">▾</span>
+    </button>
+    <div class="msel-menu" role="listbox" aria-multiselectable="true" hidden></div>
+  </div>`;
+
+  const wrap = hostEl.querySelector(".msel");
+  const trigger = hostEl.querySelector(".msel-trigger");
+  const labelEl = hostEl.querySelector(".msel-label");
+  const menu = hostEl.querySelector(".msel-menu");
+
+  const getOrderedSelected = () => items.filter(it => selectedSet.has(it.id)).map(it => it.id);
+
+  function close() {
+    menu.hidden = true;
+    wrap.classList.remove("open");
+    trigger.setAttribute("aria-expanded", "false");
+  }
+
+  function updateTrigger() {
+    const sel = items.filter(it => selectedSet.has(it.id));
+    const txt = cfg.getLabel ? cfg.getLabel(sel, items) : `${sel.length} selecionados`;
+    labelEl.textContent = txt;
+    trigger.title = txt;
+    const activeMulti = cfg.isHighlighted
+      ? cfg.isHighlighted(sel, items)
+      : (minSel > 0 ? sel.length > 1 : sel.length < items.length);
+    trigger.classList.toggle("is-multi", Boolean(activeMulti));
+  }
+
+  function renderMenu() {
+    const selCount = items.filter(it => selectedSet.has(it.id)).length;
+    const headActions = minSel === 0
+      ? `<div class="msel-head">
+           <button type="button" class="msel-act" data-ms-all>☑️ Todos</button>
+           <button type="button" class="msel-act" data-ms-none>✕ Limpar</button>
+         </div>`
+      : `<div class="msel-head">
+           <button type="button" class="msel-act" data-ms-all>☑️ Todas (${items.length})</button>
+           <span class="muted small">${selCount}/${items.length}</span>
+         </div>`;
+
+    let lastGroup = null;
+    const rowsHtml = items.map(it => {
+      let grpHtml = "";
+      if (it.group && it.group !== lastGroup) {
+        lastGroup = it.group;
+        grpHtml = `<div class="msel-group">${esc(it.group)}</div>`;
+      }
+      const checked = selectedSet.has(it.id) ? "checked" : "";
+      const prefix = it.icon ? `${it.icon} ` : "";
+      return `${grpHtml}<div class="msel-opt">
+        <label class="msel-check">
+          <input type="checkbox" value="${esc(it.id)}" ${checked}>
+          <span class="msel-txt">${esc(prefix + it.label)}</span>
+        </label>
+        <button type="button" class="msel-only" data-ms-only="${esc(it.id)}" title="Selecionar somente este">Só</button>
+      </div>`;
+    }).join("");
+
+    menu.innerHTML = headActions + rowsHtml;
+
+    const btnAll = menu.querySelector("[data-ms-all]");
+    if (btnAll) {
+      btnAll.onclick = e => {
+        e.stopPropagation();
+        selectedSet = new Set(items.map(it => it.id));
+        syncAndEmit();
+      };
+    }
+    const btnNone = menu.querySelector("[data-ms-none]");
+    if (btnNone) {
+      btnNone.onclick = e => {
+        e.stopPropagation();
+        selectedSet.clear();
+        syncAndEmit();
+      };
+    }
+    menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.onchange = () => {
+        const id = cb.value;
+        if (cb.checked) {
+          selectedSet.add(id);
+        } else {
+          if (selectedSet.size <= minSel) {
+            cb.checked = true;
+            if (cfg.minError) toast(cfg.minError);
+            return;
+          }
+          selectedSet.delete(id);
+        }
+        updateCheckboxes();
+        updateTrigger();
+        cfg.onChange?.(getOrderedSelected());
+      };
+    });
+    menu.querySelectorAll("[data-ms-only]").forEach(btn => {
+      btn.onclick = e => {
+        e.stopPropagation();
+        selectedSet = new Set([btn.dataset.msOnly]);
+        syncAndEmit();
+        if (cfg.closeOnOnly !== false) close();
+      };
+    });
+  }
+
+  function updateCheckboxes() {
+    menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.checked = selectedSet.has(cb.value);
+    });
+  }
+
+  function syncAndEmit() {
+    updateCheckboxes();
+    updateTrigger();
+    cfg.onChange?.(getOrderedSelected());
+  }
+
+  trigger.onclick = e => {
+    e.stopPropagation();
+    const willOpen = menu.hidden;
+    openMultiSelects.forEach(c => c.close());
+    if (!willOpen) return;
+    menu.classList.remove("align-right");
+    menu.hidden = false;
+    wrap.classList.add("open");
+    trigger.setAttribute("aria-expanded", "true");
+    const trRect = trigger.getBoundingClientRect();
+    const menuW = Math.max(245, menu.offsetWidth || 245);
+    if (trRect.left + menuW > window.innerWidth - 8 && trRect.right - menuW >= 8) {
+      menu.classList.add("align-right");
+    }
+  };
+  menu.onclick = e => e.stopPropagation();
+
+  const api = {
+    close,
+    setOptions(nextItems, nextSelectedIds) {
+      items = Array.isArray(nextItems) ? nextItems : [];
+      const valid = new Set(items.map(it => it.id));
+      selectedSet = new Set((nextSelectedIds || []).filter(id => valid.has(id)));
+      if (minSel > 0 && selectedSet.size === 0 && items.length) {
+        selectedSet.add(items[0].id);
+      }
+      renderMenu();
+      updateTrigger();
+    },
+    getSelected: getOrderedSelected,
+    selectAll() {
+      selectedSet = new Set(items.map(it => it.id));
+      syncAndEmit();
+    },
+    setSelected(ids) {
+      const valid = new Set(items.map(it => it.id));
+      selectedSet = new Set((ids || []).filter(id => valid.has(id)));
+      if (minSel > 0 && selectedSet.size === 0 && items.length) {
+        selectedSet.add(items[0].id);
+      }
+      updateCheckboxes();
+      updateTrigger();
+    }
+  };
+  openMultiSelects.add(api);
+  return api;
+}
+
+function formatTypesLabel(sel, items) {
+  if (!sel.length) return "Nenhum tipo (0)";
+  if (sel.length >= items.length) return "Todos os tipos";
+  if (sel.length === 1) return `${sel[0].icon ? sel[0].icon + " " : ""}${sel[0].short || sel[0].label}`;
+  if (sel.length === 2) return `${sel[0].short || sel[0].label}, ${sel[1].short || sel[1].label}`;
+  return `${sel.length} tipos`;
+}
+
+function filterByTypeSet(list, typeSet) {
+  const totalTypes = Object.keys(window.ACTIVITY_TYPES || {}).length;
+  if (!typeSet || typeSet.size >= totalTypes) return list;
+  if (typeSet.size === 0) return [];
+  return list.filter(a => typeSet.has(a.type));
+}
+
+function resetGanttTypeFilter() {
+  ganttFilterTypes = new Set(Object.keys(window.ACTIVITY_TYPES || {}));
+  ganttTypeMsel?.selectAll();
+}
+
+function resetTableTypeFilter() {
+  tableFilterTypes = new Set(Object.keys(window.ACTIVITY_TYPES || {}));
+  tableTypeMsel?.selectAll();
+}
+
 function populateTypeSelectors() {
   const types = Object.values(window.ACTIVITY_TYPES);
   const fType = $("#f-type");
   if (fType) fType.innerHTML = types.map(t => `<option value="${t.id}">${t.label}</option>`).join("");
 
-  const optsAll = `<option value="">Todos os tipos</option>` + types.map(t => `<option value="${t.id}">${t.short}</option>`).join("");
-  if ($("#ganttTypeFilter")) {
-    $("#ganttTypeFilter").innerHTML = optsAll;
-    $("#ganttTypeFilter").value = ganttFilter;
+  const typeItems = types.map(t => ({ id: t.id, label: t.short, short: t.short, icon: t.icon }));
+  if (!ganttFilterTypes || !ganttFilterTypes.size) {
+    ganttFilterTypes = new Set(types.map(t => t.id));
   }
-  if ($("#filterType")) {
-    const cur = $("#filterType").value;
-    $("#filterType").innerHTML = optsAll;
-    $("#filterType").value = cur;
+  if (!tableFilterTypes || !tableFilterTypes.size) {
+    tableFilterTypes = new Set(types.map(t => t.id));
   }
+
+  if (!ganttTypeMsel && $("#ganttTypeFilter")) {
+    ganttTypeMsel = createMultiSelect($("#ganttTypeFilter"), {
+      minSelected: 0,
+      getLabel: formatTypesLabel,
+      onChange(ids) {
+        ganttFilterTypes = new Set(ids);
+        const s = sorted();
+        renderGantt(s);
+        renderTimeline(s);
+      }
+    });
+  }
+  ganttTypeMsel?.setOptions(typeItems, [...ganttFilterTypes]);
+
+  if (!tableTypeMsel && $("#filterType")) {
+    tableTypeMsel = createMultiSelect($("#filterType"), {
+      minSelected: 0,
+      getLabel: formatTypesLabel,
+      onChange(ids) {
+        tableFilterTypes = new Set(ids);
+        renderTable(sorted(), totals());
+      }
+    });
+  }
+  tableTypeMsel?.setOptions(typeItems, [...tableFilterTypes]);
 }
 
 /* ---------- RENDER ---------- */
@@ -359,13 +724,10 @@ function formatCityLabel(cityName, spanDays, dayPx) {
   if (!clean) return "";
   const maxPx = spanDays * dayPx - 10;
   if (clean.length * 6.6 <= maxPx) return clean;
-  const words = clean.split(/\s+/).filter(w => w && !/^(de|da|do|das|dos|e)$/i.test(w));
-  if (words.length >= 2) {
-    const abbr = words.map(w => w[0].toUpperCase()).join("");
-    if (abbr.length <= 4) return abbr;
-  }
   const letters = clean.replace(/[^A-Za-zÀ-ÿ]/g, "");
-  return (letters.slice(0, 3) || clean.slice(0, 3)).toUpperCase() + ".";
+  const raw = (letters.slice(0, 3) || clean.slice(0, 3)).trim();
+  if (!raw) return "";
+  return raw[0].toLocaleUpperCase("pt-BR") + raw.slice(1).toLocaleLowerCase("pt-BR");
 }
 
 function computeDailyCityTimeline(activitiesList, dateISOs) {
@@ -493,6 +855,7 @@ function buildRightSummaryHTML(a) {
     <div class="g-summary ${info.cls}" data-id="${a.id}">
       <span class="g-summary-title">${esc(a.name)}</span>
       <span class="g-summary-badge">${badgeTxt}</span>
+      ${getTripBadgeHTML(a)}
       ${metaParts.length ? `<span class="g-summary-meta">${esc(metaParts.join(" · "))}</span>` : ""}
       ${attBadge}
     </div>`;
@@ -502,12 +865,19 @@ function renderGantt(allSorted) {
   const g = $("#gantt");
   const wrap = $("#ganttWrap");
   const tlWrap = $("#timelineWrap");
+  const trips = getSelectedTrips();
+  const multiTrip = trips.length > 1;
   const planTitle = $("#ganttPlanTitle");
-  if (planTitle) planTitle.textContent = state.title || "Cronograma";
+  if (planTitle) {
+    planTitle.textContent = multiTrip ? `${trips.length} viagens combinadas` : (state.title || "Cronograma");
+  }
 
   const roleBadge = $("#tripRoleBadge");
   if (roleBadge) {
-    if (activeTrip && activeTrip.role !== "owner") {
+    if (multiTrip) {
+      roleBadge.textContent = trips.map(t => t.data?.title || t.name).join(" + ");
+      roleBadge.hidden = false;
+    } else if (activeTrip && activeTrip.role !== "owner") {
       roleBadge.textContent = `Compartilhada (${activeTrip.ownerName || "outro usuário"})`;
       roleBadge.hidden = false;
     } else {
@@ -519,15 +889,24 @@ function renderGantt(allSorted) {
   tlWrap.hidden = ganttMode !== "timeline";
   if (ganttMode !== "gantt") return;
 
-  const s = ganttFilter ? allSorted.filter(a => a.type === ganttFilter) : allSorted;
+  const s = filterByTypeSet(allSorted, ganttFilterTypes);
   g.classList.toggle("slim-rail", ganttSlimRail);
 
   if (!s.length) {
     g.style.gridTemplateColumns = "1fr";
-    g.innerHTML = `<div style="padding:28px;text-align:center">
-      <p class="muted">Nenhuma atividade cadastrada ainda nesta viagem.</p>
-      <button type="button" class="btn primary" onclick="openModal()">➕ Adicionar primeira atividade</button>
-    </div>`;
+    if (allSorted.length > 0) {
+      g.innerHTML = `<div style="padding:28px;text-align:center">
+        <p class="muted">Nenhuma atividade corresponde aos tipos selecionados no filtro.</p>
+        <button type="button" class="btn primary" id="btnGanttResetFilter">☑️ Mostrar todos os tipos</button>
+      </div>`;
+      const rst = $("#btnGanttResetFilter");
+      if (rst) rst.onclick = resetGanttTypeFilter;
+    } else {
+      g.innerHTML = `<div style="padding:28px;text-align:center">
+        <p class="muted">Nenhuma atividade cadastrada ainda nesta viagem.</p>
+        <button type="button" class="btn primary" onclick="openModal()">➕ Adicionar primeira atividade</button>
+      </div>`;
+    }
     return;
   }
 
@@ -575,8 +954,8 @@ function renderGantt(allSorted) {
   });
 
   const dateISOs = dates.map(d => fmtISO(d));
-  const cityTrack = computeDailyCityTimeline(state.activities || [], dateISOs);
-  const hasCityRow = cityTrack.spans.length > 0;
+  const cityTrack = multiTrip ? { spans: [] } : computeDailyCityTimeline(state.activities || [], dateISOs);
+  const hasCityRow = !multiTrip && cityTrack.spans.length > 0;
   if (hasCityRow) {
     const dark = isDarkTheme();
     h += `<div class="g-city-corner" style="grid-column:1;grid-row:3" title="Cidade em cada dia">${ganttSlimRail ? "📍" : "📍 Cidade"}</div>`;
@@ -605,7 +984,7 @@ function renderGantt(allSorted) {
       <span class="g-type-dot ${info.cls}">${info.icon}</span>
       <div class="g-name-txt">
         <div class="g-name-title">${esc(a.name)}</div>
-        <div class="g-name-sub">${esc(subLeft)}</div>
+        <div class="g-name-sub">${esc(subLeft)} ${getTripBadgeHTML(a)}</div>
       </div>
     </div>`;
 
@@ -669,7 +1048,9 @@ function bindDrag(bar) {
     let dd = 0;
     const tip = document.createElement("div");
     tip.className = "drag-tip";
-    const a = state.activities.find(x => x.id === bar.dataset.id);
+    const ctx = findActivityContext(bar.dataset.id);
+    const a = ctx?.activity;
+    if (!a) return;
 
     bar.onpointermove = ev => {
       const dx = ev.clientX - x0;
@@ -691,9 +1072,10 @@ function bindDrag(bar) {
       wrap.style.transform = "";
       tip.remove();
       if (!dd) return openModal(a.id);
+      if (ctx.trip?.role === "viewer") return toast("👁️ Viagem compartilhada somente para visualização.");
       a.start = fmtISO(new Date(parseD(a.start).getTime() + dd * DAY + 3600e3));
       a.end = fmtISO(new Date(parseD(a.end || a.start).getTime() + dd * DAY + 3600e3));
-      save(`📅 ${a.name} movido ${dd > 0 ? "+" : ""}${dd} dia(s)`);
+      saveTripRecord(ctx.trip, `📅 ${a.name} movido ${dd > 0 ? "+" : ""}${dd} dia(s)`);
     };
   };
 }
@@ -705,7 +1087,9 @@ function bindResize(handle) {
     e.preventDefault();
     handle.setPointerCapture(e.pointerId);
     const bar = handle.closest(".g-bar");
-    const a = state.activities.find(x => x.id === handle.dataset.resize);
+    const ctx = findActivityContext(handle.dataset.resize);
+    const a = ctx?.activity;
+    if (!a) return;
     const DW = ganttZoom;
     const x0 = e.clientX;
     const origLen = days(a);
@@ -720,8 +1104,12 @@ function bindResize(handle) {
       handle.onpointermove = handle.onpointerup = null;
       const newLen = Math.max(1, origLen + dd);
       if (newLen === origLen) return;
+      if (ctx.trip?.role === "viewer") {
+        bar.style.width = `${Math.max(28, origLen * DW - 6)}px`;
+        return toast("👁️ Viagem compartilhada somente para visualização.");
+      }
       a.end = fmtISO(new Date(parseD(a.start).getTime() + (newLen - 1) * DAY + 3600e3));
-      save(`↔️ ${a.name}: duração ajustada para ${newLen} dia(s)`);
+      saveTripRecord(ctx.trip, `↔️ ${a.name}: duração ajustada para ${newLen} dia(s)`);
     };
   };
 }
@@ -729,9 +1117,13 @@ function bindResize(handle) {
 function renderTimeline(allSorted) {
   const tl = $("#timelineWrap");
   if (ganttMode !== "timeline") return;
-  const s = ganttFilter ? allSorted.filter(a => a.type === ganttFilter) : allSorted;
+  const s = filterByTypeSet(allSorted, ganttFilterTypes);
   if (!s.length) {
-    tl.innerHTML = `<p class="muted">Nenhuma atividade encontrada.</p>`;
+    tl.innerHTML = allSorted.length > 0
+      ? `<p class="muted">Nenhuma atividade corresponde aos tipos selecionados. <button type="button" class="link-btn" id="btnTlResetFilter">Mostrar todos os tipos</button></p>`
+      : `<p class="muted">Nenhuma atividade encontrada.</p>`;
+    const rst = $("#btnTlResetFilter");
+    if (rst) rst.onclick = resetGanttTypeFilter;
     return;
   }
   tl.innerHTML = s.map(a => {
@@ -748,7 +1140,7 @@ function renderTimeline(allSorted) {
         <div class="date-badge"><b>${d.getDate()}</b>${MON[d.getMonth()]}</div>
         <div class="tl-body">
           <div class="tl-top">
-            <span class="tl-title">${info.icon} ${esc(a.name)} ${attCount ? `<small class="muted">📎 ${attCount}</small>` : ""}</span>
+            <span class="tl-title">${info.icon} ${esc(a.name)} ${getTripBadgeHTML(a)} ${attCount ? `<small class="muted">📎 ${attCount}</small>` : ""}</span>
             <span class="chip ${info.cls}">${esc(info.short)}</span>
           </div>
           <div class="tl-meta">${WD[d.getDay()]} · ${fmtBR(a.start)}${days(a) > 1 ? ` até ${fmtBR(a.end)}` : ""}</div>
@@ -794,7 +1186,7 @@ function renderDashboard(s, t) {
     return `<li data-id="${a.id}">
       <div class="date-badge"><b>${d.getDate()}</b>${MON[d.getMonth()]}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label(a))}</div>
+        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label(a))} ${getTripBadgeHTML(a)}</div>
         <div class="muted small">${WD[d.getDay()]} · ${esc(sub)}${diff >= 0 ? ` · em ${diff}d` : ""}</div>
       </div>
       <span class="chip ${info.cls}">${esc(info.short)}</span>
@@ -811,7 +1203,7 @@ function renderDashboard(s, t) {
     return `
     <div class="bar-row clickable" data-id="${a.id}">
       <div class="top">
-        <span>${fmtShortBR(a.start)} · ${esc(label(a))}</span>
+        <span>${fmtShortBR(a.start)} · ${esc(label(a))} ${getTripBadgeHTML(a)}</span>
         <span>${num(a.km)} km · ${hmHuman(c.time)} · <b>${c.isCarpool && !c.extra ? "Carona (R$ 0)" : money(c.total + c.extra)}</b></span>
       </div>
       <div class="bar"><div style="width:${(+a.km || 0) / mx * 100}%;background:linear-gradient(90deg,#06b6d4,#6366f1)"></div></div>
@@ -894,13 +1286,13 @@ function distributeWaterFill(baseValues, targetTotal) {
   return out;
 }
 
-function computeFinancialTimeline(s, t) {
+function computeSingleTripFinancialTimeline(tripData, s, t) {
   if (!s.length) {
     return {
       daysList: [],
       plannedTotal: t.grandTotal || 0,
-      savingsGoal: Math.max(0, Number(state.finance?.savingsGoal) || 0),
-      effectiveCeiling: Math.max(0, (t.grandTotal || 0) - Math.max(0, Number(state.finance?.savingsGoal) || 0)),
+      savingsGoal: Math.max(0, Number(tripData.finance?.savingsGoal) || 0),
+      effectiveCeiling: Math.max(0, (t.grandTotal || 0) - Math.max(0, Number(tripData.finance?.savingsGoal) || 0)),
       sumActualLogged: 0,
       sumLoggedGoal: 0,
       varianceSoFar: 0,
@@ -953,7 +1345,7 @@ function computeFinancialTimeline(s, t) {
     const d1 = parseD(a.end || a.start);
     const nDays = Math.max(1, Math.round((d1 - d0) / DAY) + 1);
     const info = getTypeInfo(a.type);
-    const c = calc(a);
+    const c = calc(a, undefined, tripData);
     const tktNote = formatTicketsNote(a);
 
     for (let k = 0; k < nDays; k++) {
@@ -1012,7 +1404,7 @@ function computeFinancialTimeline(s, t) {
   const fixedPerDay = t.otherFixedBudget / span;
   const contPerDay = t.contingencyCost / span;
 
-  const records = (state.finance && state.finance.dailyRecords) || {};
+  const records = (tripData.finance && tripData.finance.dailyRecords) || {};
   daysList.forEach(d => {
     if (foodPerDay > 0) {
       d.cats.linear += foodPerDay;
@@ -1028,7 +1420,7 @@ function computeFinancialTimeline(s, t) {
     }
     if (contPerDay > 0) {
       d.cats.linear += contPerDay;
-      d.items.push({ key: "param:cont", checkable: false, cat: "linear", icon: "🛟", label: `Reserva ${state.params.contingencyPct || 0}% (rateio)`, amount: contPerDay });
+      d.items.push({ key: "param:cont", checkable: false, cat: "linear", icon: "🛟", label: `Reserva ${tripData.params?.contingencyPct || 0}% (rateio)`, amount: contPerDay });
     }
     d.plannedBase = d.cats.fuel + d.cats.tollEv + d.cats.specificOther + d.cats.lodging + d.cats.linear;
 
@@ -1072,7 +1464,7 @@ function computeFinancialTimeline(s, t) {
 
   // 3) Aplicação da meta de economia & redistribuição inteligente para os dias restantes
   const plannedTotal = t.grandTotal || 0;
-  const savingsGoal = Math.max(0, Number(state.finance?.savingsGoal) || 0);
+  const savingsGoal = Math.max(0, Number(tripData.finance?.savingsGoal) || 0);
   const effectiveCeiling = Math.max(0, plannedTotal - savingsGoal);
 
   const goalTargets = distributeWaterFill(daysList.map(d => d.plannedBase), effectiveCeiling);
@@ -1126,6 +1518,82 @@ function computeFinancialTimeline(s, t) {
     remainingCeiling,
     avgRemainingPerDay: remainingCount > 0 ? remainingCeiling / remainingCount : 0,
     overBudgetBy
+  };
+}
+
+function computeFinancialTimeline(s, t) {
+  const trips = getSelectedTrips();
+  if (trips.length <= 1) {
+    return computeSingleTripFinancialTimeline(trips[0]?.data || state, s, t);
+  }
+  const mergedDaysMap = new Map();
+  let plannedTotal = 0, savingsGoal = 0, effectiveCeiling = 0;
+  let sumActualLogged = 0, sumLoggedGoal = 0;
+
+  trips.forEach(tr => {
+    const trActs = [...(tr.data.activities || [])].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+    const trTotals = computeSingleTripTotals(tr.data);
+    const sub = computeSingleTripFinancialTimeline(tr.data, trActs, trTotals);
+    plannedTotal += sub.plannedTotal;
+    savingsGoal += sub.savingsGoal;
+    effectiveCeiling += sub.effectiveCeiling;
+    sumActualLogged += sub.sumActualLogged;
+    sumLoggedGoal += sub.sumLoggedGoal;
+
+    sub.daysList.forEach(d => {
+      let tgt = mergedDaysMap.get(d.iso);
+      if (!tgt) {
+        tgt = { ...clone(d), date: new Date(d.date), activities: [], items: [], actualEntries: [], actualNote: "" };
+        tgt.cats = { fuel: 0, tollEv: 0, specificOther: 0, lodging: 0, linear: 0 };
+        tgt.plannedBase = 0;
+        tgt.goalTarget = 0;
+        tgt.adjustedTarget = 0;
+        tgt.redistDelta = 0;
+        tgt.hasActual = false;
+        tgt.actualSpent = 0;
+        tgt.deltaVsGoal = 0;
+        mergedDaysMap.set(d.iso, tgt);
+      }
+      tgt.activities.push(...d.activities.map(a => ({ ...a, name: `[${tr.name}] ${a.name}` })));
+      tgt.items.push(...d.items.map(it => ({ ...it, label: `[${tr.name}] ${it.label}` })));
+      for (const ck of Object.keys(tgt.cats)) tgt.cats[ck] += d.cats[ck] || 0;
+      tgt.plannedBase += d.plannedBase;
+      tgt.goalTarget += d.goalTarget;
+      tgt.adjustedTarget += d.adjustedTarget;
+      tgt.redistDelta += d.redistDelta;
+      if (d.hasActual) {
+        tgt.hasActual = true;
+        tgt.actualSpent += d.actualSpent;
+      }
+      tgt.deltaVsGoal += d.deltaVsGoal;
+    });
+  });
+
+  const daysList = [...mergedDaysMap.values()].sort((a, b) => a.iso.localeCompare(b.iso));
+  let runPlan = 0, runReal = 0, loggedCount = 0;
+  daysList.forEach((d, idx) => {
+    d.idx = idx;
+    if (d.hasActual) loggedCount++;
+    runPlan += d.goalTarget;
+    runReal += d.hasActual ? d.actualSpent : d.adjustedTarget;
+    d.cumPlanned = runPlan;
+    d.cumExpectedOrReal = runReal;
+  });
+  const remainingCount = daysList.length - loggedCount;
+  const remainingCeiling = Math.max(0, effectiveCeiling - sumActualLogged);
+  return {
+    daysList,
+    plannedTotal,
+    savingsGoal,
+    effectiveCeiling,
+    sumActualLogged,
+    sumLoggedGoal,
+    varianceSoFar: sumActualLogged - sumLoggedGoal,
+    loggedCount,
+    remainingCount,
+    remainingCeiling,
+    avgRemainingPerDay: remainingCount > 0 ? remainingCeiling / remainingCount : 0,
+    overBudgetBy: Math.max(0, sumActualLogged - effectiveCeiling)
   };
 }
 
@@ -1539,6 +2007,9 @@ function renderFinModalEntries() {
 }
 
 function openFinanceDayModal(iso) {
+  if (isMultiTripMode()) {
+    return toast("Em modo multi-viagens, selecione apenas 1 viagem no topo para lançar gastos diários.");
+  }
   const s = sorted();
   const t = totals();
   const data = computeFinancialTimeline(s, t);
@@ -1592,12 +2063,16 @@ function openFinanceDayModal(iso) {
 /* ---------- TABELA ---------- */
 function renderTable(s, t) {
   const q = ($("#search").value || "").toLowerCase();
-  const ft = $("#filterType").value;
-  const rows = s.filter(a => (!ft || a.type === ft) && (!q || (label(a) + " " + (a.notes || "")).toLowerCase().includes(q)));
+  const typeFiltered = filterByTypeSet(s, tableFilterTypes);
+  const rows = typeFiltered.filter(a => !q || (label(a) + " " + (a.notes || "") + " " + (getActivityMeta(a)?.tripName || "")).toLowerCase().includes(q));
   const allTypes = Object.keys(window.ACTIVITY_TYPES);
+  const multi = isMultiTripMode();
 
   const ed = (a, f, type = "text", cls = "") =>
     `<td class="ed ${cls}"><input data-id="${a.id}" data-f="${f}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(f === "drive" || f === "stopTime" ? (a.type === "Viagem" || ((a.type === "Trem" || a.type === "Ônibus") && f === "drive" && a.drive > 0) ? hm(a[f]) : "") : a[f] ?? "")}"></td>`;
+  const nameCell = a => multi
+    ? `<td class="ed wide"><div style="display:flex;align-items:center;gap:6px">${getTripBadgeHTML(a)}<input data-id="${a.id}" data-f="name" type="text" value="${esc(a.name ?? "")}"></div></td>`
+    : ed(a, "name", "text", "wide");
   const typeSel = a =>
     `<td class="ed"><select data-id="${a.id}" data-f="type">${allTypes.map(o => `<option ${o === a.type ? "selected" : ""}>${o}</option>`).join("")}</select></td>`;
 
@@ -1620,7 +2095,7 @@ function renderTable(s, t) {
       ${ed(a, "start", "date")}
       ${ed(a, "end", "date")}
       <td>${WD[parseD(a.start).getDay()]}</td>
-      ${ed(a, "name", "text", "wide")}
+      ${nameCell(a)}
       ${routeCols ? ed(a, "from") + ed(a, "to") : "<td></td><td></td>"}
       <td class="num">${days(a)}</td>
       ${hasDist ? ed(a, "km", "number") + ed(a, "drive") : "<td></td><td></td>"}
@@ -1645,6 +2120,10 @@ function renderTable(s, t) {
     </tr>`;
   });
 
+  if (!rows.length) {
+    h += `<tr><td colspan="26" style="text-align:center;padding:22px" class="muted">Nenhuma atividade corresponde aos filtros atuais. ${s.length ? `<button type="button" class="link-btn" id="btnTblResetFilter">Mostrar todos os tipos</button>` : ""}</td></tr>`;
+  }
+
   h += `</tbody><tfoot><tr>
     <td colspan="9">TOTAL (${t.trips} viagens de carro)</td>
     <td class="num">${num(t.km)}</td>
@@ -1667,10 +2146,18 @@ function renderTable(s, t) {
 
   const tb = $("#mainTable");
   tb.innerHTML = h;
+  const tblRst = $("#btnTblResetFilter");
+  if (tblRst) tblRst.onclick = resetTableTypeFilter;
 
   tb.querySelectorAll("[data-f]").forEach(el => {
     el.onchange = () => {
-      const a = state.activities.find(x => x.id === el.dataset.id);
+      const ctx = findActivityContext(el.dataset.id);
+      if (!ctx?.activity) return;
+      const a = ctx.activity;
+      if (ctx.trip?.role === "viewer") {
+        renderTable(sorted(), totals());
+        return toast("👁️ Viagem compartilhada somente para visualização.");
+      }
       const f = el.dataset.f;
       let val = el.value;
       if (f === "drive" || f === "stopTime") val = parseHM(val);
@@ -1681,13 +2168,13 @@ function renderTable(s, t) {
       }
       if (f === "start" && (!a.end || a.end < a.start)) a.end = a.start;
       if (f === "end" && a.end < a.start) a.start = a.end;
-      if (f === "type" && val === "Viagem" && a.charges == null) a.charges = state.params.defaultCharges ?? 1;
+      if (f === "type" && val === "Viagem" && a.charges == null) a.charges = (ctx.data?.params?.defaultCharges ?? state.params.defaultCharges ?? 1);
       if (f === "drive" && a.type === "Viagem") {
         const auto = computeAutoStops(val);
         a.stops = auto.stops;
         a.stopTime = auto.stopTime;
       }
-      save("✔️ Atualizado");
+      saveTripRecord(ctx.trip, "✔️ Atualizado");
     };
   });
 
@@ -1702,7 +2189,7 @@ function renderTable(s, t) {
     const v = a.type === "Viagem";
     return `<div class="m-card" data-id="${a.id}">
       <div class="m-card-head">
-        <strong>${info.icon} ${esc(label(a))}</strong>
+        <strong>${info.icon} ${esc(label(a))} ${getTripBadgeHTML(a)}</strong>
         <span class="chip ${info.cls}">${esc(info.short)}</span>
       </div>
       <div class="m-card-grid">
@@ -1767,6 +2254,16 @@ const AUTO_PARAM_DEFS = [
 ];
 
 function renderParams() {
+  const pmNote = $("#paramsMultiNote");
+  if (pmNote) {
+    if (isMultiTripMode()) {
+      pmNote.hidden = false;
+      pmNote.innerHTML = `🔎 <b>Modo multi-viagens ativo:</b> exibindo os parâmetros da viagem principal (<b>${esc(activeTrip?.name || state.title)}</b>). Selecione 1 viagem específica no topo para editar o veículo/orçamento de outra viagem.`;
+    } else {
+      pmNote.hidden = true;
+      pmNote.innerHTML = "";
+    }
+  }
   const ptEl = $("#p-planTitle"), vnEl = $("#p-vehicleName"), pwEl = $("#p-powertrain");
   if (document.activeElement !== ptEl) ptEl.value = state.title || "";
   if (document.activeElement !== vnEl) vnEl.value = state.vehicle.name || "";
@@ -2380,10 +2877,35 @@ window.openModal = function (idOrOpts) {
   const isObj = idOrOpts && typeof idOrOpts === "object";
   const id = isObj ? null : (idOrOpts || null);
   const preset = isObj ? idOrOpts : {};
+  const ctx = id ? findActivityContext(id) : null;
   const baseDate = preset.start || (sorted()[0]?.start) || fmtISO(new Date());
-  const a = id
-    ? state.activities.find(x => x.id === id)
-    : { type: preset.type || "Viagem", start: baseDate, end: preset.end || baseDate, charges: state.params.defaultCharges ?? 1, extraCost: preset.extraCost || 0, includeRouteCost: true, tickets: [], attachments: [] };
+  const a = ctx?.activity || {
+    type: preset.type || "Viagem",
+    start: baseDate,
+    end: preset.end || baseDate,
+    charges: state.params.defaultCharges ?? 1,
+    extraCost: preset.extraCost || 0,
+    includeRouteCost: true,
+    tickets: [],
+    attachments: []
+  };
+
+  const trips = getSelectedTrips();
+  const editableTrips = trips.filter(t => t.role !== "viewer");
+  editingTripRef = ctx?.trip || editableTrips[0] || activeTrip;
+
+  const tgtWrap = $("#f-targetTripWrap");
+  const tgtSel = $("#f-targetTrip");
+  if (tgtWrap && tgtSel) {
+    if (!id && trips.length > 1) {
+      const choices = editableTrips.length ? editableTrips : trips;
+      tgtSel.innerHTML = choices.map(t => `<option value="${esc(t.id)}">${esc(t.data?.title || t.name)}</option>`).join("");
+      tgtSel.value = editingTripRef?.id || choices[0]?.id || "";
+      tgtWrap.hidden = false;
+    } else {
+      tgtWrap.hidden = true;
+    }
+  }
 
   editing = id || null;
   modalDraftId = id || uid();
@@ -2507,29 +3029,34 @@ function readForm() {
 }
 
 function delActivity(id) {
-  const a = state.activities.find(x => x.id === id);
+  const ctx = findActivityContext(id);
+  const a = ctx?.activity;
   if (!a || !confirm(`Excluir "${label(a)}"?`)) return;
-  state.activities = state.activities.filter(x => x.id !== id);
-  save("🗑️ Excluído");
+  if (ctx.trip?.role === "viewer") return toast("👁️ Viagem compartilhada somente para visualização.");
+  const tgtData = ctx.data || state;
+  tgtData.activities = tgtData.activities.filter(x => x.id !== id);
+  saveTripRecord(ctx.trip, "🗑️ Excluído");
 }
 
 async function recalcSingleTripById(id) {
-  const a = state.activities.find(x => x.id === id);
+  const ctx = findActivityContext(id);
+  const a = ctx?.activity;
   if (!a || a.type !== "Viagem") return;
   if (!a.from || !a.to) return toast("Defina Origem e Destino primeiro.");
   if (!window.FeriasMaps.hasKey()) { toast("Configure sua Google Maps API Key em Parâmetros."); return openModal(id); }
   toast(`🗺️ Calculando ${a.from} ➔ ${a.to}...`);
   try {
-    const res = await window.FeriasMaps.computeTripRoute({ origin: a.from, destination: a.to, params: state.params, vehicle: state.vehicle });
+    const tripData = ctx.data || state;
+    const res = await window.FeriasMaps.computeTripRoute({ origin: a.from, destination: a.to, params: tripData.params, vehicle: tripData.vehicle });
     a.km = res.km;
     a.drive = res.driveMinutes;
     const auto = computeAutoStops(res.driveMinutes);
     a.stops = auto.stops;
     a.stopTime = auto.stopTime;
     if (res.toll.tollKnown) a.toll = res.toll.tollCost;
-    save(`✅ ${a.name} recalculado via Google Maps!`);
+    saveTripRecord(ctx.trip, "✅ Distância, tempo e pedágios recalculados!");
   } catch (err) {
-    toast("Erro ao calcular rota: " + (err.message || err));
+    toast("❌ " + (err.message || err));
   }
 }
 
@@ -2558,23 +3085,33 @@ async function recalcAllTripsWithMaps() {
 
 /* ---------- MULTI-VIAGENS, COMPARTILHAMENTO & CONVITES ---------- */
 function renderTripDropdown() {
-  const sel = $("#tripSelect");
-  if (!sel) return;
+  const wrap = $("#tripSelectWrap");
+  if (!wrap) return;
   const own = tripsCache.ownTrips || [];
   const shared = tripsCache.sharedTrips || [];
-
-  let h = "";
-  if (own.length) {
-    h += `<optgroup label="Minhas Férias">` +
-      own.map(t => `<option value="${t.id}" ${activeTrip && activeTrip.id === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("") +
-      `</optgroup>`;
+  const items = [
+    ...own.map(t => ({ id: t.id, label: t.name, group: "Minhas Férias" })),
+    ...shared.map(t => ({ id: t.id, label: `👥 ${t.name} (${t.ownerName})`, group: "Compartilhadas comigo" }))
+  ];
+  if (!tripMultiMsel) {
+    tripMultiMsel = createMultiSelect(wrap, {
+      minSelected: 1,
+      minError: "Mantenha ao menos 1 viagem selecionada.",
+      closeOnOnly: true,
+      getLabel(sel, all) {
+        if (!sel.length) return "Selecionar férias";
+        if (sel.length === 1) return sel[0].label;
+        if (all.length > 1 && sel.length >= all.length) return `Todas (${sel.length} viagens)`;
+        return `${sel.length} viagens`;
+      },
+      isHighlighted: sel => sel.length > 1,
+      onChange(ids) {
+        openTripsByIds(ids);
+      }
+    });
   }
-  if (shared.length) {
-    h += `<optgroup label="Compartilhadas comigo">` +
-      shared.map(t => `<option value="${t.id}" ${activeTrip && activeTrip.id === t.id ? "selected" : ""}>👥 ${esc(t.name)} (${esc(t.ownerName)})</option>`).join("") +
-      `</optgroup>`;
-  }
-  sel.innerHTML = h;
+  const activeIds = selectedTripIds.length ? selectedTripIds : (activeTrip ? [activeTrip.id] : []);
+  tripMultiMsel.setOptions(items, activeIds);
   updateCrossingsMenuVisibility();
 }
 
@@ -2778,18 +3315,36 @@ function renderPendingInvites() {
   });
 }
 
-async function openTripById(tripId) {
-  const res = await window.FeriasApi.getTrip(tripId);
-  if (!res || !res.trip) return;
-  activeTrip = res.trip;
-  window.FeriasApi.setActiveTripId(activeTrip.id);
-  state = migrateState(res.trip.data);
-  state.title = res.trip.name || state.title;
-  if (res.trip.gmapsKey && window.FeriasMaps && res.trip.gmapsKey !== window.FeriasMaps.getKey()) {
-    window.FeriasMaps.setKey(res.trip.gmapsKey);
+async function openTripsByIds(tripIds, preferredPrimaryId) {
+  const unique = [...new Set((tripIds || []).filter(Boolean))];
+  if (!unique.length) return;
+  const results = await Promise.all(unique.map(id => window.FeriasApi.getTrip(id).catch(() => null)));
+  const loaded = [];
+  results.forEach(res => {
+    if (res && res.trip) {
+      const tr = { ...res.trip, data: migrateState(res.trip.data) };
+      tr.data.title = tr.name || tr.data.title;
+      loadedTripsMap.set(tr.id, tr);
+      loaded.push(tr);
+    }
+  });
+  if (!loaded.length) return;
+
+  selectedTripIds = loaded.map(t => t.id);
+  const primary = loaded.find(t => t.id === preferredPrimaryId) || loaded[0];
+  activeTrip = primary;
+  state = primary.data;
+  window.FeriasApi.setActiveTripId(primary.id);
+  try { localStorage.setItem(SELECTED_TRIPS_KEY, JSON.stringify(selectedTripIds)); } catch {}
+  if (primary.gmapsKey && window.FeriasMaps && primary.gmapsKey !== window.FeriasMaps.getKey()) {
+    window.FeriasMaps.setKey(primary.gmapsKey);
   }
   renderTripDropdown();
   render();
+}
+
+async function openTripById(tripId) {
+  return openTripsByIds([tripId], tripId);
 }
 
 async function refreshTripsAndLoad(preferredTripId) {
@@ -2811,11 +3366,23 @@ async function refreshTripsAndLoad(preferredTripId) {
     preferredTripId = created.id;
   }
 
-  const targetId = preferredTripId && all.some(t => t.id === preferredTripId)
-    ? preferredTripId
-    : (all.some(t => t.id === window.FeriasApi.getActiveTripId()) ? window.FeriasApi.getActiveTripId() : all[0].id);
+  const allIds = new Set(all.map(t => t.id));
+  if (preferredTripId && allIds.has(preferredTripId)) {
+    await openTripsByIds([preferredTripId], preferredTripId);
+    return;
+  }
 
-  await openTripById(targetId);
+  let savedMulti = [];
+  try { savedMulti = JSON.parse(localStorage.getItem(SELECTED_TRIPS_KEY) || "[]"); } catch {}
+  const validSaved = Array.isArray(savedMulti) ? savedMulti.filter(id => allIds.has(id)) : [];
+  if (validSaved.length) {
+    const prim = allIds.has(window.FeriasApi.getActiveTripId()) ? window.FeriasApi.getActiveTripId() : validSaved[0];
+    await openTripsByIds(validSaved, prim);
+    return;
+  }
+
+  const targetId = allIds.has(window.FeriasApi.getActiveTripId()) ? window.FeriasApi.getActiveTripId() : all[0].id;
+  await openTripsByIds([targetId], targetId);
 }
 
 async function openShareModal() {
@@ -3153,11 +3720,15 @@ async function enterApp() {
   window.FeriasApi.startPolling(
     () => activeTrip?.id,
     full => {
-      activeTrip = full.trip;
-      state = migrateState(full.trip.data);
-      state.title = full.trip.name || state.title;
-      if (full.trip.gmapsKey && window.FeriasMaps && full.trip.gmapsKey !== window.FeriasMaps.getKey()) {
-        window.FeriasMaps.setKey(full.trip.gmapsKey);
+      const tr = { ...full.trip, data: migrateState(full.trip.data) };
+      tr.data.title = tr.name || tr.data.title;
+      loadedTripsMap.set(tr.id, tr);
+      if (!activeTrip || tr.id === activeTrip.id) {
+        activeTrip = tr;
+        state = tr.data;
+        if (tr.gmapsKey && window.FeriasMaps && tr.gmapsKey !== window.FeriasMaps.getKey()) {
+          window.FeriasMaps.setKey(tr.gmapsKey);
+        }
       }
       renderTripDropdown();
       render();
@@ -3380,11 +3951,13 @@ $("#authForm").onsubmit = async e => {
 };
 
 $("#btnLogout").onclick = async () => {
+  selectedTripIds = [];
+  loadedTripsMap.clear();
+  try { localStorage.removeItem(SELECTED_TRIPS_KEY); } catch {}
   await window.FeriasApi.logout();
   location.reload();
 };
 
-$("#tripSelect").onchange = e => openTripById(e.target.value);
 $("#btnNewTrip").onclick = () => { $("#nt-name").value = ""; $("#newTripModal").showModal(); };
 $("#btnCloseNewTrip").onclick = $("#btnCancelNewTrip").onclick = () => $("#newTripModal").close();
 $("#newTripForm").onsubmit = async e => {
@@ -3412,7 +3985,11 @@ $("#btnRenameTrip").onclick = async () => {
 $("#btnDeleteTrip").onclick = async () => {
   if (!activeTrip || activeTrip.role !== "owner") return toast("Apenas o criador pode excluir esta viagem.");
   if (!confirm(`Excluir permanentemente "${state.title}" e todos os anexos?`)) return;
-  await window.FeriasApi.deleteTrip(activeTrip.id);
+  const delId = activeTrip.id;
+  await window.FeriasApi.deleteTrip(delId);
+  loadedTripsMap.delete(delId);
+  selectedTripIds = selectedTripIds.filter(x => x !== delId);
+  try { localStorage.setItem(SELECTED_TRIPS_KEY, JSON.stringify(selectedTripIds)); } catch {}
   toast("🗑️ Viagem excluída");
   await refreshTripsAndLoad();
 };
@@ -3694,33 +4271,40 @@ $("#form").onsubmit = e => {
   e.preventDefault();
   const a = readForm();
   if (!a.name || !a.start) return;
+  let targetTrip = editingTripRef || activeTrip;
+  if (!editing && $("#f-targetTripWrap") && !$("#f-targetTripWrap").hidden && $("#f-targetTrip")?.value) {
+    targetTrip = loadedTripsMap.get($("#f-targetTrip").value) || targetTrip;
+  }
+  if (targetTrip?.role === "viewer") {
+    return toast("👁️ Viagem compartilhada somente para visualização.");
+  }
+  const tgtData = targetTrip?.data || state;
   if (editing) {
-    const o = state.activities.find(x => x.id === editing);
-    for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges", "airline", "bookingRef", "includeRouteCost"]) delete o[k];
-    Object.assign(o, a);
+    const o = tgtData.activities.find(x => x.id === editing);
+    if (o) {
+      for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges", "airline", "bookingRef", "includeRouteCost"]) delete o[k];
+      Object.assign(o, a);
+    }
   } else {
-    state.activities.push({ id: modalDraftId || uid(), ...a });
+    tgtData.activities.push({ id: modalDraftId || uid(), ...a });
   }
   $("#modal").close();
-  save(editing ? "✔️ Atividade atualizada" : "➕ Atividade adicionada");
+  saveTripRecord(targetTrip, editing ? "✔️ Atividade atualizada" : "➕ Atividade adicionada");
 };
 
 $("#btnDelete").onclick = () => { const id = editing; $("#modal").close(); delActivity(id); };
 $("#btnDuplicate").onclick = () => {
+  const targetTrip = editingTripRef || activeTrip;
+  if (targetTrip?.role === "viewer") return toast("👁️ Viagem compartilhada somente para visualização.");
+  const tgtData = targetTrip?.data || state;
   const a = { id: uid(), ...readForm() };
   a.name += " (cópia)";
-  state.activities.push(a);
+  tgtData.activities.push(a);
   $("#modal").close();
-  save("⧉ Duplicado");
+  saveTripRecord(targetTrip, "⧉ Duplicado");
 };
 
 // Gantt controls
-$("#ganttTypeFilter").onchange = e => {
-  ganttFilter = e.target.value;
-  const s = sorted();
-  renderGantt(s);
-  renderTimeline(s);
-};
 $("#ganttModeSeg").querySelectorAll("button").forEach(b => {
   b.onclick = () => {
     ganttMode = b.dataset.gmode;
@@ -3795,8 +4379,8 @@ $("#ganttPrintForm").onsubmit = async e => {
 
 $("#btnTablePdf").onclick = () => {
   const q = ($("#search").value || "").toLowerCase();
-  const ft = $("#filterType").value;
-  const rows = sorted().filter(a => (!ft || a.type === ft) && (!q || (label(a) + " " + (a.notes || "")).toLowerCase().includes(q)));
+  const rows = filterByTypeSet(sorted(), tableFilterTypes)
+    .filter(a => !q || (label(a) + " " + (a.notes || "") + " " + (getActivityMeta(a)?.tripName || "")).toLowerCase().includes(q));
   window.FeriasReport.printTableLandscape(rows, state, totals(), reportHelpers());
 };
 
@@ -4802,7 +5386,7 @@ $("#btnProfileSendWa").onclick = async () => {
 };
 
 /* ---------- BUSCA, CHECKLIST MODAL, MENU E BACKUP ---------- */
-$("#search").oninput = $("#filterType").onchange = () => renderTable(sorted(), totals());
+$("#search").oninput = () => renderTable(sorted(), totals());
 $("#filterChecklist").onchange = e => { checklistFilter = e.target.value; renderChecklist(); };
 $("#btnAddScenario").onclick = () => { state.scenarios.push({ id: uid(), name: "Novo cenário", kmL: state.vehicle.hevKmL }); save("➕ Cenário adicionado"); };
 $("#btnAddCheck").onclick = () => openCheckModal();

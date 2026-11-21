@@ -15,7 +15,7 @@
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=18">
+<link rel="stylesheet" href="styles.css?v=19">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -146,7 +146,7 @@
         </div>
 
         <div class="trip-switcher">
-          <select id="tripSelect" aria-label="Selecionar planejamento de férias"></select>
+          <div id="tripSelectWrap" class="msel-host msel-trip" aria-label="Selecionar planejamentos de férias"></div>
           <button type="button" class="btn ghost small icon-compact" id="btnNewTrip" title="Criar nova viagem">➕</button>
         </div>
       </div>
@@ -225,9 +225,7 @@
             <span class="pill" id="tripRoleBadge" hidden>Compartilhada</span>
           </div>
           <div class="gantt-controls">
-            <select id="ganttTypeFilter" class="gantt-filter-sel" aria-label="Filtrar tipo no cronograma">
-              <option value="">Todos os tipos</option>
-            </select>
+            <div id="ganttTypeFilter" class="msel-host" aria-label="Filtrar tipos no cronograma"></div>
             <div class="seg" id="ganttModeSeg" role="group" aria-label="Modo de visualização">
               <button type="button" class="active" data-gmode="gantt">Gantt</button>
               <button type="button" data-gmode="timeline">Linha do Tempo</button>
@@ -405,7 +403,7 @@
           <h2>Tabela completa</h2>
           <div class="filters">
             <input type="search" id="search" placeholder="🔎 Buscar...">
-            <select id="filterType"><option value="">Todos os tipos</option></select>
+            <div id="filterType" class="msel-host" aria-label="Filtrar tipos na tabela"></div>
             <button type="button" class="btn ghost small" id="btnTableAdd">➕ Novo item</button>
             <button type="button" class="btn primary small" id="btnTablePdf">📄 Baixar Tabela (A4 Horizontal)</button>
           </div>
@@ -418,6 +416,7 @@
 
     <!-- PARÂMETROS -->
     <section class="view" id="view-params">
+      <div id="paramsMultiNote" class="fin-redist-banner warn" hidden style="margin-bottom:14px"></div>
       <div class="grid2">
         <div class="card">
           <div class="card-head">
@@ -631,6 +630,9 @@
     </div>
 
     <div class="form-grid">
+      <label class="span2" id="f-targetTripWrap" hidden>Viagem / Férias de destino
+        <select id="f-targetTrip"></select>
+      </label>
       <label class="span2">Tipo de atividade / meio de locomoção
         <select name="type" id="f-type"></select>
       </label>
@@ -1182,14 +1184,14 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=18"></script>
-<script src="vehicles.js?v=18"></script>
-<script src="countries.js?v=18"></script>
-<script src="data.js?v=18"></script>
-<script src="maps.js?v=18"></script>
-<script src="calendar.js?v=18"></script>
-<script src="report.js?v=18"></script>
-<script src="api.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="config.example.js?v=19"></script>
+<script src="vehicles.js?v=19"></script>
+<script src="countries.js?v=19"></script>
+<script src="data.js?v=19"></script>
+<script src="maps.js?v=19"></script>
+<script src="calendar.js?v=19"></script>
+<script src="report.js?v=19"></script>
+<script src="api.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
