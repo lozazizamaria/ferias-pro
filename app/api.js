@@ -132,6 +132,42 @@
     return r.data;
   }
 
+  /* ---------- Admin ---------- */
+  async function adminOverview() {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/admin/overview");
+    if (!r.ok) throw new Error(r.data?.error || "Sem permissão de administrador.");
+    return r.data;
+  }
+
+  async function adminGetUser(userId) {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req(`/api/admin/users/${encodeURIComponent(userId)}`);
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao carregar detalhes do usuário.");
+    return r.data;
+  }
+
+  async function adminDeleteUser(userId) {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req(`/api/admin/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao excluir usuário.");
+    return r.data;
+  }
+
+  async function adminSetDelegate(email, action = "add") {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/admin/delegates", { method: "POST", body: JSON.stringify({ email, action }) });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao atualizar administradores.");
+    return r.data;
+  }
+
+  async function adminSeedDemo() {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/admin/seed-demo", { method: "POST" });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao gerar usuário fictício.");
+    return r.data;
+  }
+
   async function logout() {
     if (serverAvailable) await req("/api/auth/logout", { method: "POST" }).catch(() => {});
     currentUser = null;
@@ -443,6 +479,11 @@
     logout,
     listTrips,
     getCrossings,
+    adminOverview,
+    adminGetUser,
+    adminDeleteUser,
+    adminSetDelegate,
+    adminSeedDemo,
     createTrip,
     getTrip,
     updateTrip,

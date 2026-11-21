@@ -3128,6 +3128,141 @@ function updateCrossingsMenuVisibility() {
   btn.hidden = !hasShared;
 }
 
+function colorForCityStable(cityName) {
+  const k = normCityKey(cityName);
+  let h = 0;
+  for (let i = 0; i < k.length; i++) h = ((h * 31) + k.charCodeAt(i)) >>> 0;
+  return CITY_PALETTE[h % CITY_PALETTE.length];
+}
+
+function analyzeTripsCrossings(trips, opts = {}) {
+  if (!Array.isArray(trips) || trips.length < 2) {
+    return { crossings: [], analyzed: [], allDates: [] };
+  }
+  const allStarts = [], allEnds = [];
+  trips.forEach(tr => {
+    (tr.data?.activities || []).forEach(a => {
+      if (a.start) {
+        allStarts.push(a.start);
+        allEnds.push(a.end || a.start);
+      }
+    });
+  });
+  if (!allStarts.length) return { crossings: [], analyzed: [], allDates: [] };
+  allStarts.sort();
+  allEnds.sort();
+  const minDt = parseD(allStarts[0]);
+  const maxDt = parseD(allEnds[allEnds.length - 1]);
+  const allDates = [];
+  for (let d = new Date(minDt); d <= maxDt; d.setDate(d.getDate() + 1)) {
+    allDates.push(fmtISO(d));
+  }
+
+  const analyzed = trips.map(tr => {
+    const acts = Array.isArray(tr.data?.activities) ? tr.data.activities : [];
+    const track = computeDailyCityTimeline(acts, allDates);
+    const cityByDay = {};
+    track.dayCities.forEach(dc => { if (dc.key) cityByDay[dc.iso] = dc; });
+    const minT = acts.map(a => a.start).filter(Boolean).sort()[0] || "";
+    const maxT = acts.map(a => a.end || a.start).filter(Boolean).sort().pop() || minT;
+    return {
+      trip: tr,
+      minStart: minT,
+      maxEnd: maxT,
+      cityByDay,
+      spans: track.spans.filter(sp => sp.startIso >= minT && sp.endIso <= maxT),
+      acts
+    };
+  });
+
+  const crossings = [];
+  for (let i = 0; i < analyzed.length; i++) {
+    for (let j = i + 1; j < analyzed.length; j++) {
+      const A = analyzed[i], B = analyzed[j];
+      if (opts.requireDifferentOwners) {
+        if (A.trip.ownerId && B.trip.ownerId && A.trip.ownerId === B.trip.ownerId) continue;
+        if (A.trip.ownerEmail && B.trip.ownerEmail && A.trip.ownerEmail === B.trip.ownerEmail) continue;
+      } else if (opts.requireSharedInvolvement) {
+        if (!A.trip.isShared && !B.trip.isShared && A.trip.role === "owner" && B.trip.role === "owner") continue;
+      }
+
+      let cur = null;
+      allDates.forEach(iso => {
+        if (A.minStart && (iso < A.minStart || iso > A.maxEnd)) { cur = null; return; }
+        if (B.minStart && (iso < B.minStart || iso > B.maxEnd)) { cur = null; return; }
+        const cA = A.cityByDay[iso];
+        const cB = B.cityByDay[iso];
+        if (cA && cB && cA.key === cB.key) {
+          if (cur && cur.key === cA.key) {
+            cur.endIso = iso;
+            cur.dates.push(iso);
+          } else {
+            cur = { key: cA.key, city: cA.city, startIso: iso, endIso: iso, dates: [iso], A, B };
+            crossings.push(cur);
+          }
+        } else {
+          cur = null;
+        }
+      });
+    }
+  }
+  return { crossings, analyzed, allDates };
+}
+
+function buildOverlapVisualPairHTML(pairA, pairB, pairCrossings, dark) {
+  const minS = [pairA.minStart, pairB.minStart].filter(Boolean).sort()[0];
+  const maxE = [pairA.maxEnd, pairB.maxEnd].filter(Boolean).sort().pop();
+  if (!minS || !maxE) return "";
+  const dates = [];
+  for (let d = parseD(minS); d <= parseD(maxE); d.setDate(d.getDate() + 1)) dates.push(fmtISO(d));
+  const totalDays = Math.max(1, dates.length);
+  const matchSet = new Set();
+  pairCrossings.forEach(cr => cr.dates.forEach(iso => matchSet.add(iso)));
+
+  const renderRow = item => {
+    const segs = [];
+    dates.forEach(iso => {
+      const active = item.minStart && iso >= item.minStart && iso <= item.maxEnd;
+      const dc = active ? item.cityByDay[iso] : null;
+      const isMatch = Boolean(dc && matchSet.has(iso));
+      const key = dc ? `${dc.key}:${isMatch ? 1 : 0}` : "empty";
+      const last = segs[segs.length - 1];
+      if (last && last.key === key) last.days++;
+      else segs.push({ key, city: dc?.city || "", isMatch, days: 1 });
+    });
+    const who = item.trip.role === "owner" && !item.trip.isAdminGlobal
+      ? `Você · ${item.trip.name}`
+      : `${item.trip.ownerName || "Viajante"} · ${item.trip.name}`;
+    return `<div class="overlap-track-row">
+      <div class="overlap-who" title="${esc(who)}">${esc(who)}</div>
+      <div class="overlap-bar-grid">
+        ${segs.map(sg => {
+          const wPct = (sg.days / totalDays) * 100;
+          if (!sg.city) {
+            return `<div class="overlap-seg" style="width:${wPct.toFixed(2)}%;opacity:0.25"></div>`;
+          }
+          const col = colorForCityStable(sg.city);
+          const bg = dark ? col.darkBg : col.lightBg;
+          const txt = dark ? col.darkTxt : col.lightTxt;
+          return `<div class="overlap-seg ${sg.isMatch ? "match" : ""}" style="width:${wPct.toFixed(2)}%;background:${bg};color:${txt}" title="${esc(sg.city)}${sg.isMatch ? " (COINCIDE!)" : ""}">${wPct >= 7 ? esc(formatCityLabel(sg.city, sg.days, 28)) : ""}</div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  };
+
+  return `<div class="overlap-visual-box">
+    <div class="overlap-pair-title">
+      <span>📊 Linha Visual de Sobreposição (${totalDays} dias)</span>
+      <span class="pill ok">${matchSet.size} dia(s) coincidentes destacados em verde</span>
+    </div>
+    <div class="overlap-track-wrap">
+      ${renderRow(pairA)}
+      ${renderRow(pairB)}
+      <div class="overlap-axis"><span>${fmtBR(dates[0])}</span><span>${fmtBR(dates[dates.length - 1])}</span></div>
+    </div>
+  </div>`;
+}
+
 async function openCrossingsModal() {
   const modal = $("#crossingsModal");
   const body = $("#crossingsBody");
@@ -3144,87 +3279,28 @@ async function openCrossingsModal() {
       return;
     }
 
-    // Descobre intervalo global de datas entre todas as viagens
-    const allStarts = [], allEnds = [];
-    trips.forEach(tr => {
-      (tr.data?.activities || []).forEach(a => {
-        if (a.start) {
-          allStarts.push(a.start);
-          allEnds.push(a.end || a.start);
-        }
-      });
-    });
-    if (!allStarts.length) {
+    const { crossings, analyzed } = analyzeTripsCrossings(trips, { requireSharedInvolvement: true });
+    if (!analyzed.length) {
       body.innerHTML = `<p class="muted">Nenhuma atividade com datas encontrada nas viagens.</p>`;
       return;
     }
-    allStarts.sort();
-    allEnds.sort();
-    const minDt = parseD(allStarts[0]);
-    const maxDt = parseD(allEnds[allEnds.length - 1]);
-    const allDates = [];
-    for (let d = new Date(minDt); d <= maxDt; d.setDate(d.getDate() + 1)) {
-      allDates.push(fmtISO(d));
-    }
-
-    // Calcula mapa dia -> cidade + atividades do dia para cada viagem
-    const analyzed = trips.map(tr => {
-      const acts = Array.isArray(tr.data?.activities) ? tr.data.activities : [];
-      const track = computeDailyCityTimeline(acts, allDates);
-      const cityByDay = {};
-      track.dayCities.forEach(dc => { if (dc.key) cityByDay[dc.iso] = dc; });
-      const minT = acts.map(a => a.start).filter(Boolean).sort()[0] || "";
-      const maxT = acts.map(a => a.end || a.start).filter(Boolean).sort().pop() || minT;
-      return {
-        trip: tr,
-        minStart: minT,
-        maxEnd: maxT,
-        cityByDay,
-        spans: track.spans.filter(sp => sp.startIso >= minT && sp.endIso <= maxT),
-        acts
-      };
-    });
-
-    const crossings = [];
-    for (let i = 0; i < analyzed.length; i++) {
-      for (let j = i + 1; j < analyzed.length; j++) {
-        const A = analyzed[i], B = analyzed[j];
-        // Prioriza pares envolvendo pelo menos uma viagem compartilhada ou donos diferentes
-        if (!A.trip.isShared && !B.trip.isShared && A.trip.role === "owner" && B.trip.role === "owner") continue;
-
-        let cur = null;
-        allDates.forEach(iso => {
-          if (A.minStart && (iso < A.minStart || iso > A.maxEnd)) { cur = null; return; }
-          if (B.minStart && (iso < B.minStart || iso > B.maxEnd)) { cur = null; return; }
-          const cA = A.cityByDay[iso];
-          const cB = B.cityByDay[iso];
-          if (cA && cB && cA.key === cB.key) {
-            if (cur && cur.key === cA.key) {
-              cur.endIso = iso;
-              cur.dates.push(iso);
-            } else {
-              cur = { key: cA.key, city: cA.city, startIso: iso, endIso: iso, dates: [iso], A, B };
-              crossings.push(cur);
-            }
-          } else {
-            cur = null;
-          }
-        });
-      }
-    }
 
     const dark = isDarkTheme();
-    const colorForCity = cityName => {
-      const k = normCityKey(cityName);
-      let h = 0;
-      for (let i = 0; i < k.length; i++) h = ((h * 31) + k.charCodeAt(i)) >>> 0;
-      return CITY_PALETTE[h % CITY_PALETTE.length];
-    };
-
     let html = "";
     if (crossings.length) {
+      // Agrupa pares distintos com sobreposição para exibir o gráfico visual de overlap acima dos cards
+      const pairs = new Map();
+      crossings.forEach(cr => {
+        const pk = `${cr.A.trip.id}::${cr.B.trip.id}`;
+        if (!pairs.has(pk)) pairs.set(pk, { A: cr.A, B: cr.B, items: [] });
+        pairs.get(pk).items.push(cr);
+      });
+      pairs.forEach(p => {
+        html += buildOverlapVisualPairHTML(p.A, p.B, p.items, dark);
+      });
+
       html += crossings.map(cr => {
-        const col = colorForCity(cr.city);
+        const col = colorForCityStable(cr.city);
         const bg = dark ? col.darkBg : col.lightBg;
         const bd = dark ? col.darkBd : col.lightBd;
         const txt = dark ? col.darkTxt : col.lightTxt;
@@ -3258,7 +3334,7 @@ async function openCrossingsModal() {
           <div class="crossing-trip-chips">
             ${item.spans.length
               ? item.spans.map(sp => {
-                  const col = colorForCity(sp.city);
+                  const col = colorForCityStable(sp.city);
                   return `<span class="crossing-city-pill" style="font-size:0.74rem;background:${dark ? col.darkBg : col.lightBg};border-color:${dark ? col.darkBd : col.lightBd};color:${dark ? col.darkTxt : col.lightTxt}">${esc(sp.city)} (${fmtShortBR(sp.startIso)}–${fmtShortBR(sp.endIso)})</span>`;
                 }).join("")
               : `<span class="muted small">Sem trechos com origem/destino cadastrados</span>`}
@@ -3352,18 +3428,24 @@ async function refreshTripsAndLoad(preferredTripId) {
   renderPendingInvites();
   updateCrossingsMenuVisibility();
 
-  let all = [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])];
-  if (!all.length) {
-    // Se ainda não há nenhuma viagem na conta, cria a 1ª viagem padrão
+  const own = tripsCache.ownTrips || [];
+  let all = [...own, ...(tripsCache.sharedTrips || [])];
+  const curUser = window.FeriasApi.getUser();
+  const bootKey = curUser ? `ferias-pro-own-boot-${curUser.id}` : "";
+  if (!all.length || (!own.length && bootKey && !localStorage.getItem(bootKey))) {
+    // Garante que o usuário tenha sua própria viagem padrão na 1ª entrada (mesmo se já houver viagem compartilhada pré-carregada)
     let initialData = clone(window.DEFAULT_DATA);
     try {
       const leg = localStorage.getItem(LEGACY_KEY_1) || localStorage.getItem(LEGACY_KEY_2);
       if (leg) initialData = migrateState(JSON.parse(leg));
     } catch {}
     const created = await window.FeriasApi.createTrip(initialData.title || "Férias Final de Ano 2026", initialData, window.FeriasMaps.getKey());
+    if (bootKey) { try { localStorage.setItem(bootKey, "1"); } catch {} }
     tripsCache = await window.FeriasApi.listTrips();
     all = [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])];
-    preferredTripId = created.id;
+    preferredTripId = created?.trip?.id || created?.id || all.find(t => t.role === "owner")?.id;
+  } else if (own.length && bootKey) {
+    try { localStorage.setItem(bootKey, "1"); } catch {}
   }
 
   const allIds = new Set(all.map(t => t.id));
@@ -3381,7 +3463,8 @@ async function refreshTripsAndLoad(preferredTripId) {
     return;
   }
 
-  const targetId = allIds.has(window.FeriasApi.getActiveTripId()) ? window.FeriasApi.getActiveTripId() : all[0].id;
+  const ownFirst = all.find(t => t.role === "owner") || all[0];
+  const targetId = allIds.has(window.FeriasApi.getActiveTripId()) ? window.FeriasApi.getActiveTripId() : ownFirst.id;
   await openTripsByIds([targetId], targetId);
 }
 
@@ -3707,16 +3790,30 @@ function setupGoogleSignInButton(clientId) {
   document.head.appendChild(s);
 }
 
+function updateAdminMenuVisibility() {
+  const u = window.FeriasApi?.getUser();
+  const isAdm = Boolean(window.FeriasApi?.isServer() && u?.isAdmin);
+  const tabAdm = $("#tab-admin");
+  const menuAdm = $("#btnMenuAdmin");
+  if (tabAdm) tabAdm.hidden = !isAdm;
+  if (menuAdm) menuAdm.hidden = !isAdm;
+  if (!isAdm && $("#view-admin")?.classList.contains("active")) {
+    switchAppView("gantt");
+  }
+}
+
 function updateUserMenu() {
   const u = window.FeriasApi.getUser();
   const box = $("#menuUserInfo");
   if (u) {
-    box.innerHTML = `<strong>${esc(u.name)}</strong><span>${esc(u.email)}</span>`;
+    const roleTag = u.isSuperAdmin ? " · 👑 Super Admin" : (u.isAdmin ? " · 🛡️ Admin" : "");
+    box.innerHTML = `<strong>${esc(u.name)}${roleTag}</strong><span>${esc(u.email)}</span>`;
     $("#btnLogout").hidden = false;
   } else {
     box.innerHTML = `<strong>Modo Offline</strong><span>Somente este aparelho</span>`;
     $("#btnLogout").hidden = true;
   }
+  updateAdminMenuVisibility();
 }
 
 async function enterApp() {
@@ -4031,12 +4128,543 @@ if ($("#btnCrossingsDone")) $("#btnCrossingsDone").onclick = () => $("#crossings
 
 $("#btnPendingInvites").onclick = () => $("#invitesBanner").scrollIntoView({ behavior: "smooth" });
 
+function switchAppView(viewId) {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.view === viewId));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
+  if (viewId === "admin") loadAndRenderAdmin();
+}
+
 document.querySelectorAll(".tab").forEach(b => {
-  b.onclick = () => {
-    document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === b));
-    document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + b.dataset.view));
-  };
+  b.onclick = () => switchAppView(b.dataset.view);
 });
+
+/* ---------- PAINEL SUPER ADMIN & ADMIN DELEGADO ---------- */
+let adminCache = null;
+let adminSubTab = "users";
+
+const fmtDateTimeBR = ms => {
+  if (!ms) return "—";
+  try {
+    return new Date(ms).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  } catch { return "—"; }
+};
+
+const fmtBytes = b => {
+  const n = Number(b) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+};
+
+async function loadAndRenderAdmin() {
+  if (!window.FeriasApi?.isServer() || !window.FeriasApi.getUser()?.isAdmin) return;
+  const usersBox = $("#adminTab-users");
+  if (usersBox && !adminCache) {
+    usersBox.innerHTML = `<p class="muted">⏳ Carregando dados globais de administração...</p>`;
+  }
+  try {
+    adminCache = await window.FeriasApi.adminOverview();
+    renderAdminDashboard();
+  } catch (err) {
+    if (usersBox) usersBox.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>`;
+  }
+}
+
+function getAdminGlobalOverlaps() {
+  if (!adminCache?.trips?.length) return { crossings: [], analyzed: [], allDates: [] };
+  const allTrips = adminCache.trips.map(tr => ({
+    ...tr,
+    role: "owner",
+    isAdminGlobal: true,
+    data: migrateState(tr.data)
+  }));
+  return analyzeTripsCrossings(allTrips, { requireDifferentOwners: true });
+}
+
+function renderAdminDashboard() {
+  if (!adminCache) return;
+  const { stats, admins, users, trips, shares, isSuperAdmin } = adminCache;
+
+  const badge = $("#adminRoleBadge");
+  if (badge) {
+    badge.textContent = isSuperAdmin ? "👑 Super Admin Principal" : "🛡️ Admin Delegado";
+    badge.className = `pill ${isSuperAdmin ? "ok" : ""}`;
+  }
+
+  const delForm = $("#adminDelegateForm");
+  const delHint = $("#adminDelegateHint");
+  if (delForm) delForm.hidden = !isSuperAdmin;
+  if (delHint) {
+    delHint.textContent = isSuperAdmin
+      ? "Adicione outros e-mails para terem acesso ao Painel Admin global (somente você é Super Admin permanente)."
+      : "Lista de administradores configurados pelo Super Admin (somente leitura).";
+  }
+
+  if ($("#adminKpis")) {
+    const cards = [
+      ["Usuários Cadastrados", `${stats.totalUsers}`, `${stats.googleUsers} Google · ${stats.passwordUsers} c/ senha${stats.demoUsers ? ` · ${stats.demoUsers} demo` : ""}`, "#6366f1"],
+      ["Viagens & Atividades", `${stats.totalTrips} viagens`, `${stats.totalActivities} atividades lançadas`, "#06b6d4"],
+      ["Compartilhamentos", `${stats.acceptedShares} aceitos`, `${stats.pendingShares} pendentes (${stats.totalShares} total)`, "#10b981"],
+      ["Armazenamento & Admins", `${stats.totalAttachments} anexos`, `${fmtBytes(stats.totalAttachmentBytes)} · ${stats.delegatedAdminsCount + 1} admin(s)`, "#f59e0b"]
+    ];
+    $("#adminKpis").innerHTML = cards.map(([l, v, sub, c]) =>
+      `<div class="kpi" style="--c:${c}"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`
+    ).join("");
+  }
+
+  if ($("#adminDelegatesList")) {
+    $("#adminDelegatesList").innerHTML = admins.map(a => `
+      <div class="admin-del-chip ${a.isSuperAdmin ? "super" : ""}">
+        <span>${a.isSuperAdmin ? "👑" : "🛡️"} <b>${esc(a.email)}</b></span>
+        <span class="muted small">${a.registered ? esc(a.name || "Cadastrado") : "Aguardando 1º login"}</span>
+        ${a.isSuperAdmin
+          ? `<span class="admin-badge super">Super Admin</span>`
+          : (isSuperAdmin ? `<button type="button" class="icon-btn" data-adm-revoke="${esc(a.email)}" title="Remover privilégio Admin">🗑️</button>` : `<span class="admin-badge admin">Delegado</span>`)}
+      </div>
+    `).join("");
+
+    $("#adminDelegatesList").querySelectorAll("[data-adm-revoke]").forEach(btn => {
+      btn.onclick = async () => {
+        const em = btn.dataset.admRevoke;
+        if (!confirm(`Remover privilégio de administrador de "${em}"?`)) return;
+        try {
+          await window.FeriasApi.adminSetDelegate(em, "remove");
+          toast(`🛡️ Privilégio de ${em} removido.`);
+          await loadAndRenderAdmin();
+        } catch (err) { toast("❌ " + (err.message || err)); }
+      };
+    });
+  }
+
+  const ovData = getAdminGlobalOverlaps();
+  const globalCrossings = ovData.crossings || [];
+
+  if ($("#admCountUsers")) $("#admCountUsers").textContent = String(users.length);
+  if ($("#admCountTrips")) $("#admCountTrips").textContent = String(trips.length);
+  if ($("#admCountOverlaps")) $("#admCountOverlaps").textContent = String(globalCrossings.length);
+  if ($("#admCountShares")) $("#admCountShares").textContent = String(shares.length);
+
+  renderAdminSubView(ovData);
+}
+
+function renderAdminSubView(precomputedOv) {
+  if (!adminCache) return;
+  const q = ($("#adminSearch")?.value || "").trim().toLowerCase();
+  const uFilter = $("#adminUserTypeFilter")?.value || "";
+  if ($("#adminUserTypeFilter")) $("#adminUserTypeFilter").hidden = adminSubTab !== "users";
+
+  ["users", "trips", "overlaps", "shares"].forEach(k => {
+    const el = $(`#adminTab-${k}`);
+    if (el) el.hidden = adminSubTab !== k;
+  });
+
+  if (adminSubTab === "users") {
+    const box = $("#adminTab-users");
+    const filtered = adminCache.users.filter(u => {
+      if (uFilter === "google" && !u.hasGoogle) return false;
+      if (uFilter === "password" && !u.hasPassword) return false;
+      if (uFilter === "admin" && !u.isAdmin) return false;
+      if (uFilter === "demo" && !u.isDemo) return false;
+      if (!q) return true;
+      const hay = `${u.name} ${u.email} ${u.whatsappFull} ${u.city} ${u.state}`.toLowerCase();
+      return hay.includes(q);
+    });
+    if (!filtered.length) {
+      box.innerHTML = `<p class="muted">Nenhum usuário encontrado para este filtro.</p>`;
+      return;
+    }
+    box.innerHTML = `<div class="admin-users-list">${filtered.map(u => {
+      const initials = (u.name || u.email || "?").trim().slice(0, 2).toUpperCase();
+      return `
+      <div class="admin-user-row" data-adm-uid="${esc(u.id)}" tabindex="0" role="button">
+        <div class="admin-user-main">
+          <div class="admin-avatar">${u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : esc(initials)}</div>
+          <div class="admin-user-meta">
+            <div class="admin-user-title">
+              <span>${esc(u.name)}</span>
+              ${u.isSuperAdmin ? `<span class="admin-badge super">👑 Super Admin</span>` : (u.isAdmin ? `<span class="admin-badge admin">🛡️ Admin</span>` : "")}
+              ${u.isDemo ? `<span class="admin-badge demo">🤖 Fictício Demo</span>` : ""}
+              ${u.hasGoogle ? `<span class="admin-badge google">G Google</span>` : ""}
+              ${u.hasPassword ? `<span class="admin-badge pw">🔑 Senha</span>` : ""}
+            </div>
+            <div class="admin-user-sub">${esc(u.email)}${u.whatsappFull ? ` · ${esc(u.whatsappFull)}` : ""}${u.city ? ` · ${esc(u.city)}${u.state ? "/" + esc(u.state) : ""}` : ""}</div>
+          </div>
+        </div>
+        <div class="admin-user-stats">
+          <span class="pill">${u.ownTripsCount} própria(s)</span>
+          ${u.sharedWithUserCount ? `<span class="pill">${u.sharedWithUserCount} compart.</span>` : ""}
+          <span class="pill">${u.totalActivitiesCount} ativ.</span>
+          <span class="muted small">Acesso: ${fmtDateTimeBR(u.lastLoginAt)}</span>
+          <span class="btn ghost small">👁️ Abrir</span>
+        </div>
+      </div>`;
+    }).join("")}</div>`;
+
+    box.querySelectorAll("[data-adm-uid]").forEach(row => {
+      row.onclick = () => openAdminUserModal(row.dataset.admUid);
+      row.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openAdminUserModal(row.dataset.admUid); } };
+    });
+  } else if (adminSubTab === "trips") {
+    const box = $("#adminTab-trips");
+    const filtered = adminCache.trips.filter(t => {
+      if (!q) return true;
+      const hay = `${t.name} ${t.ownerName} ${t.ownerEmail}`.toLowerCase();
+      return hay.includes(q);
+    });
+    if (!filtered.length) {
+      box.innerHTML = `<p class="muted">Nenhuma viagem encontrada.</p>`;
+      return;
+    }
+    box.innerHTML = `<div class="admin-mini-table-wrap"><table class="admin-mini-table">
+      <thead><tr><th>Viagem</th><th>Proprietário</th><th>Período</th><th>Atividades</th><th>Km</th><th>Total Estimado</th><th>Compart.</th><th>Atualizado</th><th>Ações</th></tr></thead>
+      <tbody>
+        ${filtered.map(t => {
+          const td = migrateState(t.data);
+          const acts = [...(td.activities || [])].sort((a, b) => a.start.localeCompare(b.start));
+          const tot = computeSingleTripTotals(td);
+          const spanTxt = acts.length ? `${fmtShortBR(acts[0].start)} – ${fmtShortBR(acts.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, acts[0].start))}` : "—";
+          return `<tr>
+            <td><b>${esc(t.name)}</b> ${t.isDemoTrip ? `<span class="admin-badge demo">Demo</span>` : ""}</td>
+            <td>${esc(t.ownerName)}<br><small class="muted">${esc(t.ownerEmail)}</small></td>
+            <td>${spanTxt}</td>
+            <td>${t.activitiesCount}</td>
+            <td>${num(tot.km)} km</td>
+            <td><b>${money(tot.grandTotal)}</b></td>
+            <td>${t.sharesCount}</td>
+            <td>${fmtDateTimeBR(t.updatedAt)}</td>
+            <td>
+              <div class="inline-actions">
+                <button type="button" class="btn ghost small" data-adm-utrip="${esc(t.ownerId)}" data-adm-tid="${esc(t.id)}">👁️ Detalhes</button>
+                <button type="button" class="btn ghost small" data-adm-ptrip="${esc(t.id)}">🖨️ PDF</button>
+              </div>
+            </td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table></div>`;
+
+    box.querySelectorAll("[data-adm-utrip]").forEach(b => {
+      b.onclick = () => openAdminUserModal(b.dataset.admUtrip, b.dataset.admTid);
+    });
+    box.querySelectorAll("[data-adm-ptrip]").forEach(b => {
+      b.onclick = () => printAdminTripReport(b.dataset.admPtrip);
+    });
+  } else if (adminSubTab === "overlaps") {
+    const box = $("#adminTab-overlaps");
+    const ov = precomputedOv || getAdminGlobalOverlaps();
+    const crossings = (ov.crossings || []).filter(cr => {
+      if (!q) return true;
+      const hay = `${cr.city} ${cr.A.trip.name} ${cr.A.trip.ownerName} ${cr.A.trip.ownerEmail} ${cr.B.trip.name} ${cr.B.trip.ownerName} ${cr.B.trip.ownerEmail}`.toLowerCase();
+      return hay.includes(q);
+    });
+    if (!crossings.length) {
+      box.innerHTML = `<p class="muted">Nenhuma sobreposição de cidade e data entre usuários diferentes encontrada ainda.</p>`;
+      return;
+    }
+    const dark = isDarkTheme();
+    const pairs = new Map();
+    crossings.forEach(cr => {
+      const pk = `${cr.A.trip.id}::${cr.B.trip.id}`;
+      if (!pairs.has(pk)) pairs.set(pk, { A: cr.A, B: cr.B, items: [] });
+      pairs.get(pk).items.push(cr);
+    });
+
+    let html = "";
+    pairs.forEach(p => {
+      const hasShared = adminCache.shares.some(s =>
+        s.status === "accepted" &&
+        ((s.tripId === p.A.trip.id && s.targetEmail === p.B.trip.ownerEmail) ||
+         (s.tripId === p.B.trip.id && s.targetEmail === p.A.trip.ownerEmail))
+      );
+      html += `<div class="crossing-summary-box" style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <strong>🤝 ${esc(p.A.trip.ownerName)} (${esc(p.A.trip.name)}) × ${esc(p.B.trip.ownerName)} (${esc(p.B.trip.name)})</strong>
+          <span class="pill ${hasShared ? "ok" : ""}">${hasShared ? "✅ Viagem compartilhada entre eles" : "💡 Usuários sem compartilhamento mútuo ainda"}</span>
+        </div>
+        ${buildOverlapVisualPairHTML(p.A, p.B, p.items, dark)}
+        <div class="crossing-trip-chips">
+          ${p.items.map(cr => {
+            const col = colorForCityStable(cr.city);
+            return `<span class="crossing-city-pill" style="background:${dark ? col.darkBg : col.lightBg};border-color:${dark ? col.darkBd : col.lightBd};color:${dark ? col.darkTxt : col.lightTxt}">📍 ${esc(cr.city)} · ${fmtShortBR(cr.startIso)}${cr.endIso !== cr.startIso ? "–" + fmtShortBR(cr.endIso) : ""} (${cr.dates.length}d)</span>`;
+          }).join("")}
+        </div>
+      </div>`;
+    });
+    box.innerHTML = html;
+  } else if (adminSubTab === "shares") {
+    const box = $("#adminTab-shares");
+    const filtered = adminCache.shares.filter(s => {
+      if (!q) return true;
+      return `${s.tripName} ${s.ownerName} ${s.ownerEmail} ${s.targetEmail}`.toLowerCase().includes(q);
+    });
+    if (!filtered.length) {
+      box.innerHTML = `<p class="muted">Nenhum compartilhamento registrado ainda.</p>`;
+      return;
+    }
+    const stLbl = { accepted: "✅ Aceito", pending: "⏳ Pendente", declined: "❌ Recusado" };
+    box.innerHTML = `<div class="admin-mini-table-wrap"><table class="admin-mini-table">
+      <thead><tr><th>Viagem</th><th>Proprietário</th><th>Convidado</th><th>Permissão</th><th>Status</th><th>Data</th></tr></thead>
+      <tbody>
+        ${filtered.map(s => `<tr>
+          <td><b>${esc(s.tripName)}</b></td>
+          <td>${esc(s.ownerName)}<br><small class="muted">${esc(s.ownerEmail)}</small></td>
+          <td>${esc(s.targetEmail)}</td>
+          <td>${s.role === "viewer" ? "Só visualizar" : "Pode editar"}</td>
+          <td>${stLbl[s.status] || esc(s.status)}</td>
+          <td>${fmtDateTimeBR(s.createdAt)}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table></div>`;
+  }
+}
+
+async function printAdminTripReport(tripId) {
+  if (!adminCache) return;
+  const tr = adminCache.trips.find(x => x.id === tripId);
+  if (!tr) return toast("Viagem não encontrada.");
+  const td = migrateState(tr.data);
+  const acts = [...(td.activities || [])].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+  const tot = computeSingleTripTotals(td);
+  const helpers = {
+    ...reportHelpers(),
+    calc: (a, kmL) => calc(a, kmL, td)
+  };
+  toast(`🖨️ Gerando relatório de "${tr.name}"...`);
+  await window.FeriasReport.printFullTripReport(td, acts, tot, helpers, window.FeriasMaps ? window.FeriasMaps.getKey() : "");
+}
+
+async function openAdminUserModal(userId, focusTripId = null) {
+  const modal = $("#adminUserModal");
+  const body = $("#adminUserDetailBody");
+  const titleEl = $("#adminUserModalTitle");
+  if (!modal || !body) return;
+  titleEl.textContent = "👤 Carregando dados do usuário...";
+  body.innerHTML = `<p class="muted">⏳ Buscando perfil, viagens, finanças, checklist e anexos...</p>`;
+  modal.showModal();
+
+  try {
+    const detail = await window.FeriasApi.adminGetUser(userId);
+    const u = detail.user;
+    const me = window.FeriasApi.getUser();
+    const isSuper = Boolean(me?.isSuperAdmin);
+    titleEl.textContent = `👤 ${u.name}`;
+
+    // Sobreposições com as viagens do próprio admin logado
+    let overlapHtml = "";
+    const adminOwnTrips = (adminCache?.trips || []).filter(t => t.ownerId === me?.id).map(t => ({ ...t, role: "owner", isAdminGlobal: true, data: migrateState(t.data) }));
+    const targetTrips = [...detail.ownTrips, ...detail.sharedTrips].map(t => ({
+      ...t,
+      ownerId: t.ownerId || u.id,
+      ownerName: t.ownerName || u.name,
+      ownerEmail: t.ownerEmail || u.email,
+      isAdminGlobal: true,
+      data: migrateState(t.data)
+    }));
+    if (adminOwnTrips.length && targetTrips.length && u.id !== me?.id) {
+      const allForCheck = [...adminOwnTrips, ...targetTrips.map(t => ({ ...t, ownerId: u.id, ownerEmail: u.email }))];
+      const ov = analyzeTripsCrossings(allForCheck, { requireDifferentOwners: true });
+      const dark = isDarkTheme();
+      if (ov.crossings.length) {
+        const pairs = new Map();
+        ov.crossings.forEach(cr => {
+          const pk = `${cr.A.trip.id}::${cr.B.trip.id}`;
+          if (!pairs.has(pk)) pairs.set(pk, { A: cr.A, B: cr.B, items: [] });
+          pairs.get(pk).items.push(cr);
+        });
+        pairs.forEach(p => { overlapHtml += buildOverlapVisualPairHTML(p.A, p.B, p.items, dark); });
+        overlapHtml += `<div class="crossing-trip-chips">${ov.crossings.map(cr => {
+          const col = colorForCityStable(cr.city);
+          return `<span class="crossing-city-pill" style="background:${dark ? col.darkBg : col.lightBg};border-color:${dark ? col.darkBd : col.lightBd};color:${dark ? col.darkTxt : col.lightTxt}">📍 ${esc(cr.city)}: ${fmtBR(cr.startIso)}${cr.endIso !== cr.startIso ? " até " + fmtBR(cr.endIso) : ""} (${cr.dates.length}d juntos)</span>`;
+        }).join("")}</div>`;
+      } else {
+        overlapHtml = `<p class="muted small">Nenhuma data e cidade coincidente com as suas viagens no momento.</p>`;
+      }
+    }
+
+    const renderTripCard = (tr, idx) => {
+      const td = migrateState(tr.data);
+      const acts = [...(td.activities || [])].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+      const tot = computeSingleTripTotals(td);
+      const fin = computeSingleTripFinancialTimeline(td, acts, tot);
+      const openAttr = (focusTripId ? tr.id === focusTripId : idx === 0) ? "open" : "";
+      const roleLbl = tr.role === "owner" ? "👑 Proprietário" : `👥 Compartilhada (${tr.role === "viewer" ? "Só visualizar" : "Editor"} · ${tr.shareStatus || "accepted"})`;
+      const recordsEntries = Object.entries(td.finance?.dailyRecords || {}).sort((a, b) => a[0].localeCompare(b[0]));
+
+      return `
+      <details class="admin-trip-card" ${openAttr}>
+        <summary style="cursor:pointer;list-style:none">
+          <div class="admin-trip-head">
+            <div>
+              <strong style="font-size:1rem;color:var(--text-strong)">✈️ ${esc(tr.name)}</strong>
+              <div class="muted small">${roleLbl} · ${acts.length} atividade(s) · ${num(tot.km)} km · <b>Total ${money(tot.grandTotal)}</b></div>
+            </div>
+            <div class="inline-actions">
+              <span class="pill">${fmtDateTimeBR(tr.updatedAt)}</span>
+              <button type="button" class="btn ghost small" data-admu-print="${esc(tr.id)}">🖨️ Relatório A4</button>
+            </div>
+          </div>
+        </summary>
+
+        <div class="admin-kv-grid" style="margin-top:8px">
+          <div class="admin-kv-item"><span>Veículo</span><b>${esc(td.vehicle.name)} (${esc(td.vehicle.powertrain)})</b></div>
+          <div class="admin-kv-item"><span>Consumo / Combustível</span><b>${td.vehicle.hevKmL} km/L · ${money(td.vehicle.fuelPrice)}/L</b></div>
+          <div class="admin-kv-item"><span>Elétrico (EV)</span><b>${td.vehicle.evRange} km · ${td.vehicle.kwhPerCharge} kWh · ${money(td.vehicle.kwhPrice)}/kWh</b></div>
+          <div class="admin-kv-item"><span>Viajantes &amp; Orçamento</span><b>${td.params.travelers} viaj. · Hosp. ${money(td.params.lodgingPerNight)}/noite · Alim. ${money(td.params.dailyFoodPerPerson)}/dia</b></div>
+          <div class="admin-kv-item"><span>Fixos &amp; Reserva</span><b>Fixos ${money(td.params.otherFixedBudget)} · Reserva ${td.params.contingencyPct}%</b></div>
+          <div class="admin-kv-item"><span>Financeiro Real</span><b>Alvo ${money(fin.effectiveCeiling)} (Eco. ${money(fin.savingsGoal)}) · Executado ${money(fin.sumActualLogged)} (${fin.loggedCount}d)</b></div>
+        </div>
+
+        <strong style="font-size:0.84rem">📅 Atividades lançadas (${acts.length})</strong>
+        ${acts.length ? `<div class="admin-mini-table-wrap"><table class="admin-mini-table">
+          <thead><tr><th>Tipo</th><th>Datas</th><th>Atividade</th><th>Origem ➔ Destino</th><th>Km</th><th>Pedágio</th><th>Extras</th><th>Notas &amp; Anexos</th></tr></thead>
+          <tbody>
+            ${acts.map(a => {
+              const atts = (tr.attachments || []).filter(at => at.activityId === a.id);
+              return `<tr>
+                <td>${esc(a.type)}</td>
+                <td>${fmtShortBR(a.start)}${a.end && a.end !== a.start ? "–" + fmtShortBR(a.end) : ""}</td>
+                <td><b>${esc(a.name)}</b></td>
+                <td>${(a.from || a.to) ? esc(`${a.from || "?"} ➔ ${a.to || "?"}`) : "—"}</td>
+                <td>${a.km ? num(a.km) + " km" : "—"}</td>
+                <td>${a.toll ? money(a.toll) : "—"}</td>
+                <td>${a.extraCost ? money(a.extraCost) : "—"}</td>
+                <td>${esc(a.notes || "")}${atts.length ? `<br>${atts.map(at => `<a href="/api/attachments/${esc(at.id)}" target="_blank" rel="noopener" style="color:var(--accent2)">📎 ${esc(at.fileName)}</a>`).join(" · ")}` : ""}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table></div>` : `<p class="muted small">Sem atividades.</p>`}
+
+        ${recordsEntries.length ? `
+          <strong style="font-size:0.84rem">💳 Lançamentos Reais Diários (${recordsEntries.length} dias)</strong>
+          <div class="admin-mini-table-wrap"><table class="admin-mini-table">
+            <thead><tr><th>Data</th><th>Gasto Real</th><th>Observação</th></tr></thead>
+            <tbody>${recordsEntries.map(([iso, r]) => `<tr><td>${fmtBR(iso)}</td><td><b>${money(r.spent || 0)}</b></td><td>${esc(r.note || "—")}</td></tr>`).join("")}</tbody>
+          </table></div>` : ""}
+
+        ${(td.checklist || []).length ? `
+          <strong style="font-size:0.84rem">✅ Checklist (${td.checklist.filter(c => c.status === "Concluído").length}/${td.checklist.length} concluídos)</strong>
+          <div class="admin-mini-table-wrap"><table class="admin-mini-table">
+            <thead><tr><th>Categoria</th><th>Item</th><th>Prioridade</th><th>Status</th><th>Notas</th></tr></thead>
+            <tbody>${td.checklist.map(c => `<tr><td>${esc(c.cat)}</td><td>${esc(c.item)}</td><td>${esc(c.prio)}</td><td>${esc(c.status)}</td><td>${esc(c.notes || "")}</td></tr>`).join("")}</tbody>
+          </table></div>` : ""}
+
+        ${(tr.shares || []).length ? `
+          <strong style="font-size:0.84rem">🔗 Compartilhamentos desta viagem (${tr.shares.length})</strong>
+          <div class="crossing-trip-chips">${tr.shares.map(sh => `<span class="pill">${esc(sh.targetEmail)} · ${sh.role} · ${sh.status}</span>`).join("")}</div>` : ""}
+      </details>`;
+    };
+
+    const allUserTrips = [...detail.ownTrips, ...detail.sharedTrips];
+    body.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          ${u.isSuperAdmin ? `<span class="admin-badge super">👑 Super Admin</span>` : (u.isAdmin ? `<span class="admin-badge admin">🛡️ Admin Delegado</span>` : `<span class="admin-badge">Viajante</span>`)}
+          ${u.isDemo ? `<span class="admin-badge demo">🤖 Usuário Fictício Demo</span>` : ""}
+          ${u.hasGoogle ? `<span class="admin-badge google">G Login Google</span>` : ""}
+          ${u.hasPassword ? `<span class="admin-badge pw">🔑 Com Senha</span>` : `<span class="admin-badge">Sem senha (só Google)</span>`}
+        </div>
+        <div class="inline-actions">
+          ${isSuper && !u.isSuperAdmin ? `
+            <button type="button" class="btn ghost small" id="btnAdmModalDelegate">${u.isAdmin ? "🛡️ Revogar Admin" : "👑 Tornar Admin"}</button>
+            ${u.id !== me?.id ? `<button type="button" class="btn danger-ghost small" id="btnAdmModalDeleteUser">🗑️ Excluir Usuário</button>` : ""}
+          ` : ""}
+        </div>
+      </div>
+
+      <div class="admin-kv-grid">
+        <div class="admin-kv-item"><span>Nome completo</span><b>${esc(u.name)}</b></div>
+        <div class="admin-kv-item"><span>E-mail</span><b>${esc(u.email)}</b></div>
+        <div class="admin-kv-item"><span>ID da conta</span><b>${esc(u.id)}</b></div>
+        <div class="admin-kv-item"><span>WhatsApp / Telefone</span><b>${esc(u.whatsappFull || "Não informado")}</b></div>
+        <div class="admin-kv-item"><span>Idade / Documento</span><b>${esc(u.age || "—")} · ${esc(u.doc || "—")}</b></div>
+        <div class="admin-kv-item"><span>Contato de emergência</span><b>${esc(u.emergencyContact || "—")}</b></div>
+        <div class="admin-kv-item"><span>CEP / Cidade / UF</span><b>${esc(u.cep || "—")} · ${esc(u.city || "—")}${u.state ? "/" + esc(u.state) : ""}</b></div>
+        <div class="admin-kv-item"><span>Endereço completo</span><b>${esc(u.address || "—")}</b></div>
+        <div class="admin-kv-item"><span>Cadastro &amp; Último Acesso</span><b>${fmtDateTimeBR(u.createdAt)} · Último: ${fmtDateTimeBR(u.lastLoginAt)}</b></div>
+        <div class="admin-kv-item"><span>Integrações</span><b>Gemini: ${u.integrations?.hasGemini ? esc(u.integrations.geminiHint || "Sim") : "Não"} · Maps: ${u.integrations?.hasMaps ? esc(u.integrations.gmapsHint || "Sim") : "Não"} · Wallet: ${u.integrations?.hasWallet ? "Sim" : "Não"}</b></div>
+      </div>
+
+      ${overlapHtml ? `<div class="crossing-summary-box"><strong>🔀 Coincidências / Overlap com as suas viagens</strong>${overlapHtml}</div>` : ""}
+
+      <div class="admin-trips-wrap">
+        <strong>🗺️ Todas as Viagens do Usuário (${allUserTrips.length})</strong>
+        ${allUserTrips.length ? allUserTrips.map(renderTripCard).join("") : `<p class="muted small">Este usuário ainda não possui viagens cadastradas.</p>`}
+      </div>
+    `;
+
+    body.querySelectorAll("[data-admu-print]").forEach(b => {
+      b.onclick = () => printAdminTripReport(b.dataset.admuPrint);
+    });
+    if ($("#btnAdmModalDelegate")) {
+      $("#btnAdmModalDelegate").onclick = async () => {
+        try {
+          await window.FeriasApi.adminSetDelegate(u.email, u.isAdmin ? "remove" : "add");
+          toast(u.isAdmin ? `🛡️ Admin removido de ${u.email}.` : `👑 ${u.email} agora é Admin!`);
+          await loadAndRenderAdmin();
+          await openAdminUserModal(u.id, focusTripId);
+        } catch (err) { toast("❌ " + (err.message || err)); }
+      };
+    }
+    if ($("#btnAdmModalDeleteUser")) {
+      $("#btnAdmModalDeleteUser").onclick = async () => {
+        if (!confirm(`Excluir permanentemente a conta de "${u.name}" (${u.email}) e todas as suas viagens/anexos?`)) return;
+        try {
+          await window.FeriasApi.adminDeleteUser(u.id);
+          modal.close();
+          toast("🗑️ Usuário excluído.");
+          await refreshTripsAndLoad();
+          await loadAndRenderAdmin();
+        } catch (err) { toast("❌ " + (err.message || err)); }
+      };
+    }
+  } catch (err) {
+    body.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>`;
+  }
+}
+
+if ($("#btnMenuAdmin")) {
+  $("#btnMenuAdmin").onclick = () => switchAppView("admin");
+}
+if ($("#btnAdminRefresh")) {
+  $("#btnAdminRefresh").onclick = () => loadAndRenderAdmin();
+}
+if ($("#btnAdminSeedDemo")) {
+  $("#btnAdminSeedDemo").onclick = async () => {
+    try {
+      await window.FeriasApi.adminSeedDemo();
+      await refreshTripsAndLoad(activeTrip?.id);
+      await loadAndRenderAdmin();
+      toast("🌱 Usuário fictício + viagem com datas coincidentes criado e compartilhado!");
+    } catch (err) { toast("❌ " + (err.message || err)); }
+  };
+}
+if ($("#adminDelegateForm")) {
+  $("#adminDelegateForm").onsubmit = async e => {
+    e.preventDefault();
+    const inp = $("#adminDelegateEmail");
+    const email = inp.value.trim();
+    if (!email) return;
+    try {
+      await window.FeriasApi.adminSetDelegate(email, "add");
+      inp.value = "";
+      toast(`👑 ${email} delegado(a) como Administrador!`);
+      await loadAndRenderAdmin();
+    } catch (err) { toast("❌ " + (err.message || err)); }
+  };
+}
+if ($("#adminSubTabs")) {
+  $("#adminSubTabs").querySelectorAll("button").forEach(b => {
+    b.onclick = () => {
+      adminSubTab = b.dataset.admtab || "users";
+      $("#adminSubTabs").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+      renderAdminSubView();
+    };
+  });
+}
+if ($("#adminSearch")) $("#adminSearch").oninput = () => renderAdminSubView();
+if ($("#adminUserTypeFilter")) $("#adminUserTypeFilter").onchange = () => renderAdminSubView();
+if ($("#btnCloseAdminUser")) $("#btnCloseAdminUser").onclick = () => $("#adminUserModal").close();
+if ($("#btnAdminUserDone")) $("#btnAdminUserDone").onclick = () => $("#adminUserModal").close();
 
 $("#btnAdd").onclick = () => openModal();
 $("#btnCloseX").onclick = $("#btnCancel").onclick = () => $("#modal").close();

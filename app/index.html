@@ -15,7 +15,7 @@
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=21">
+<link rel="stylesheet" href="styles.css?v=23">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -182,6 +182,7 @@
               <span>Compartilhar viagem</span>
             </button>
             <button type="button" id="btnMenuCrossings" hidden>🔀 Cruzamentos de Viagens</button>
+            <button type="button" id="btnMenuAdmin" hidden>🛡️ Admin (Super Painel)</button>
             <button type="button" id="btnMenuWhatsApp">💬 Enviar p/ meu WhatsApp</button>
             <button type="button" id="btnMenuCalendarAll">📅 Enviar férias p/ Google Agenda</button>
             <a href="/como-usar.html" class="menu-link">📖 Como utilizar o Férias Pro</a>
@@ -209,6 +210,7 @@
       <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
       <button class="tab" data-view="params" id="tab-params" type="button">⚙️ Parâmetros</button>
       <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
+      <button class="tab tab-admin" data-view="admin" id="tab-admin" type="button" hidden>🛡️ Admin</button>
     </nav>
   </header>
 
@@ -591,6 +593,62 @@
         <div class="progress"><div id="checkBar"></div></div>
         <div class="table-wrap desktop-table-wrap"><table id="checkTable"></table></div>
         <div id="mobileCheckCards" class="mobile-cards"></div>
+      </div>
+    </section>
+
+    <!-- PAINEL SUPER ADMIN / ADMIN DELEGADO -->
+    <section class="view" id="view-admin">
+      <div class="card">
+        <div class="card-head">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <h2>🛡️ Painel Admin Global</h2>
+            <span class="pill" id="adminRoleBadge">Super Admin</span>
+          </div>
+          <div class="inline-actions">
+            <button type="button" class="btn ghost small" id="btnAdminSeedDemo" title="Criar ou restaurar usuário fictício com férias que coincidem com o roteiro padrão">🌱 Usuário Fictício Demo</button>
+            <button type="button" class="btn primary small" id="btnAdminRefresh">🔄 Atualizar</button>
+          </div>
+        </div>
+        <p class="muted small">Visualização global de todos os cadastros, perfis, planejamentos, atividades, gastos e sobreposições de férias do sistema. Clique em qualquer usuário para abrir todos os detalhes.</p>
+        <div class="kpis" id="adminKpis" style="margin-bottom:0"></div>
+      </div>
+
+      <div class="card" id="adminDelegationCard">
+        <div class="card-head">
+          <h2>👑 Administradores &amp; Delegação de Acesso</h2>
+          <span class="muted small" id="adminDelegateHint">Delegue privilégios de administrador para outros e-mails.</span>
+        </div>
+        <form id="adminDelegateForm" class="key-input-row" style="margin-bottom:12px">
+          <input type="email" id="adminDelegateEmail" required placeholder="email.admin@exemplo.com">
+          <button type="submit" class="btn primary small">➕ Delegar Admin</button>
+        </form>
+        <div id="adminDelegatesList" class="admin-delegates-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="seg" id="adminSubTabs" role="tablist">
+            <button type="button" class="active" data-admtab="users">👥 Usuários (<span id="admCountUsers">0</span>)</button>
+            <button type="button" data-admtab="trips">🗺️ Todas as Viagens (<span id="admCountTrips">0</span>)</button>
+            <button type="button" data-admtab="overlaps">🔀 Sobreposições Globais (<span id="admCountOverlaps">0</span>)</button>
+            <button type="button" data-admtab="shares">🔗 Compartilhamentos (<span id="admCountShares">0</span>)</button>
+          </div>
+          <div class="filters" id="adminFilterBar">
+            <input type="search" id="adminSearch" placeholder="🔎 Filtrar usuário, e-mail, cidade ou viagem...">
+            <select id="adminUserTypeFilter" aria-label="Filtrar categoria de usuário">
+              <option value="">Todos os perfis</option>
+              <option value="google">Entraram c/ Google</option>
+              <option value="password">Com senha</option>
+              <option value="admin">Admins</option>
+              <option value="demo">Fictício / Demo</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="adminTab-users"></div>
+        <div id="adminTab-trips" hidden></div>
+        <div id="adminTab-overlaps" hidden></div>
+        <div id="adminTab-shares" hidden></div>
       </div>
     </section>
   </main>
@@ -1073,6 +1131,21 @@
   </div>
 </dialog>
 
+<!-- MODAL INSPETOR COMPLETO DO USUÁRIO (ADMIN) -->
+<dialog id="adminUserModal" class="admin-user-dialog">
+  <div class="modal-head">
+    <div style="display:flex;align-items:center;gap:10px;min-width:0">
+      <h2 id="adminUserModalTitle">👤 Detalhes do Usuário</h2>
+    </div>
+    <button type="button" class="icon-btn modal-close" id="btnCloseAdminUser" aria-label="Fechar">✕</button>
+  </div>
+  <div id="adminUserDetailBody" class="admin-detail-body"></div>
+  <div class="modal-actions">
+    <span class="spacer"></span>
+    <button type="button" class="btn primary" id="btnAdminUserDone">Fechar</button>
+  </div>
+</dialog>
+
 <!-- MODAL SINCRONIZAÇÃO GOOGLE AGENDA -->
 <dialog id="calSyncModal">
   <div class="modal-head">
@@ -1184,14 +1257,14 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=21"></script>
-<script src="vehicles.js?v=21"></script>
-<script src="countries.js?v=21"></script>
-<script src="data.js?v=21"></script>
-<script src="maps.js?v=21"></script>
-<script src="calendar.js?v=21"></script>
-<script src="report.js?v=21"></script>
-<script src="api.js?v=21"></script>
-<script src="app.js?v=21"></script>
+<script src="config.example.js?v=23"></script>
+<script src="vehicles.js?v=23"></script>
+<script src="countries.js?v=23"></script>
+<script src="data.js?v=23"></script>
+<script src="maps.js?v=23"></script>
+<script src="calendar.js?v=23"></script>
+<script src="report.js?v=23"></script>
+<script src="api.js?v=23"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>

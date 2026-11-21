@@ -42,6 +42,10 @@ const SERVE_STATIC = process.env.SERVE_STATIC !== "0";
 const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || "").trim()
   || (process.env.DISABLE_DEFAULT_GOOGLE_CLIENT_ID === "1" ? "" : DEFAULT_GOOGLE_CLIENT_ID);
 const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
+const SUPER_ADMIN_EMAILS = new Set([
+  "adelphi86@gmail.com",
+  ...String(process.env.SUPER_ADMIN_EMAILS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean)
+]);
 const ENV_GEMINI_KEY = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "").trim();
 const ENV_GMAPS_KEY = (process.env.GOOGLE_MAPS_API_KEY || "").trim();
 const ENV_WALLET_ISSUER_ID = (process.env.GOOGLE_WALLET_ISSUER_ID || "").trim();
@@ -83,7 +87,7 @@ function ensureDirs() {
 }
 
 function emptyDb() {
-  return { users: {}, sessions: {}, trips: {}, shares: [], attachments: {}, passwordResets: {} };
+  return { users: {}, sessions: {}, trips: {}, shares: [], attachments: {}, passwordResets: {}, admins: [], meta: {} };
 }
 
 function loadDb() {
@@ -93,6 +97,8 @@ function loadDb() {
       const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
       const merged = Object.assign(emptyDb(), parsed || {});
       if (!merged.passwordResets || typeof merged.passwordResets !== "object") merged.passwordResets = {};
+      if (!Array.isArray(merged.admins)) merged.admins = [];
+      if (!merged.meta || typeof merged.meta !== "object") merged.meta = {};
       return merged;
     }
   } catch {}
@@ -305,6 +311,205 @@ function maskKeyHint(k) {
   return `${s.slice(0, 6)}...${s.slice(-4)}`;
 }
 
+function isSuperAdminEmail(email) {
+  return SUPER_ADMIN_EMAILS.has(String(email || "").trim().toLowerCase());
+}
+
+function isAdminUser(user) {
+  if (!user) return false;
+  const email = String(user.email || "").trim().toLowerCase();
+  return isSuperAdminEmail(email) || (Array.isArray(db.admins) && db.admins.includes(email));
+}
+
+function buildAdminUserSummary(u) {
+  const creds = getEffectiveCredentials(u);
+  const ownTrips = Object.values(db.trips).filter(t => t.ownerId === u.id);
+  const sharedToUser = db.shares.filter(s => s.status === "accepted" && (s.targetUserId === u.id || s.targetEmail === u.email));
+  const sharesSent = db.shares.filter(s => s.ownerId === u.id && s.status !== "declined");
+  const totalActivitiesCount = ownTrips.reduce((sum, t) => sum + (Array.isArray(t.data?.activities) ? t.data.activities.length : 0), 0);
+  const attachmentsCount = ownTrips.reduce((sum, t) => sum + Object.values(db.attachments).filter(a => a.tripId === t.id).length, 0);
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    avatar: u.avatar || "",
+    isSuperAdmin: isSuperAdminEmail(u.email),
+    isAdmin: isAdminUser(u),
+    isDemo: Boolean(u.isDemo),
+    hasGoogle: Boolean(u.googleSub),
+    hasPassword: Boolean(u.passwordHash),
+    age: u.age ?? "",
+    doc: u.doc || "",
+    emergencyContact: u.emergencyContact || "",
+    cep: u.cep || "",
+    address: u.address || "",
+    city: u.city || "",
+    state: u.state || "",
+    whatsappCountry: u.whatsappCountry || "+55",
+    whatsappNumber: u.whatsappNumber || "",
+    whatsappFull: u.whatsappFull || "",
+    createdAt: u.createdAt || null,
+    lastLoginAt: u.lastLoginAt || u.createdAt || null,
+    ownTripsCount: ownTrips.length,
+    sharedWithUserCount: sharedToUser.length,
+    sharesSentCount: sharesSent.length,
+    totalActivitiesCount,
+    attachmentsCount,
+    integrations: {
+      hasGemini: Boolean(creds.geminiKey),
+      geminiHint: maskKeyHint(creds.geminiKey),
+      hasMaps: Boolean(creds.gmapsKey),
+      gmapsHint: maskKeyHint(creds.gmapsKey),
+      googleClientId: creds.googleClientId || "",
+      hasWallet: Boolean(creds.walletIssuerId && creds.walletSaJson),
+      walletIssuerId: creds.walletIssuerId || ""
+    }
+  };
+}
+
+function buildDemoTripData() {
+  return {
+    title: "Roteiro Sul & Litoral — Rodrigo",
+    vehicle: {
+      name: "Jeep Compass 1.3 Turbo 2024",
+      powertrain: "Flex/Gasolina",
+      evRange: 0,
+      hevKmL: 12.8,
+      bevKwhPer100: 0,
+      fuelPrice: 6.39,
+      tank: 60,
+      kwhPerCharge: 0,
+      kwhPrice: 0.92,
+      battery: 0
+    },
+    params: {
+      travelers: 2,
+      stopIntervalHours: 4,
+      stopDurationMin: 45,
+      defaultCharges: 0,
+      tollPass: "BR_SEM_PARAR",
+      trafficAware: true,
+      avoidTolls: false,
+      avoidHighways: false,
+      avoidFerries: false,
+      lodgingPerNight: 320,
+      lodgingNightsOverride: 10,
+      dailyFoodPerPerson: 110,
+      otherFixedBudget: 600,
+      contingencyPct: 10,
+      calendarReminderTime: "09:00"
+    },
+    scenarios: [
+      { id: "s1", name: "Econômico (100 km/h)", kmL: 14.0 },
+      { id: "s2", name: "Realista (110 km/h)", kmL: null },
+      { id: "s3", name: "Rápido / Serra", kmL: 11.2 }
+    ],
+    activities: [
+      { id: "demo_act_1", type: "Viagem", name: "Campinas ➔ São Paulo", from: "Campinas", to: "São Paulo", start: "2026-12-08", end: "2026-12-08", km: 96, drive: 85, stops: 0, stopTime: 0, toll: 24.4, charges: 0, extraCost: 0, includeRouteCost: true, notes: "Mesma data em São Paulo (08/12)!", attachments: [], tickets: [] },
+      { id: "demo_act_2", type: "Viagem", name: "São Paulo ➔ Pirassununga", from: "São Paulo", to: "Pirassununga", start: "2026-12-09", end: "2026-12-09", km: 209, drive: 165, stops: 0, stopTime: 0, toll: 58, charges: 0, extraCost: 0, includeRouteCost: true, notes: "Encontro no interior de SP", attachments: [], tickets: [] },
+      { id: "demo_act_3", type: "Evento", name: "Churrasco & Encontro Pirassununga", start: "2026-12-11", end: "2026-12-11", extraCost: 180, tickets: [{ label: "Rateio churrasco", qty: 2, unitPrice: 90 }], notes: "Datas em comum em Pirassununga", attachments: [] },
+      { id: "demo_act_4", type: "Viagem", name: "Pirassununga ➔ Navegantes", from: "Pirassununga", to: "Navegantes", start: "2026-12-14", end: "2026-12-14", km: 785, drive: 590, stops: 2, stopTime: 90, toll: 99.5, charges: 0, extraCost: 0, includeRouteCost: true, notes: "Seguindo para SC", attachments: [], tickets: [] },
+      { id: "demo_act_5", type: "Hospedagem", name: "Pousada Praia de Navegantes", start: "2026-12-21", end: "2026-12-23", extraCost: 1140, tickets: [{ label: "Diária casal", qty: 3, unitPrice: 380 }], notes: "Coincide com a chegada em Navegantes pré-Natal", attachments: [] },
+      { id: "demo_act_6", type: "Passeio", name: "Beto Carrero World (Rodrigo)", start: "2027-01-04", end: "2027-01-04", extraCost: 340, tickets: [{ label: "Passaporte", qty: 2, unitPrice: 170 }], notes: "Mesmo passeio em Penha / Navegantes!", attachments: [] },
+      { id: "demo_act_7", type: "Viagem", name: "Retorno Navegantes ➔ Campinas", from: "Navegantes", to: "Campinas", start: "2027-01-05", end: "2027-01-05", km: 720, drive: 540, stops: 1, stopTime: 45, toll: 88, charges: 0, extraCost: 0, includeRouteCost: true, notes: "Retorno para casa", attachments: [], tickets: [] }
+    ],
+    checklist: [
+      { id: "demo_chk_1", cat: "Documentos", item: "CNH, CRLV digital e seguro em dia", prio: "Alta", status: "Concluído", notes: "" },
+      { id: "demo_chk_2", cat: "Eventos", item: "Ingressos Beto Carrero 04/01", prio: "Alta", status: "Pendente", notes: "Combinar horário no parque" }
+    ],
+    finance: {
+      savingsGoal: 400,
+      dailyRecords: {
+        "2026-12-08": {
+          checkedPlanned: { "demo_act_1:fuel": { checked: true, actualAmount: 47.93 }, "demo_act_1:toll": { checked: true, actualAmount: 24.4 } },
+          entries: [{ cat: "Alimentação", desc: "Almoço em SP", amount: 145 }],
+          manualTotalOverride: false,
+          spent: 217.33,
+          note: "Trecho tranquilo pela Anhanguera"
+        }
+      }
+    }
+  };
+}
+
+function ensureAdminSeedDemoData(adminUser, forceRecreate = false) {
+  if (!adminUser) return null;
+  if (!forceRecreate && db.meta?.adelphiDemoSeeded) return null;
+
+  const demoEmail = "rodrigo.simulado@feriaspro.demo";
+  let demoUser = Object.values(db.users).find(u => u.email === demoEmail);
+  const now = Date.now();
+  if (!demoUser) {
+    const demoId = uid("u_demo_");
+    demoUser = {
+      id: demoId,
+      name: "Rodrigo Almeida (Simulado)",
+      email: demoEmail,
+      isDemo: true,
+      passwordHash: hashPassword(crypto.randomBytes(16).toString("hex") + "Aa1!"),
+      age: "36",
+      doc: "",
+      emergencyContact: "Camila Almeida (11) 98888-7777",
+      cep: "13020-000",
+      city: "Campinas",
+      state: "SP",
+      address: "Av. Brasil, 1450 (Usuário Fictício Demo)",
+      whatsappCountry: "+55",
+      whatsappNumber: "11987654321",
+      whatsappFull: "+55 (11) 98765-4321",
+      createdAt: now - 3600 * 1000,
+      lastLoginAt: now - 600 * 1000
+    };
+    db.users[demoId] = demoUser;
+  } else {
+    demoUser.isDemo = true;
+  }
+
+  let demoTrip = Object.values(db.trips).find(t => t.ownerId === demoUser.id && t.isDemoTrip);
+  if (!demoTrip || forceRecreate) {
+    const tripId = demoTrip ? demoTrip.id : uid("t_demo_");
+    demoTrip = {
+      id: tripId,
+      name: "Roteiro Sul & Litoral — Rodrigo",
+      isDemoTrip: true,
+      ownerId: demoUser.id,
+      calToken: demoTrip?.calToken || crypto.randomBytes(18).toString("hex"),
+      createdAt: now - 3000 * 1000,
+      updatedAt: now,
+      revision: (demoTrip?.revision || 0) + 1,
+      gmapsKey: "",
+      data: buildDemoTripData()
+    };
+    db.trips[tripId] = demoTrip;
+  }
+
+  const existingShare = db.shares.find(
+    s => s.tripId === demoTrip.id && (s.targetUserId === adminUser.id || s.targetEmail === adminUser.email)
+  );
+  if (!existingShare) {
+    db.shares.push({
+      id: uid("sh_demo_"),
+      tripId: demoTrip.id,
+      ownerId: demoUser.id,
+      targetEmail: adminUser.email,
+      targetUserId: adminUser.id,
+      role: "viewer",
+      status: "accepted",
+      createdAt: now - 1800 * 1000,
+      respondedAt: now - 1200 * 1000
+    });
+  } else {
+    existingShare.targetUserId = adminUser.id;
+    existingShare.status = "accepted";
+    existingShare.respondedAt = existingShare.respondedAt || now;
+  }
+
+  db.meta = db.meta || {};
+  db.meta.adelphiDemoSeeded = true;
+  saveDb();
+  return { demoUserId: demoUser.id, demoTripId: demoTrip.id };
+}
+
 function publicUser(u) {
   const creds = getEffectiveCredentials(u);
   return {
@@ -312,8 +517,13 @@ function publicUser(u) {
     name: u.name,
     email: u.email,
     avatar: u.avatar || "",
+    isAdmin: isAdminUser(u),
+    isSuperAdmin: isSuperAdminEmail(u.email),
+    isDemo: Boolean(u.isDemo),
     hasGoogle: Boolean(u.googleSub),
     hasPassword: Boolean(u.passwordHash),
+    createdAt: u.createdAt || null,
+    lastLoginAt: u.lastLoginAt || u.createdAt || null,
     age: u.age ?? "",
     doc: u.doc || "",
     emergencyContact: u.emergencyContact || "",
@@ -1149,20 +1359,23 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 409, { ok: false, error: "Este e-mail já está cadastrado." });
       }
       const userId = uid("u_");
+      const now = Date.now();
       db.users[userId] = {
         id: userId,
         name,
         email,
         passwordHash: hashPassword(password),
-        createdAt: Date.now()
+        createdAt: now,
+        lastLoginAt: now
       };
       linkSharesForUser(db.users[userId]);
+      if (isSuperAdminEmail(email)) ensureAdminSeedDemoData(db.users[userId]);
       const token = createSession(userId);
       setSessionCookie(req, res, token);
       return sendJson(res, 201, {
         ok: true,
         user: publicUser(db.users[userId]),
-        legacyData: Object.keys(db.trips).length === 0 ? getLegacyMigrationData() : null
+        legacyData: Object.keys(db.trips).filter(k => !db.trips[k]?.isDemoTrip).length === 0 ? getLegacyMigrationData() : null
       });
     }
 
@@ -1177,7 +1390,10 @@ const server = http.createServer(async (req, res) => {
       if (!user || !verifyPassword(password, user.passwordHash)) {
         return sendJson(res, 401, { ok: false, error: "E-mail ou senha inválidos." });
       }
+      user.lastLoginAt = Date.now();
+      saveDb();
       linkSharesForUser(user);
+      if (isSuperAdminEmail(user.email)) ensureAdminSeedDemoData(user);
       const token = createSession(user.id);
       setSessionCookie(req, res, token);
       return sendJson(res, 200, { ok: true, user: publicUser(user) });
@@ -1194,7 +1410,9 @@ const server = http.createServer(async (req, res) => {
       }
       const email = String(info.email || "").trim().toLowerCase();
       let user = Object.values(db.users).find(u => u.email === email || u.googleSub === info.sub);
-      const isFirstUser = Object.keys(db.users).length === 0;
+      const nonDemoUserCount = Object.values(db.users).filter(u => !u.isDemo).length;
+      const isFirstUser = nonDemoUserCount === 0;
+      const now = Date.now();
       if (!user) {
         const userId = uid("u_");
         user = {
@@ -1203,21 +1421,24 @@ const server = http.createServer(async (req, res) => {
           email,
           googleSub: info.sub,
           avatar: info.picture || "",
-          createdAt: Date.now()
+          createdAt: now,
+          lastLoginAt: now
         };
         db.users[userId] = user;
       } else {
         user.googleSub = info.sub;
         if (!user.avatar && info.picture) user.avatar = info.picture;
+        user.lastLoginAt = now;
       }
       saveDb();
       linkSharesForUser(user);
+      if (isSuperAdminEmail(user.email)) ensureAdminSeedDemoData(user);
       const token = createSession(user.id);
       setSessionCookie(req, res, token);
       return sendJson(res, 200, {
         ok: true,
         user: publicUser(user),
-        legacyData: isFirstUser && Object.keys(db.trips).length === 0 ? getLegacyMigrationData() : null
+        legacyData: isFirstUser && Object.keys(db.trips).filter(k => !db.trips[k]?.isDemoTrip).length === 0 ? getLegacyMigrationData() : null
       });
     }
 
@@ -1449,6 +1670,9 @@ const server = http.createServer(async (req, res) => {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
       const user = auth.user;
+      if (isSuperAdminEmail(user.email) && !db.meta?.adelphiDemoSeeded) {
+        ensureAdminSeedDemoData(user);
+      }
 
       const ownTrips = Object.values(db.trips)
         .filter(t => t.ownerId === user.id)
@@ -1507,6 +1731,223 @@ const server = http.createServer(async (req, res) => {
 
       const hasSharedTrips = sharedTrips.length > 0 || ownTrips.some(t => (t.sharedCount || 0) > 0);
       return sendJson(res, 200, { ok: true, ownTrips, sharedTrips, pendingShares, hasSharedTrips });
+    }
+
+    /* ---------- SUPER ADMIN & DELEGATED ADMINS ---------- */
+    if (pathname === "/api/admin/overview" && req.method === "GET") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isAdminUser(auth.user)) return sendJson(res, 403, { ok: false, error: "Acesso restrito a administradores." });
+
+      const usersList = Object.values(db.users)
+        .map(buildAdminUserSummary)
+        .sort((a, b) => Number(b.isSuperAdmin) - Number(a.isSuperAdmin) || Number(b.isAdmin) - Number(a.isAdmin) || (b.lastLoginAt || 0) - (a.lastLoginAt || 0));
+
+      const tripsList = Object.values(db.trips)
+        .map(t => {
+          const owner = db.users[t.ownerId];
+          const tripShares = db.shares.filter(s => s.tripId === t.id && s.status !== "declined");
+          const tripAtts = Object.values(db.attachments).filter(a => a.tripId === t.id);
+          return {
+            id: t.id,
+            name: t.name,
+            isDemoTrip: Boolean(t.isDemoTrip || owner?.isDemo),
+            ownerId: t.ownerId,
+            ownerName: owner ? owner.name : "Usuário removido",
+            ownerEmail: owner ? owner.email : "",
+            createdAt: t.createdAt || null,
+            updatedAt: t.updatedAt || null,
+            revision: t.revision || 1,
+            activitiesCount: Array.isArray(t.data?.activities) ? t.data.activities.length : 0,
+            sharesCount: tripShares.length,
+            attachmentsCount: tripAtts.length,
+            data: t.data
+          };
+        })
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+      const allAdminEmails = [...new Set([...SUPER_ADMIN_EMAILS, ...(db.admins || [])])];
+      const adminsList = allAdminEmails.map(em => {
+        const u = Object.values(db.users).find(usr => usr.email === em);
+        return {
+          email: em,
+          isSuperAdmin: isSuperAdminEmail(em),
+          registered: Boolean(u),
+          userId: u ? u.id : null,
+          name: u ? u.name : "",
+          hasGoogle: Boolean(u?.googleSub),
+          lastLoginAt: u?.lastLoginAt || u?.createdAt || null
+        };
+      });
+
+      const allAtts = Object.values(db.attachments || {});
+      const stats = {
+        totalUsers: usersList.length,
+        googleUsers: usersList.filter(u => u.hasGoogle).length,
+        passwordUsers: usersList.filter(u => u.hasPassword).length,
+        demoUsers: usersList.filter(u => u.isDemo).length,
+        totalTrips: tripsList.length,
+        totalActivities: tripsList.reduce((sum, t) => sum + t.activitiesCount, 0),
+        totalShares: db.shares.length,
+        acceptedShares: db.shares.filter(s => s.status === "accepted").length,
+        pendingShares: db.shares.filter(s => s.status === "pending").length,
+        totalAttachments: allAtts.length,
+        totalAttachmentBytes: allAtts.reduce((sum, a) => sum + (Number(a.size) || 0), 0),
+        delegatedAdminsCount: (db.admins || []).filter(e => !isSuperAdminEmail(e)).length
+      };
+
+      const sharesList = db.shares.map(s => {
+        const tr = db.trips[s.tripId];
+        const owner = db.users[s.ownerId];
+        return {
+          id: s.id,
+          tripId: s.tripId,
+          tripName: tr ? tr.name : "(Removida)",
+          ownerName: owner ? owner.name : "Usuário",
+          ownerEmail: owner ? owner.email : "",
+          targetEmail: s.targetEmail,
+          role: s.role || "editor",
+          status: s.status,
+          createdAt: s.createdAt
+        };
+      });
+
+      return sendJson(res, 200, {
+        ok: true,
+        isSuperAdmin: isSuperAdminEmail(auth.user.email),
+        stats,
+        admins: adminsList,
+        users: usersList,
+        trips: tripsList,
+        shares: sharesList
+      });
+    }
+
+    const adminUserMatch = pathname.match(/^\/api\/admin\/users\/([a-zA-Z0-9_]+)$/);
+    if (adminUserMatch && req.method === "GET") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isAdminUser(auth.user)) return sendJson(res, 403, { ok: false, error: "Acesso restrito a administradores." });
+
+      const target = db.users[adminUserMatch[1]];
+      if (!target) return sendJson(res, 404, { ok: false, error: "Usuário não encontrado." });
+
+      const mapTripFull = (t, extra = {}) => {
+        const atts = Object.values(db.attachments || {})
+          .filter(a => a.tripId === t.id)
+          .map(a => ({ id: a.id, activityId: a.activityId, fileName: a.fileName, mimeType: a.mimeType, size: a.size, createdAt: a.createdAt }));
+        const shares = db.shares
+          .filter(s => s.tripId === t.id)
+          .map(s => ({ id: s.id, targetEmail: s.targetEmail, role: s.role, status: s.status, createdAt: s.createdAt }));
+        return {
+          id: t.id,
+          name: t.name,
+          isDemoTrip: Boolean(t.isDemoTrip),
+          createdAt: t.createdAt || null,
+          updatedAt: t.updatedAt || null,
+          revision: t.revision || 1,
+          data: t.data,
+          attachments: atts,
+          shares,
+          ...extra
+        };
+      };
+
+      const ownTrips = Object.values(db.trips)
+        .filter(t => t.ownerId === target.id)
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+        .map(t => mapTripFull(t, { role: "owner", ownerName: target.name, ownerEmail: target.email }));
+
+      const sharedTrips = db.shares
+        .filter(s => s.status !== "declined" && (s.targetUserId === target.id || s.targetEmail === target.email))
+        .map(s => {
+          const t = db.trips[s.tripId];
+          if (!t) return null;
+          const owner = db.users[t.ownerId];
+          return mapTripFull(t, {
+            role: s.role || "editor",
+            shareStatus: s.status,
+            ownerName: owner ? owner.name : "Usuário",
+            ownerEmail: owner ? owner.email : ""
+          });
+        })
+        .filter(Boolean);
+
+      return sendJson(res, 200, {
+        ok: true,
+        user: buildAdminUserSummary(target),
+        ownTrips,
+        sharedTrips
+      });
+    }
+
+    if (adminUserMatch && req.method === "DELETE") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isSuperAdminEmail(auth.user.email)) {
+        return sendJson(res, 403, { ok: false, error: "Apenas o Super Admin pode excluir contas de usuários." });
+      }
+      const target = db.users[adminUserMatch[1]];
+      if (!target) return sendJson(res, 404, { ok: false, error: "Usuário não encontrado." });
+      if (target.id === auth.user.id || isSuperAdminEmail(target.email)) {
+        return sendJson(res, 400, { ok: false, error: "Não é permitido excluir o Super Admin principal." });
+      }
+
+      const ownedTrips = Object.values(db.trips).filter(t => t.ownerId === target.id);
+      for (const tr of ownedTrips) {
+        for (const [attId, att] of Object.entries(db.attachments || {})) {
+          if (att.tripId === tr.id) {
+            try { fs.unlinkSync(path.join(UPLOADS_DIR, attId)); } catch {}
+            delete db.attachments[attId];
+          }
+        }
+        db.shares = db.shares.filter(s => s.tripId !== tr.id);
+        delete db.trips[tr.id];
+      }
+      db.shares = db.shares.filter(s => s.targetUserId !== target.id && s.targetEmail !== target.email);
+      for (const [sid, s] of Object.entries(db.sessions || {})) {
+        if (s.userId === target.id) delete db.sessions[sid];
+      }
+      for (const [rk, r] of Object.entries(db.passwordResets || {})) {
+        if (r.userId === target.id) delete db.passwordResets[rk];
+      }
+      db.admins = (db.admins || []).filter(e => e !== target.email);
+      delete db.users[target.id];
+      saveDb();
+      return sendJson(res, 200, { ok: true });
+    }
+
+    if (pathname === "/api/admin/delegates" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isSuperAdminEmail(auth.user.email)) {
+        return sendJson(res, 403, { ok: false, error: "Apenas o Super Admin pode delegar ou remover administradores." });
+      }
+      const body = await readBody(req);
+      const email = String(body.email || "").trim().toLowerCase();
+      const action = body.action === "remove" ? "remove" : "add";
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return sendJson(res, 400, { ok: false, error: "Informe um e-mail válido." });
+      }
+      if (isSuperAdminEmail(email)) {
+        return sendJson(res, 400, { ok: false, error: "O Super Admin principal já possui privilégios permanentes." });
+      }
+      db.admins = Array.isArray(db.admins) ? db.admins : [];
+      if (action === "add") {
+        if (!db.admins.includes(email)) db.admins.push(email);
+      } else {
+        db.admins = db.admins.filter(e => e !== email);
+      }
+      saveDb();
+      return sendJson(res, 200, { ok: true, admins: db.admins });
+    }
+
+    if (pathname === "/api/admin/seed-demo" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isAdminUser(auth.user)) return sendJson(res, 403, { ok: false, error: "Acesso restrito a administradores." });
+      const seeded = ensureAdminSeedDemoData(auth.user, true);
+      return sendJson(res, 200, { ok: true, ...(seeded || {}) });
     }
 
     if (pathname === "/api/crossings" && req.method === "GET") {
@@ -1769,7 +2210,8 @@ const server = http.createServer(async (req, res) => {
       if (!att) return sendJson(res, 404, { ok: false, error: "Anexo não encontrado." });
       const trip = db.trips[att.tripId];
       const access = getTripAccess(trip, auth.user);
-      if (!access) return sendJson(res, 403, { ok: false, error: "Sem permissão." });
+      const isAdminRead = req.method === "GET" && isAdminUser(auth.user);
+      if (!access && !isAdminRead) return sendJson(res, 403, { ok: false, error: "Sem permissão." });
 
       if (req.method === "GET") {
         const filePath = path.resolve(UPLOADS_DIR, att.id);
