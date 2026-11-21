@@ -3648,6 +3648,7 @@ function showAuthPanel(panel) {
   resetPasswordFieldVisibility($("#authView"));
 }
 
+let gsiScriptLoaded = false;
 function setupGoogleSignInButton(clientId) {
   const wrap = $("#googleBtnWrap");
   const fallbackBtn = $("#btnGoogleLoginFallback");
@@ -3668,13 +3669,12 @@ function setupGoogleSignInButton(clientId) {
     return;
   }
   hint.hidden = true;
-  const s = document.createElement("script");
-  s.src = "https://accounts.google.com/gsi/client";
-  s.async = true;
-  s.onload = () => {
+
+  const initAndRender = () => {
     if (!window.google?.accounts?.id) return;
     window.google.accounts.id.initialize({
       client_id: clientId,
+      auto_select: false,
       callback: async resp => {
         try {
           const res = await window.FeriasApi.loginGoogle(resp.credential);
@@ -3688,9 +3688,23 @@ function setupGoogleSignInButton(clientId) {
         }
       }
     });
-    window.google.accounts.id.renderButton(wrap, { theme: isDarkTheme() ? "filled_black" : "outline", size: "large", width: 340, text: "continue_with" });
+    const w = Math.min(340, Math.max(240, (wrap.parentElement?.clientWidth || 340) - 4));
+    wrap.innerHTML = "";
+    window.google.accounts.id.renderButton(wrap, { theme: isDarkTheme() ? "filled_black" : "outline", size: "large", width: w, text: "continue_with" });
     if (fallbackBtn && wrap.children.length > 0) fallbackBtn.hidden = true;
   };
+
+  if (window.google?.accounts?.id) {
+    initAndRender();
+    return;
+  }
+  if (gsiScriptLoaded) return;
+  gsiScriptLoaded = true;
+  const s = document.createElement("script");
+  s.src = "https://accounts.google.com/gsi/client";
+  s.async = true;
+  s.onload = initAndRender;
+  s.onerror = () => { gsiScriptLoaded = false; };
   document.head.appendChild(s);
 }
 

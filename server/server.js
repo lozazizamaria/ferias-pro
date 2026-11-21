@@ -7,6 +7,31 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
 
+function loadDotEnv() {
+  if (process.env.SKIP_DOTENV === "1") return;
+  for (const envPath of [path.join(__dirname, "..", ".env"), path.join(__dirname, ".env")]) {
+    try {
+      if (!fs.existsSync(envPath)) continue;
+      const raw = fs.readFileSync(envPath, "utf8");
+      for (const line of raw.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq <= 0) continue;
+        const k = trimmed.slice(0, eq).trim();
+        let v = trimmed.slice(eq + 1).trim();
+        if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+          v = v.slice(1, -1);
+        }
+        if (k && process.env[k] === undefined) process.env[k] = v;
+      }
+    } catch {}
+  }
+}
+loadDotEnv();
+
+const DEFAULT_GOOGLE_CLIENT_ID = "1075987097030-j9htnv6l02rfdbt4spbjp84btj8bopqq.apps.googleusercontent.com";
+const HAS_EXPLICIT_GOOGLE_CLIENT_ID = Object.prototype.hasOwnProperty.call(process.env, "GOOGLE_CLIENT_ID");
 const PORT = parseInt(process.env.PORT || "3080", 10);
 const HOST = process.env.HOST || "127.0.0.1";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
@@ -15,7 +40,10 @@ const LEGACY_STATE_FILE = process.env.DATA_FILE || path.join(DATA_DIR, "state.js
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const STATIC_DIR = process.env.STATIC_DIR || path.resolve(__dirname, "..", "app");
 const SERVE_STATIC = process.env.SERVE_STATIC !== "0";
-const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || "").trim();
+const GOOGLE_CLIENT_ID = HAS_EXPLICIT_GOOGLE_CLIENT_ID
+  ? String(process.env.GOOGLE_CLIENT_ID || "").trim()
+  : DEFAULT_GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
 const ENV_GEMINI_KEY = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "").trim();
 const ENV_GMAPS_KEY = (process.env.GOOGLE_MAPS_API_KEY || "").trim();
 const ENV_WALLET_ISSUER_ID = (process.env.GOOGLE_WALLET_ISSUER_ID || "").trim();
