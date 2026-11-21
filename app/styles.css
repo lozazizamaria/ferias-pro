@@ -124,7 +124,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   gap: 12px;
 }
 
-@media (min-width: 1120px) {
+@media (min-width: 1340px) {
   .topbar {
     flex-direction: row;
     align-items: center;
@@ -176,6 +176,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   overflow-x: auto;
   scrollbar-width: none;
   max-width: 100%;
+  width: fit-content;
 }
 .tabs::-webkit-scrollbar { display: none; }
 
