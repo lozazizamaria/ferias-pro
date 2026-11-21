@@ -1033,12 +1033,12 @@ Retorne EXCLUSIVAMENTE um JSON válido com esta estrutura exata:
   },
   "activities": [
     {
-      "type": "Viagem | Voo | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
+      "type": "Viagem | Voo | Trem | Ônibus | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
       "name": "Nome curto da atividade",
       "start": "YYYY-MM-DD",
       "end": "YYYY-MM-DD",
-      "from": "Cidade/Aeroporto origem (se Viagem ou Voo)",
-      "to": "Cidade/Aeroporto destino (se Viagem ou Voo)",
+      "from": "Cidade/Aeroporto/Estação origem (se Viagem, Voo, Trem ou Ônibus)",
+      "to": "Cidade/Aeroporto/Estação destino (se Viagem, Voo, Trem ou Ônibus)",
       "km": 0,
       "drive": 0,
       "toll": 0,
@@ -1114,12 +1114,12 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
           parts,
           `Retorne JSON com uma atividade do Férias Pro:
 {
-  "type": "Viagem | Voo | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
+  "type": "Viagem | Voo | Trem | Ônibus | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
   "name": "Título curto",
   "start": "YYYY-MM-DD",
   "end": "YYYY-MM-DD",
-  "from": "Origem se Viagem ou Voo",
-  "to": "Destino se Viagem ou Voo",
+  "from": "Origem se Viagem, Voo, Trem ou Ônibus",
+  "to": "Destino se Viagem, Voo, Trem ou Ônibus",
   "extraCost": 0,
   "bookingRef": "Código localizador/ingresso",
   "notes": "Horário, companhia, local, poltrona ou detalhes úteis"

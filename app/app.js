@@ -47,7 +47,11 @@ function migrateState(raw) {
     if (!a.end) a.end = a.start;
     if (a.extraCost == null) a.extraCost = 0;
     if (!Array.isArray(a.attachments)) a.attachments = [];
-    if (a.type === "Viagem" && a.charges == null) a.charges = merged.params.defaultCharges ?? 1;
+    if (!Array.isArray(a.tickets)) a.tickets = [];
+    if (a.type === "Viagem") {
+      if (a.charges == null) a.charges = merged.params.defaultCharges ?? 1;
+      if (a.includeRouteCost === undefined) a.includeRouteCost = true;
+    }
   });
   merged.checklist.forEach(c => { if (!c.id) c.id = uid(); });
   return merged;
@@ -101,7 +105,7 @@ const parseHM = s => {
   return Math.round(parseFloat(s.replace(",", ".")) * 60) || 0;
 };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const label = a => (a.type === "Viagem" || a.type === "Voo") && (a.from || a.to) ? `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})` : a.name;
+const label = a => (a.type === "Viagem" || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus") && (a.from || a.to) ? `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})` : a.name;
 const sorted = () => [...state.activities].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
 
 function toast(m) {
@@ -121,8 +125,18 @@ function computeAutoStops(driveMinutes) {
 
 function calc(a, kmLOverride) {
   const v = state.vehicle;
-  const r = { ev: 0, hev: 0, liters: 0, fuel: 0, charge: 0, toll: 0, total: 0, extra: +a.extraCost || 0, tanks: 0, time: 0 };
-  if (a.type !== "Viagem" || !(a.km > 0)) return r;
+  const r = { ev: 0, hev: 0, liters: 0, fuel: 0, charge: 0, toll: 0, total: 0, extra: +a.extraCost || 0, tanks: 0, time: 0, isCarpool: false };
+  if (a.type !== "Viagem") return r;
+  r.time = (+a.drive || 0) + (+a.stopTime || 0);
+  if (a.includeRouteCost === false) {
+    r.isCarpool = true;
+    return r;
+  }
+  if (!(a.km > 0)) {
+    r.toll = +a.toll || 0;
+    r.total = r.toll;
+    return r;
+  }
 
   const ch = a.charges ?? state.params.defaultCharges ?? 1;
   const pt = v.powertrain || "PHEV";
@@ -145,8 +159,15 @@ function calc(a, kmLOverride) {
   r.toll = +a.toll || 0;
   r.total = r.fuel + r.charge + r.toll;
   r.tanks = v.tank > 0 ? r.liters / v.tank : 0;
-  r.time = (+a.drive || 0) + (+a.stopTime || 0);
   return r;
+}
+
+function formatTicketsNote(a) {
+  if (!Array.isArray(a.tickets) || !a.tickets.length) return "";
+  const valid = a.tickets.filter(t => (Number(t.qty) || 0) > 0 && (Number(t.unitPrice) || 0) > 0);
+  if (valid.length <= 1 && (!valid.length || (Number(valid[0].qty) || 1) === 1)) return "";
+  const totalQty = valid.reduce((s, t) => s + (Number(t.qty) || 0), 0);
+  return `${totalQty} un. (${valid.map(t => `${t.qty}× ${money(t.unitPrice)}`).join(" + ")})`;
 }
 
 function totals(kmLOverride) {
@@ -167,6 +188,9 @@ function totals(kmLOverride) {
 
   const COST_CATEGORY_STYLES = {
     Voo: { label: "Passagens Aéreas / Voos", color: "#38bdf8", gradient: "linear-gradient(90deg,#38bdf8,#0284c7)" },
+    Trem: { label: "Passagens de Trem", color: "#14b8a6", gradient: "linear-gradient(90deg,#14b8a6,#0284c7)" },
+    "Ônibus": { label: "Passagens de Ônibus", color: "#f59e0b", gradient: "linear-gradient(90deg,#f59e0b,#d97706)" },
+    Viagem_Extra: { label: "Extras em Viagens de Carro", color: "#6366f1", gradient: "linear-gradient(90deg,#6366f1,#22d3ee)" },
     Hospedagem: { label: "Hospedagem", color: "#10b981", gradient: "linear-gradient(90deg,#10b981,#0d9488)" },
     Ingresso: { label: "Ingressos & Tickets", color: "#c084fc", gradient: "linear-gradient(90deg,#8b5cf6,#ec4899)" },
     Evento: { label: "Eventos / Jogos / Shows", color: "#f59e0b", gradient: "linear-gradient(90deg,#f59e0b,#e11d48)" },
@@ -185,7 +209,7 @@ function totals(kmLOverride) {
     else t.otherActCost += ex;
 
     if (ex > 0) {
-      const bKey = a.costCategory || (a.type === "Viagem" ? "Outro" : a.type);
+      const bKey = a.costCategory || (a.type === "Viagem" ? "Viagem_Extra" : a.type);
       extraBuckets[bKey] = (extraBuckets[bKey] || 0) + ex;
     }
 
@@ -213,11 +237,11 @@ function totals(kmLOverride) {
   t.contingencyCost = sub * ((+p.contingencyPct || 0) / 100);
   t.grandTotal = sub + t.contingencyCost;
 
-  // Monta composição dinâmica (sempre inclui novas categorias automaticamente)
+  // Monta composição dinâmica ordenada do MAIOR custo para o MENOR (escalonando de cima para baixo)
   const costBreakdown = [];
-  if (t.fuel > 0 || t.trips > 0) costBreakdown.push({ id: "fuel", label: "Gasolina / Combustível", value: t.fuel, color: "#fb7185", gradient: "linear-gradient(90deg,#fb7185,#f5b544)" });
-  if (t.toll > 0 || t.trips > 0) costBreakdown.push({ id: "toll", label: "Pedágios", value: t.toll, color: "#a78bfa", gradient: "linear-gradient(90deg,#a78bfa,#7c5cff)" });
-  if (t.charge > 0 || state.vehicle.powertrain === "BEV" || state.vehicle.powertrain === "PHEV") costBreakdown.push({ id: "charge", label: "Recargas EV", value: t.charge, color: "#34d399", gradient: "linear-gradient(90deg,#34d399,#22d3ee)" });
+  if (t.fuel > 0) costBreakdown.push({ id: "fuel", label: "Gasolina / Combustível", value: t.fuel, color: "#fb7185", gradient: "linear-gradient(90deg,#fb7185,#f5b544)" });
+  if (t.toll > 0) costBreakdown.push({ id: "toll", label: "Pedágios", value: t.toll, color: "#a78bfa", gradient: "linear-gradient(90deg,#a78bfa,#7c5cff)" });
+  if (t.charge > 0) costBreakdown.push({ id: "charge", label: "Recargas EV", value: t.charge, color: "#34d399", gradient: "linear-gradient(90deg,#34d399,#22d3ee)" });
 
   const combinedLodging = (extraBuckets.Hospedagem || 0) + t.lodgingParamCost;
   if (combinedLodging > 0) {
@@ -234,6 +258,7 @@ function totals(kmLOverride) {
   if (t.otherFixedBudget > 0) costBreakdown.push({ id: "fixed", label: "Outros gastos fixos", value: t.otherFixedBudget, color: "#94a3b8", gradient: "linear-gradient(90deg,#64748b,#94a3b8)" });
   if (t.contingencyCost > 0) costBreakdown.push({ id: "contingency", label: `Reserva (${p.contingencyPct || 0}%)`, value: t.contingencyCost, color: "#f43f5e", gradient: "linear-gradient(90deg,#f43f5e,#fb7185)" });
 
+  costBreakdown.sort((a, b) => b.value - a.value);
   t.costBreakdown = costBreakdown;
   return t;
 }
@@ -272,6 +297,7 @@ function buildRightSummaryHTML(a) {
   const info = getTypeInfo(a.type);
   const attCount = Array.isArray(a.attachments) ? a.attachments.length : 0;
   const attBadge = attCount ? `<span class="g-summary-meta">📎 ${attCount}</span>` : "";
+  const tktNote = formatTicketsNote(a);
 
   if (a.type === "Viagem") {
     const c = calc(a);
@@ -279,13 +305,14 @@ function buildRightSummaryHTML(a) {
     const parts = [];
     if (a.km) parts.push(`${num(a.km)} km`);
     if (a.drive) parts.push(hmHuman(a.drive) + (a.stopTime ? ` + ${hmHuman(a.stopTime)}` : ""));
-    if (a.toll) parts.push(`Ped. ${money(a.toll)}`);
+    if (c.isCarpool) parts.push("Carona");
+    else if (a.toll) parts.push(`Ped. ${money(a.toll)}`);
     return `
       <div class="g-summary ${info.cls}" data-id="${a.id}">
         <span class="g-summary-title">${esc(a.name)}</span>
         ${routeTxt ? `<span class="g-summary-meta">${routeTxt}</span>` : ""}
         ${parts.length ? `<span class="g-summary-badge">${parts.join(" · ")}</span>` : ""}
-        <span class="g-summary-meta">${money(c.total + c.extra)}</span>
+        <span class="g-summary-meta">${c.isCarpool && !c.extra ? "Custo R$ 0" : money(c.total + c.extra)}</span>
         ${attBadge}
       </div>`;
   }
@@ -293,7 +320,8 @@ function buildRightSummaryHTML(a) {
   const d = days(a);
   const metaParts = [];
   if (a.from || a.to) metaParts.push(`${a.from || "?"} ➔ ${a.to || "?"}`);
-  if (a.extraCost > 0) metaParts.push(money(a.extraCost));
+  if (a.km > 0 && (a.type === "Trem" || a.type === "Ônibus")) metaParts.push(`${num(a.km)} km`);
+  if (a.extraCost > 0) metaParts.push(tktNote ? `${money(a.extraCost)} (${tktNote})` : money(a.extraCost));
   if (a.notes) metaParts.push(a.notes);
   const badgeTxt = d > 1 ? `${d} dias` : fmtShortBR(a.start);
 
@@ -386,7 +414,7 @@ function renderGantt(allSorted) {
     const info = getTypeInfo(a.type);
     const row = rowIdx + 3;
     const altCls = rowIdx % 2 ? "alt" : "";
-    const subLeft = (a.type === "Viagem" || a.type === "Voo") && (a.from || a.to)
+    const subLeft = (a.type === "Viagem" || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus") && (a.from || a.to)
       ? `${a.from || "?"} ➔ ${a.to || "?"}`
       : `${fmtShortBR(a.start)}${days(a) > 1 ? ` · ${days(a)}d` : ""}`;
 
@@ -528,9 +556,10 @@ function renderTimeline(allSorted) {
     const d = parseD(a.start);
     const c = calc(a);
     const attCount = Array.isArray(a.attachments) ? a.attachments.length : 0;
+    const tktNote = formatTicketsNote(a);
     const meta = a.type === "Viagem"
-      ? `${a.from || "?"} ➔ ${a.to || "?"} · ${num(a.km)} km · ${hmHuman(a.drive)}${a.stopTime ? ` (+${hmHuman(a.stopTime)} par.)` : ""} · Ped. ${money(a.toll)} · Total ${money(c.total + c.extra)}`
-      : `${days(a)} dia(s)${a.extraCost ? ` · ${money(a.extraCost)}` : ""}${a.notes ? ` · ${a.notes}` : ""}`;
+      ? `${a.from || "?"} ➔ ${a.to || "?"} · ${num(a.km)} km · ${hmHuman(a.drive)}${a.stopTime ? ` (+${hmHuman(a.stopTime)} par.)` : ""} · ${c.isCarpool ? "Carona (s/ custo carro)" : `Ped. ${money(a.toll)}`} · Total ${money(c.total + c.extra)}`
+      : `${days(a)} dia(s)${a.from || a.to ? ` · ${a.from || "?"} ➔ ${a.to || "?"}` : ""}${a.extraCost ? ` · ${money(a.extraCost)}${tktNote ? ` (${tktNote})` : ""}` : ""}${a.notes ? ` · ${a.notes}` : ""}`;
     return `
       <div class="tl-item ${info.cls}" data-id="${a.id}">
         <div class="date-badge"><b>${d.getDate()}</b>${MON[d.getMonth()]}</div>
@@ -575,8 +604,9 @@ function renderDashboard(s, t) {
     const info = getTypeInfo(a.type);
     const d = parseD(a.start);
     const diff = Math.round((d - parseD(today)) / DAY);
+    const c = calc(a);
     const sub = a.type === "Viagem"
-      ? `${num(a.km)} km · ${hmHuman(calc(a).time)} · ${money(calc(a).total)}`
+      ? `${num(a.km)} km · ${hmHuman(c.time)} · ${c.isCarpool ? "Carona · " : ""}${money(c.total + c.extra)}`
       : `${days(a)} dia(s)${a.extraCost ? ` · ${money(a.extraCost)}` : ""}${a.notes ? ` · ${a.notes}` : ""}`;
     return `<li data-id="${a.id}">
       <div class="date-badge"><b>${d.getDate()}</b>${MON[d.getMonth()]}</div>
@@ -616,14 +646,17 @@ function renderDashboard(s, t) {
 
   const trips = s.filter(a => a.type === "Viagem");
   const mx = Math.max(1, ...trips.map(a => +a.km || 0));
-  $("#tripBars").innerHTML = trips.map(a => `
+  $("#tripBars").innerHTML = trips.map(a => {
+    const c = calc(a);
+    return `
     <div class="bar-row clickable" data-id="${a.id}">
       <div class="top">
         <span>${fmtShortBR(a.start)} · ${esc(label(a))}</span>
-        <span>${num(a.km)} km · ${hmHuman(calc(a).time)} · <b>${money(calc(a).total)}</b></span>
+        <span>${num(a.km)} km · ${hmHuman(c.time)} · <b>${c.isCarpool && !c.extra ? "Carona (R$ 0)" : money(c.total + c.extra)}</b></span>
       </div>
       <div class="bar"><div style="width:${(+a.km || 0) / mx * 100}%;background:linear-gradient(90deg,#06b6d4,#6366f1)"></div></div>
-    </div>`).join("") || `<p class="muted">Nenhuma viagem de carro cadastrada.</p>`;
+    </div>`;
+  }).join("") || `<p class="muted">Nenhuma viagem de carro cadastrada.</p>`;
   $("#tripBars").querySelectorAll(".bar-row[data-id]").forEach(row => row.onclick = () => openModal(row.dataset.id));
 
   const ml = $("#mapsLink");
@@ -655,7 +688,7 @@ function renderTable(s, t) {
   const allTypes = Object.keys(window.ACTIVITY_TYPES);
 
   const ed = (a, f, type = "text", cls = "") =>
-    `<td class="ed ${cls}"><input data-id="${a.id}" data-f="${f}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(f === "drive" || f === "stopTime" ? (a.type === "Viagem" ? hm(a[f]) : "") : a[f] ?? "")}"></td>`;
+    `<td class="ed ${cls}"><input data-id="${a.id}" data-f="${f}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(f === "drive" || f === "stopTime" ? (a.type === "Viagem" || ((a.type === "Trem" || a.type === "Ônibus") && f === "drive" && a.drive > 0) ? hm(a[f]) : "") : a[f] ?? "")}"></td>`;
   const typeSel = a =>
     `<td class="ed"><select data-id="${a.id}" data-f="type">${allTypes.map(o => `<option ${o === a.type ? "selected" : ""}>${o}</option>`).join("")}</select></td>`;
 
@@ -670,7 +703,8 @@ function renderTable(s, t) {
   rows.forEach((a, i) => {
     const c = calc(a);
     const v = a.type === "Viagem";
-    const routeCols = (v || a.type === "Voo");
+    const routeCols = (v || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus");
+    const hasDist = v || a.type === "Trem" || a.type === "Ônibus";
     h += `<tr>
       <td>${i + 1}</td>
       ${typeSel(a)}
@@ -680,8 +714,9 @@ function renderTable(s, t) {
       ${ed(a, "name", "text", "wide")}
       ${routeCols ? ed(a, "from") + ed(a, "to") : "<td></td><td></td>"}
       <td class="num">${days(a)}</td>
-      ${v ? ed(a, "km", "number") + ed(a, "drive") + ed(a, "stops", "number") + ed(a, "stopTime") : "<td></td><td></td><td></td><td></td>"}
-      <td class="num">${v ? hm(c.time) : ""}</td>
+      ${hasDist ? ed(a, "km", "number") + ed(a, "drive") : "<td></td><td></td>"}
+      ${v ? ed(a, "stops", "number") + ed(a, "stopTime") : "<td></td><td></td>"}
+      <td class="num">${v ? hm(c.time) : (hasDist && a.drive ? hm(a.drive) : "")}</td>
       ${v ? ed(a, "charges", "number") : "<td></td>"}
       <td class="num">${v ? num(c.ev) : ""}</td>
       <td class="num">${v ? num(c.hev) : ""}</td>
@@ -732,6 +767,9 @@ function renderTable(s, t) {
       if (f === "drive" || f === "stopTime") val = parseHM(val);
       else if (el.type === "number") val = val === "" ? 0 : parseFloat(val);
       a[f] = val;
+      if (f === "extraCost") {
+        a.tickets = val > 0 ? [{ label: "", qty: 1, unitPrice: val }] : [];
+      }
       if (f === "start" && (!a.end || a.end < a.start)) a.end = a.start;
       if (f === "end" && a.end < a.start) a.start = a.end;
       if (f === "type" && val === "Viagem" && a.charges == null) a.charges = state.params.defaultCharges ?? 1;
@@ -923,18 +961,19 @@ function renderParamTickets() {
     dateInp.value = (sorted()[0] && sorted()[0].start) || fmtISO(new Date());
   }
   if (!listEl) return;
-  const ticketItems = sorted().filter(a => a.type !== "Viagem" && (a.extraCost > 0 || ["Ingresso", "Voo", "Hospedagem", "Evento", "Passeio"].includes(a.type)));
+  const ticketItems = sorted().filter(a => a.extraCost > 0 || ["Ingresso", "Voo", "Trem", "Ônibus", "Hospedagem", "Evento", "Passeio"].includes(a.type));
   if (!ticketItems.length) {
     listEl.innerHTML = `<p class="muted small">Nenhum ingresso, passagem ou reserva cadastrado ainda.</p>`;
     return;
   }
   listEl.innerHTML = ticketItems.map(a => {
     const info = getTypeInfo(a.type);
+    const tktNote = formatTicketsNote(a);
     return `<div class="param-ticket-row">
       <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
         <span class="chip ${info.cls}">${info.icon} ${esc(info.short)}</span>
         <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label(a))}</strong>
-        <span class="muted small">${fmtBR(a.start)}</span>
+        <span class="muted small">${fmtBR(a.start)}${tktNote ? ` · ${esc(tktNote)}` : ""}</span>
       </div>
       <div class="inline-actions">
         <b>${money(a.extraCost || 0)}</b>
@@ -1155,14 +1194,76 @@ function openCheckModal(id) {
 let editing = null;
 let modalDraftId = "";
 let modalAttachments = [];
+let modalTickets = [];
 let stopsManualOverride = false;
 let lastRouteKey = "";
 let acFromCtrl = null;
 let acToCtrl = null;
+let acTFromCtrl = null;
+let acTToCtrl = null;
 
 function initAutocompleteControllers() {
   if (!acFromCtrl) acFromCtrl = window.FeriasMaps.attachAutocomplete($("#f-from"), $("#ac-from"), () => maybeAutoComputeRoute(true));
   if (!acToCtrl) acToCtrl = window.FeriasMaps.attachAutocomplete($("#f-to"), $("#ac-to"), () => maybeAutoComputeRoute(true));
+  if (!acTFromCtrl && $("#f-transitFrom")) acTFromCtrl = window.FeriasMaps.attachAutocomplete($("#f-transitFrom"), $("#ac-tfrom"), () => computeModalTransitRoute(false));
+  if (!acTToCtrl && $("#f-transitTo")) acTToCtrl = window.FeriasMaps.attachAutocomplete($("#f-transitTo"), $("#ac-tto"), () => computeModalTransitRoute(false));
+}
+
+function getTicketBoxTitle(type) {
+  if (type === "Viagem") return "💵 Gastos extras na viagem (opcional — ex: estacionamento, lanche, balsa)";
+  if (type === "Voo") return "✈️ Passagens aéreas & Tarifas (Adulto / Criança / Bagagem)";
+  if (type === "Trem") return "🚂 Passagens de Trem (Inteira / Meia / Classe)";
+  if (type === "Ônibus") return "🚌 Passagens de Ônibus (Inteira / Meia / Leito)";
+  if (type === "Hospedagem") return "🏨 Diárias, Quartos & Taxas";
+  return "🎟️ Quantidade & Valores (ex: Inteira, Meia, VIP...)";
+}
+
+function calcTicketsTotal(rows) {
+  return rows.reduce((sum, r) => sum + Math.max(0, Number(r.qty) || 0) * Math.max(0, Number(r.unitPrice) || 0), 0);
+}
+
+function renderTicketRows() {
+  const box = $("#ticketsRows");
+  if (!box) return;
+  if (!modalTickets.length) {
+    modalTickets = [{ label: "", qty: 1, unitPrice: "" }];
+  }
+  box.innerHTML = modalTickets.map((t, idx) => {
+    const sub = Math.max(0, Number(t.qty) || 0) * Math.max(0, Number(t.unitPrice) || 0);
+    return `<div class="ticket-row" data-tidx="${idx}">
+      <input type="text" data-tk="label" placeholder="Tipo (ex: Inteira, Meia, Adulto...)" value="${esc(t.label || "")}">
+      <input type="number" min="1" step="1" data-tk="qty" placeholder="Qtd" title="Quantidade" value="${t.qty ?? 1}">
+      <input type="number" min="0" step="any" data-tk="unitPrice" placeholder="Valor unit. R$" title="Valor por unidade" value="${t.unitPrice === "" || t.unitPrice == null ? "" : t.unitPrice}">
+      <span class="ticket-sub">= ${money(sub)}</span>
+      <button type="button" class="icon-btn" data-tdel="${idx}" title="Remover faixa" ${modalTickets.length === 1 && !t.unitPrice ? "style='opacity:0.35'" : ""}>🗑️</button>
+    </div>`;
+  }).join("");
+
+  box.querySelectorAll(".ticket-row").forEach(rowEl => {
+    const idx = parseInt(rowEl.dataset.tidx, 10);
+    rowEl.querySelectorAll("[data-tk]").forEach(inp => {
+      inp.addEventListener("input", () => {
+        const k = inp.dataset.tk;
+        modalTickets[idx][k] = k === "label" ? inp.value : (inp.value === "" ? "" : parseFloat(inp.value));
+        const subEl = rowEl.querySelector(".ticket-sub");
+        if (subEl) {
+          const sub = Math.max(0, Number(modalTickets[idx].qty) || 0) * Math.max(0, Number(modalTickets[idx].unitPrice) || 0);
+          subEl.textContent = `= ${money(sub)}`;
+        }
+        updateModalPreview();
+      });
+    });
+  });
+
+  box.querySelectorAll("[data-tdel]").forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.tdel, 10);
+      if (modalTickets.length <= 1) modalTickets = [{ label: "", qty: 1, unitPrice: "" }];
+      else modalTickets.splice(idx, 1);
+      renderTicketRows();
+      updateModalPreview();
+    };
+  });
 }
 
 function renderModalAttachments() {
@@ -1197,10 +1298,21 @@ function renderModalAttachments() {
 function updateModalPreview() {
   const a = readForm();
   const box = $("#modalTripCalcPreview");
-  const info = getTypeInfo(a.type);
-  $("#f-extraCostLabel").textContent = info.costLabel || "Custo (R$)";
+  const tTitle = $("#ticketsBoxTitle");
+  if (tTitle) tTitle.textContent = getTicketBoxTitle(a.type);
+  const totQty = modalTickets.reduce((s, r) => s + ((Number(r.unitPrice) > 0 && Number(r.qty) > 0) ? Number(r.qty) : 0), 0);
+  const badge = $("#ticketsTotalBadge");
+  if (badge) badge.textContent = `Total: ${money(a.extraCost)}${totQty > 0 ? ` (${totQty} un.)` : ""}`;
   $("#calRemLabel").textContent = state.params.calendarReminderTime || "09:00";
   $("#btnCalLink").href = window.FeriasCalendar.buildGoogleCalendarTemplateUrl(a, state.title);
+
+  if (a.type === "Trem" || a.type === "Ônibus") {
+    const ext = $("#transitMapsStatus");
+    if (ext && !window.FeriasMaps.hasKey() && !ext.textContent) {
+      ext.innerHTML = `<span>ℹ️ Sem Maps Key: informe manualmente ou abra no Google Maps</span>
+        <a href="${window.FeriasMaps.buildLegUrl(a.from, a.to, "transit")}" target="_blank" rel="noopener" style="color:var(--accent2)">Ver horários no Maps ↗</a>`;
+    }
+  }
 
   if (a.type !== "Viagem") {
     box.innerHTML = "";
@@ -1210,10 +1322,10 @@ function updateModalPreview() {
   box.innerHTML = `
     <span><b>Tempo total:</b> ${hmHuman(c.time)} (${hmHuman(a.drive)} dir. + ${hmHuman(a.stopTime)} par.)</span>
     <span><b>EV / HEV:</b> ${num(c.ev)} / ${num(c.hev)} km (${num(c.liters, 1)} L)</span>
-    <span><b>Total trecho:</b> ${money(c.total + c.extra)}</span>
+    <span><b>${c.isCarpool ? "Carona (rota R$ 0)" : "Rota"} + Extras:</b> ${money(c.total + c.extra)}</span>
   `;
   const ext = $("#modalMapsExternal");
-  if (ext) ext.href = window.FeriasMaps.buildLegUrl(a.from, a.to);
+  if (ext) ext.href = window.FeriasMaps.buildLegUrl(a.from, a.to, "driving");
 }
 
 function updateModalMapsUI() {
@@ -1308,6 +1420,52 @@ function maybeAutoComputeRoute(force = false) {
   if ($("#f-from").value.trim() && $("#f-to").value.trim()) computeModalRoute(force);
 }
 
+async function computeModalTransitRoute(force = false) {
+  const t = $("#f-type").value;
+  if (t !== "Trem" && t !== "Ônibus") return;
+  const from = $("#f-transitFrom").value.trim();
+  const to = $("#f-transitTo").value.trim();
+  const statusEl = $("#transitMapsStatus");
+  if (!from || !to) { if (force) toast("Preencha Origem e Destino."); return; }
+
+  if (!window.FeriasMaps.hasKey()) {
+    statusEl.innerHTML = `<span>ℹ️ Sem Google Maps Key configurada</span>
+      <a href="${window.FeriasMaps.buildLegUrl(from, to, "transit")}" target="_blank" rel="noopener" style="color:var(--accent2)">Ver horários no Maps ↗</a>`;
+    if (force) toast("Configure sua Google Maps Key em Parâmetros.");
+    return;
+  }
+
+  const info = getTypeInfo(t);
+  const btn = $("#btnCalcTransit");
+  statusEl.innerHTML = `<span>⏳ Consultando trajeto de ${esc(info.short)} no Google Maps...</span>`;
+  btn.disabled = true;
+  try {
+    const originArg = (acTFromCtrl && acTFromCtrl.getSelectedPlace()) || from;
+    const destArg = (acTToCtrl && acTToCtrl.getSelectedPlace()) || to;
+    const res = await window.FeriasMaps.computeTripRoute({
+      origin: originArg,
+      destination: destArg,
+      travelMode: "TRANSIT",
+      transitPreference: info.transitMode || null
+    });
+    $("#f-transitKm").value = res.km;
+    $("#f-transitDrive").value = hm(res.driveMinutes);
+    if (!$("#f-name").value.trim()) $("#f-name").value = `${info.short} ${to.split(",")[0].trim()}`;
+    const note = res.travelModeUsed === "DRIVING_ESTIMATE" ? " (estimativa rodoviária)" : ` (${res.description || "Google Transit"})`;
+    statusEl.innerHTML = `<span>✅ <b>Google Maps:</b> ${num(res.km)} km · ${hmHuman(res.driveMinutes)}${esc(note)}</span>
+      <a href="${window.FeriasMaps.buildLegUrl(from, to, "transit")}" target="_blank" rel="noopener" style="color:var(--accent2)">Ver no Maps ↗</a>`;
+    const mapWrap = $("#transitMapWrap");
+    mapWrap.hidden = false;
+    await window.FeriasMaps.renderRouteOnMap(mapWrap, res.route, isDarkTheme());
+    updateModalPreview();
+  } catch (err) {
+    statusEl.innerHTML = `<span>❌ ${esc(err.message || err)}</span>
+      <a href="${window.FeriasMaps.buildLegUrl(from, to, "transit")}" target="_blank" rel="noopener" style="color:var(--accent2)">Abrir no Maps ↗</a>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 window.openModal = function (idOrOpts) {
   initAutocompleteControllers();
   const isObj = idOrOpts && typeof idOrOpts === "object";
@@ -1316,35 +1474,56 @@ window.openModal = function (idOrOpts) {
   const baseDate = preset.start || (sorted()[0]?.start) || fmtISO(new Date());
   const a = id
     ? state.activities.find(x => x.id === id)
-    : { type: preset.type || "Viagem", start: baseDate, end: preset.end || baseDate, charges: state.params.defaultCharges ?? 1, extraCost: preset.extraCost || 0, attachments: [] };
+    : { type: preset.type || "Viagem", start: baseDate, end: preset.end || baseDate, charges: state.params.defaultCharges ?? 1, extraCost: preset.extraCost || 0, includeRouteCost: true, tickets: [], attachments: [] };
 
   editing = id || null;
   modalDraftId = id || uid();
   modalAttachments = clone(a.attachments || []);
+  if (Array.isArray(a.tickets) && a.tickets.length) {
+    modalTickets = clone(a.tickets);
+  } else if (a.extraCost > 0) {
+    modalTickets = [{ label: "", qty: 1, unitPrice: a.extraCost }];
+  } else {
+    modalTickets = [{ label: "", qty: 1, unitPrice: "" }];
+  }
+
   stopsManualOverride = false;
   lastRouteKey = a.from && a.to ? `${a.from.trim()}=>${a.to.trim()}` : "";
   acFromCtrl.clearSelected();
   acToCtrl.clearSelected();
+  if (acTFromCtrl) acTFromCtrl.clearSelected();
+  if (acTToCtrl) acTToCtrl.clearSelected();
 
   $("#modalTitle").textContent = id ? "Editar atividade" : "Nova atividade";
   const f = $("#form");
-  for (const k of ["type", "name", "start", "end", "from", "to", "km", "stops", "toll", "charges", "extraCost", "notes"]) {
+  for (const k of ["type", "name", "start", "end", "from", "to", "km", "stops", "toll", "charges", "notes"]) {
     if (f.elements[k]) f.elements[k].value = a[k] ?? "";
   }
+  $("#f-includeRouteCost").checked = a.includeRouteCost !== false;
   $("#f-flightFrom").value = a.type === "Voo" ? (a.from || "") : "";
   $("#f-flightTo").value = a.type === "Voo" ? (a.to || "") : "";
   $("#f-airline").value = a.airline || "";
   $("#f-bookingRef").value = a.bookingRef || "";
+  $("#f-transitFrom").value = (a.type === "Trem" || a.type === "Ônibus") ? (a.from || "") : "";
+  $("#f-transitTo").value = (a.type === "Trem" || a.type === "Ônibus") ? (a.to || "") : "";
+  $("#f-transitKm").value = (a.type === "Trem" || a.type === "Ônibus") ? (a.km ?? "") : "";
+  $("#f-transitDrive").value = (a.type === "Trem" || a.type === "Ônibus") && a.drive ? hm(a.drive) : "";
+  $("#f-transitCarrier").value = (a.type === "Trem" || a.type === "Ônibus") ? (a.airline || "") : "";
+  $("#f-transitRef").value = (a.type === "Trem" || a.type === "Ônibus") ? (a.bookingRef || "") : "";
   $("#f-ticketRef").value = a.bookingRef || "";
-  f.elements.drive.value = a.drive ? hm(a.drive) : "";
+  f.elements.drive.value = a.drive && a.type === "Viagem" ? hm(a.drive) : "";
   f.elements.stopTime.value = a.stopTime != null && a.type === "Viagem" && id ? hm(a.stopTime) : "";
 
   $("#tollSourceTag").textContent = "";
   $("#modalMapsStatus").innerHTML = "";
+  $("#transitMapsStatus").innerHTML = "";
   $("#modalMapWrap").hidden = true;
   $("#modalMapWrap").innerHTML = "";
+  $("#transitMapWrap").hidden = true;
+  $("#transitMapWrap").innerHTML = "";
   $("#btnDelete").style.visibility = $("#btnDuplicate").style.visibility = id ? "visible" : "hidden";
 
+  renderTicketRows();
   toggleTrip();
   updateModalMapsUI();
   renderModalAttachments();
@@ -1354,24 +1533,34 @@ window.openModal = function (idOrOpts) {
 
 function toggleTrip() {
   const t = $("#f-type").value;
-  const info = getTypeInfo(t);
+  const isTransit = t === "Trem" || t === "Ônibus";
   $(".trip-only").hidden = t !== "Viagem";
   $(".trip-only").style.display = t === "Viagem" ? "" : "none";
   $(".flight-only").hidden = t !== "Voo";
-  $("#f-extraCostWrap").hidden = Boolean(info.hideCostInput);
-  $("#f-ticketRefWrap").hidden = (t === "Viagem" || t === "Voo");
+  $(".transit-only").hidden = !isTransit;
+  $(".transit-only").style.display = isTransit ? "" : "none";
+  if (isTransit && $("#transitBoxTitle")) {
+    $("#transitBoxTitle").textContent = t === "Trem" ? "🚂 Rota de Trem (Google Maps)" : "🚌 Rota de Ônibus (Google Maps)";
+  }
+  $("#f-ticketRefWrap").hidden = (t === "Viagem" || t === "Voo" || isTransit);
   updateModalPreview();
 }
 
 function readForm() {
   const e = $("#form").elements;
-  const n = k => e[k].value === "" ? null : parseFloat(e[k].value);
+  const n = k => !e[k] || e[k].value === "" ? null : parseFloat(e[k].value);
+  const cleanTickets = modalTickets
+    .map(r => ({ label: String(r.label || "").trim(), qty: Math.max(0, Number(r.qty) || 0), unitPrice: Math.max(0, Number(r.unitPrice) || 0) }))
+    .filter(r => r.qty > 0 && r.unitPrice > 0);
+  const computedCost = Math.round(calcTicketsTotal(cleanTickets) * 100) / 100;
+
   const a = {
     type: e.type.value,
     name: e.name.value.trim(),
     start: e.start.value,
     end: e.end.value || e.start.value,
-    extraCost: e.type.value === "Viagem" ? 0 : (n("extraCost") || 0),
+    tickets: cleanTickets,
+    extraCost: computedCost,
     notes: e.notes.value,
     attachments: clone(modalAttachments)
   };
@@ -1385,13 +1574,21 @@ function readForm() {
       stops: n("stops") || 0,
       stopTime: parseHM(e.stopTime.value),
       toll: n("toll") || 0,
-      charges: n("charges") ?? (state.params.defaultCharges ?? 1)
+      charges: n("charges") ?? (state.params.defaultCharges ?? 1),
+      includeRouteCost: $("#f-includeRouteCost").checked
     });
   } else if (a.type === "Voo") {
     a.from = $("#f-flightFrom").value.trim();
     a.to = $("#f-flightTo").value.trim();
     a.airline = $("#f-airline").value.trim();
     a.bookingRef = $("#f-bookingRef").value.trim();
+  } else if (a.type === "Trem" || a.type === "Ônibus") {
+    a.from = $("#f-transitFrom").value.trim();
+    a.to = $("#f-transitTo").value.trim();
+    a.km = $("#f-transitKm").value === "" ? null : parseFloat($("#f-transitKm").value);
+    a.drive = parseHM($("#f-transitDrive").value);
+    a.airline = $("#f-transitCarrier").value.trim();
+    a.bookingRef = $("#f-transitRef").value.trim();
   } else {
     const tr = $("#f-ticketRef").value.trim();
     if (tr) a.bookingRef = tr;
@@ -1952,13 +2149,31 @@ $("#btnSwapRoute").onclick = () => {
 };
 
 $("#btnCalcMaps").onclick = () => computeModalRoute(true);
+$("#btnSwapTransit").onclick = () => {
+  const f = $("#f-transitFrom").value;
+  $("#f-transitFrom").value = $("#f-transitTo").value;
+  $("#f-transitTo").value = f;
+  if (acTFromCtrl) acTFromCtrl.clearSelected();
+  if (acTToCtrl) acTToCtrl.clearSelected();
+  computeModalTransitRoute(true);
+};
+$("#btnCalcTransit").onclick = () => computeModalTransitRoute(true);
+$("#btnAddTicketRow").onclick = () => {
+  modalTickets.push({ label: "", qty: 1, unitPrice: "" });
+  renderTicketRows();
+  const rows = $$("#ticketsRows .ticket-row");
+  const last = rows[rows.length - 1];
+  if (last) last.querySelector('[data-tk="label"]')?.focus();
+};
+$("#f-includeRouteCost").onchange = updateModalPreview;
 $("#f-from").addEventListener("blur", () => setTimeout(() => maybeAutoComputeRoute(false), 220));
 $("#f-to").addEventListener("blur", () => setTimeout(() => maybeAutoComputeRoute(false), 220));
 $("#f-drive").addEventListener("input", () => { applyAutoStopsToForm(false); updateModalPreview(); });
 $("#f-stops").addEventListener("input", () => { stopsManualOverride = true; updateModalPreview(); });
 $("#f-stopTime").addEventListener("input", () => { stopsManualOverride = true; updateModalPreview(); });
-["#f-km", "#f-toll", "#f-charges", "#f-extraCost", "#f-name", "#f-start", "#f-end", "#f-flightFrom", "#f-flightTo"].forEach(sel => {
-  $(sel).addEventListener("input", updateModalPreview);
+["#f-km", "#f-toll", "#f-charges", "#f-name", "#f-start", "#f-end", "#f-flightFrom", "#f-flightTo", "#f-transitFrom", "#f-transitTo", "#f-transitKm", "#f-transitDrive"].forEach(sel => {
+  const el = $(sel);
+  if (el) el.addEventListener("input", updateModalPreview);
 });
 
 $("#btnAutoStops").onclick = () => { stopsManualOverride = false; applyAutoStopsToForm(true); toast("⏱️ Paradas recalculadas!"); };
@@ -2166,7 +2381,7 @@ $("#form").onsubmit = e => {
   if (!a.name || !a.start) return;
   if (editing) {
     const o = state.activities.find(x => x.id === editing);
-    for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges"]) delete o[k];
+    for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges", "airline", "bookingRef", "includeRouteCost"]) delete o[k];
     Object.assign(o, a);
   } else {
     state.activities.push({ id: modalDraftId || uid(), ...a });
@@ -2434,7 +2649,9 @@ $("#paramTicketForm").onsubmit = e => {
   const type = $("#pt-type").value || "Ingresso";
   const name = $("#pt-name").value.trim();
   const start = $("#pt-start").value;
-  const extraCost = parseFloat($("#pt-cost").value) || 0;
+  const qty = Math.max(1, parseInt($("#pt-qty").value, 10) || 1);
+  const unitPrice = parseFloat($("#pt-cost").value) || 0;
+  const extraCost = Math.round(qty * unitPrice * 100) / 100;
   const notes = $("#pt-notes").value.trim();
   if (!name || !start) return;
   state.activities.push({
@@ -2443,11 +2660,13 @@ $("#paramTicketForm").onsubmit = e => {
     name,
     start,
     end: start,
+    tickets: unitPrice > 0 ? [{ label: "", qty, unitPrice }] : [],
     extraCost,
     notes,
     attachments: []
   });
   $("#pt-name").value = "";
+  $("#pt-qty").value = "1";
   $("#pt-cost").value = "";
   $("#pt-notes").value = "";
   save(`🎟️ ${type} "${name}" adicionado ao Cronograma & Custos!`);
@@ -2599,11 +2818,18 @@ function applyExtractedActivityToForm(act) {
   if (act.name) $("#f-name").value = act.name;
   if (act.start) $("#f-start").value = act.start;
   if (act.end) $("#f-end").value = act.end;
-  if (act.extraCost != null && $("#f-type").value !== "Viagem") $("#f-extraCost").value = act.extraCost;
+  if (act.extraCost != null && Number(act.extraCost) > 0) {
+    modalTickets = [{ label: "IA", qty: 1, unitPrice: Number(act.extraCost) }];
+    renderTicketRows();
+  }
   if ($("#f-type").value === "Voo") {
     if (act.from) $("#f-flightFrom").value = act.from;
     if (act.to) $("#f-flightTo").value = act.to;
     if (act.bookingRef) $("#f-bookingRef").value = act.bookingRef;
+  } else if ($("#f-type").value === "Trem" || $("#f-type").value === "Ônibus") {
+    if (act.from) $("#f-transitFrom").value = act.from;
+    if (act.to) $("#f-transitTo").value = act.to;
+    if (act.bookingRef) $("#f-transitRef").value = act.bookingRef;
   } else if ($("#f-type").value === "Viagem") {
     if (act.from) $("#f-from").value = act.from;
     if (act.to) $("#f-to").value = act.to;

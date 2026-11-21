@@ -38,8 +38,10 @@
   }
 
   function formatActivitySummary(a) {
-    if (a.type === "Viagem" && (a.from || a.to)) return `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`;
-    if (a.type === "Voo" && (a.from || a.to)) return `✈️ ${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`;
+    if ((a.type === "Viagem" || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus") && (a.from || a.to)) {
+      const pfx = a.type === "Voo" ? "✈️ " : a.type === "Trem" ? "🚂 " : a.type === "Ônibus" ? "🚌 " : "";
+      return `${pfx}${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`;
+    }
     return a.name;
   }
 

@@ -1225,6 +1225,62 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
 .tl-item.Hospedagem { border-left-color: var(--ok); }
 .tl-item.Passeio { border-left-color: #f472b6; }
 .tl-item.Restaurante { border-left-color: #fb923c; }
+.tl-item.Trem { border-left-color: #14b8a6; }
+.tl-item.Onibus { border-left-color: #f59e0b; }
+
+.g-type-dot.Trem { background: rgba(20, 184, 166, 0.2); color: #14b8a6; }
+.g-bar.Trem { background: linear-gradient(135deg, #14b8a6, #0284c7); }
+.g-summary.Trem { border-left-color: #14b8a6; }
+.g-summary.Trem .g-summary-badge { background: rgba(20, 184, 166, 0.16); color: #14b8a6; }
+.chip.Trem { background: rgba(20, 184, 166, 0.16); color: #14b8a6; }
+
+.g-type-dot.Onibus { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.g-bar.Onibus { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.g-summary.Onibus { border-left-color: #f59e0b; }
+.g-summary.Onibus .g-summary-badge { background: rgba(245, 158, 11, 0.16); color: #f59e0b; }
+.chip.Onibus { background: rgba(245, 158, 11, 0.16); color: #f59e0b; }
+
+.route-cost-toggle {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  color: var(--text) !important;
+  cursor: pointer;
+}
+.route-cost-toggle input[type="checkbox"] {
+  width: 18px !important;
+  height: 18px !important;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.tickets-box {
+  padding: 12px 14px;
+  border-radius: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  display: grid;
+  gap: 9px;
+}
+.tickets-rows { display: grid; gap: 7px; }
+.ticket-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.4fr) 74px minmax(95px, 1fr) auto auto;
+  gap: 7px;
+  align-items: center;
+}
+.ticket-sub { font-size: 0.82rem; font-weight: 700; color: var(--ok); white-space: nowrap; min-width: 72px; text-align: right; }
+
+@media (max-width: 720px) {
+  .ticket-row { grid-template-columns: 1fr 78px 1fr; }
+  .ticket-row input:first-child { grid-column: span 3; }
+  .ticket-sub { text-align: left; }
+}
 
 .stacked-bar {
   display: flex;
@@ -1241,7 +1297,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
 
 .ticket-inline-form {
   display: grid;
-  grid-template-columns: 165px minmax(180px, 1.4fr) 138px 115px minmax(140px, 1fr) auto;
+  grid-template-columns: 155px minmax(160px, 1.3fr) 132px 72px 108px minmax(120px, 1fr) auto;
   gap: 8px;
   align-items: center;
   margin-bottom: 12px;

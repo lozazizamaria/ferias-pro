@@ -1,17 +1,17 @@
 /* ===== Service Worker PWA — Férias Pro ===== */
-const CACHE = "ferias-pro-v11";
+const CACHE = "ferias-pro-v12";
 const SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=11",
-  "./vehicles.js?v=11",
-  "./countries.js?v=11",
-  "./data.js?v=11",
-  "./maps.js?v=11",
-  "./calendar.js?v=11",
-  "./report.js?v=11",
-  "./api.js?v=11",
-  "./app.js?v=11",
+  "./styles.css?v=12",
+  "./vehicles.js?v=12",
+  "./countries.js?v=12",
+  "./data.js?v=12",
+  "./maps.js?v=12",
+  "./calendar.js?v=12",
+  "./report.js?v=12",
+  "./api.js?v=12",
+  "./app.js?v=12",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

@@ -3,6 +3,8 @@
   const TYPE_COLORS = {
     Viagem: ["#0284c7", "#4f46e5"],
     Voo: ["#0ea5e9", "#0369a1"],
+    Trem: ["#14b8a6", "#0284c7"],
+    "Ônibus": ["#f59e0b", "#d97706"],
     Hospedagem: ["#10b981", "#0f766e"],
     Ingresso: ["#8b5cf6", "#db2777"],
     Evento: ["#d97706", "#e11d48"],
@@ -336,21 +338,22 @@
     const bodyRows = rows.map((a, i) => {
       const c = calc(a);
       const v = a.type === "Viagem";
+      const hasRoute = v || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus";
       return `<tr>
         <td>${i + 1}</td>
         <td>${esc(a.type)}</td>
         <td>${fmtShortBR(a.start)}${a.end && a.end !== a.start ? "–" + fmtShortBR(a.end) : ""}</td>
         <td>${WD[parseD(a.start).getDay()]}</td>
         <td class="wrap"><b>${esc(a.name)}</b></td>
-        <td class="wrap">${v || a.type === "Voo" ? `${esc(a.from || "")} ➔ ${esc(a.to || "")}` : ""}</td>
+        <td class="wrap">${hasRoute ? `${esc(a.from || "")} ➔ ${esc(a.to || "")}` : ""}</td>
         <td class="num">${days(a)}</td>
-        <td class="num">${v ? num(a.km) : ""}</td>
-        <td class="num">${v ? hm(a.drive) : ""}</td>
+        <td class="num">${a.km > 0 ? num(a.km) : ""}</td>
+        <td class="num">${a.drive > 0 ? hm(a.drive) : ""}</td>
         <td class="num">${v ? `${a.stops || 0} (${hm(a.stopTime)})` : ""}</td>
         <td class="num">${v ? num(c.ev) : ""}</td>
         <td class="num">${v ? num(c.liters, 1) : ""}</td>
         <td class="num">${v ? money(c.fuel + c.charge) : ""}</td>
-        <td class="num">${v ? money(a.toll) : ""}</td>
+        <td class="num">${v ? money(c.toll) : ""}</td>
         <td class="num">${c.extra > 0 ? money(c.extra) : ""}</td>
         <td class="num"><b>${money(c.total + c.extra)}</b></td>
         <td class="wrap">${esc(a.notes || "")}</td>

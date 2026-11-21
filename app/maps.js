@@ -119,9 +119,55 @@
     };
   }
 
-  async function computeTripRoute({ origin, destination, intermediates = [], params = {}, vehicle = {} }) {
+  async function computeTripRoute({ origin, destination, intermediates = [], params = {}, vehicle = {}, travelMode = "DRIVING", transitPreference = null }) {
     await ensureLoaded();
     const { Route } = await google.maps.importLibrary("routes");
+
+    if (travelMode === "TRANSIT") {
+      const transitReq = {
+        origin: formatWaypointInput(origin),
+        destination: formatWaypointInput(destination),
+        travelMode: "TRANSIT",
+        language: "pt-BR",
+        region: "br",
+        fields: [
+          "distanceMeters",
+          "durationMillis",
+          "staticDurationMillis",
+          "description",
+          "legs",
+          "path",
+          "viewport",
+          "warnings"
+        ],
+        internalUsageAttributionIds: [ATTR_ID]
+      };
+      if (transitPreference) {
+        transitReq.transitPreference = { allowedTravelModes: [transitPreference] };
+      }
+      try {
+        const { routes } = await Route.computeRoutes(transitReq);
+        if (routes && routes.length) {
+          const route = routes[0];
+          const km = Math.round((route.distanceMeters || 0) / 1000);
+          const ms = route.durationMillis ?? route.staticDurationMillis ?? 0;
+          return {
+            km,
+            driveMinutes: Math.round(ms / 60000),
+            toll: { hasTolls: false, tollKnown: true, tollCost: 0, currency: "BRL" },
+            description: route.description || "Transporte público / coletivo",
+            warnings: route.warnings || [],
+            travelModeUsed: "TRANSIT",
+            route
+          };
+        }
+      } catch {}
+      // Fallback rodoviário caso trecho intermunicipal não possua grade GTFS no Google Transit
+      const roadFallback = await computeTripRoute({ origin, destination, params: { ...params, avoidTolls: false }, vehicle, travelMode: "DRIVING" });
+      roadFallback.travelModeUsed = "DRIVING_ESTIMATE";
+      roadFallback.toll = { hasTolls: false, tollKnown: true, tollCost: 0, currency: "BRL" };
+      return roadFallback;
+    }
 
     const routeModifiers = {
       avoidTolls: Boolean(params.avoidTolls),
@@ -179,6 +225,7 @@
       toll,
       description: route.description || "",
       warnings: route.warnings || [],
+      travelModeUsed: "DRIVING",
       route
     };
   }
@@ -317,9 +364,9 @@
     };
   }
 
-  function buildLegUrl(from, to) {
+  function buildLegUrl(from, to, mode = "driving") {
     if (!from || !to) return "https://www.google.com/maps";
-    return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(formatWaypointInput(from))}&destination=${encodeURIComponent(formatWaypointInput(to))}&travelmode=driving`;
+    return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(formatWaypointInput(from))}&destination=${encodeURIComponent(formatWaypointInput(to))}&travelmode=${encodeURIComponent(mode)}`;
   }
 
   function buildFullRouteUrl(trips) {
