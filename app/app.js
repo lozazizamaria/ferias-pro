@@ -56,6 +56,12 @@ function load() {
 
 function save(msg, skipRender = false) {
   localStorage.setItem(KEY, JSON.stringify(state));
+  if (window.FeriasSync) {
+    window.FeriasSync.schedulePush(() => ({
+      stateObj: state,
+      gmapsKey: window.FeriasMaps ? window.FeriasMaps.getKey() : ""
+    }));
+  }
   if (!skipRender) render();
   if (msg) toast(msg);
 }
@@ -796,6 +802,11 @@ function renderParams() {
     badge.className = "pill warn";
   }
 
+  const syncTokInp = $("#syncTokenInput");
+  if (syncTokInp && document.activeElement !== syncTokInp && window.FeriasSync) {
+    syncTokInp.value = window.FeriasSync.getToken();
+  }
+
   renderScenarios();
 }
 
@@ -1330,6 +1341,9 @@ $("#btnModalSaveKey").onclick = () => {
   const val = $("#modalKeyInput").value.trim();
   if (!val) return toast("Cole uma chave válida.");
   const { needsReload } = window.FeriasMaps.setKey(val);
+  if (window.FeriasSync) {
+    window.FeriasSync.push(state, val);
+  }
   updateModalMapsUI();
   renderParams();
   if (needsReload) {
@@ -1441,6 +1455,9 @@ $("#btnToggleKey").onclick = () => {
 };
 $("#btnSaveKey").onclick = () => {
   const { saved, needsReload } = window.FeriasMaps.setKey($("#gmapsKeyInput").value);
+  if (window.FeriasSync) {
+    window.FeriasSync.push(state, window.FeriasMaps.getKey());
+  }
   renderParams();
   renderDashboard(sorted(), totals());
   if (needsReload) {
@@ -1545,5 +1562,132 @@ window.addEventListener("resize", () => {
   if (ganttMode === "gantt") renderGantt(sorted());
 });
 
+/* ---------- SINCRONIZAÇÃO VPS ---------- */
+let syncRunCheck = null;
+
+function updateSyncUI(info) {
+  const pill = $("#syncBadge");
+  const txt = $("#syncText");
+  const pBadge = $("#syncParamBadge");
+  if (!pill || !txt) return;
+
+  pill.setAttribute("data-status", info.status);
+  const labels = {
+    checking: "Conectando...",
+    synced: "Sincronizado",
+    syncing: "Salvando...",
+    auth_required: "PIN necessário",
+    offline: "Sem conexão",
+    local_only: "Local"
+  };
+  txt.textContent = labels[info.status] || "Local";
+
+  if (pBadge) {
+    const pLabels = {
+      checking: ["Verificando...", "pill"],
+      synced: [`Conectado (rev. ${info.serverRevision})`, "pill"],
+      syncing: ["Sincronizando...", "pill"],
+      auth_required: ["PIN necessário", "pill warn"],
+      offline: ["Sem conexão com VPS", "pill warn"],
+      local_only: ["Modo local (sem API)", "pill warn"]
+    };
+    const [pt, pc] = pLabels[info.status] || ["Modo local", "pill warn"];
+    pBadge.textContent = pt;
+    pBadge.className = pc;
+  }
+}
+
+function initSync() {
+  if (!window.FeriasSync) return;
+  const getPayload = () => ({
+    stateObj: state,
+    gmapsKey: window.FeriasMaps ? window.FeriasMaps.getKey() : ""
+  });
+
+  window.FeriasSync.onStatus(updateSyncUI);
+
+  syncRunCheck = window.FeriasSync.startAutoPoll((remoteState, remoteGmapsKey) => {
+    state = migrateState(remoteState);
+    localStorage.setItem(KEY, JSON.stringify(state));
+    if (remoteGmapsKey && window.FeriasMaps && remoteGmapsKey !== window.FeriasMaps.getKey()) {
+      window.FeriasMaps.setKey(remoteGmapsKey);
+    }
+    render();
+  }, getPayload);
+
+  $("#syncBadge").onclick = async () => {
+    const res = await window.FeriasSync.pull();
+    if (res.reason === "auth_required") {
+      $("#syncModalInput").value = window.FeriasSync.getToken();
+      $("#syncModal").showModal();
+      return;
+    }
+    if (res.reason === "local_only") {
+      toast("💾 Modo local ativo (servidor de sincronização não detectado).");
+      return;
+    }
+    if (syncRunCheck) await syncRunCheck();
+    toast("☁️ Sincronização verificada!");
+  };
+
+  $("#btnCloseSyncModal").onclick = () => $("#syncModal").close();
+  $("#btnCancelSyncModal").onclick = () => $("#syncModal").close();
+  $("#syncForm").onsubmit = async e => {
+    e.preventDefault();
+    const tok = $("#syncModalInput").value.trim();
+    if (!tok) return;
+    window.FeriasSync.setToken(tok);
+    const res = await window.FeriasSync.pull();
+    if (res.ok) {
+      $("#syncModal").close();
+      if (syncRunCheck) await syncRunCheck();
+      renderParams();
+      toast("☁️ Conectado e sincronizado com a VPS!");
+    } else if (res.reason === "auth_required") {
+      toast("❌ PIN incorreto.");
+    } else {
+      toast("⚠️ Não foi possível conectar à VPS.");
+    }
+  };
+
+  $("#btnToggleSyncToken").onclick = () => {
+    const inp = $("#syncTokenInput");
+    inp.type = inp.type === "password" ? "text" : "password";
+  };
+
+  $("#btnSaveSyncToken").onclick = async () => {
+    window.FeriasSync.setToken($("#syncTokenInput").value);
+    const res = await window.FeriasSync.pull();
+    if (res.ok) {
+      if (syncRunCheck) await syncRunCheck();
+      toast("☁️ Conectado à VPS!");
+    } else if (res.reason === "auth_required") {
+      toast("❌ PIN incorreto.");
+    } else if (res.reason === "local_only") {
+      toast("Modo local (servidor /api não ativo neste endereço).");
+    }
+  };
+
+  $("#btnSyncPull").onclick = async () => {
+    const res = await window.FeriasSync.pull();
+    if (!res.ok) return toast(res.reason === "auth_required" ? "Informe o PIN da VPS primeiro." : "Servidor indisponível.");
+    if (res.data.empty) return toast("VPS ainda sem dados salvos.");
+    state = migrateState(res.data.state);
+    localStorage.setItem(KEY, JSON.stringify(state));
+    window.FeriasSync.setMeta({ updatedAt: res.data.updatedAt, dirty: false });
+    if (res.data.gmapsKey && window.FeriasMaps) window.FeriasMaps.setKey(res.data.gmapsKey);
+    render();
+    toast("⬇️ Dados carregados da VPS!");
+  };
+
+  $("#btnSyncPush").onclick = async () => {
+    window.FeriasSync.setMeta({ updatedAt: Date.now(), dirty: true });
+    const res = await window.FeriasSync.push(state, window.FeriasMaps ? window.FeriasMaps.getKey() : "");
+    if (res.ok) toast("⬆️ Dados enviados para a VPS!");
+    else toast(res.reason === "auth_required" ? "Informe o PIN da VPS primeiro." : "Falha ao enviar para VPS.");
+  };
+}
+
 initTheme();
 render();
+initSync();

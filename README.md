@@ -1,6 +1,6 @@
 # Férias Pro
 
-Planejador inteligente de viagens e férias com cronograma Gantt interativo, cálculo automático de rotas, paradas e pedágios via **Google Maps Platform**, parâmetros completos do veículo e dashboard financeiro em tempo real.
+Planejador inteligente de viagens e férias com cronograma Gantt interativo, cálculo automático de rotas, paradas e pedágios via **Google Maps Platform**, parâmetros completos do veículo, dashboard financeiro e **sincronização automática em nuvem na sua VPS**.
 
 ## Principais recursos
 
@@ -13,19 +13,16 @@ Planejador inteligente de viagens e férias com cronograma Gantt interativo, cá
   - Ao editar Origem e Destino em qualquer viagem, calcula automaticamente **distância (km)**, **tempo de direção**, **pedágios oficiais** e exibe prévia do trajeto no mapa interativo.
   - Autocomplete de endereços e cidades (`Places API New`).
   - Regra automática de paradas: **1 parada a cada 4 horas** de viagem com **1 hora** por parada (configurável na aba Parâmetros).
+- **Sincronização automática PC ⇄ Celular (VPS)**:
+  - Servidor leve em Node.js puro (`server/server.js`, sem dependências externas) que persiste as alterações no servidor atrás do Nginx (`/api/state`) protegido por **PIN/Token**, sincronizando automaticamente entre computador e celular.
 - **Dashboard & Tabela 100% reativos**:
   - Qualquer alteração no Cronograma, Tabela ou Parâmetros recalcula automaticamente todos os KPIs, custos de combustível, recargas EV, pedágios, orçamento por viajante e cenários.
-- **Aba Parâmetros completa**:
-  - Modelo do carro, motorização (PHEV, HEV, Combustão ou 100% Elétrico BEV), consumo, autonomia elétrica, tanque, bateria, tarifas, tag de pedágio (Sem Parar, Veloe, ConectCar, Taggy, Move Mais), orçamento de hospedagem/alimentação, viajantes e simulação de cenários.
-- **Modo Dia / Noite + Mobile-first**:
-  - Botão Dia / Noite sempre visível no topo e layout totalmente adaptativo para celular e desktop.
-- **Exportação e Backup**:
-  - Exportação/importação `.xlsx` (Excel), backup/restauração `.json` e modo de impressão/PDF.
+- **Aba Parâmetros completa & Modo Dia / Noite**:
+  - Motorização (`PHEV`, `HEV`, `Combustão`, `BEV`), consumo, autonomia elétrica, tanque, bateria, tag de pedágio (`Sem Parar`, `Veloe`, `ConectCar`, `Taggy`, `Move Mais`), viajantes, orçamento extra e cenários.
+  - Botão **Dia / Noite** sempre visível e layout responsivo para celular e desktop.
 
-## Como usar
+## Executar com Sincronização na VPS (Ubuntu + Nginx)
 
-1. Sirva a pasta `app/` (ou a raiz do repositório) via HTTP local ou GitHub Pages, ou abra `app/index.html`.
-2. Para ativar cálculo automático de rotas, pedágios e autocomplete em tempo real:
-   - Acesse a aba **⚙️ Parâmetros** (ou o aviso dentro do modal de viagem) e cole sua **Google Maps API Key** (ou gere uma [Demo Key gratuita](https://mapsplatform.google.com/maps-demo-key?utm_campaign=gmp_git_agentskills_v1)).
-   - A chave é salva apenas no `localStorage` do seu navegador (nunca no repositório).
-   - Opcionalmente, copie `app/config.example.js` para `app/config.local.js` (arquivo ignorado pelo Git).
+1. Execute o servidor de sincronização (`server/server.js`) na porta local `3080` com `SYNC_TOKEN` definido em `/etc/ferias-pro.env` e `DATA_FILE=/var/lib/ferias-pro/state.json` via `systemd`.
+2. Configure o Nginx para servir `/var/www/ferias-pro/app` na raiz `/` e redirecionar `/api/` para `http://127.0.0.1:3080`.
+3. No navegador (PC e celular), clique no botão **PIN necessário** no topo (ou na aba **⚙️ Parâmetros ➔ Sincronização na Nuvem**) e informe o mesmo PIN configurado na VPS.

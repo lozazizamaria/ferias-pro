@@ -1,4 +1,5 @@
 app/config.local.js
+server/data/
 .env
 .env.*
 *.log

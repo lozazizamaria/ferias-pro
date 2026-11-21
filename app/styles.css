@@ -251,6 +251,13 @@ html[data-theme="light"] .tab.active {
   padding: 8px 12px;
 }
 
+.sync-pill { font-size: 0.82rem; font-weight: 600; padding: 7px 11px; gap: 7px; }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.sync-pill[data-status="synced"] .sync-dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.sync-pill[data-status="syncing"] .sync-dot { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); }
+.sync-pill[data-status="auth_required"] .sync-dot,
+.sync-pill[data-status="offline"] .sync-dot { background: var(--event); box-shadow: 0 0 8px var(--event); }
+
 .dropdown { position: relative; }
 .menu {
   display: none;
@@ -935,7 +942,8 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
   .card { padding: 14px; border-radius: 14px; }
   .hide-xs { display: none; }
   .btn-text { display: none; }
-  .theme-toggle .theme-label { display: none; }
+  .theme-toggle .theme-label, .sync-pill .sync-text { display: none; }
+  .sync-pill { padding: 8px 10px; }
   .btn { min-height: 40px; padding: 8px 12px; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .kpi { padding: 13px; }

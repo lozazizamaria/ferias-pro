@@ -8,7 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%236366f1'/%3E%3Cstop offset='100%25' stop-color='%2306b6d4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='18' fill='url(%23g)'/%3E%3Cpath d='M32 14c-7.7 0-14 6.2-14 13.8 0 10.4 14 22.2 14 22.2s14-11.8 14-22.2C46 20.2 39.7 14 32 14zm0 18.8a5 5 0 1 1 0-10 5 5 0 0 1 0 10z' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=2">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -28,6 +28,10 @@
     </div>
 
     <div class="actions">
+      <button class="btn ghost sync-pill" id="syncBadge" type="button" title="Status da sincronização em nuvem">
+        <span class="sync-dot" id="syncDot" aria-hidden="true"></span>
+        <span class="sync-text" id="syncText">Local</span>
+      </button>
       <button class="btn ghost theme-toggle" id="btnTheme" type="button" title="Alternar modo Dia / Noite" aria-label="Alternar modo Dia ou Noite">
         <span class="theme-icon" id="themeIcon" aria-hidden="true">☀️</span>
         <span class="theme-label" id="themeLabel">Dia</span>
@@ -227,6 +231,23 @@
             <a href="https://console.cloud.google.com/google/maps-apis/credentials?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Google Cloud Console</a> (habilitar Maps JS, Routes e Places API).
           </p>
         </div>
+
+        <div class="gmaps-key-panel">
+          <div class="gmaps-key-head">
+            <strong>☁️ Sincronização na Nuvem (VPS)</strong>
+            <span class="pill" id="syncParamBadge">Verificando...</span>
+          </div>
+          <p class="muted small">Mantém suas alterações (cronograma, parâmetros, checklist e chave Maps) sincronizadas automaticamente entre PC e celular.</p>
+          <div class="key-input-row">
+            <input type="password" id="syncTokenInput" placeholder="PIN / Código de sincronização da VPS" autocomplete="off">
+            <button type="button" class="btn ghost small" id="btnToggleSyncToken" title="Mostrar/ocultar PIN">👁️</button>
+            <button type="button" class="btn primary small" id="btnSaveSyncToken">Conectar</button>
+          </div>
+          <div class="key-actions-row">
+            <button type="button" class="btn ghost small" id="btnSyncPull">⬇️ Puxar da VPS</button>
+            <button type="button" class="btn ghost small" id="btnSyncPush">⬆️ Enviar para VPS</button>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -366,13 +387,34 @@
   </form>
 </dialog>
 
+<dialog id="syncModal">
+  <form id="syncForm" method="dialog">
+    <div class="modal-head">
+      <h2>☁️ Conectar Sincronização</h2>
+      <button type="button" class="icon-btn modal-close" id="btnCloseSyncModal" aria-label="Fechar">✕</button>
+    </div>
+    <p class="muted small">Digite o código (PIN) configurado na sua VPS para sincronizar PC e celular automaticamente.</p>
+    <div class="form-grid">
+      <label class="span2">PIN / Código de sincronização
+        <input type="password" id="syncModalInput" placeholder="Digite o código da VPS" autocomplete="current-password" required>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnCancelSyncModal">Cancelar</button>
+      <button type="submit" class="btn primary">Conectar e Sincronizar</button>
+    </div>
+  </form>
+</dialog>
+
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js"></script>
-<script src="data.js"></script>
-<script src="maps.js"></script>
-<script src="app.js"></script>
+<script src="config.example.js?v=2"></script>
+<script src="data.js?v=2"></script>
+<script src="maps.js?v=2"></script>
+<script src="sync.js?v=2"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>
