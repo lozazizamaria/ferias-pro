@@ -302,19 +302,19 @@
     const gridHtml = buildGanttHtmlBlock(activities, fromISO, toISO, helpers, "Atividade");
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Gantt — ${esc(state.title)}</title>
       <style>
-        @page { size: A4 landscape; margin: 7mm; }
+        @page { size: A4 landscape; margin: 12mm 15mm; }
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: Outfit, Arial, sans-serif; color: #0f172a; background: #fff; }
+        body { margin: 0; padding: 14px 20px; font-family: Outfit, Arial, sans-serif; color: #0f172a; background: #fff; }
         h1 { margin: 0 0 2px; font-size: 15pt; }
-        .sub { font-size: 9pt; color: #475569; margin-bottom: 8px; }
+        .sub { font-size: 9pt; color: #475569; margin-bottom: 10px; }
         .sheet { width: 100%; overflow: hidden; page-break-inside: avoid; }
-        .pg-grid { display: grid; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; font-size: 7.5pt; width: 100%; }
+        .pg-grid { display: grid; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; font-size: 7.5pt; width: 100%; }
         .pg-corner { grid-row: 1 / span 2; grid-column: 1; background: #f1f5f9; font-weight: 700; display: flex; align-items: center; padding: 4px 8px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
-        .pg-month { background: #e2e8f0; font-weight: 700; font-size: 7pt; text-transform: uppercase; padding: 2px 5px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
-        .pg-day { text-align: center; padding: 2px 0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #cbd5e1; font-size: 6.5pt; color: #475569; }
+        .pg-month { background: #e2e8f0; font-weight: 700; font-size: 7pt; text-transform: uppercase; padding: 3px 6px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
+        .pg-day { text-align: center; padding: 3px 0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #cbd5e1; font-size: 6.5pt; color: #475569; }
         .pg-day b { display: block; font-size: 8pt; color: #0f172a; }
         .pg-day.we, .pg-cell.we { background: #f8fafc; }
-        .pg-name { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #e2e8f0; background: #fff; min-width: 0; }
+        .pg-name { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #e2e8f0; background: #fff; min-width: 0; }
         .pg-dot { width: 16px; height: 16px; border-radius: 4px; color: #fff; font-size: 7pt; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .pg-ntxt { min-width: 0; overflow: hidden; }
         .pg-ntxt b { display: block; font-size: 7.4pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -401,20 +401,21 @@
     const tblHtml = buildFittedTableHtml(rows, totalsObj, helpers);
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Tabela — ${esc(state.title)}</title>
       <style>
-        @page { size: A4 landscape; margin: 8mm; }
+        @page { size: A4 landscape; margin: 12mm 15mm; }
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: Outfit, Arial, sans-serif; color: #0f172a; background: #fff; }
+        body { margin: 0; padding: 14px 20px; font-family: Outfit, Arial, sans-serif; color: #0f172a; background: #fff; }
         h1 { margin: 0 0 2px; font-size: 14pt; }
-        .sub { font-size: 8.5pt; color: #475569; margin-bottom: 8px; }
+        .sub { font-size: 8.5pt; color: #475569; margin-bottom: 10px; }
         .a4-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 6.8pt; }
         .a4-table thead { display: table-header-group; }
         .a4-table tfoot { display: table-row-group; }
         .a4-table tr { break-inside: avoid; page-break-inside: avoid; }
-        .a4-table th, .a4-table td { border: 1px solid #cbd5e1; padding: 4px 3px; text-align: left; vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .a4-table tbody tr:nth-child(even) { background: #f8fafc; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .a4-table th, .a4-table td { border: 1px solid #cbd5e1; padding: 4px 4px; text-align: left; vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .a4-table td.wrap { white-space: normal; word-break: break-word; }
         .a4-table th { background: #e2e8f0; font-weight: 700; color: #0f172a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .a4-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
-        .a4-table tfoot td { background: #f1f5f9; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .a4-table tfoot td { background: #eef2ff; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       </style></head><body>
       <h1>🧾 Planilha Completa — ${esc(state.title || "Férias Pro")}</h1>
       <div class="sub">Largura ajustada à página A4 horizontal (${rows.length} registros)</div>
@@ -423,52 +424,113 @@
     return printHtmlInFrame(html, false);
   }
 
-  /* ---------- MAPA DA ROTA PARA O RELATÓRIO ---------- */
-  function buildFallbackRouteMapDataUrl(trips, stateTitle) {
-    const W = 1200, H = 420;
-    const canvas = document.createElement("canvas");
-    canvas.width = W;
-    canvas.height = H;
-    const ctx = canvas.getContext("2d");
-
-    const grad = ctx.createLinearGradient(0, 0, W, H);
-    grad.addColorStop(0, "#eff6ff");
-    grad.addColorStop(1, "#ecfeff");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-
-    // Subtle map grid
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.25)";
-    ctx.lineWidth = 1;
-    for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-
+  /* ---------- MAPA DA ROTA PARA O RELATÓRIO (100% IMUNE A IMAGEM QUEBRADA) ---------- */
+  function collectRouteStops(trips) {
     const stops = [];
     trips.forEach(a => {
       if (a.from && stops[stops.length - 1] !== a.from) stops.push(a.from);
       if (a.to && stops[stops.length - 1] !== a.to) stops.push(a.to);
     });
+    return stops;
+  }
 
+  function buildGeoOrSchematicMapDataUrl(trips, stateTitle, coordsMap, helpers) {
+    const { num } = helpers || { num: v => String(v || 0) };
+    const W = 1280, H = 480;
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    // Atmosfera cartográfica clean
+    const grad = ctx.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, "#f0f7ff");
+    grad.addColorStop(0.55, "#f8fafc");
+    grad.addColorStop(1, "#ecfeff");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Grade sutil + paralelos/meridianos decorativos
+    ctx.strokeStyle = "rgba(148, 163, 184, 0.22)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 64) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 64) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+    // Rosa dos ventos discreta no canto superior direito
+    ctx.save();
+    ctx.translate(W - 58, 56);
+    ctx.strokeStyle = "rgba(79, 70, 229, 0.25)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#4f46e5";
+    ctx.font = "700 12px Outfit, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("N", 0, -27);
+    ctx.beginPath();
+    ctx.moveTo(0, -16); ctx.lineTo(6, 0); ctx.lineTo(0, 16); ctx.lineTo(-6, 0); ctx.closePath();
+    ctx.fillStyle = "rgba(79, 70, 229, 0.22)";
+    ctx.fill();
+    ctx.restore();
+
+    const stops = collectRouteStops(trips);
+    const totalKm = trips.reduce((s, a) => s + (+a.km || 0), 0);
+
+    // Card de título no mapa
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.beginPath();
+    ctx.roundRect(24, 18, 560, 44, 12);
+    ctx.fill();
+    ctx.strokeStyle = "#cbd5e1";
+    ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.fillStyle = "#0f172a";
-    ctx.font = "700 22px Outfit, sans-serif";
-    ctx.fillText(`🗺️ Mapa Esquemático da Rota — ${stateTitle || "Férias Pro"}`, 32, 42);
+    ctx.font = "700 18px Outfit, sans-serif";
+    ctx.fillText(`🗺️ Trajeto Rodoviário — ${String(stateTitle || "Férias Pro").slice(0, 28)} (${num(totalKm)} km)`, 40, 46);
 
     if (stops.length < 2) {
       ctx.fillStyle = "#475569";
       ctx.font = "500 18px Outfit, sans-serif";
-      ctx.fillText("Nenhuma rota rodoviária com origem e destino cadastrada.", 32, 210);
+      ctx.fillText("Nenhuma rota rodoviária com origem e destino cadastrada.", 40, 240);
       return canvas.toDataURL("image/png");
     }
 
-    const pts = stops.map((name, i) => {
-      const t = i / (stops.length - 1);
-      const x = 90 + t * (W - 180);
-      const y = 215 + Math.sin(t * Math.PI * 2.2) * 75;
-      return { x, y, name };
-    });
+    // Usa coordenadas geográficas reais se disponíveis, caso contrário esquema ondulado limpo
+    const geoValid = coordsMap && stops.every(s => coordsMap[s] && isFinite(coordsMap[s].lat) && isFinite(coordsMap[s].lng));
+    let pts;
+    if (geoValid) {
+      const lats = stops.map(s => coordsMap[s].lat);
+      const lngs = stops.map(s => coordsMap[s].lng);
+      const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+      const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+      const latSpan = Math.max(0.4, maxLat - minLat);
+      const lngSpan = Math.max(0.4, maxLng - minLng);
+      pts = stops.map((name, i) => {
+        const ll = coordsMap[name];
+        const nx = (ll.lng - minLng) / lngSpan;
+        const ny = 1 - (ll.lat - minLat) / latSpan;
+        return {
+          x: 110 + nx * (W - 220),
+          y: 96 + ny * (H - 185),
+          name
+        };
+      });
+    } else {
+      pts = stops.map((name, i) => {
+        const t = i / (stops.length - 1);
+        const x = 95 + t * (W - 190);
+        const y = 248 + Math.sin(t * Math.PI * 2.2) * 85;
+        return { x, y, name };
+      });
+    }
 
-    ctx.strokeStyle = "#0284c7";
-    ctx.lineWidth = 6;
+    // Sombra da rota + linha gradiente principal
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(79, 70, 229, 0.16)";
+    ctx.lineWidth = 14;
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
     for (let i = 1; i < pts.length; i++) {
@@ -478,8 +540,23 @@
     }
     ctx.stroke();
 
+    const routeGrad = ctx.createLinearGradient(pts[0].x, pts[0].y, pts[pts.length - 1].x, pts[pts.length - 1].y);
+    routeGrad.addColorStop(0, "#10b981");
+    routeGrad.addColorStop(0.5, "#0284c7");
+    routeGrad.addColorStop(1, "#4f46e5");
+    ctx.strokeStyle = routeGrad;
+    ctx.lineWidth = 6;
+    ctx.stroke();
+    ctx.restore();
+
+    // Pinos e rótulos com pílula branca legível
     pts.forEach((p, idx) => {
-      ctx.fillStyle = idx === 0 ? "#10b981" : (idx === pts.length - 1 ? "#ef4444" : "#4f46e5");
+      const col = idx === 0 ? "#10b981" : (idx === pts.length - 1 ? "#ef4444" : "#4f46e5");
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 17, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = col;
       ctx.beginPath();
       ctx.arc(p.x, p.y, 13, 0, Math.PI * 2);
       ctx.fill();
@@ -488,93 +565,154 @@
       ctx.textAlign = "center";
       ctx.fillText(String(idx + 1), p.x, p.y + 4);
 
-      const lblY = idx % 2 === 0 ? p.y - 22 : p.y + 30;
+      const lbl = p.name.slice(0, 20);
+      ctx.font = "700 13px Outfit, sans-serif";
+      const tw = Math.min(180, ctx.measureText(lbl).width + 18);
+      const boxY = idx % 2 === 0 ? Math.max(70, p.y - 44) : Math.min(H - 36, p.y + 22);
+      const boxX = Math.max(12, Math.min(W - tw - 12, p.x - tw / 2));
+
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, tw, 24, 8);
+      ctx.fill();
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
       ctx.fillStyle = "#0f172a";
-      ctx.font = "700 14px Outfit, sans-serif";
-      ctx.fillText(p.name.slice(0, 22), p.x, lblY);
+      ctx.textAlign = "center";
+      ctx.fillText(lbl, boxX + tw / 2, boxY + 16);
       ctx.textAlign = "left";
     });
+
+    // Legenda inferior
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.beginPath();
+    ctx.roundRect(24, H - 38, 360, 26, 8);
+    ctx.fill();
+    ctx.fillStyle = "#10b981"; ctx.beginPath(); ctx.arc(40, H - 25, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#334155"; ctx.font = "600 12px Outfit, sans-serif"; ctx.fillText("Origem", 52, H - 21);
+    ctx.fillStyle = "#4f46e5"; ctx.beginPath(); ctx.arc(125, H - 25, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#334155"; ctx.fillText("Paradas", 137, H - 21);
+    ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.arc(215, H - 25, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#334155"; ctx.fillText(geoValid ? "Destino (Coordenadas Reais)" : "Destino Final", 227, H - 21);
 
     return canvas.toDataURL("image/png");
   }
 
-  function buildStaticMapImageUrl(trips, gmapsKey) {
-    const pts = [];
-    trips.forEach(a => {
-      if (a.from && pts[pts.length - 1] !== a.from) pts.push(a.from);
-      if (a.to && pts[pts.length - 1] !== a.to) pts.push(a.to);
-    });
-    if (!gmapsKey || pts.length < 2) return "";
-    const markers = pts.slice(0, 10).map((p, i) => `markers=color:${i === 0 ? "green" : (i === pts.length - 1 ? "red" : "blue")}|label:${i + 1}|${encodeURIComponent(p + ", Brasil")}`).join("&");
-    const path = "path=color:0x0284c7ff|weight:4|" + pts.slice(0, 10).map(p => encodeURIComponent(p + ", Brasil")).join("|");
-    return `https://maps.googleapis.com/maps/api/staticmap?size=1100x400&scale=2&language=pt-BR&region=BR&${markers}&${path}&key=${encodeURIComponent(gmapsKey)}`;
+  async function resolveRouteMapDataUrl(trips, stateTitle, helpers, gmapsKey) {
+    const stops = collectRouteStops(trips);
+    if (stops.length >= 2 && window.FeriasApi && window.FeriasApi.isServer && window.FeriasApi.isServer() && window.FeriasApi.getStaticRouteMap) {
+      try {
+        const res = await window.FeriasApi.getStaticRouteMap(stops, gmapsKey);
+        if (res && res.available && res.dataUrl) {
+          return { dataUrl: res.dataUrl, isGoogleStatic: true };
+        }
+      } catch {}
+    }
+
+    let coordsMap = null;
+    if (stops.length >= 2 && window.google?.maps?.Geocoder) {
+      try {
+        const geocoder = new google.maps.Geocoder();
+        const unique = [...new Set(stops)].slice(0, 12);
+        const results = await Promise.race([
+          Promise.all(unique.map(name => new Promise(resolve => {
+            geocoder.geocode({ address: /brasil|brazil/i.test(name) ? name : `${name}, Brasil` }, (res, st) => {
+              if (st === "OK" && res && res[0]?.geometry?.location) {
+                const loc = res[0].geometry.location;
+                resolve([name, { lat: loc.lat(), lng: loc.lng() }]);
+              } else resolve(null);
+            });
+          }))),
+          new Promise(r => setTimeout(() => r([]), 2400))
+        ]);
+        const pairs = (results || []).filter(Boolean);
+        if (pairs.length >= 2) coordsMap = Object.fromEntries(pairs);
+      } catch {}
+    }
+
+    return {
+      dataUrl: buildGeoOrSchematicMapDataUrl(trips, stateTitle, coordsMap, helpers),
+      isGoogleStatic: false
+    };
   }
 
-  /* ---------- RELATÓRIO COMPLETO LIMPO (ORDEM SOLICITADA) ----------
+  /* ---------- RELATÓRIO COMPLETO LIMPO E VISUAL (ORDEM SOLICITADA) ----------
      1. Dashboards (+ Composição de Custos)
-     2. Imagem do Maps da Rota
+     2. Imagem do Maps da Rota (pré-resolvida, sem quebra!)
      3. Gráfico de Gantt (Horizontal)
      4. Linha do Tempo
      5. Checklist
      6. Planilha / Tabela (A4 Horizontal)
-     7. Parâmetros
+     7. Parâmetros & Finanças
   */
-  function printFullTripReport(state, sorted, totalsObj, helpers, gmapsKey) {
+  async function printFullTripReport(state, sorted, totalsObj, helpers, gmapsKey) {
     const { parseD, fmtBR, fmtShortBR, days, money, num, hmHuman, calc, getTypeInfo, WD } = helpers;
     const t = totalsObj;
     const avg = t.liters ? t.km / t.liters : 0;
     const perPerson = t.grandTotal / Math.max(1, +state.params?.travelers || 1);
     const doneChk = (state.checklist || []).filter(c => c.status === "Concluído").length;
 
-    const minISO = sorted.length ? sorted[0].start : fmtBR(new Date().toISOString().slice(0, 10));
-    const maxISO = sorted.length ? sorted.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, sorted[0].start) : minISO;
+    const minISO = sorted.length ? fmtBR(sorted[0].start) : fmtBR(new Date().toISOString().slice(0, 10));
+    const maxRaw = sorted.length ? sorted.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, sorted[0].start) : "";
+    const maxISO = maxRaw ? fmtBR(maxRaw) : minISO;
 
     const kpisHtml = [
-      ["Total Geral das Férias", money(t.grandTotal), `${state.params?.travelers || 1} viajantes · ${money(perPerson)}/pessoa`],
-      ["Distância de Carro", `${num(t.km)} km`, `${t.trips} trechos rodoviários`],
-      ["Tempo na Estrada", hmHuman(t.drive + t.stopTime), `Direção ${hmHuman(t.drive)} + ${t.stops} par.`],
-      ["Combustível + EV + Ped.", money(t.total), `${num(t.liters, 1)} L (${avg ? num(avg, 1) + " km/L" : "BEV"}) · Ped. ${money(t.toll)}`],
-      ["Checklist Preparação", `${doneChk}/${state.checklist.length}`, `${state.checklist.length ? Math.round(doneChk / state.checklist.length * 100) : 0}% concluído`]
-    ].map(([l, v, s]) => `<div class="rkpi"><small>${l}</small><b>${v}</b><span>${s}</span></div>`).join("");
+      ["Total Geral das Férias", money(t.grandTotal), `${state.params?.travelers || 1} viajante(s) · ${money(perPerson)}/pessoa`, "#4f46e5"],
+      ["Distância de Carro", `${num(t.km)} km`, `${t.trips} trechos rodoviários`, "#0284c7"],
+      ["Tempo na Estrada", hmHuman(t.drive + t.stopTime), `Direção ${hmHuman(t.drive)} + ${t.stops} par.`, "#7c3aed"],
+      ["Combustível + EV + Ped.", money(t.total), `${num(t.liters, 1)} L (${avg ? num(avg, 1) + " km/L" : "BEV"}) · Ped. ${money(t.toll)}`, "#059669"],
+      ["Checklist Preparação", `${doneChk}/${(state.checklist || []).length}`, `${(state.checklist || []).length ? Math.round(doneChk / state.checklist.length * 100) : 0}% concluído`, "#d97706"]
+    ].map(([l, v, s, col]) => `<div class="rkpi" style="--rc:${col}"><small>${l}</small><b>${v}</b><span>${s}</span></div>`).join("");
 
     const compRows = (t.costBreakdown || []).filter(b => b.value > 0);
     const denom = t.grandTotal || t.total || 1;
     const costHtml = compRows.map(b => `
       <div class="rbar">
-        <div class="rbar-top"><span>${esc(b.label)}</span><b>${money(b.value)} (${num(b.value / denom * 100)}%)</b></div>
+        <div class="rbar-top">
+          <span><i class="rdot" style="background:${b.color || "#4f46e5"}"></i>${esc(b.label)}</span>
+          <b>${money(b.value)} <small>(${num(b.value / denom * 100)}%)</small></b>
+        </div>
         <div class="rbar-track"><div style="width:${Math.min(100, b.value / denom * 100)}%;background:${b.gradient || "#4f46e5"}"></div></div>
       </div>`).join("") || `<p class="muted">Sem custos registrados.</p>`;
 
     const trips = sorted.filter(a => a.type === "Viagem" && (a.from || a.to));
-    const fallbackMapImg = buildFallbackRouteMapDataUrl(trips, state.title);
-    const staticMapUrl = buildStaticMapImageUrl(trips, gmapsKey);
+    const mapRes = await resolveRouteMapDataUrl(trips, state.title, helpers, gmapsKey);
+    const routeLegsHtml = trips.map((tr, i) => `
+      <span class="rleg-pill"><b>${i + 1}.</b> ${esc(tr.from)} ➔ ${esc(tr.to)} · ${num(tr.km)} km</span>`
+    ).join("");
 
     const ganttHtml = sorted.length
-      ? buildGanttHtmlBlock(sorted, sorted[0].start, maxISO, helpers, "Atividade")
+      ? buildGanttHtmlBlock(sorted, sorted[0].start, maxRaw || sorted[0].start, helpers, "Atividade")
       : "<p>Sem atividades.</p>";
 
     const timelineHtml = sorted.map(a => {
       const info = getTypeInfo(a.type);
+      const colors = TYPE_COLORS[a.type] || TYPE_COLORS.Outro;
       const d = parseD(a.start);
       const c = calc(a);
       const val = c.total + c.extra;
       const meta = a.type === "Viagem"
         ? `${a.from || "?"} ➔ ${a.to || "?"} · ${num(a.km)} km · ${hmHuman(a.drive)} · Ped. ${money(a.toll)} · ${money(val)}`
         : `${days(a)} dia(s)${a.from || a.to ? ` · ${a.from || "?"} ➔ ${a.to || "?"}` : ""}${val > 0 ? ` · ${money(val)}` : ""}${a.notes ? ` · ${a.notes}` : ""}`;
-      return `<div class="rtl-item">
+      return `<div class="rtl-item" style="border-left-color:${colors[0]}">
         <div class="rtl-date">${fmtBR(a.start)}<small>${WD[d.getDay()]}</small></div>
-        <div class="rtl-body"><b>${info.icon} [${esc(a.type)}] ${esc(a.name)}</b><span>${esc(meta)}</span></div>
+        <div class="rtl-body"><b>${info.icon} <span class="rbadge" style="background:${colors[0]}18;color:${colors[0]}">${esc(a.type)}</span> ${esc(a.name)}</b><span>${esc(meta)}</span></div>
       </div>`;
     }).join("") || "<p>Sem atividades.</p>";
 
     const checklistHtml = `<table class="a4-table">
       <thead><tr><th style="width:5%">#</th><th style="width:14%">Categoria</th><th style="width:36%">Item</th><th style="width:11%">Prioridade</th><th style="width:12%">Status</th><th style="width:22%">Notas</th></tr></thead>
-      <tbody>${(state.checklist || []).map((c, i) => `
-        <tr><td>${i + 1}</td><td>${esc(c.cat)}</td><td class="wrap"><b>${esc(c.item)}</b></td><td>${esc(c.prio)}</td><td>${esc(c.status)}</td><td class="wrap">${esc(c.notes || "")}</td></tr>`).join("")}
+      <tbody>${(state.checklist || []).map((c, i) => {
+        const stCls = c.status === "Concluído" ? "ok" : (c.status === "Em andamento" ? "mid" : "pend");
+        return `<tr><td>${i + 1}</td><td>${esc(c.cat)}</td><td class="wrap"><b>${esc(c.item)}</b></td><td>${esc(c.prio)}</td><td><span class="rpill ${stCls}">${esc(c.status)}</span></td><td class="wrap">${esc(c.notes || "")}</td></tr>`;
+      }).join("")}
       </tbody></table>`;
 
     const tableHtml = buildFittedTableHtml(sorted, t, helpers);
 
+    const savingsGoal = Number(state.finance?.savingsGoal) || 0;
     const paramsHtml = `<div class="rparams-grid">
       <div class="rbox"><h3>🚗 Veículo &amp; Motorização</h3>
         <div><b>Modelo:</b> ${esc(state.vehicle.name)} (${esc(state.vehicle.powertrain)})</div>
@@ -582,9 +720,9 @@
         <div><b>Tanque:</b> ${state.vehicle.tank} L · <b>Bateria:</b> ${state.vehicle.battery} kWh (${state.vehicle.kwhPerCharge} kWh/recarga)</div>
         <div><b>Tarifas:</b> Gasolina ${money(state.vehicle.fuelPrice)}/L · Energia ${money(state.vehicle.kwhPrice)}/kWh</div>
       </div>
-      <div class="rbox"><h3>💰 Regras &amp; Cenários</h3>
+      <div class="rbox"><h3>💰 Regras, Economia &amp; Cenários</h3>
         <div><b>Viajantes:</b> ${state.params.travelers} · <b>Hospedagem base:</b> ${money(state.params.lodgingPerNight)}/noite (${t.lodgingNights} noites)</div>
-        <div><b>Alimentação/pessoa:</b> ${money(state.params.dailyFoodPerPerson)}/dia · <b>Reserva:</b> ${state.params.contingencyPct || 0}%</div>
+        <div><b>Alimentação/pessoa:</b> ${money(state.params.dailyFoodPerPerson)}/dia · <b>Reserva:</b> ${state.params.contingencyPct || 0}%${savingsGoal > 0 ? ` · <b>Meta Economia:</b> -${money(savingsGoal)}` : ""}</div>
         <div><b>Paradas auto:</b> 1 a cada ${state.params.stopIntervalHours}h (${state.params.stopDurationMin} min) · <b>Lembrete:</b> ${state.params.calendarReminderTime || "09:00"}</div>
         <div><b>Cenários:</b> ${(state.scenarios || []).map(sc => `${esc(sc.name)} (${sc.kmL || state.vehicle.hevKmL} km/L)`).join(" · ")}</div>
       </div>
@@ -592,102 +730,136 @@
 
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório — ${esc(state.title)}</title>
       <style>
-        @page { size: A4 landscape; margin: 9mm; }
+        @page { size: A4 landscape; margin: 13mm 15mm; }
         * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        body { margin: 0; font-family: Outfit, Arial, sans-serif; color: #0f172a; background: #fff; font-size: 9pt; }
-        .rhead { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid #4f46e5; padding-bottom: 6px; margin-bottom: 12px; }
-        .rhead h1 { margin: 0; font-size: 16pt; color: #0f172a; }
-        .rsec { margin-bottom: 16px; }
-        .rsec-break { break-before: page; page-break-before: always; }
-        .rsec h2 { margin: 0 0 8px; font-size: 12pt; color: #3730a3; border-left: 4px solid #4f46e5; padding-left: 8px; }
-        .rkpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 12px; }
-        .rkpi { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; background: #f8fafc; }
-        .rkpi small { display: block; font-size: 7pt; text-transform: uppercase; color: #64748b; font-weight: 700; }
-        .rkpi b { display: block; font-size: 12pt; margin: 2px 0; color: #0f172a; }
-        .rkpi span { font-size: 7.3pt; color: #475569; }
-        .rbar { margin-bottom: 6px; }
-        .rbar-top { display: flex; justify-content: space-between; font-size: 8.2pt; margin-bottom: 2px; }
-        .rbar-track { height: 7px; border-radius: 99px; background: #e2e8f0; overflow: hidden; }
+        body { margin: 0; padding: 14px 22px; font-family: Outfit, Arial, sans-serif; color: #0f172a; background: #fff; font-size: 9pt; line-height: 1.4; }
+        .rwrap { max-width: 100%; margin: 0 auto; }
+        .rhead {
+          display: flex; justify-content: space-between; align-items: center; gap: 16px;
+          background: linear-gradient(135deg, #1e1b4b, #4338ca); color: #fff;
+          padding: 14px 18px; border-radius: 12px; margin-bottom: 16px;
+        }
+        .rhead h1 { margin: 0; font-size: 16pt; color: #fff; letter-spacing: -0.2px; }
+        .rhead-sub { font-size: 8.5pt; color: #e0e7ff; margin-top: 2px; }
+        .rhead-meta { text-align: right; font-size: 8.2pt; color: #c7d2fe; white-space: nowrap; }
+        .rsec { margin-bottom: 18px; }
+        .rsec-break { break-before: page; page-break-before: always; padding-top: 4px; }
+        .rsec h2 {
+          margin: 0 0 10px; font-size: 11.5pt; color: #1e293b;
+          display: flex; align-items: center; gap: 8px;
+          border-bottom: 2px solid #e2e8f0; padding-bottom: 6px;
+        }
+        .rsec-num {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 22px; height: 22px; border-radius: 7px; font-size: 9pt; font-weight: 700;
+          background: #4f46e5; color: #fff;
+        }
+        .rkpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 14px; }
+        .rkpi { border: 1px solid #cbd5e1; border-top: 3px solid var(--rc, #4f46e5); border-radius: 10px; padding: 10px 11px; background: #f8fafc; }
+        .rkpi small { display: block; font-size: 6.8pt; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.4px; }
+        .rkpi b { display: block; font-size: 12.5pt; margin: 3px 0; color: #0f172a; }
+        .rkpi span { font-size: 7.4pt; color: #475569; }
+        .rcost-box { border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px 14px; background: #fff; }
+        .rbar { margin-bottom: 8px; }
+        .rbar:last-child { margin-bottom: 0; }
+        .rbar-top { display: flex; justify-content: space-between; font-size: 8.4pt; margin-bottom: 3px; }
+        .rbar-top small { color: #64748b; font-weight: 600; }
+        .rdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+        .rbar-track { height: 8px; border-radius: 99px; background: #e2e8f0; overflow: hidden; }
         .rbar-track > div { height: 100%; border-radius: 99px; }
-        .map-img-box { border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; text-align: center; background: #f8fafc; }
-        .map-img-box img { width: 100%; max-height: 280px; object-fit: contain; display: block; margin: auto; }
+        .map-img-box { border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; text-align: center; background: #f8fafc; padding: 6px; }
+        .map-img-box img { width: 100%; max-height: 295px; object-fit: contain; display: block; margin: auto; border-radius: 8px; }
+        .rlegs-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+        .rleg-pill { font-size: 7.3pt; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 999px; padding: 3px 9px; color: #334155; }
         /* Gantt */
-        .pg-grid { display: grid; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; font-size: 7pt; width: 100%; }
+        .pg-grid { display: grid; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; font-size: 7pt; width: 100%; }
         .pg-corner { grid-row: 1 / span 2; grid-column: 1; background: #f1f5f9; font-weight: 700; display: flex; align-items: center; padding: 4px 8px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
-        .pg-month { background: #e2e8f0; font-weight: 700; font-size: 6.8pt; text-transform: uppercase; padding: 2px 5px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
+        .pg-month { background: #e2e8f0; font-weight: 700; font-size: 6.8pt; text-transform: uppercase; padding: 3px 5px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
         .pg-day { text-align: center; padding: 2px 0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #cbd5e1; font-size: 6pt; color: #475569; }
         .pg-day b { display: block; font-size: 7.5pt; color: #0f172a; }
         .pg-day.we, .pg-cell.we { background: #f8fafc; }
-        .pg-name { display: flex; align-items: center; gap: 5px; padding: 3px 5px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #e2e8f0; background: #fff; min-width: 0; }
+        .pg-name { display: flex; align-items: center; gap: 5px; padding: 3.5px 6px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #e2e8f0; background: #fff; min-width: 0; }
         .pg-dot { width: 15px; height: 15px; border-radius: 4px; color: #fff; font-size: 6.5pt; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .pg-ntxt { min-width: 0; overflow: hidden; }
         .pg-ntxt b { display: block; font-size: 7pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .pg-ntxt small { display: block; font-size: 6pt; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .pg-cell { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; min-height: 20px; }
+        .pg-cell { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; min-height: 21px; }
         .pg-bar-wrap { display: flex; align-items: center; padding: 2px; z-index: 2; overflow: hidden; }
-        .pg-bar { width: 100%; border-radius: 4px; color: #fff; font-weight: 700; font-size: 6.5pt; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pg-bar { width: 100%; border-radius: 5px; color: #fff; font-weight: 700; font-size: 6.5pt; padding: 2px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         /* Timeline */
-        .rtl-list { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-        .rtl-item { display: flex; gap: 8px; border: 1px solid #cbd5e1; border-left: 3px solid #4f46e5; border-radius: 6px; padding: 6px 8px; break-inside: avoid; }
-        .rtl-date { font-weight: 700; font-size: 7.5pt; color: #3730a3; min-width: 62px; }
+        .rtl-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .rtl-item { display: flex; gap: 10px; border: 1px solid #cbd5e1; border-left: 4px solid #4f46e5; border-radius: 8px; padding: 7px 10px; background: #fcfcfd; break-inside: avoid; }
+        .rtl-date { font-weight: 700; font-size: 7.8pt; color: #3730a3; min-width: 64px; }
         .rtl-date small { display: block; font-weight: 500; color: #64748b; }
-        .rtl-body b { display: block; font-size: 8pt; }
-        .rtl-body span { font-size: 7.2pt; color: #475569; }
+        .rtl-body b { display: block; font-size: 8.2pt; }
+        .rtl-body span { font-size: 7.4pt; color: #475569; }
+        .rbadge { font-size: 6.8pt; padding: 1px 6px; border-radius: 99px; font-weight: 700; vertical-align: middle; }
         /* Tables */
-        .a4-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 6.8pt; }
+        .a4-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 6.9pt; }
         .a4-table thead { display: table-header-group; }
         .a4-table tr { break-inside: avoid; }
-        .a4-table th, .a4-table td { border: 1px solid #cbd5e1; padding: 3.5px 3px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .a4-table tbody tr:nth-child(even) { background: #f8fafc; }
+        .a4-table th, .a4-table td { border: 1px solid #cbd5e1; padding: 4px 4px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .a4-table td.wrap { white-space: normal; word-break: break-word; }
-        .a4-table th { background: #e2e8f0; font-weight: 700; }
-        .a4-table td.num { text-align: right; }
-        .a4-table tfoot td { background: #f1f5f9; font-weight: 700; }
-        .rparams-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .rbox { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; background: #f8fafc; display: grid; gap: 4px; font-size: 8.2pt; }
-        .rbox h3 { margin: 0 0 4px; font-size: 9.5pt; color: #0f172a; }
+        .a4-table th { background: #e2e8f0; font-weight: 700; color: #0f172a; }
+        .a4-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .a4-table tfoot td { background: #eef2ff; font-weight: 700; }
+        .rpill { padding: 2px 7px; border-radius: 99px; font-size: 6.8pt; font-weight: 700; }
+        .rpill.ok { background: #dcfce7; color: #166534; }
+        .rpill.mid { background: #fef3c7; color: #92400e; }
+        .rpill.pend { background: #f1f5f9; color: #475569; }
+        .rparams-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .rbox { border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px 14px; background: #f8fafc; display: grid; gap: 5px; font-size: 8.4pt; }
+        .rbox h3 { margin: 0 0 4px; font-size: 9.8pt; color: #1e293b; }
       </style></head><body>
-      <div class="rhead">
-        <h1>✈️ Relatório da Viagem — ${esc(state.title || "Férias Pro")}</h1>
-        <span>Gerado em ${new Date().toLocaleDateString("pt-BR")} · ${sorted.length} atividades</span>
+      <div class="rwrap">
+        <header class="rhead">
+          <div>
+            <h1>✈️ Relatório da Viagem — ${esc(state.title || "Férias Pro")}</h1>
+            <div class="rhead-sub">Período: ${minISO} a ${maxISO} · ${t.totalDays || sorted.length} dias planejados · ${state.params?.travelers || 1} viajante(s)</div>
+          </div>
+          <div class="rhead-meta">Gerado em ${new Date().toLocaleDateString("pt-BR")}<br>${sorted.length} atividades · Férias Pro</div>
+        </header>
+
+        <section class="rsec">
+          <h2><span class="rsec-num">1</span> Dashboard &amp; Composição de Custos</h2>
+          <div class="rkpis">${kpisHtml}</div>
+          <div class="rcost-box">${costHtml}</div>
+        </section>
+
+        <section class="rsec">
+          <h2><span class="rsec-num">2</span> Mapa da Rota (${mapRes.isGoogleStatic ? "Google Maps" : "Trajeto Visual"})</h2>
+          <div class="map-img-box">
+            <img src="${mapRes.dataUrl}" alt="Mapa visual da rota">
+          </div>
+          ${routeLegsHtml ? `<div class="rlegs-row">${routeLegsHtml}</div>` : ""}
+        </section>
+
+        <section class="rsec rsec-break">
+          <h2><span class="rsec-num">3</span> Cronograma Gráfico de Gantt (Horizontal)</h2>
+          ${ganttHtml}
+        </section>
+
+        <section class="rsec rsec-break">
+          <h2><span class="rsec-num">4</span> Linha do Tempo</h2>
+          <div class="rtl-list">${timelineHtml}</div>
+        </section>
+
+        <section class="rsec rsec-break">
+          <h2><span class="rsec-num">5</span> Checklist de Preparação (${doneChk}/${(state.checklist || []).length})</h2>
+          ${checklistHtml}
+        </section>
+
+        <section class="rsec rsec-break">
+          <h2><span class="rsec-num">6</span> Planilha Completa (A4 Horizontal)</h2>
+          ${tableHtml}
+        </section>
+
+        <section class="rsec rsec-break">
+          <h2><span class="rsec-num">7</span> Parâmetros, Economia &amp; Cenários</h2>
+          ${paramsHtml}
+        </section>
       </div>
-
-      <section class="rsec">
-        <h2>1. Dashboard &amp; Composição de Custos</h2>
-        <div class="rkpis">${kpisHtml}</div>
-        ${costHtml}
-      </section>
-
-      <section class="rsec">
-        <h2>2. Mapa da Rota (Google Maps)</h2>
-        <div class="map-img-box">
-          <img src="${esc(staticMapUrl || fallbackMapImg)}" alt="Mapa da rota" onerror="this.onerror=null;this.src='${fallbackMapImg}'">
-        </div>
-      </section>
-
-      <section class="rsec rsec-break">
-        <h2>3. Cronograma Gráfico de Gantt (Horizontal)</h2>
-        ${ganttHtml}
-      </section>
-
-      <section class="rsec rsec-break">
-        <h2>4. Linha do Tempo</h2>
-        <div class="rtl-list">${timelineHtml}</div>
-      </section>
-
-      <section class="rsec rsec-break">
-        <h2>5. Checklist de Preparação (${doneChk}/${(state.checklist || []).length})</h2>
-        ${checklistHtml}
-      </section>
-
-      <section class="rsec rsec-break">
-        <h2>6. Planilha Completa (A4 Horizontal)</h2>
-        ${tableHtml}
-      </section>
-
-      <section class="rsec rsec-break">
-        <h2>7. Parâmetros &amp; Cenários</h2>
-        ${paramsHtml}
-      </section>
       </body></html>`;
 
     return printHtmlInFrame(html, true);

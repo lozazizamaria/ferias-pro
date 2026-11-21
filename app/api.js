@@ -331,6 +331,12 @@
     return r.data;
   }
 
+  async function getStaticRouteMap(stops, gmapsKey) {
+    if (!serverAvailable) return { ok: false, available: false };
+    const r = await req("/api/maps/static-route", { method: "POST", body: JSON.stringify({ stops, gmapsKey }) });
+    return r.ok ? r.data : { ok: false, available: false };
+  }
+
   /* ---------- Local fallback ---------- */
   function getLocalStore() {
     try { return JSON.parse(localStorage.getItem(LOCAL_TRIPS_KEY)) || {}; }
@@ -408,6 +414,7 @@
     signWalletPass,
     createPkpassUrl,
     epaVehicles,
+    getStaticRouteMap,
     schedulePush,
     startPolling,
     onStatus,

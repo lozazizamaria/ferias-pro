@@ -285,7 +285,10 @@ function readBody(req) {
 }
 
 function serveStaticFile(reqPath, res) {
-  const cleanPath = reqPath === "/" ? "/index.html" : reqPath;
+  let cleanPath = reqPath === "/" ? "/index.html" : reqPath;
+  if (cleanPath === "/sobre" || cleanPath === "/como-usar" || cleanPath === "/saiba-mais") {
+    cleanPath = "/como-usar.html";
+  }
   const resolved = path.resolve(STATIC_DIR, "." + cleanPath);
   if (!resolved.startsWith(path.resolve(STATIC_DIR))) {
     res.writeHead(403);
@@ -1352,6 +1355,37 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
         return sendJson(res, 200, { ok: true, activity });
       } catch (err) {
         return sendJson(res, 502, { ok: false, error: err.message || "Erro ao analisar atividade com IA." });
+      }
+    }
+
+    /* ---------- PROXY STATIC ROUTE MAP (EVITA QUEBRA NO RELATÓRIO PDF) ---------- */
+    if (pathname === "/api/maps/static-route" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      const body = await readBody(req);
+      const key = String(creds.gmapsKey || body.gmapsKey || "").trim();
+      const stops = Array.isArray(body.stops) ? body.stops.filter(Boolean).slice(0, 10) : [];
+      if (!key || stops.length < 2) {
+        return sendJson(res, 200, { ok: true, available: false });
+      }
+      try {
+        const markers = stops.map((p, i) => `markers=color:${i === 0 ? "green" : (i === stops.length - 1 ? "red" : "blue")}|label:${i + 1}|${encodeURIComponent(p + ", Brasil")}`).join("&");
+        const pathParam = "path=color:0x0284c7ff|weight:4|" + stops.map(p => encodeURIComponent(p + ", Brasil")).join("|");
+        const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x250&scale=2&language=pt-BR&region=BR&${markers}&${pathParam}&key=${encodeURIComponent(key)}`;
+        const mRes = await fetch(mapUrl);
+        const ct = mRes.headers.get("content-type") || "";
+        if (!mRes.ok || !ct.startsWith("image/")) {
+          return sendJson(res, 200, { ok: true, available: false });
+        }
+        const buf = Buffer.from(await mRes.arrayBuffer());
+        return sendJson(res, 200, {
+          ok: true,
+          available: true,
+          dataUrl: `data:${ct.split(";")[0]};base64,${buf.toString("base64")}`
+        });
+      } catch {
+        return sendJson(res, 200, { ok: true, available: false });
       }
     }
 

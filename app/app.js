@@ -3239,8 +3239,9 @@ $("#btnTablePdf").onclick = () => {
   window.FeriasReport.printTableLandscape(rows, state, totals(), reportHelpers());
 };
 
-$("#btnPrintReport").onclick = () => {
-  window.FeriasReport.printFullTripReport(state, sorted(), totals(), reportHelpers(), window.FeriasMaps ? window.FeriasMaps.getKey() : "");
+$("#btnPrintReport").onclick = async () => {
+  toast("🖨️ Gerando relatório visual completo...");
+  await window.FeriasReport.printFullTripReport(state, sorted(), totals(), reportHelpers(), window.FeriasMaps ? window.FeriasMaps.getKey() : "");
 };
 
 /* ---------- DASHBOARD QUICK ACTIONS & MAP ---------- */

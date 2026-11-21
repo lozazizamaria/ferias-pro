@@ -323,7 +323,7 @@ html[data-theme="light"] .btn.wa-pill { color: #15803d; background: rgba(22, 163
   z-index: 50;
 }
 .menu.open { display: block; animation: pop 0.15s; }
-.menu button {
+.menu button, .menu .menu-link {
   display: block;
   width: 100%;
   text-align: left;
@@ -333,10 +333,36 @@ html[data-theme="light"] .btn.wa-pill { color: #15803d; background: rgba(22, 163
   border-radius: 8px;
   cursor: pointer;
   color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 500;
+  text-decoration: none;
 }
-.menu button:hover { background: var(--surface-hover); }
+.menu button:hover, .menu .menu-link:hover { background: var(--surface-hover); }
 .menu .danger { color: var(--danger); }
 .menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
+
+.icon-outline-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 10px;
+  color: var(--text-strong);
+}
+.icon-outline-btn svg {
+  display: block;
+  flex-shrink: 0;
+}
+.auth-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-learn-more {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
 
 /* MAIN & VIEWS */
 main { padding: 20px 26px 40px; max-width: 1580px; margin: auto; }
