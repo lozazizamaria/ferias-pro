@@ -1892,7 +1892,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true,
         mode: "multi-user",
-        version: "25",
+        version: "26",
         encryption: "aes-256-gcm",
         googleClientId: getServerGoogleClientId(),
         hasGemini: Boolean(sys.geminiKey),
@@ -3189,6 +3189,7 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
         return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key na Central de Integrações." });
       }
       const body = await readBody(req);
+      const todayIso = String(body.baseDate || new Date().toISOString().slice(0, 10));
       const detectedBarcode = (body.detectedBarcode && body.detectedBarcode.rawValue)
         ? {
             rawValue: String(body.detectedBarcode.rawValue).slice(0, 1200),
@@ -3198,7 +3199,7 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
       const barcodeHint = detectedBarcode
         ? `\nCódigo de barras/QR detectado no bilhete (${detectedBarcode.format}): ${detectedBarcode.rawValue}`
         : "";
-      const parts = [{ text: `Extraia dados completos de atividade/passagem/bilhete/reserva/viagem desta entrada: ${String(body.prompt || "").trim()}${barcodeHint}` }];
+      const parts = [{ text: `Data de referência hoje: ${todayIso}. Extraia todos os dados completos de atividade/passagem/bilhete/reserva/viagem desta entrada (imagem, áudio, PDF ou texto): ${String(body.prompt || "").trim()}${barcodeHint}` }];
       if (Array.isArray(body.media)) {
         body.media.slice(0, 4).forEach(m => {
           const p = parseGeminiMediaPart(m);
@@ -3209,8 +3210,8 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
         const activity = await callGeminiJSON(
           creds.geminiKey,
           parts,
-          `Você é especialista em leitura de tickets aéreos, cartões de embarque, reservas de navio/cruzeiro, trem, ônibus, hotéis e ingressos para o Férias Pro.
-Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para passagem aérea/embarque, "Navio" para cruzeiro/balsa/barco, "Trem", "Ônibus", "Viagem", "Hospedagem", "Ingresso", "Evento", etc.) e preencha TODOS os campos identificados em JSON:
+          `Você é especialista em leitura de áudios falados, textos, tickets aéreos, cartões de embarque, reservas de navio/cruzeiro, trem, ônibus, hotéis e ingressos para o Férias Pro.
+Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para passagem aérea/embarque, "Navio" para cruzeiro/balsa/barco, "Trem", "Ônibus", "Viagem", "Hospedagem", "Ingresso", "Evento", etc.), converta datas relativas usando ${todayIso} para YYYY-MM-DD, e preencha TODOS os campos identificados em JSON:
 {
   "type": "Viagem | Voo | Trem | Ônibus | Navio | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
   "name": "Título curto e claro (ex: Voo LATAM BSB-GRU ou Cruzeiro MSC Santos-Ilhabela)",

@@ -1035,9 +1035,11 @@ dialog {
 }
 dialog[open] { animation: pop 0.18s; }
 dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
-.modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.modal-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
+.modal-head-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
 .modal-head h2 { margin: 0; color: var(--text-strong); }
-.modal-close { font-size: 1.15rem; }
+.btn-modal-dup { padding: 4px 10px; font-size: 0.78rem; min-height: 29px; border-radius: 999px; }
+.modal-close { font-size: 1.15rem; flex-shrink: 0; }
 
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-grid.inner { padding: 14px; border-radius: 13px; background: var(--trip-bg); border: 1px solid rgba(34, 211, 238, 0.25); }
@@ -1062,17 +1064,18 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
   border-style: dashed;
   cursor: not-allowed;
 }
-.diff-arrival-toggle {
-  display: inline-flex !important;
-  flex-direction: row !important;
+.arrival-date-box .diff-arrival-toggle {
+  display: inline-flex;
+  flex-direction: row;
   align-items: center;
   gap: 6px;
-  font-size: 0.77rem !important;
+  font-size: 0.77rem;
   color: var(--muted);
   cursor: pointer;
   user-select: none;
   margin-top: 2px;
 }
+.diff-arrival-toggle[hidden] { display: none !important; }
 .diff-arrival-toggle input[type="checkbox"] {
   width: 15px !important;
   height: 15px !important;
@@ -1788,17 +1791,84 @@ tr.chk-row.drag-over td, .m-card.drag-over {
 tr.chk-row.dragging-row, .m-card.dragging-row { opacity: 0.45; }
 
 .modal-ai-strip {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: grid;
   gap: 8px;
-  flex-wrap: wrap;
-  padding: 9px 12px;
+  padding: 10px 12px;
   margin-bottom: 12px;
   border-radius: 12px;
   background: linear-gradient(135deg, rgba(168, 85, 247, 0.12), rgba(34, 211, 238, 0.1));
   border: 1px solid rgba(168, 85, 247, 0.3);
   font-size: 0.81rem;
+}
+.modal-ai-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.modal-ai-text-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+.modal-ai-text-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 7px 10px;
+  color: var(--text-strong);
+  font-size: 0.85rem;
+  outline: none;
+}
+.modal-ai-text-row input:focus { border-color: var(--accent); }
+.modal-ai-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 0.79rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.modal-ai-status.is-loading {
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  color: var(--text-strong);
+}
+.modal-ai-status.is-ok {
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.42);
+  color: var(--ok);
+}
+.modal-ai-status.is-error {
+  background: rgba(248, 113, 113, 0.13);
+  border: 1px solid rgba(248, 113, 113, 0.42);
+  color: var(--danger);
+}
+.ai-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(34, 211, 238, 0.25);
+  border-top-color: var(--accent2);
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: aiSpin 0.75s linear infinite;
+}
+@keyframes aiSpin { to { transform: rotate(360deg); } }
+.ai-filled-flash {
+  border-color: var(--ok) !important;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.24) !important;
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+@media (max-width: 720px) {
+  .modal-ai-text-row { flex-wrap: wrap; }
+  .modal-ai-text-row input { font-size: 16px; width: 100%; }
+  .modal-ai-text-row .btn { width: 100%; }
 }
 .ai-plan-body { display: grid; gap: 12px; min-width: 0; max-width: 100%; }
 .ai-plan-body p, .ai-plan-body label, #aiPlanStatus { min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }

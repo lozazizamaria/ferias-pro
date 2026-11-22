@@ -1,0 +1,14 @@
+{
+  "name": "ads-intelligence-architect",
+  "displayName": "Ads Intelligence Architect",
+  "version": "1.0.0",
+  "description": "Agente especialista e blueprint completo do Ads Intelligence: arquitetura SaaS multi-tenant Express + SQLite WAL + PWA ES Modules sem build, RBAC + OAuth + AES-256-GCM, fila persistente, parsers/geradores zero-dependencias (CSV/ZIP/XLSX/PDF/PIX EMV), planos Stripe e runbook de hardening/deploy.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Criar um novo aplicativo SaaS multi-tenant do zero seguindo toda a arquitetura, segurança, fila assíncrona e PWA sem build do Ads Intelligence",
+    "Analisar e ajustar outro aplicativo aplicando as boas práticas de SQLite WAL, RBAC multi-tenant, criptografia AES-256-GCM, offline-first e parsers zero-dependências",
+    "Auditar segurança, permissões por tenant/agência, deploy Docker/Nginx e consistência PWA no Ads Intelligence ou em projeto derivado"
+  ],
+  "author": "Ads Intelligence",
+  "repository": "https://github.com/lozazizamaria/ads-intelligence"
+}

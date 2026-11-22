@@ -2983,7 +2983,12 @@ window.openModal = function (idOrOpts) {
   $("#modalMapWrap").innerHTML = "";
   $("#transitMapWrap").hidden = true;
   $("#transitMapWrap").innerHTML = "";
-  $("#btnDelete").style.visibility = $("#btnDuplicate").style.visibility = id ? "visible" : "hidden";
+  $("#btnDelete").style.visibility = id ? "visible" : "hidden";
+  if ($("#btnDuplicate")) $("#btnDuplicate").hidden = !id;
+  stopActAiRecording(true);
+  setActAiBusy(false, "");
+  if ($("#actAiTextRow")) $("#actAiTextRow").hidden = true;
+  if ($("#actAiTextInput")) $("#actAiTextInput").value = "";
 
   renderModalQrBadge();
   renderTicketRows();
@@ -5807,7 +5812,149 @@ $("#btnDownloadPassPng").onclick = () => {
   toast("🖼️ Passe QR salvo!");
 };
 
-/* ---------- IA GEMINI NA ATIVIDADE (PRINT DE VOO / TICKET / TEXTO) ---------- */
+/* ---------- IA GEMINI NA ATIVIDADE (IMAGEM / ÁUDIO / TEXTO — PREENCHIMENTO IMEDIATO) ---------- */
+let actAiRecorder = null;
+let actAiChunks = [];
+let actAiRecTimer = null;
+let actAiRecSec = 0;
+
+function normalizeAiType(rawType) {
+  const s = String(rawType || "").trim();
+  if (!s) return "";
+  if (window.ACTIVITY_TYPES && window.ACTIVITY_TYPES[s]) return s;
+  const k = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/\b(voo|aviao|aerea|aereo|flight|embarque)\b/.test(k)) return "Voo";
+  if (/\b(navio|cruzeiro|barco|balsa|ferry|boat|ship)\b/.test(k)) return "Navio";
+  if (/\b(trem|rail|train|metro|eurostar)\b/.test(k)) return "Trem";
+  if (/\b(onibus|bus|rodoviaria|viacao)\b/.test(k)) return "Ônibus";
+  if (/\b(carro|automovel|drive|rodoviario|viagem)\b/.test(k)) return "Viagem";
+  if (/\b(hotel|hospedagem|pousada|resort|airbnb|hostel|estadia)\b/.test(k)) return "Hospedagem";
+  if (/\b(ingresso|ticket|bilhete|entrada)\b/.test(k)) return "Ingresso";
+  if (/\b(evento|jogo|show|concerto|festival|teatro)\b/.test(k)) return "Evento";
+  if (/\b(passeio|parque|tour|excursao|atracao)\b/.test(k)) return "Passeio";
+  if (/\b(restaurante|jantar|almoco|cafe|lazer|gastronomia)\b/.test(k)) return "Restaurante";
+  if (/\b(periodo|permanencia)\b/.test(k)) return "Período";
+  if (/\b(outro|other)\b/.test(k)) return "Outro";
+  return "";
+}
+
+function normalizeAiDate(rawDate) {
+  const s = String(rawDate || "").trim();
+  if (!s) return { iso: "", time: "" };
+  const isoMatch = s.match(/(\d{4})-(\d{2})-(\d{2})(?:[T\s]+(\d{2}:\d{2}))?/);
+  if (isoMatch) {
+    return { iso: `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`, time: isoMatch[4] || "" };
+  }
+  const brMatch = s.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})(?:\s+(\d{2}:\d{2}))?/);
+  if (brMatch) {
+    const dd = brMatch[1].padStart(2, "0");
+    const mm = brMatch[2].padStart(2, "0");
+    let yy = brMatch[3];
+    if (yy.length === 2) yy = "20" + yy;
+    return { iso: `${yy}-${mm}-${dd}`, time: brMatch[4] || "" };
+  }
+  return { iso: "", time: "" };
+}
+
+function parseAiNumber(val) {
+  if (typeof val === "number") return isFinite(val) ? val : 0;
+  let s = String(val ?? "").replace(/[^\d,.-]/g, "").trim();
+  if (!s) return 0;
+  if (s.includes(",") && s.includes(".")) {
+    if (s.lastIndexOf(",") > s.lastIndexOf(".")) s = s.replace(/\./g, "").replace(",", ".");
+    else s = s.replace(/,/g, "");
+  } else if (s.includes(",")) {
+    s = s.replace(",", ".");
+  }
+  const n = parseFloat(s);
+  return isFinite(n) ? n : 0;
+}
+
+function normalizeExtractedActivity(raw) {
+  let src = Array.isArray(raw) ? raw[0] : raw;
+  if (src && typeof src === "object" && src.activity && typeof src.activity === "object") {
+    src = src.activity;
+  } else if (src && typeof src === "object" && Array.isArray(src.activities) && src.activities[0]) {
+    src = src.activities[0];
+  }
+  if (!src || typeof src !== "object") return null;
+  const st = normalizeAiDate(src.start);
+  const en = normalizeAiDate(src.end);
+  const tickets = Array.isArray(src.tickets)
+    ? src.tickets.map(t => ({
+        label: String(t?.label || "Tarifa").slice(0, 40),
+        qty: Math.max(1, parseInt(t?.qty, 10) || 1),
+        unitPrice: parseAiNumber(t?.unitPrice ?? t?.price ?? 0)
+      })).filter(t => t.unitPrice > 0)
+    : [];
+  const startTimeRaw = String(src.startTime || st.time || "").trim().slice(0, 5);
+  return {
+    type: normalizeAiType(src.type),
+    name: String(src.name || src.title || "").trim(),
+    start: st.iso,
+    end: en.iso,
+    startTime: /^\d{2}:\d{2}$/.test(startTimeRaw) ? startTimeRaw : "",
+    from: String(src.from || src.origin || "").trim(),
+    to: String(src.to || src.destination || "").trim(),
+    airline: String(src.airline || src.carrier || src.company || "").trim(),
+    km: parseAiNumber(src.km),
+    drive: parseAiNumber(src.drive),
+    extraCost: parseAiNumber(src.extraCost ?? src.cost ?? src.price),
+    tickets,
+    bookingRef: String(src.bookingRef || src.locator || src.pnr || "").trim(),
+    qrPayload: String(src.qrPayload || src.barcode || "").trim(),
+    qrFormat: String(src.qrFormat || "").trim(),
+    notes: String(src.notes || src.description || "").trim()
+  };
+}
+
+function setActAiBusy(busy, msg = "", kind = "") {
+  const btns = ["#btnActAiUpload", "#btnActAiAudio", "#btnActAiText", "#btnActAiTextRun", "#btnSave"];
+  btns.forEach(sel => {
+    const el = $(sel);
+    if (el) el.disabled = Boolean(busy);
+  });
+  const st = $("#actAiStatus");
+  if (!st) return;
+  if (!msg) {
+    st.hidden = true;
+    st.className = "modal-ai-status";
+    st.innerHTML = "";
+    return;
+  }
+  st.hidden = false;
+  st.className = `modal-ai-status${kind ? " is-" + kind : ""}`;
+  st.innerHTML = kind === "loading"
+    ? `<span class="ai-spinner" aria-hidden="true"></span><span>${esc(msg)}</span>`
+    : `<span>${esc(msg)}</span>`;
+}
+
+function flashAiFilledFields(selectors) {
+  selectors.forEach(sel => {
+    const el = $(sel);
+    if (!el) return;
+    el.classList.remove("ai-filled-flash");
+    void el.offsetWidth;
+    el.classList.add("ai-filled-flash");
+    setTimeout(() => el.classList.remove("ai-filled-flash"), 1600);
+  });
+}
+
+function stopActAiRecording(silent = false) {
+  clearInterval(actAiRecTimer);
+  actAiRecTimer = null;
+  const btn = $("#btnActAiAudio");
+  if (btn) btn.textContent = "🎙️ Áudio";
+  if (actAiRecorder && actAiRecorder.state === "recording") {
+    if (silent) {
+      actAiRecorder.onstop = () => {
+        try { actAiRecorder.stream?.getTracks().forEach(t => t.stop()); } catch {}
+      };
+    }
+    try { actAiRecorder.stop(); } catch {}
+  }
+}
+
 async function detectBarcodeFromFile(fileOrBlob) {
   try {
     if (!fileOrBlob || !String(fileOrBlob.type || "").startsWith("image/")) return null;
@@ -5831,55 +5978,68 @@ async function detectBarcodeFromFile(fileOrBlob) {
   return null;
 }
 
-function applyExtractedActivityToForm(act, detectedBarcode) {
-  if (!act || typeof act !== "object") return;
-  if (act.type && window.ACTIVITY_TYPES[act.type]) $("#f-type").value = act.type;
+function applyExtractedActivityToForm(rawAct, detectedBarcode) {
+  const act = normalizeExtractedActivity(rawAct);
+  if (!act) return [];
+  const touched = [];
+  if (act.type && window.ACTIVITY_TYPES[act.type]) {
+    $("#f-type").value = act.type;
+    touched.push("#f-type");
+  }
   const curType = $("#f-type").value;
   if (isTravelType(curType) && $("#f-diffArrival")) {
     $("#f-diffArrival").checked = Boolean(act.start && act.end && act.end !== act.start);
   }
   toggleTrip();
-  if (act.name) $("#f-name").value = act.name;
-  if (act.start) $("#f-start").value = act.start;
+  if (act.name) {
+    $("#f-name").value = act.name;
+    touched.push("#f-name");
+  } else if (act.from || act.to) {
+    $("#f-name").value = `${getTypeInfo(curType).short} ${act.from || ""} - ${act.to || ""}`.trim();
+    touched.push("#f-name");
+  }
+  if (act.start) { $("#f-start").value = act.start; touched.push("#f-start"); }
   if (act.end) {
     $("#f-end").value = act.end;
+    touched.push("#f-end");
   } else if (isTravelType(curType) && act.start && !$("#f-diffArrival")?.checked) {
     $("#f-end").value = act.start;
   }
   syncTravelArrivalUI();
 
-  if (Array.isArray(act.tickets) && act.tickets.some(t => Number(t.unitPrice) > 0)) {
-    modalTickets = act.tickets
-      .filter(t => Number(t.unitPrice) > 0)
-      .map(t => ({ label: String(t.label || "Tarifa").slice(0, 40), qty: Math.max(1, Number(t.qty) || 1), unitPrice: Number(t.unitPrice) }));
+  if (act.tickets.length) {
+    modalTickets = act.tickets;
     renderTicketRows();
-  } else if (act.extraCost != null && Number(act.extraCost) > 0) {
-    modalTickets = [{ label: curType === "Voo" ? "Passagem aérea" : (isTravelType(curType) ? "Passagem" : "IA"), qty: 1, unitPrice: Number(act.extraCost) }];
+    touched.push("#f-ticketsBox");
+  } else if (act.extraCost > 0) {
+    modalTickets = [{ label: curType === "Voo" ? "Passagem aérea" : (isTravelType(curType) ? "Passagem" : "IA"), qty: 1, unitPrice: act.extraCost }];
     renderTicketRows();
+    touched.push("#f-ticketsBox");
   }
 
   if (curType === "Voo") {
-    if (act.from) $("#f-flightFrom").value = act.from;
-    if (act.to) $("#f-flightTo").value = act.to;
-    if (act.airline) $("#f-airline").value = act.airline;
-    if (act.bookingRef) $("#f-bookingRef").value = act.bookingRef;
+    if (act.from) { $("#f-flightFrom").value = act.from; touched.push("#f-flightFrom"); }
+    if (act.to) { $("#f-flightTo").value = act.to; touched.push("#f-flightTo"); }
+    if (act.airline) { $("#f-airline").value = act.airline; touched.push("#f-airline"); }
+    if (act.bookingRef) { $("#f-bookingRef").value = act.bookingRef; touched.push("#f-bookingRef"); }
   } else if (isTransitOrShip(curType)) {
-    if (act.from) $("#f-transitFrom").value = act.from;
-    if (act.to) $("#f-transitTo").value = act.to;
-    if (act.km > 0) $("#f-transitKm").value = act.km;
-    if (act.drive > 0) $("#f-transitDrive").value = hm(act.drive);
-    if (act.airline) $("#f-transitCarrier").value = act.airline;
-    if (act.bookingRef) $("#f-transitRef").value = act.bookingRef;
+    if (act.from) { $("#f-transitFrom").value = act.from; touched.push("#f-transitFrom"); }
+    if (act.to) { $("#f-transitTo").value = act.to; touched.push("#f-transitTo"); }
+    if (act.km > 0) { $("#f-transitKm").value = act.km; touched.push("#f-transitKm"); }
+    if (act.drive > 0) { $("#f-transitDrive").value = hm(act.drive); touched.push("#f-transitDrive"); }
+    if (act.airline) { $("#f-transitCarrier").value = act.airline; touched.push("#f-transitCarrier"); }
+    if (act.bookingRef) { $("#f-transitRef").value = act.bookingRef; touched.push("#f-transitRef"); }
   } else if (curType === "Viagem") {
-    if (act.from) $("#f-from").value = act.from;
-    if (act.to) $("#f-to").value = act.to;
-    if (act.km > 0) $("#f-km").value = act.km;
-    if (act.drive > 0) $("#f-drive").value = hm(act.drive);
+    if (act.from) { $("#f-from").value = act.from; touched.push("#f-from"); }
+    if (act.to) { $("#f-to").value = act.to; touched.push("#f-to"); }
+    if (act.km > 0) { $("#f-km").value = act.km; touched.push("#f-km"); }
+    if (act.drive > 0) { $("#f-drive").value = hm(act.drive); touched.push("#f-drive"); }
   } else if (act.bookingRef) {
     $("#f-ticketRef").value = act.bookingRef;
+    touched.push("#f-ticketRef");
   }
 
-  modalStartTime = act.startTime ? String(act.startTime).slice(0, 5) : "";
+  modalStartTime = act.startTime || modalStartTime;
   const qrTxt = String(act.qrPayload || detectedBarcode?.rawValue || "").trim();
   if (qrTxt) {
     modalQrPayload = qrTxt.slice(0, 1200);
@@ -5887,9 +6047,11 @@ function applyExtractedActivityToForm(act, detectedBarcode) {
   }
   renderModalQrBadge();
 
-  if (act.notes) $("#f-notes").value = act.notes;
+  if (act.notes) { $("#f-notes").value = act.notes; touched.push("#f-notes"); }
   updateModalPreview();
   prefetchModalWalletPass();
+  flashAiFilledFields(touched);
+  return touched;
 }
 
 function fileToBase64Obj(file) {
@@ -5908,38 +6070,126 @@ function fileToBase64Obj(file) {
   });
 }
 
+async function runActAiAnalyze({ prompt, media = [], detectedBarcode = null, loadingMsg = "Gemini IA analisando e preenchendo..." }) {
+  setActAiBusy(true, loadingMsg, "loading");
+  try {
+    const act = await window.FeriasApi.aiAnalyzeActivity({
+      prompt,
+      baseDate: fmtISO(new Date()),
+      media,
+      detectedBarcode
+    });
+    const touched = applyExtractedActivityToForm(act, detectedBarcode);
+    setActAiBusy(false);
+    if (!touched.length) {
+      setActAiBusy(false, "⚠️ Não foi possível identificar os campos desta entrada. Tente outra foto ou texto.", "error");
+      return;
+    }
+    const qrNote = detectedBarcode || (act && act.qrPayload) ? " + QR Code" : "";
+    setActAiBusy(false, `✅ Cartão preenchido automaticamente (${touched.length} campo(s)${qrNote})! Confira abaixo e salve quando quiser.`, "ok");
+    if ($("#actAiTextRow")) $("#actAiTextRow").hidden = true;
+  } catch (err) {
+    setActAiBusy(false);
+    const msg = String(err.message).includes("GEMINI_NOT_CONFIGURED")
+      ? "Configure sua Gemini API Key em Parâmetros ou Planejar com IA."
+      : (err.message || "Falha ao analisar com Gemini IA.");
+    setActAiBusy(false, "❌ " + msg, "error");
+  }
+}
+
 $("#btnActAiUpload").onclick = () => $("#actAiFile").click();
 $("#actAiFile").onchange = async e => {
   const f = e.target.files[0];
   if (!f) return;
-  toast("✨ Analisando documento com Gemini IA...");
   try {
+    setActAiBusy(true, `Lendo "${f.name}" com Gemini IA...`, "loading");
     const [m, detectedBarcode] = await Promise.all([fileToBase64Obj(f), detectBarcodeFromFile(f)]);
-    const act = await window.FeriasApi.aiAnalyzeActivity({
-      prompt: "Extraia todos os dados completos deste bilhete/passagem/reserva/documento (tipo, trecho, datas saída/chegada, cia/voo/navio, localizador, valor e QR Code).",
+    await runActAiAnalyze({
+      prompt: "Extraia todos os dados completos deste bilhete/passagem/reserva/áudio/documento (tipo, título, trecho, datas saída/chegada, cia/voo/navio, localizador, valor e QR Code).",
       media: [m],
-      detectedBarcode
+      detectedBarcode,
+      loadingMsg: `Preenchendo cartão a partir de "${f.name}"...`
     });
-    applyExtractedActivityToForm(act, detectedBarcode);
-    toast(detectedBarcode ? "✅ Campos e QR Code preenchidos com IA!" : "✅ Campos preenchidos com IA!");
   } catch (err) {
-    toast(String(err.message).includes("GEMINI_NOT_CONFIGURED") ? "Configure sua Gemini Key em Parâmetros ou Planejar com IA." : "❌ " + (err.message || err));
+    setActAiBusy(false, "❌ " + (err.message || err), "error");
+  } finally {
+    e.target.value = "";
   }
-  e.target.value = "";
 };
 
-$("#btnActAiText").onclick = async () => {
-  const txt = prompt("Descreva a atividade (ex: Voo LATAM Brasília para Maceió dia 15/01/2027 por R$ 1.850 reserva ABC123):");
-  if (!txt || !txt.trim()) return;
-  toast("✨ Extraindo dados com Gemini IA...");
+$("#btnActAiAudio").onclick = async () => {
+  const btn = $("#btnActAiAudio");
+  if (actAiRecorder && actAiRecorder.state === "recording") {
+    stopActAiRecording(false);
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setActAiBusy(false, "Microfone indisponível neste navegador. Use 📷 Ler Imagem / Ticket (aceita áudio gravado) ou ✍️ Descrever.", "error");
+    return;
+  }
   try {
-    const act = await window.FeriasApi.aiAnalyzeActivity({ prompt: txt.trim(), media: [] });
-    applyExtractedActivityToForm(act, null);
-    toast("✅ Campos preenchidos com IA!");
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    actAiChunks = [];
+    actAiRecorder = new MediaRecorder(stream);
+    actAiRecorder.ondataavailable = ev => { if (ev.data.size > 0) actAiChunks.push(ev.data); };
+    actAiRecorder.onstop = async () => {
+      try { stream.getTracks().forEach(t => t.stop()); } catch {}
+      clearInterval(actAiRecTimer);
+      btn.textContent = "🎙️ Áudio";
+      const cleanMime = String(actAiRecorder.mimeType || "audio/webm").split(";")[0].trim() || "audio/webm";
+      const ext = cleanMime.includes("mp4") ? "m4a" : cleanMime.includes("ogg") ? "ogg" : "webm";
+      const blob = new Blob(actAiChunks, { type: cleanMime });
+      if (!blob.size) return;
+      const fileObj = await fileToBase64Obj(new File([blob], `atividade_${Date.now()}.${ext}`, { type: cleanMime }));
+      await runActAiAnalyze({
+        prompt: "Transcreva este áudio em português e extraia todos os campos da atividade/passagem/viagem/reserva automaticamente.",
+        media: [fileObj],
+        loadingMsg: "Transcrevendo áudio e preenchendo cartão..."
+      });
+    };
+    actAiRecorder.start();
+    actAiRecSec = 0;
+    btn.textContent = "⏹️ Parar 0:00";
+    setActAiBusy(false, "🎙️ Gravando áudio... fale sua atividade/viagem e toque em Parar para preencher automaticamente.", "loading");
+    clearInterval(actAiRecTimer);
+    actAiRecTimer = setInterval(() => {
+      actAiRecSec++;
+      const m = Math.floor(actAiRecSec / 60), s = actAiRecSec % 60;
+      btn.textContent = `⏹️ Parar ${m}:${String(s).padStart(2, "0")}`;
+    }, 1000);
   } catch (err) {
-    toast(String(err.message).includes("GEMINI_NOT_CONFIGURED") ? "Configure sua Gemini Key em Parâmetros ou Planejar com IA." : "❌ " + (err.message || err));
+    setActAiBusy(false, "Permissão de microfone negada ou indisponível: " + (err.message || err), "error");
   }
 };
+
+$("#btnActAiText").onclick = () => {
+  const row = $("#actAiTextRow");
+  if (!row) return;
+  row.hidden = !row.hidden;
+  if (!row.hidden && $("#actAiTextInput")) $("#actAiTextInput").focus();
+};
+
+const runInlineTextFill = async () => {
+  const txt = ($("#actAiTextInput")?.value || "").trim();
+  if (!txt) {
+    setActAiBusy(false, "Digite uma descrição rápida acima (ex: Voo LATAM Brasília para Maceió dia 15/01/2027 R$ 1.850).", "error");
+    return;
+  }
+  await runActAiAnalyze({ prompt: txt, media: [], loadingMsg: "Extraindo informações com Gemini IA..." });
+};
+if ($("#btnActAiTextRun")) $("#btnActAiTextRun").onclick = runInlineTextFill;
+if ($("#actAiTextInput")) {
+  $("#actAiTextInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      runInlineTextFill();
+    }
+  });
+}
+if ($("#modal")) {
+  $("#modal").addEventListener("close", () => stopActAiRecording(true));
+}
 
 /* ---------- MODAL PLANEJAR COM IA (ÁUDIO + MÚLTIPLAS IMAGENS + DOCUMENTOS) ---------- */
 let aiAttachedMedia = [];

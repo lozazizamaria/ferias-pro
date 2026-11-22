@@ -1,0 +1,14 @@
+{
+  "name": "ferias-pro-architect",
+  "displayName": "Férias Pro Architect",
+  "version": "1.1.0",
+  "description": "Agente especialista e blueprint completo do Férias Pro fortalecido com padrões do Ads Intelligence: Node.js zero-deps, PWA network-first com fallback offline, criptografia AES-256-GCM (.master.key), sessões SHA-256, rate limits, Cofre de Credenciais, Auditoria, Backups .json.gz, Super Admin, Docker + Nginx e QA.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Adicionar uma nova funcionalidade no Férias Pro seguindo segurança AES-256-GCM, QA Desktop/Mobile e Docker/Nginx",
+    "Criar um novo aplicativo web/PWA do zero usando a base zero-dependências, login Google + senha forte, Cofre de Credenciais e Super Admin",
+    "Auditar segurança, sessões, headers CSP/ETag, cache PWA network-first (?v=NN) e gerar backup/deploy seguro no GitHub/VPS"
+  ],
+  "author": "Férias Pro",
+  "repository": "https://github.com/lozazizamaria/ferias-pro"
+}

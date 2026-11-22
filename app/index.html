@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Férias Pro">
-<link rel="manifest" href="/manifest.webmanifest?v=25">
+<link rel="manifest" href="/manifest.webmanifest?v=26">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=25">
+<link rel="stylesheet" href="styles.css?v=26">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -683,18 +683,29 @@
 <dialog id="modal">
   <form id="form" method="dialog">
     <div class="modal-head">
-      <h2 id="modalTitle">Atividade</h2>
+      <div class="modal-head-left">
+        <h2 id="modalTitle">Atividade</h2>
+        <button type="button" class="btn ghost small btn-modal-dup" id="btnDuplicate" title="Duplicar esta atividade" hidden>⧉ Duplicar</button>
+      </div>
       <button type="button" class="icon-btn modal-close" id="btnCloseX" aria-label="Fechar">✕</button>
     </div>
 
     <!-- ATALHO IA DENTRO DA ATIVIDADE -->
-    <div class="modal-ai-strip">
-      <span>✨ Preencher automático com Gemini IA (texto, print de voo/ingresso/reserva)</span>
-      <div class="inline-actions">
-        <button type="button" class="btn ai-pill small" id="btnActAiUpload">📷 Ler Imagem / Ticket</button>
-        <button type="button" class="btn ghost small" id="btnActAiText">✍️ Descrever</button>
-        <input type="file" id="actAiFile" accept="image/*,audio/*,.pdf" hidden>
+    <div class="modal-ai-strip" id="modalAiStrip">
+      <div class="modal-ai-top">
+        <span>✨ Preencher automático com Gemini IA (imagem, ticket, áudio ou texto)</span>
+        <div class="inline-actions">
+          <button type="button" class="btn ai-pill small" id="btnActAiUpload">📷 Ler Imagem / Ticket</button>
+          <button type="button" class="btn ghost small" id="btnActAiAudio">🎙️ Áudio</button>
+          <button type="button" class="btn ghost small" id="btnActAiText">✍️ Descrever</button>
+          <input type="file" id="actAiFile" accept="image/*,audio/*,.pdf" hidden>
+        </div>
       </div>
+      <div class="modal-ai-text-row" id="actAiTextRow" hidden>
+        <input type="text" id="actAiTextInput" placeholder="Ex: Voo LATAM Brasília para Maceió dia 15/01/2027 por R$ 1.850 reserva ABC123">
+        <button type="button" class="btn primary small" id="btnActAiTextRun">✨ Preencher</button>
+      </div>
+      <div class="modal-ai-status" id="actAiStatus" role="status" aria-live="polite" hidden></div>
     </div>
 
     <div class="form-grid">
@@ -877,7 +888,6 @@
     <div class="modal-actions">
       <button type="button" class="btn danger-ghost" id="btnDelete">🗑️ Excluir</button>
       <span class="spacer"></span>
-      <button type="button" class="btn ghost" id="btnDuplicate">⧉ Duplicar</button>
       <button type="button" class="btn ghost" id="btnCancel">Cancelar</button>
       <button type="submit" class="btn primary" id="btnSave">Salvar</button>
     </div>
@@ -1268,14 +1278,14 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=25"></script>
-<script src="vehicles.js?v=25"></script>
-<script src="countries.js?v=25"></script>
-<script src="data.js?v=25"></script>
-<script src="maps.js?v=25"></script>
-<script src="calendar.js?v=25"></script>
-<script src="report.js?v=25"></script>
-<script src="api.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="config.example.js?v=26"></script>
+<script src="vehicles.js?v=26"></script>
+<script src="countries.js?v=26"></script>
+<script src="data.js?v=26"></script>
+<script src="maps.js?v=26"></script>
+<script src="calendar.js?v=26"></script>
+<script src="report.js?v=26"></script>
+<script src="api.js?v=26"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>

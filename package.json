@@ -1,6 +1,6 @@
 {
   "name": "ferias-pro",
-  "version": "25.0.0",
+  "version": "26.0.0",
   "description": "Planejador inteligente de viagens e férias com Gantt, Google Maps, IA Gemini multimodal, controle financeiro diário, multiusuário e Super Admin.",
   "private": true,
   "engines": {
