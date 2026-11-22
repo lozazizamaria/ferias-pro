@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Férias Pro">
-<link rel="manifest" href="/manifest.webmanifest?v=26">
+<link rel="manifest" href="/manifest.webmanifest?v=27">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=26">
+<link rel="stylesheet" href="styles.css?v=27">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -233,7 +233,10 @@
             <span class="pill" id="tripRoleBadge" hidden>Compartilhada</span>
           </div>
           <div class="gantt-controls">
-            <div id="ganttTypeFilter" class="msel-host" aria-label="Filtrar tipos no cronograma"></div>
+            <div class="gantt-filter-pair" role="group" aria-label="Filtros por tipo e tag">
+              <div id="ganttTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no cronograma"></div>
+              <div id="ganttTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no cronograma"></div>
+            </div>
             <div class="seg" id="ganttModeSeg" role="group" aria-label="Modo de visualização">
               <button type="button" class="active" data-gmode="gantt">Gantt</button>
               <button type="button" data-gmode="timeline">Linha do Tempo</button>
@@ -411,7 +414,8 @@
           <h2>Tabela completa</h2>
           <div class="filters">
             <input type="search" id="search" placeholder="🔎 Buscar...">
-            <div id="filterType" class="msel-host" aria-label="Filtrar tipos na tabela"></div>
+            <div id="filterType" class="msel-host msel-compact" aria-label="Filtrar tipos na tabela"></div>
+            <div id="filterTag" class="msel-host msel-compact" aria-label="Filtrar tags na tabela"></div>
             <button type="button" class="btn ghost small" id="btnTableAdd">➕ Novo item</button>
             <button type="button" class="btn primary small" id="btnTablePdf">📄 Baixar Tabela (A4 Horizontal)</button>
           </div>
@@ -560,10 +564,12 @@
               <button type="button" class="btn ghost small" id="btnParamProfile">💬 WhatsApp &amp; Perfil</button>
             </div>
             <details class="help-details">
-              <summary>⚙️ Modo avançado: API Google Agenda (OAuth Client ID)</summary>
+              <summary>⚙️ Opcional avançado: Client ID próprio verificado (API Google Agenda)</summary>
+              <p class="muted small" style="margin-top:6px">Deixe vazio para usar o envio direto (Agenda / assinatura .ics) sem bloqueio do Google.</p>
               <div class="key-input-row" style="margin-top:8px">
-                <input type="text" id="calClientIdInput" placeholder="OAuth Client ID Google" autocomplete="off">
+                <input type="text" id="calClientIdInput" placeholder="Deixe vazio p/ envio direto sem bloqueio..." autocomplete="off">
                 <button type="button" class="btn ghost small" id="btnSaveCalClientId">Salvar ID</button>
+                <button type="button" class="btn ghost small" id="btnClearCalClientId">Limpar</button>
               </div>
             </details>
           </div>
@@ -712,9 +718,13 @@
       <label class="span2" id="f-targetTripWrap" hidden>Viagem / Férias de destino
         <select id="f-targetTrip"></select>
       </label>
-      <label class="span2">Tipo de atividade / meio de locomoção
+      <label>Tipo de atividade / meio de locomoção
         <select name="type" id="f-type"></select>
       </label>
+      <div class="field-box modal-tags-field">
+        <label for="f-tagsTrigger">Tags</label>
+        <div id="modalTagsHost" class="msel-host" aria-label="Tags da atividade"></div>
+      </div>
 
       <label class="span2">Nome / Descrição
         <input name="name" id="f-name" required placeholder="Ex: Viagem SP, Voo BSB-FLN, Cruzeiro Santos, Jogo Mané Garrincha...">
@@ -1278,14 +1288,14 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=26"></script>
-<script src="vehicles.js?v=26"></script>
-<script src="countries.js?v=26"></script>
-<script src="data.js?v=26"></script>
-<script src="maps.js?v=26"></script>
-<script src="calendar.js?v=26"></script>
-<script src="report.js?v=26"></script>
-<script src="api.js?v=26"></script>
-<script src="app.js?v=26"></script>
+<script src="config.example.js?v=27"></script>
+<script src="vehicles.js?v=27"></script>
+<script src="countries.js?v=27"></script>
+<script src="data.js?v=27"></script>
+<script src="maps.js?v=27"></script>
+<script src="calendar.js?v=27"></script>
+<script src="report.js?v=27"></script>
+<script src="api.js?v=27"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>

@@ -53,6 +53,7 @@
     if (a.km) lines.push(`Distância: ${a.km} km`);
     if (a.toll) lines.push(`Pedágio: R$ ${Number(a.toll).toFixed(2)}`);
     if (a.extraCost) lines.push(`Custo previsto: R$ ${Number(a.extraCost).toFixed(2)}`);
+    if (Array.isArray(a.tags) && a.tags.length) lines.push(`Tags: ${a.tags.join(", ")}`);
     if (a.notes) lines.push(`Notas: ${a.notes}`);
     if (tag) lines.push(`\n[Férias Pro • ${tag}]`);
     return lines.join("\n");
@@ -181,6 +182,13 @@
               if (res) res(accessToken);
             } else if (rej) {
               rej(new Error(resp?.error || "Autorização Google Agenda negada."));
+            }
+          },
+          error_callback: err => {
+            const rej = pendingReject;
+            pendingResolve = pendingReject = null;
+            if (rej) {
+              rej(new Error(err?.message || err?.type || "Janela de autorização do Google Agenda fechada ou bloqueada."));
             }
           }
         });

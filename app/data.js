@@ -14,8 +14,11 @@ window.ACTIVITY_TYPES = {
   Outro:       { id: "Outro",       label: "📌 Outra Atividade",       short: "Outro",       icon: "●",  cls: "Outro",       costLabel: "Outros custos / valores" }
 };
 
+window.DEFAULT_TAGS = ["Pessoal", "Profissional", "Férias", "Viagem"];
+
 window.DEFAULT_DATA = {
   title: "Férias Final de Ano 2026",
+  customTags: [],
   vehicle: {
     name: "BYD Song Plus DM-i 23/24",
     powertrain: "PHEV",
@@ -87,6 +90,7 @@ window.createBlankTripData = function (name, vehicleCopy) {
   const def = JSON.parse(JSON.stringify(window.DEFAULT_DATA));
   return {
     title: name || "Nova Viagem",
+    customTags: [],
     vehicle: vehicleCopy ? JSON.parse(JSON.stringify(vehicleCopy)) : def.vehicle,
     params: def.params,
     scenarios: def.scenarios,

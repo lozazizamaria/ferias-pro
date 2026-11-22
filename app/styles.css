@@ -1470,6 +1470,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
   min-width: 245px;
   max-width: min(320px, 90vw);
   max-height: 350px;
+  overflow-x: hidden;
   overflow-y: auto;
   background: var(--bg2);
   border: 1px solid var(--border-strong);
@@ -1522,8 +1523,10 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
   transition: background 0.12s;
 }
 .msel-opt:hover { background: var(--surface-hover); }
+.form-grid .msel-check,
 .msel-check {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
   flex: 1;
@@ -1532,6 +1535,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
   font-size: 0.84rem;
   color: var(--text);
   font-weight: 500;
+  margin: 0;
 }
 .msel-check input[type="checkbox"] {
   width: 16px;
@@ -1561,6 +1565,114 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); }
   border-color: var(--accent);
   color: var(--accent2);
   background: var(--surface);
+}
+
+.gantt-filter-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.msel-compact .msel-trigger {
+  padding: 5px 9px;
+  font-size: 0.78rem;
+  min-height: 30px;
+  max-width: 132px;
+  border-radius: 9px;
+  gap: 6px;
+}
+.modal-tags-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.modal-tags-field > label[for] {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 500;
+  margin: 0;
+}
+.modal-tags-field .msel-host,
+.modal-tags-field .msel {
+  width: 100%;
+}
+.modal-tags-field .msel-trigger {
+  width: 100%;
+  max-width: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 11px;
+  min-height: 38px;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+.modal-tags-field .msel-menu {
+  z-index: 90;
+  min-width: 260px;
+}
+.modal-tags-field .msel-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.msel-create-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 7px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.modal-tags-field .msel-create-input,
+.msel-create-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  color: var(--text-strong);
+  font-size: 0.82rem;
+  outline: none;
+}
+.msel-create-input:focus { border-color: var(--accent); }
+.msel-create-btn {
+  background: var(--accent);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.msel-create-btn:hover { filter: brightness(1.08); }
+.g-summary-tags,
+.m-card-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.m-card-tags { margin: 4px 0 6px; }
+.tag-mini {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  background: rgba(124, 92, 255, 0.14);
+  border: 1px solid rgba(124, 92, 255, 0.34);
+  color: var(--accent2);
+  white-space: nowrap;
 }
 
 .trip-tag-pill {
@@ -1944,8 +2056,13 @@ tr.chk-row.dragging-row, .m-card.dragging-row { opacity: 0.45; }
   .trip-switcher .msel-host { flex: 1; max-width: 165px; min-width: 0; }
   .trip-switcher .msel-trigger { width: 100%; max-width: 165px; font-size: 0.74rem; padding: 2px 6px; min-height: 26px; border-radius: 8px; }
   .trip-switcher .icon-compact { width: 26px; height: 26px; min-height: 26px; }
+  .gantt-filter-pair { gap: 4px; }
   .gantt-controls .msel-trigger,
-  .filters .msel-trigger { max-width: 145px; font-size: 0.74rem; padding: 3px 7px; min-height: 28px; }
+  .filters .msel-trigger { max-width: 118px; font-size: 0.74rem; padding: 3px 7px; min-height: 28px; }
+  .gantt-controls .msel-compact .msel-trigger,
+  .filters .msel-compact .msel-trigger { max-width: 104px; font-size: 0.72rem; padding: 3px 6px; min-height: 28px; gap: 4px; }
+  .modal-tags-field .msel-menu { min-width: 0; width: 100%; max-width: 100%; left: 0; right: 0; }
+  .modal-tags-field .msel-create-input { font-size: 16px; padding: 7px 10px; }
   .actions { width: 100%; justify-content: flex-end; gap: 4px; }
   .actions .btn { padding: 4px 8px; min-height: 29px; font-size: 0.78rem; border-radius: 8px; }
   .actions .btn.icon-only { width: 29px; height: 29px; min-height: 29px; padding: 0; }

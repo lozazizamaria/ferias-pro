@@ -14,14 +14,21 @@ const MON = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out
 const MON_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 const SELECTED_TRIPS_KEY = "ferias-pro-selected-trips";
+const CUSTOM_TAGS_KEY = "ferias-pro-custom-tags";
 let ganttFilterTypes = new Set(Object.keys(window.ACTIVITY_TYPES || {}));
+let ganttFilterTags = new Set();
 let tableFilterTypes = new Set(Object.keys(window.ACTIVITY_TYPES || {}));
+let tableFilterTags = new Set();
 let selectedTripIds = [];
 let loadedTripsMap = new Map();
 const actOriginMap = new WeakMap();
 const MULTI_TRIP_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#06b6d4", "#a78bfa"];
 let ganttTypeMsel = null;
+let ganttTagMsel = null;
 let tableTypeMsel = null;
+let tableTagMsel = null;
+let modalTagsMsel = null;
+let modalDraftTags = [];
 let tripMultiMsel = null;
 let editingTripRef = null;
 let ganttMode = "gantt";
@@ -69,6 +76,9 @@ function migrateState(raw) {
   const s = raw && typeof raw === "object" ? raw : {};
   const merged = {
     title: s.title || def.title,
+    customTags: Array.isArray(s.customTags)
+      ? [...new Set(s.customTags.map(t => String(t || "").trim()).filter(Boolean))]
+      : [],
     vehicle: Object.assign({}, def.vehicle, s.vehicle || {}),
     params: Object.assign({}, def.params, s.params || {}),
     scenarios: Array.isArray(s.scenarios) && s.scenarios.length ? s.scenarios : def.scenarios,
@@ -81,6 +91,9 @@ function migrateState(raw) {
     if (a.extraCost == null) a.extraCost = 0;
     if (!Array.isArray(a.attachments)) a.attachments = [];
     if (!Array.isArray(a.tickets)) a.tickets = [];
+    a.tags = Array.isArray(a.tags)
+      ? [...new Set(a.tags.map(t => String(t || "").trim()).filter(Boolean))]
+      : [];
     if (a.type === "Viagem") {
       if (a.charges == null) a.charges = merged.params.defaultCharges ?? 1;
       if (a.includeRouteCost === undefined) a.includeRouteCost = true;
@@ -443,9 +456,10 @@ function createMultiSelect(hostEl, cfg = {}) {
   let items = [];
   let selectedSet = new Set();
   const minSel = cfg.minSelected ?? 0;
+  const triggerIdAttr = cfg.triggerId ? ` id="${esc(cfg.triggerId)}"` : "";
 
   hostEl.innerHTML = `<div class="msel">
-    <button type="button" class="msel-trigger" aria-haspopup="listbox" aria-expanded="false">
+    <button type="button" class="msel-trigger"${triggerIdAttr} aria-haspopup="listbox" aria-expanded="false">
       <span class="msel-label"></span>
       <span class="msel-caret" aria-hidden="true">▾</span>
     </button>
@@ -478,17 +492,20 @@ function createMultiSelect(hostEl, cfg = {}) {
 
   function renderMenu() {
     const selCount = items.filter(it => selectedSet.has(it.id)).length;
+    const allBtnLabel = cfg.allLabel || "☑️ Todos";
+    const noneBtnLabel = cfg.noneLabel || "✕ Limpar";
     const headActions = minSel === 0
       ? `<div class="msel-head">
-           <button type="button" class="msel-act" data-ms-all>☑️ Todos</button>
-           <button type="button" class="msel-act" data-ms-none>✕ Limpar</button>
+           ${cfg.hideAllBtn ? "" : `<button type="button" class="msel-act" data-ms-all>${esc(allBtnLabel)}</button>`}
+           <button type="button" class="msel-act" data-ms-none>${esc(noneBtnLabel)}</button>
          </div>`
       : `<div class="msel-head">
-           <button type="button" class="msel-act" data-ms-all>☑️ Todas (${items.length})</button>
+           <button type="button" class="msel-act" data-ms-all>${esc(cfg.allLabel || `☑️ Todas (${items.length})`)}</button>
            <span class="muted small">${selCount}/${items.length}</span>
          </div>`;
 
     let lastGroup = null;
+    const showOnly = cfg.showOnlyBtn !== false;
     const rowsHtml = items.map(it => {
       let grpHtml = "";
       if (it.group && it.group !== lastGroup) {
@@ -502,11 +519,46 @@ function createMultiSelect(hostEl, cfg = {}) {
           <input type="checkbox" value="${esc(it.id)}" ${checked}>
           <span class="msel-txt">${esc(prefix + it.label)}</span>
         </label>
-        <button type="button" class="msel-only" data-ms-only="${esc(it.id)}" title="Selecionar somente este">Só</button>
+        ${showOnly ? `<button type="button" class="msel-only" data-ms-only="${esc(it.id)}" title="Selecionar somente este">Só</button>` : ""}
       </div>`;
     }).join("");
 
-    menu.innerHTML = headActions + rowsHtml;
+    const createHtml = cfg.allowCreate
+      ? `<div class="msel-create-row">
+           <input type="text" class="msel-create-input" placeholder="${esc(cfg.createPlaceholder || "Nova tag...")}" maxlength="32" autocomplete="off">
+           <button type="button" class="msel-create-btn">+ Criar</button>
+         </div>`
+      : "";
+
+    menu.innerHTML = createHtml + headActions + rowsHtml;
+
+    const createInp = menu.querySelector(".msel-create-input");
+    const createBtn = menu.querySelector(".msel-create-btn");
+    if (createInp && createBtn && typeof cfg.onCreate === "function") {
+      const triggerCreate = () => {
+        const val = createInp.value.trim();
+        if (!val) return;
+        const createdId = cfg.onCreate(val, selectedSet);
+        createInp.value = "";
+        if (createdId) {
+          updateTrigger();
+          cfg.onChange?.(getOrderedSelected());
+        }
+        menu.querySelector(".msel-create-input")?.focus();
+      };
+      createBtn.onclick = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        triggerCreate();
+      };
+      createInp.onkeydown = e => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.stopPropagation();
+          triggerCreate();
+        }
+      };
+    }
 
     const btnAll = menu.querySelector("[data-ms-all]");
     if (btnAll) {
@@ -574,8 +626,10 @@ function createMultiSelect(hostEl, cfg = {}) {
     wrap.classList.add("open");
     trigger.setAttribute("aria-expanded", "true");
     const trRect = trigger.getBoundingClientRect();
+    const parentDlg = hostEl.closest("dialog");
+    const maxRight = parentDlg ? Math.min(window.innerWidth, parentDlg.getBoundingClientRect().right) : window.innerWidth;
     const menuW = Math.max(245, menu.offsetWidth || 245);
-    if (trRect.left + menuW > window.innerWidth - 8 && trRect.right - menuW >= 8) {
+    if (trRect.left + menuW > maxRight - 8 && trRect.right - menuW >= 8) {
       menu.classList.add("align-right");
     }
   };
@@ -598,6 +652,10 @@ function createMultiSelect(hostEl, cfg = {}) {
       selectedSet = new Set(items.map(it => it.id));
       syncAndEmit();
     },
+    clearAll() {
+      selectedSet.clear();
+      syncAndEmit();
+    },
     setSelected(ids) {
       const valid = new Set(items.map(it => it.id));
       selectedSet = new Set((ids || []).filter(id => valid.has(id)));
@@ -612,12 +670,103 @@ function createMultiSelect(hostEl, cfg = {}) {
   return api;
 }
 
+function normalizeTagName(raw) {
+  return String(raw || "").trim().replace(/\s+/g, " ").slice(0, 32);
+}
+
+function dedupeTagList(list) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(list) ? list : []).forEach(raw => {
+    const clean = normalizeTagName(raw);
+    if (!clean) return;
+    const key = clean.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(clean);
+    }
+  });
+  return out;
+}
+
+function getStoredCustomTags() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_TAGS_KEY);
+    return raw ? dedupeTagList(JSON.parse(raw)) : [];
+  } catch { return []; }
+}
+
+function saveStoredCustomTags(tags) {
+  try { localStorage.setItem(CUSTOM_TAGS_KEY, JSON.stringify(dedupeTagList(tags))); } catch {}
+}
+
+function getAllAvailableTags(extraActs = []) {
+  const defaults = Array.isArray(window.DEFAULT_TAGS) && window.DEFAULT_TAGS.length
+    ? window.DEFAULT_TAGS
+    : ["Pessoal", "Profissional", "Férias", "Viagem"];
+  const rawList = [...defaults, ...getStoredCustomTags()];
+  if (Array.isArray(state.customTags)) rawList.push(...state.customTags);
+  (state.activities || []).forEach(a => { if (Array.isArray(a?.tags)) rawList.push(...a.tags); });
+  loadedTripsMap.forEach(tr => {
+    if (Array.isArray(tr?.data?.customTags)) rawList.push(...tr.data.customTags);
+    (tr?.data?.activities || []).forEach(a => { if (Array.isArray(a?.tags)) rawList.push(...a.tags); });
+  });
+  (extraActs || []).forEach(a => { if (Array.isArray(a?.tags)) rawList.push(...a.tags); });
+  const deduped = dedupeTagList(rawList);
+  const defaultLower = new Set(defaults.map(t => t.toLowerCase()));
+  const basePart = deduped.filter(t => defaultLower.has(t.toLowerCase()));
+  const customPart = deduped
+    .filter(t => !defaultLower.has(t.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return [...basePart, ...customPart];
+}
+
+function registerCustomTag(rawName, extraSelected = []) {
+  const clean = normalizeTagName(rawName);
+  if (!clean) return "";
+  const existing = getAllAvailableTags().find(t => t.toLowerCase() === clean.toLowerCase());
+  const canonical = existing || clean;
+  if (!existing) {
+    const stored = getStoredCustomTags();
+    stored.push(canonical);
+    saveStoredCustomTags(stored);
+    if (!Array.isArray(state.customTags)) state.customTags = [];
+    if (!state.customTags.some(t => normalizeTagName(t).toLowerCase() === canonical.toLowerCase())) {
+      state.customTags.push(canonical);
+    }
+    const tgtData = editingTripRef?.data || activeTrip?.data;
+    if (tgtData && tgtData !== state) {
+      if (!Array.isArray(tgtData.customTags)) tgtData.customTags = [];
+      if (!tgtData.customTags.some(t => normalizeTagName(t).toLowerCase() === canonical.toLowerCase())) {
+        tgtData.customTags.push(canonical);
+      }
+    }
+  }
+  const nextSel = dedupeTagList([...(extraSelected || []), canonical]);
+  refreshTagSelectors([], nextSel);
+  return canonical;
+}
+
 function formatTypesLabel(sel, items) {
-  if (!sel.length) return "Nenhum tipo (0)";
-  if (sel.length >= items.length) return "Todos os tipos";
+  if (!sel.length) return "Nenhum tipo";
+  if (sel.length >= items.length) return "Tipos";
   if (sel.length === 1) return `${sel[0].icon ? sel[0].icon + " " : ""}${sel[0].short || sel[0].label}`;
   if (sel.length === 2) return `${sel[0].short || sel[0].label}, ${sel[1].short || sel[1].label}`;
   return `${sel.length} tipos`;
+}
+
+function formatTagsFilterLabel(sel) {
+  if (!sel.length) return "Tags";
+  if (sel.length === 1) return sel[0].short || sel[0].label;
+  if (sel.length === 2) return `${sel[0].short || sel[0].label}, ${sel[1].short || sel[1].label}`;
+  return `${sel.length} tags`;
+}
+
+function formatModalTagsLabel(sel) {
+  if (!sel.length) return "Selecionar ou criar tag...";
+  if (sel.length === 1) return `🏷️ ${sel[0].label}`;
+  if (sel.length === 2) return `🏷️ ${sel[0].label}, ${sel[1].label}`;
+  return `🏷️ ${sel.length} tags`;
 }
 
 function filterByTypeSet(list, typeSet) {
@@ -627,14 +776,93 @@ function filterByTypeSet(list, typeSet) {
   return list.filter(a => typeSet.has(a.type));
 }
 
+function filterByTagSet(list, tagSet) {
+  if (!tagSet || tagSet.size === 0) return list;
+  const targets = new Set([...tagSet].map(t => normalizeTagName(t).toLowerCase()).filter(Boolean));
+  if (!targets.size) return list;
+  return list.filter(a => Array.isArray(a.tags) && a.tags.some(t => targets.has(normalizeTagName(t).toLowerCase())));
+}
+
 function resetGanttTypeFilter() {
   ganttFilterTypes = new Set(Object.keys(window.ACTIVITY_TYPES || {}));
+  ganttFilterTags = new Set();
   ganttTypeMsel?.selectAll();
+  ganttTagMsel?.clearAll();
 }
 
 function resetTableTypeFilter() {
   tableFilterTypes = new Set(Object.keys(window.ACTIVITY_TYPES || {}));
+  tableFilterTags = new Set();
   tableTypeMsel?.selectAll();
+  tableTagMsel?.clearAll();
+}
+
+function refreshTagSelectors(extraActs = [], modalSelectedOverride = null) {
+  const tags = getAllAvailableTags(extraActs);
+  const tagItems = tags.map(tag => ({ id: tag, label: tag, short: tag, icon: "🏷️" }));
+
+  if (!ganttTagMsel && $("#ganttTagFilter")) {
+    ganttTagMsel = createMultiSelect($("#ganttTagFilter"), {
+      minSelected: 0,
+      hideAllBtn: true,
+      noneLabel: "✕ Limpar (todas)",
+      getLabel: formatTagsFilterLabel,
+      isHighlighted: sel => sel.length > 0,
+      onChange(ids) {
+        ganttFilterTags = new Set(ids);
+        const s = sorted();
+        renderGantt(s);
+        renderTimeline(s);
+      }
+    });
+  }
+  if (ganttTagMsel) ganttTagMsel.setOptions(tagItems, [...ganttFilterTags]);
+
+  if (!tableTagMsel && $("#filterTag")) {
+    tableTagMsel = createMultiSelect($("#filterTag"), {
+      minSelected: 0,
+      hideAllBtn: true,
+      noneLabel: "✕ Limpar (todas)",
+      getLabel: formatTagsFilterLabel,
+      isHighlighted: sel => sel.length > 0,
+      onChange(ids) {
+        tableFilterTags = new Set(ids);
+        renderTable(sorted(), totals());
+      }
+    });
+  }
+  if (tableTagMsel) tableTagMsel.setOptions(tagItems, [...tableFilterTags]);
+
+  if (!modalTagsMsel && $("#modalTagsHost")) {
+    modalTagsMsel = createMultiSelect($("#modalTagsHost"), {
+      triggerId: "f-tagsTrigger",
+      minSelected: 0,
+      allLabel: "☑️ Todas",
+      noneLabel: "✕ Limpar",
+      showOnlyBtn: false,
+      allowCreate: true,
+      createPlaceholder: "Criar nova tag...",
+      getLabel: formatModalTagsLabel,
+      isHighlighted: sel => sel.length > 0,
+      onCreate(raw) {
+        const curSel = modalTagsMsel ? modalTagsMsel.getSelected() : modalDraftTags;
+        const created = registerCustomTag(raw, curSel);
+        if (created) toast(`🏷️ Tag "${created}" criada!`);
+        return created;
+      },
+      onChange(ids) {
+        modalDraftTags = [...ids];
+        updateModalPreview();
+      }
+    });
+  }
+  if (modalTagsMsel) {
+    const sel = modalSelectedOverride !== null
+      ? modalSelectedOverride
+      : (modalTagsMsel.getSelected().length ? modalTagsMsel.getSelected() : modalDraftTags);
+    modalDraftTags = dedupeTagList(sel);
+    modalTagsMsel.setOptions(tagItems, modalDraftTags);
+  }
 }
 
 function populateTypeSelectors() {
@@ -675,11 +903,14 @@ function populateTypeSelectors() {
     });
   }
   tableTypeMsel?.setOptions(typeItems, [...tableFilterTypes]);
+
+  refreshTagSelectors();
 }
 
 /* ---------- RENDER ---------- */
 function render(allSortedOpt) {
   const s = allSortedOpt || sorted();
+  refreshTagSelectors(s);
   const t = totals();
   renderGantt(s);
   renderTimeline(s);
@@ -827,6 +1058,10 @@ function buildRightSummaryHTML(a) {
   const attCount = Array.isArray(a.attachments) ? a.attachments.length : 0;
   const attBadge = attCount ? `<span class="g-summary-meta">📎 ${attCount}</span>` : "";
   const tktNote = formatTicketsNote(a);
+  const actTags = Array.isArray(a.tags) ? a.tags.filter(Boolean) : [];
+  const tagsHtml = actTags.length
+    ? `<span class="g-summary-tags">${actTags.slice(0, 3).map(tg => `<span class="tag-mini">${esc(tg)}</span>`).join("")}${actTags.length > 3 ? `<span class="tag-mini">+${actTags.length - 3}</span>` : ""}</span>`
+    : "";
 
   if (a.type === "Viagem") {
     const c = calc(a);
@@ -842,6 +1077,7 @@ function buildRightSummaryHTML(a) {
         ${routeTxt ? `<span class="g-summary-meta">${routeTxt}</span>` : ""}
         ${parts.length ? `<span class="g-summary-badge">${parts.join(" · ")}</span>` : ""}
         <span class="g-summary-meta">${c.isCarpool && !c.extra ? "Custo R$ 0" : money(c.total + c.extra)}</span>
+        ${tagsHtml}
         ${attBadge}
       </div>`;
   }
@@ -860,6 +1096,7 @@ function buildRightSummaryHTML(a) {
       <span class="g-summary-title">${esc(a.name)}</span>
       <span class="g-summary-badge">${badgeTxt}</span>
       ${getTripBadgeHTML(a)}
+      ${tagsHtml}
       ${metaParts.length ? `<span class="g-summary-meta">${esc(metaParts.join(" · "))}</span>` : ""}
       ${attBadge}
     </div>`;
@@ -893,15 +1130,15 @@ function renderGantt(allSorted) {
   tlWrap.hidden = ganttMode !== "timeline";
   if (ganttMode !== "gantt") return;
 
-  const s = filterByTypeSet(allSorted, ganttFilterTypes);
+  const s = filterByTagSet(filterByTypeSet(allSorted, ganttFilterTypes), ganttFilterTags);
   g.classList.toggle("slim-rail", ganttSlimRail);
 
   if (!s.length) {
     g.style.gridTemplateColumns = "1fr";
     if (allSorted.length > 0) {
       g.innerHTML = `<div style="padding:28px;text-align:center">
-        <p class="muted">Nenhuma atividade corresponde aos tipos selecionados no filtro.</p>
-        <button type="button" class="btn primary" id="btnGanttResetFilter">☑️ Mostrar todos os tipos</button>
+        <p class="muted">Nenhuma atividade corresponde aos filtros selecionados.</p>
+        <button type="button" class="btn primary" id="btnGanttResetFilter">☑️ Limpar filtros</button>
       </div>`;
       const rst = $("#btnGanttResetFilter");
       if (rst) rst.onclick = resetGanttTypeFilter;
@@ -1122,10 +1359,10 @@ function bindResize(handle) {
 function renderTimeline(allSorted) {
   const tl = $("#timelineWrap");
   if (ganttMode !== "timeline") return;
-  const s = filterByTypeSet(allSorted, ganttFilterTypes);
+  const s = filterByTagSet(filterByTypeSet(allSorted, ganttFilterTypes), ganttFilterTags);
   if (!s.length) {
     tl.innerHTML = allSorted.length > 0
-      ? `<p class="muted">Nenhuma atividade corresponde aos tipos selecionados. <button type="button" class="link-btn" id="btnTlResetFilter">Mostrar todos os tipos</button></p>`
+      ? `<p class="muted">Nenhuma atividade corresponde aos filtros selecionados. <button type="button" class="link-btn" id="btnTlResetFilter">Limpar filtros</button></p>`
       : `<p class="muted">Nenhuma atividade encontrada.</p>`;
     const rst = $("#btnTlResetFilter");
     if (rst) rst.onclick = resetGanttTypeFilter;
@@ -2068,8 +2305,8 @@ function openFinanceDayModal(iso) {
 /* ---------- TABELA ---------- */
 function renderTable(s, t) {
   const q = ($("#search").value || "").toLowerCase();
-  const typeFiltered = filterByTypeSet(s, tableFilterTypes);
-  const rows = typeFiltered.filter(a => !q || (label(a) + " " + (a.notes || "") + " " + (getActivityMeta(a)?.tripName || "")).toLowerCase().includes(q));
+  const filtered = filterByTagSet(filterByTypeSet(s, tableFilterTypes), tableFilterTags);
+  const rows = filtered.filter(a => !q || (label(a) + " " + (a.notes || "") + " " + (Array.isArray(a.tags) ? a.tags.join(" ") : "") + " " + (getActivityMeta(a)?.tripName || "")).toLowerCase().includes(q));
   const allTypes = Object.keys(window.ACTIVITY_TYPES);
   const multi = isMultiTripMode();
 
@@ -2126,7 +2363,7 @@ function renderTable(s, t) {
   });
 
   if (!rows.length) {
-    h += `<tr><td colspan="26" style="text-align:center;padding:22px" class="muted">Nenhuma atividade corresponde aos filtros atuais. ${s.length ? `<button type="button" class="link-btn" id="btnTblResetFilter">Mostrar todos os tipos</button>` : ""}</td></tr>`;
+    h += `<tr><td colspan="26" style="text-align:center;padding:22px" class="muted">Nenhuma atividade corresponde aos filtros atuais. ${s.length ? `<button type="button" class="link-btn" id="btnTblResetFilter">Limpar filtros</button>` : ""}</td></tr>`;
   }
 
   h += `</tbody><tfoot><tr>
@@ -2192,11 +2429,15 @@ function renderTable(s, t) {
     const info = getTypeInfo(a.type);
     const c = calc(a);
     const v = a.type === "Viagem";
+    const cardTags = Array.isArray(a.tags) && a.tags.length
+      ? `<div class="m-card-tags">${a.tags.map(tg => `<span class="tag-mini">${esc(tg)}</span>`).join("")}</div>`
+      : "";
     return `<div class="m-card" data-id="${a.id}">
       <div class="m-card-head">
         <strong>${info.icon} ${esc(label(a))} ${getTripBadgeHTML(a)}</strong>
         <span class="chip ${info.cls}">${esc(info.short)}</span>
       </div>
+      ${cardTags}
       <div class="m-card-grid">
         <div><span class="muted">Data:</span> ${fmtBR(a.start)}${days(a) > 1 ? ` - ${fmtShortBR(a.end)}` : ""}</div>
         <div><span class="muted">Dias:</span> ${days(a)}</div>
@@ -2358,7 +2599,7 @@ function renderParams() {
   if ($("#calBadge")) $("#calBadge").textContent = `Lembrete dia anterior ${remTime}`;
   const cidInput = $("#calClientIdInput");
   if (cidInput && document.activeElement !== cidInput) {
-    cidInput.value = getEffectiveGoogleClientId();
+    cidInput.value = getEffectiveCalendarClientId();
   }
 
   renderParamTickets();
@@ -2934,6 +3175,7 @@ window.openModal = function (idOrOpts) {
   editing = id || null;
   modalDraftId = id || uid();
   modalAttachments = clone(a.attachments || []);
+  modalDraftTags = dedupeTagList(a.tags || []);
   modalQrPayload = a.qrPayload || "";
   modalQrFormat = a.qrFormat || "";
   modalStartTime = a.startTime || "";
@@ -2992,6 +3234,7 @@ window.openModal = function (idOrOpts) {
 
   renderModalQrBadge();
   renderTicketRows();
+  refreshTagSelectors([], modalDraftTags);
   toggleTrip();
   updateModalMapsUI();
   renderModalAttachments();
@@ -3085,6 +3328,7 @@ function readForm() {
   const startVal = e.start.value;
   const diffChecked = Boolean($("#f-diffArrival")?.checked);
   const endVal = (isTravelType(tVal) && !diffChecked) ? startVal : (e.end.value || startVal);
+  const formTags = modalTagsMsel ? dedupeTagList(modalTagsMsel.getSelected()) : dedupeTagList(modalDraftTags);
 
   const a = {
     type: tVal,
@@ -3096,6 +3340,7 @@ function readForm() {
     notes: e.notes.value,
     attachments: clone(modalAttachments)
   };
+  if (formTags.length) a.tags = formTags;
   if (a.end < a.start) a.end = a.start;
   if (modalStartTime) a.startTime = modalStartTime;
   if (modalQrPayload) {
@@ -3654,7 +3899,9 @@ function exportXlsx() {
       "Gasolina (L)": v ? +c.liters.toFixed(2) : "", "Custo Gasolina": v ? +c.fuel.toFixed(2) : "",
       "Custo Recarga": v ? +c.charge.toFixed(2) : "", Pedágio: v ? a.toll : "",
       Extras: +a.extraCost || 0, "Total Item": +(c.total + c.extra).toFixed(2),
-      Tanques: v ? +c.tanks.toFixed(2) : "", Observações: a.notes || ""
+      Tanques: v ? +c.tanks.toFixed(2) : "",
+      Tags: Array.isArray(a.tags) ? a.tags.join(", ") : "",
+      Observações: a.notes || ""
     };
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sanitizeSheetRows(rows)), "Tabela Completa");
@@ -5121,24 +5368,41 @@ $("#btnAttachLink").onclick = () => {
   renderModalAttachments();
 };
 
-function getEffectiveGoogleClientId() {
-  return (
-    (window.FeriasApi && window.FeriasApi.getGoogleClientId()) ||
-    (state.params && state.params.googleClientId) ||
-    localStorage.getItem("ferias-pro-gcal-client-id") ||
-    DEFAULT_GOOGLE_CLIENT_ID
-  ).trim();
+const CALENDAR_CLIENT_ID_KEY = "ferias-pro-gcal-client-id";
+
+function isLoginOnlyGoogleClientId(cid) {
+  const clean = String(cid || "").trim();
+  if (!clean) return false;
+  const loginCid = String(window.FeriasApi?.getGoogleClientId?.() || "").trim();
+  return clean === DEFAULT_GOOGLE_CLIENT_ID || (Boolean(loginCid) && clean === loginCid);
 }
 
-function setLocalGoogleClientId(cid) {
-  const clean = (cid || "").trim();
-  state.params.googleClientId = clean;
-  if (clean) localStorage.setItem("ferias-pro-gcal-client-id", clean);
-  else localStorage.removeItem("ferias-pro-gcal-client-id");
+function getEffectiveCalendarClientId() {
+  const explicit = String(
+    (state.params && state.params.calendarGoogleClientId) ||
+    localStorage.getItem(CALENDAR_CLIENT_ID_KEY) ||
+    ""
+  ).trim();
+  if (explicit && !isLoginOnlyGoogleClientId(explicit)) return explicit;
+  const legacy = String((state.params && state.params.googleClientId) || "").trim();
+  return legacy && !isLoginOnlyGoogleClientId(legacy) ? legacy : "";
+}
+
+function setLocalCalendarClientId(cid) {
+  const clean = String(cid || "").trim();
+  if (clean && isLoginOnlyGoogleClientId(clean)) {
+    toast("⚠️ Esse Client ID é exclusivo do Login Google e é bloqueado na Agenda sem verificação.");
+    return false;
+  }
+  state.params.calendarGoogleClientId = clean;
+  delete state.params.googleClientId;
+  if (clean) localStorage.setItem(CALENDAR_CLIENT_ID_KEY, clean);
+  else localStorage.removeItem(CALENDAR_CLIENT_ID_KEY);
+  return true;
 }
 
 async function executeSmartCalendarSync() {
-  const cid = getEffectiveGoogleClientId();
+  const cid = getEffectiveCalendarClientId();
   const body = $("#calSyncBody");
   const btnNow = $("#btnCalSyncNow");
   const acts = sorted();
@@ -5147,6 +5411,11 @@ async function executeSmartCalendarSync() {
 
   if (!cid) {
     btnNow.hidden = true;
+    if (activeTrip?.role === "owner" && !activeTrip.calToken && window.FeriasApi?.rotateCalToken) {
+      try {
+        activeTrip.calToken = await window.FeriasApi.rotateCalToken(activeTrip.id);
+      } catch {}
+    }
     const feedUrl = activeTrip?.calToken ? window.FeriasApi.getCalendarFeedUrl(activeTrip.calToken) : "";
     const webcalUrl = feedUrl ? feedUrl.replace(/^https?:\/\//i, "webcal://") : "";
     const gcalSubscribeUrl = webcalUrl ? `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}` : "";
@@ -5155,31 +5424,31 @@ async function executeSmartCalendarSync() {
     body.innerHTML = `
       ${feedUrl ? `
         <div class="gmaps-key-panel" style="margin-top:0">
-          <strong>1️⃣ Assinar Calendário Automático (1 clique · sem configurar nada)</strong>
-          <p class="muted small">Assine uma única vez: todas as viagens, eventos e lembretes (dia anterior às <b>${esc(rem)}</b>) são publicados pela sua VPS e atualizam sozinhos na sua agenda.</p>
+          <strong>1️⃣ Assinar Calendário Automático (1 clique · sem bloqueio OAuth)</strong>
+          <p class="muted small">Assine uma única vez: <b>${acts.length}</b> atividade(s) e lembretes (dia anterior às <b>${esc(rem)}</b>) são publicados pela sua VPS e atualizam na sua agenda.</p>
           <div class="key-actions-row">
             <a class="btn primary small" href="${esc(gcalSubscribeUrl)}" target="_blank" rel="noopener">📅 Assinar no Google Agenda</a>
             <a class="btn ghost small" href="${esc(webcalUrl)}">🍎 Assinar no iPhone / Mac</a>
             <button type="button" class="btn ghost small" id="btnCopyCalFeed">📋 Copiar link</button>
           </div>
-          ${isLocalHost ? `<p class="muted small">💡 A assinatura automática por link funciona quando acessado pelo seu domínio público (<code>https://feriaspro.digitalinpulse.com.br</code>).</p>` : `<p class="muted small">ℹ️ O Google Agenda atualiza assinaturas externas periodicamente. Para atualização no mesmo segundo, use o arquivo <code>.ics</code> abaixo ou o modo API.</p>`}
+          ${isLocalHost ? `<p class="muted small">💡 A assinatura automática por link webcal funciona no domínio público (<code>https://feriaspro.digitalinpulse.com.br</code>). Localmente, use o botão <b>Baixar .ics agora</b> abaixo.</p>` : `<p class="muted small">ℹ️ O Google Agenda atualiza assinaturas externas periodicamente. Para importar imediatamente agora mesmo, use o botão <code>.ics</code> abaixo.</p>`}
         </div>
       ` : ""}
 
       <div class="gmaps-key-panel" style="margin-top:0">
-        <strong>2️⃣ Importar / Atualizar na hora (.ics inteligente)</strong>
-        <p class="muted small">Baixe o arquivo e importe no Google Agenda — cada evento tem ID único para atualizar sem duplicar.</p>
+        <strong>2️⃣ Importar / Atualizar todas agora (.ics inteligente)</strong>
+        <p class="muted small">Baixe o arquivo <code>.ics</code> com todas as <b>${acts.length}</b> atividade(s) e importe no Google Agenda — cada evento tem ID único para atualizar sem duplicar. Ao clicar em <b>📅 Enviar p/ Agenda</b> dentro de qualquer atividade, ela também abre preenchida direto no Google Agenda.</p>
         <div class="key-actions-row">
           <a class="btn ghost small" href="https://calendar.google.com/calendar/u/0/r/settings/export" target="_blank" rel="noopener">📂 Abrir Importador do Google Agenda ↗</a>
         </div>
       </div>
 
       <details class="help-details">
-        <summary>⚡ Modo instantâneo com botão "Autorizar Google" (opcional)</summary>
+        <summary>⚙️ Modo avançado opcional: API OAuth (Client ID próprio verificado)</summary>
         <div style="display:grid;gap:8px;margin-top:8px">
-          <p class="muted small">Se você quiser que o app peça permissão na janela do Google e envie/altere/apague em 1 segundo, cole o <b>OAuth Client ID</b> (configurado 1 única vez):</p>
+          <p class="muted small">Requer um <b>OAuth Client ID</b> separado e verificado no Google Cloud para o escopo <code>calendar.events</code> (não use o Client ID padrão de Login para evitar a tela "Acesso bloqueado"):</p>
           <div class="key-input-row">
-            <input type="text" id="calModalClientId" placeholder="123456-abc.apps.googleusercontent.com" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:9px 11px;color:var(--text-strong);width:100%">
+            <input type="text" id="calModalClientId" placeholder="Client ID verificado para Agenda..." style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:9px 11px;color:var(--text-strong);width:100%">
             <button type="button" class="btn primary small" id="btnModalConnectGcal">Ativar e Sincronizar</button>
           </div>
         </div>
@@ -5196,8 +5465,8 @@ async function executeSmartCalendarSync() {
     if (modalBtn) {
       modalBtn.onclick = () => {
         const val = ($("#calModalClientId")?.value || "").trim();
-        if (!val) return toast("Cole o OAuth Client ID do Google.");
-        setLocalGoogleClientId(val);
+        if (!val) return toast("Cole um OAuth Client ID verificado do Google Agenda.");
+        if (!setLocalCalendarClientId(val)) return;
         save();
         renderParams();
         executeSmartCalendarSync();
@@ -5225,7 +5494,19 @@ async function executeSmartCalendarSync() {
     toast(`📅 Agenda: ${res.created} criados · ${res.updated} atualizados · ${res.deleted} removidos`);
   } catch (err) {
     body.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>
-      <p class="muted small">Você também pode usar o botão <b>Baixar .ics agora</b> abaixo para importar na hora.</p>`;
+      <p class="muted small">Se o Google exibiu <b>Acesso bloqueado</b>, volte para o modo direto sem OAuth ou baixe o arquivo <code>.ics</code> abaixo.</p>
+      <div class="key-actions-row" style="margin-top:8px">
+        <button type="button" class="btn primary small" id="btnCalFallbackDirect">🔓 Voltar ao modo direto (sem bloqueio OAuth)</button>
+      </div>`;
+    const fb = $("#btnCalFallbackDirect");
+    if (fb) {
+      fb.onclick = () => {
+        setLocalCalendarClientId("");
+        save();
+        renderParams();
+        executeSmartCalendarSync();
+      };
+    }
     btnNow.textContent = "Tentar Novamente";
   } finally {
     btnNow.disabled = false;
@@ -5239,10 +5520,11 @@ function openSmartCalendarModal() {
 }
 
 $("#btnCalDirect").onclick = async () => {
-  const cid = getEffectiveGoogleClientId();
+  updateModalPreview();
+  const cid = getEffectiveCalendarClientId();
   if (!cid) {
     window.open($("#btnCalLink").href, "_blank", "noopener");
-    return toast("Abrindo Google Agenda com dados preenchidos.");
+    return toast("📅 Abrindo evento preenchido no Google Agenda!");
   }
   try {
     const a = readForm();
@@ -5250,7 +5532,8 @@ $("#btnCalDirect").onclick = async () => {
     const res = await window.FeriasCalendar.syncSingleActivity(a, state.title, cid, state.params.calendarReminderTime, activeTrip?.id || "default");
     toast(`📅 Google Agenda: ${res.created ? "evento criado" : res.updated ? "evento atualizado" : "já atualizado"}!`);
   } catch (err) {
-    toast("❌ " + (err.message || err));
+    window.open($("#btnCalLink").href, "_blank", "noopener");
+    toast("⚠️ OAuth indisponível — abrindo evento direto no Google Agenda.");
   }
 };
 
@@ -5271,16 +5554,23 @@ $("#btnCalSyncIcs").onclick = $("#btnDownloadAllIcs").onclick = $("#btnExportIcs
 $("#btnCalSyncNow").onclick = () => {
   const inp = $("#calModalClientId");
   if (inp && inp.value.trim()) {
-    setLocalGoogleClientId(inp.value.trim());
+    if (!setLocalCalendarClientId(inp.value.trim())) return;
     save();
     renderParams();
   }
   executeSmartCalendarSync();
 };
 $("#btnSaveCalClientId").onclick = () => {
-  setLocalGoogleClientId($("#calClientIdInput").value);
-  save("📅 Client ID Google Agenda salvo!");
+  if (!setLocalCalendarClientId($("#calClientIdInput").value)) return;
+  save("📅 Configuração da Google Agenda salva!");
 };
+if ($("#btnClearCalClientId")) {
+  $("#btnClearCalClientId").onclick = () => {
+    setLocalCalendarClientId("");
+    if ($("#calClientIdInput")) $("#calClientIdInput").value = "";
+    save("🔓 Modo direto da Google Agenda ativado (sem bloqueio OAuth)!");
+  };
+}
 
 $("#btnModalSaveKey").onclick = () => {
   const val = $("#modalKeyInput").value.trim();
@@ -5305,10 +5595,19 @@ $("#form").onsubmit = e => {
     return toast("👁️ Viagem compartilhada somente para visualização.");
   }
   const tgtData = targetTrip?.data || state;
+  if (Array.isArray(a.tags) && a.tags.length) {
+    const defaultsLower = new Set((window.DEFAULT_TAGS || ["Pessoal", "Profissional", "Férias", "Viagem"]).map(t => t.toLowerCase()));
+    if (!Array.isArray(tgtData.customTags)) tgtData.customTags = [];
+    a.tags.forEach(tg => {
+      if (!defaultsLower.has(tg.toLowerCase()) && !tgtData.customTags.some(x => x.toLowerCase() === tg.toLowerCase())) {
+        tgtData.customTags.push(tg);
+      }
+    });
+  }
   if (editing) {
     const o = tgtData.activities.find(x => x.id === editing);
     if (o) {
-      for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges", "airline", "bookingRef", "includeRouteCost", "startTime", "qrPayload", "qrFormat"]) delete o[k];
+      for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges", "airline", "bookingRef", "includeRouteCost", "startTime", "qrPayload", "qrFormat", "tags"]) delete o[k];
       Object.assign(o, a);
     }
   } else {
@@ -5405,8 +5704,8 @@ $("#ganttPrintForm").onsubmit = async e => {
 
 $("#btnTablePdf").onclick = () => {
   const q = ($("#search").value || "").toLowerCase();
-  const rows = filterByTypeSet(sorted(), tableFilterTypes)
-    .filter(a => !q || (label(a) + " " + (a.notes || "") + " " + (getActivityMeta(a)?.tripName || "")).toLowerCase().includes(q));
+  const rows = filterByTagSet(filterByTypeSet(sorted(), tableFilterTypes), tableFilterTags)
+    .filter(a => !q || (label(a) + " " + (a.notes || "") + " " + (Array.isArray(a.tags) ? a.tags.join(" ") : "") + " " + (getActivityMeta(a)?.tripName || "")).toLowerCase().includes(q));
   window.FeriasReport.printTableLandscape(rows, state, totals(), reportHelpers());
 };
 

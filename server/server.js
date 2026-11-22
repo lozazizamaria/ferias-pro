@@ -813,7 +813,7 @@ function applySecurityHeaders(res, extraHeaders = {}) {
     "Content-Security-Policy":
       "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https:; " +
       "script-src 'self' 'unsafe-inline' https:; connect-src 'self' https:; font-src 'self' data: https:; " +
-      "media-src 'self' blob: data:; frame-src 'self' https://accounts.google.com; frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
+      "media-src 'self' blob: data:; frame-src 'self' https://accounts.google.com https://content.googleapis.com; frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
     ...extraHeaders
   };
   return headers;
@@ -949,6 +949,7 @@ function buildTripIcs(trip) {
     if (a.km) descParts.push(`Distância: ${a.km} km`);
     if (a.toll) descParts.push(`Pedágio: R$ ${Number(a.toll).toFixed(2)}`);
     if (a.extraCost) descParts.push(`Custo: R$ ${Number(a.extraCost).toFixed(2)}`);
+    if (Array.isArray(a.tags) && a.tags.length) descParts.push(`Tags: ${a.tags.map(t => String(t)).join(", ")}`);
     if (a.notes) descParts.push(`Notas: ${a.notes}`);
     const desc = descParts.join("\n");
 
@@ -1578,6 +1579,9 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
     const totalTxt = Number(act.extraCost) > 0 ? `R$ ${Number(act.extraCost).toFixed(2).replace(".", ",")}` : "";
     textModulesData.push({ id: "valores", header: "Ingressos / Valor", body: [listTxt, totalTxt ? `Total: ${totalTxt}` : ""].filter(Boolean).join(" · ") });
   }
+  if (Array.isArray(act.tags) && act.tags.length) {
+    textModulesData.push({ id: "tags", header: "Tags", body: act.tags.map(t => String(t)).join(", ").slice(0, 120) });
+  }
   if (act.notes) {
     textModulesData.push({ id: "notas", header: "Observações", body: String(act.notes).slice(0, 400) });
   }
@@ -1804,6 +1808,9 @@ function buildPkpassBuffer(activity, tripName) {
       value: ticketsArr.map(t => `${t.qty}x ${t.label || "Item"} @ R$ ${Number(t.unitPrice).toFixed(2).replace(".", ",")}`).join(" | ")
     });
   }
+  if (Array.isArray(act.tags) && act.tags.length) {
+    backFields.push({ key: "tags", label: "Tags", value: act.tags.map(t => String(t)).join(", ").slice(0, 120) });
+  }
   if (act.notes) backFields.push({ key: "notes", label: "Observações", value: String(act.notes).slice(0, 500) });
 
   const isTransit = actType === "Voo" || actType === "Trem" || actType === "Ônibus" || actType === "Navio";
@@ -1892,7 +1899,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true,
         mode: "multi-user",
-        version: "26",
+        version: "27",
         encryption: "aes-256-gcm",
         googleClientId: getServerGoogleClientId(),
         hasGemini: Boolean(sys.geminiKey),

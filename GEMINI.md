@@ -10,10 +10,10 @@
 - **Google OAuth Client Secret**: armazenado localmente de forma segura no arquivo gitignored `.env` na variável `GOOGLE_CLIENT_SECRET` (nunca versionar em arquivos rastreados pelo Git).
 - **Lembrete Google Cloud**: manter nas origens JavaScript autorizadas `https://feriaspro.digitalinpulse.com.br` (e `http://127.0.0.1:4173` / `http://localhost:3080` se testar localmente).
 
-## Arquitetura de Segurança, Credenciais & Operação (v26)
+## Arquitetura de Segurança, Credenciais & Operação (v27)
 - **Cofre Criptografado (`AES-256-GCM`)**: Segredos gravados pelo Super Admin (`db.systemSettings`) ou integrações de usuários (`geminiKeyEnc`, `gmapsKeyEnc`, `walletSaJsonEnc`) são cifrados com `MASTER_KEY` (`.env`, `>= 32` chars) ou `DATA_DIR/.master.key` (modo `0600` fora do `db.json` e dos backups). Credenciais já definidas no `.env` mantêm prioridade máxima.
 - **Super Admin vs Admin Delegado**: `adelphi86@gmail.com` é Super Admin permanente. Cofre de Credenciais (`/api/admin/system-settings`), teste SMTP (`/api/admin/test-smtp`), backups compactados `.json.gz` + SHA-256 (`/api/admin/backups*`), delegação e exclusão de usuários são restritos ao Super Admin (`403` até para delegados).
-- **Hardening HTTP, Sessões, IA & Carteira**: Tokens de sessão armazenados em `SHA-256`, rate limit em login/cadastro/reset, headers CSP/ETag (`Cache-Control: no-cache`), Service Worker `network-first` (`v26`), auto-preenchimento instantâneo de atividades por IA Gemini (imagem/ticket, áudio e texto com fallback automático de modelos a partir de `gemini-3.8-flash`) e geração automática de passes `.pkpass` / JWT da Carteira do Google com replicação de QR Code.
+- **Hardening HTTP, Sessões, IA, Carteira & Google Agenda**: Tokens de sessão armazenados em `SHA-256`, rate limit em login/cadastro/reset, headers CSP/ETag (`Cache-Control: no-cache`), Service Worker `network-first` (`v27`), auto-preenchimento instantâneo de atividades por IA Gemini (imagem/ticket, áudio e texto com fallback automático de modelos a partir de `gemini-3.8-flash`), geração automática de passes `.pkpass` / JWT da Carteira do Google com replicação de QR Code, sincronização direta/assinatura Google Agenda isolada do Client ID de Login (sem erro "Acesso bloqueado") e sistema completo de Tags multi-seleção + criação customizada nas atividades e nos filtros de Cronograma/Tabela.
 - **Comandos Locais & Deploy VPS**:
   - Local: `npm run check`, `npm start`, `npm run dev`
   - Atualizar VPS (terminal SSH): `cd /var/www/ferias-pro && git pull origin main && systemctl restart ferias-pro`
