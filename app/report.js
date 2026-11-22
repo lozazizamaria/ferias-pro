@@ -5,6 +5,7 @@
     Voo: ["#0ea5e9", "#0369a1"],
     Trem: ["#14b8a6", "#0284c7"],
     "Ônibus": ["#f59e0b", "#d97706"],
+    Navio: ["#0891b2", "#1d4ed8"],
     Hospedagem: ["#10b981", "#0f766e"],
     Ingresso: ["#8b5cf6", "#db2777"],
     Evento: ["#d97706", "#e11d48"],
@@ -338,7 +339,7 @@
     const bodyRows = rows.map((a, i) => {
       const c = calc(a);
       const v = a.type === "Viagem";
-      const hasRoute = v || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus";
+      const hasRoute = v || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus" || a.type === "Navio";
       return `<tr>
         <td>${i + 1}</td>
         <td>${esc(a.type)}</td>
@@ -865,7 +866,7 @@
     return printHtmlInFrame(html, true);
   }
 
-  /* ---------- GOOGLE WALLET & PASSE VISUAL COM QR CODE ---------- */
+  /* ---------- CARTEIRA DO GOOGLE & PASSE VISUAL COM QR CODE ---------- */
   function drawQrMatrix(ctx, seedStr, x, y, size) {
     const N = 21;
     const cell = size / N;
@@ -901,7 +902,7 @@
 
   function renderWalletPassCanvas(canvas, activity, tripName, helpers) {
     const { fmtBR, money } = helpers;
-    const W = 720, H = 400;
+    const W = 720, H = 420;
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext("2d");
@@ -916,41 +917,59 @@
     ctx.fill();
 
     ctx.fillStyle = "rgba(255,255,255,0.12)";
-    ctx.fillRect(0, 82, W, 2);
+    ctx.fillRect(0, 78, W, 2);
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "700 20px Outfit, sans-serif";
-    ctx.fillText(`Férias Pro · ${tripName || "Passe Digital"}`, 32, 50);
+    ctx.font = "700 19px Outfit, sans-serif";
+    ctx.fillText(`Férias Pro · ${tripName || "Carteira do Google"}`, 32, 48);
 
-    ctx.font = "700 32px Outfit, sans-serif";
-    ctx.fillText(String(activity.name || "Atividade").slice(0, 28), 32, 138);
+    ctx.font = "700 30px Outfit, sans-serif";
+    ctx.fillText(String(activity.name || "Atividade").slice(0, 30), 32, 130);
 
-    ctx.font = "500 18px Outfit, sans-serif";
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.font = "500 17px Outfit, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
     const dt = activity.end && activity.end !== activity.start
-      ? `${fmtBR(activity.start)} até ${fmtBR(activity.end)}`
+      ? `${fmtBR(activity.start)} ➔ ${fmtBR(activity.end)}`
       : fmtBR(activity.start);
-    ctx.fillText(`📅 ${dt}   ·   Tipo: ${activity.type}`, 32, 178);
+    const timePart = activity.startTime ? ` · ${String(activity.startTime).slice(0, 5)}` : "";
+    ctx.fillText(`📅 ${dt}${timePart}   ·   ${activity.type}`, 32, 168);
 
-    let lineY = 216;
+    let lineY = 204;
     if (activity.from || activity.to) {
-      ctx.fillText(`📍 ${activity.from || "?"} ➔ ${activity.to || "?"}`, 32, lineY);
-      lineY += 34;
+      ctx.fillText(`📍 ${activity.from || "?"} ➔ ${activity.to || "?"}`.slice(0, 44), 32, lineY);
+      lineY += 30;
+    }
+    if (activity.airline) {
+      ctx.fillText(`🛫 ${activity.airline}`.slice(0, 44), 32, lineY);
+      lineY += 30;
     }
     if (activity.bookingRef) {
-      ctx.fillText(`🔖 Localizador / Código: ${activity.bookingRef}`, 32, lineY);
-      lineY += 34;
+      ctx.fillText(`🔖 Localizador / Código: ${activity.bookingRef}`.slice(0, 44), 32, lineY);
+      lineY += 30;
     }
-    if (activity.extraCost > 0) {
-      ctx.fillText(`💳 Valor: ${money(activity.extraCost)}`, 32, lineY);
-      lineY += 34;
+    const tktArr = Array.isArray(activity.tickets) ? activity.tickets.filter(t => (Number(t.qty) || 0) > 0 && (Number(t.unitPrice) || 0) > 0) : [];
+    const totalTkts = tktArr.reduce((s, t) => s + (Number(t.qty) || 0), 0);
+    if (activity.extraCost > 0 || totalTkts > 0) {
+      const valStr = activity.extraCost > 0 ? money(activity.extraCost) : "";
+      const qtyStr = totalTkts > 0 ? ` (${totalTkts} un.)` : "";
+      ctx.fillText(`💳 Valor: ${valStr}${qtyStr}`.trim(), 32, lineY);
+      lineY += 30;
     }
     if (activity.notes) {
-      ctx.font = "400 16px Outfit, sans-serif";
-      ctx.fillText(String(activity.notes).slice(0, 48), 32, 345);
+      ctx.font = "400 15px Outfit, sans-serif";
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillText(String(activity.notes).slice(0, 54), 32, Math.max(lineY + 8, 372));
     }
 
-    drawQrMatrix(ctx, `${activity.id || ""}|${activity.name}|${activity.start}`, W - 196, 132, 160);
+    const qrValue = String(activity.qrPayload || "").trim() || `${activity.id || ""}|${activity.name}|${activity.start}|${activity.bookingRef || ""}`;
+    drawQrMatrix(ctx, qrValue, W - 196, 128, 160);
+    if (activity.qrPayload) {
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = "700 12px Outfit, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("QR DO BILHETE", W - 116, 314);
+      ctx.textAlign = "left";
+    }
   }
 
   window.FeriasReport = {

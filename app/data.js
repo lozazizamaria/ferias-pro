@@ -4,6 +4,7 @@ window.ACTIVITY_TYPES = {
   Voo:         { id: "Voo",         label: "✈️ Avião / Voo",           short: "Voo",         icon: "✈",  cls: "Voo",         isFlight: true,  costLabel: "Passagens aéreas / bagagem" },
   Trem:        { id: "Trem",        label: "🚂 Viagem de Trem",        short: "Trem",        icon: "🚂", cls: "Trem",        isTransit: true, transitMode: "RAIL", costLabel: "Passagens de trem" },
   "Ônibus":    { id: "Ônibus",      label: "🚌 Viagem de Ônibus",      short: "Ônibus",      icon: "🚌", cls: "Onibus",      isTransit: true, transitMode: "BUS",  costLabel: "Passagens de ônibus" },
+  Navio:       { id: "Navio",       label: "🚢 Viagem de Navio",       short: "Navio",       icon: "🚢", cls: "Navio",       isTransit: true, transitMode: "BOAT", costLabel: "Passagens / cruzeiro / cabine" },
   Hospedagem:  { id: "Hospedagem",  label: "🏨 Hospedagem / Hotel",    short: "Hospedagem",  icon: "🏨", cls: "Hospedagem",  isStay: true,    costLabel: "Diárias ou valor da hospedagem" },
   Ingresso:    { id: "Ingresso",    label: "🎟️ Ingresso / Ticket",     short: "Ingresso",    icon: "🎟", cls: "Ingresso",    isTicket: true,  costLabel: "Ingressos / entradas" },
   Evento:      { id: "Evento",      label: "★ Evento / Jogo / Show",   short: "Evento",      icon: "★",  cls: "Evento",      costLabel: "Ingressos / entradas do evento" },

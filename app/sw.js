@@ -1,21 +1,21 @@
 /* ===== Service Worker PWA — Férias Pro (Network-First Shell + Leituras Offline) ===== */
-const CACHE = "ferias-pro-v24";
-const DATA_CACHE = "ferias-pro-data-v24";
+const CACHE = "ferias-pro-v25";
+const DATA_CACHE = "ferias-pro-data-v25";
 const SHELL = [
   "/",
   "/index.html",
   "/como-usar.html",
-  "/styles.css?v=24",
-  "/sobre.css?v=24",
-  "/vehicles.js?v=24",
-  "/countries.js?v=24",
-  "/data.js?v=24",
-  "/maps.js?v=24",
-  "/calendar.js?v=24",
-  "/report.js?v=24",
-  "/api.js?v=24",
-  "/app.js?v=24",
-  "/manifest.webmanifest",
+  "/styles.css?v=25",
+  "/sobre.css?v=25",
+  "/vehicles.js?v=25",
+  "/countries.js?v=25",
+  "/data.js?v=25",
+  "/maps.js?v=25",
+  "/calendar.js?v=25",
+  "/report.js?v=25",
+  "/api.js?v=25",
+  "/app.js?v=25",
+  "/manifest.webmanifest?v=25",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/icon.svg"

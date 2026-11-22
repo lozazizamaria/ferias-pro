@@ -38,8 +38,8 @@
   }
 
   function formatActivitySummary(a) {
-    if ((a.type === "Viagem" || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus") && (a.from || a.to)) {
-      const pfx = a.type === "Voo" ? "✈️ " : a.type === "Trem" ? "🚂 " : a.type === "Ônibus" ? "🚌 " : "";
+    if ((a.type === "Viagem" || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus" || a.type === "Navio") && (a.from || a.to)) {
+      const pfx = a.type === "Voo" ? "✈️ " : a.type === "Navio" ? "🚢 " : a.type === "Trem" ? "🚂 " : a.type === "Ônibus" ? "🚌 " : "";
       return `${pfx}${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`;
     }
     return a.name;
@@ -48,6 +48,8 @@
   function formatActivityDescription(a, tripName, tag) {
     const lines = [`Planejamento: ${tripName || "Férias Pro"}`, `Tipo: ${a.type}`];
     if (a.from || a.to) lines.push(`Trecho: ${a.from || "?"} ➔ ${a.to || "?"}`);
+    if (a.airline) lines.push(`Cia / Empresa / Navio: ${a.airline}`);
+    if (a.bookingRef) lines.push(`Localizador / Reserva: ${a.bookingRef}`);
     if (a.km) lines.push(`Distância: ${a.km} km`);
     if (a.toll) lines.push(`Pedágio: R$ ${Number(a.toll).toFixed(2)}`);
     if (a.extraCost) lines.push(`Custo previsto: R$ ${Number(a.extraCost).toFixed(2)}`);

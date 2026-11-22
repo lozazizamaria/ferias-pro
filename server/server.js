@@ -51,6 +51,10 @@ const SUPER_ADMIN_EMAILS = new Set([
   ...String(process.env.SUPER_ADMIN_EMAILS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean)
 ]);
 const ENV_GEMINI_KEY = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "").trim();
+const ENV_GEMINI_MODEL = (process.env.GEMINI_MODEL || "").trim().replace(/^models\//i, "");
+const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
+const GEMINI_FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.0-flash", "gemini-2.5-flash-lite"];
+const geminiDiscoveredModelCache = new Map();
 const ENV_GMAPS_KEY = (process.env.GOOGLE_MAPS_API_KEY || "").trim();
 const ENV_WALLET_ISSUER_ID = (process.env.GOOGLE_WALLET_ISSUER_ID || "").trim();
 const ENV_WALLET_SA_JSON = (process.env.GOOGLE_WALLET_SA_JSON || "").trim();
@@ -933,11 +937,15 @@ function buildTripIcs(trip) {
 
   activities.forEach(a => {
     if (!a || !a.start) return;
-    const summary = (a.type === "Viagem" || a.type === "Voo") && (a.from || a.to)
-      ? `${a.type === "Voo" ? "✈️ " : ""}${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`
+    const isRouteOrTransit = ["Viagem", "Voo", "Trem", "Ônibus", "Navio"].includes(a.type);
+    const modePrefix = a.type === "Voo" ? "✈️ " : a.type === "Navio" ? "🚢 " : a.type === "Trem" ? "🚂 " : a.type === "Ônibus" ? "🚌 " : "";
+    const summary = isRouteOrTransit && (a.from || a.to)
+      ? `${modePrefix}${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`
       : a.name;
     const descParts = [`Planejamento: ${tripName}`, `Tipo: ${a.type}`];
     if (a.from || a.to) descParts.push(`Trecho: ${a.from || "?"} ➔ ${a.to || "?"}`);
+    if (a.airline) descParts.push(`Cia / Empresa / Navio: ${a.airline}`);
+    if (a.bookingRef) descParts.push(`Localizador / Reserva: ${a.bookingRef}`);
     if (a.km) descParts.push(`Distância: ${a.km} km`);
     if (a.toll) descParts.push(`Pedágio: R$ ${Number(a.toll).toFixed(2)}`);
     if (a.extraCost) descParts.push(`Custo: R$ ${Number(a.extraCost).toFixed(2)}`);
@@ -1377,9 +1385,68 @@ function buildResetEmailContent(name, resetUrl) {
   return { subject: "Férias Pro — Link para redefinir sua senha", text, html };
 }
 
+function normalizeGeminiModelId(name) {
+  return String(name || "").trim().replace(/^models\//i, "").replace(/[.,;:!?]+$/g, "");
+}
+
+function scoreGeminiFlashModel(id) {
+  const clean = normalizeGeminiModelId(id).toLowerCase();
+  const verMatch = clean.match(/gemini-(\d+)(?:\.(\d+))?/);
+  const major = verMatch ? parseInt(verMatch[1], 10) : 0;
+  const minor = verMatch && verMatch[2] ? parseInt(verMatch[2], 10) : 0;
+  let score = major * 1000 + minor * 50;
+  if (clean.includes("flash")) score += 20;
+  if (!clean.includes("lite")) score += 10;
+  if (clean.includes("preview") || clean.includes("exp")) score -= 3;
+  if (clean.includes("8b")) score -= 12;
+  return score;
+}
+
+async function discoverAvailableGeminiFlashModels(apiKey) {
+  try {
+    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+    const json = await resp.json().catch(() => null);
+    if (!resp.ok || !Array.isArray(json?.models)) return [];
+    const list = json.models
+      .filter(m => {
+        const name = normalizeGeminiModelId(m?.name).toLowerCase();
+        const methods = Array.isArray(m?.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
+        return methods.includes("generateContent")
+          && name.includes("gemini-")
+          && name.includes("flash")
+          && !/embedding|tts|image-generation|thinking-exp|native-audio/i.test(name);
+      })
+      .map(m => normalizeGeminiModelId(m.name))
+      .filter(Boolean);
+    const unique = [...new Set(list)];
+    unique.sort((a, b) => scoreGeminiFlashModel(b) - scoreGeminiFlashModel(a));
+    return unique;
+  } catch {
+    return [];
+  }
+}
+
 async function callGeminiJSON(apiKey, parts, systemInstruction) {
   if (!apiKey) throw new Error("GEMINI_NOT_CONFIGURED");
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const cacheEntry = geminiDiscoveredModelCache.get(apiKey);
+  const cachedModel = cacheEntry && cacheEntry.expiresAt > Date.now() ? cacheEntry.model : "";
+  const initialCandidates = [
+    ENV_GEMINI_MODEL,
+    cachedModel,
+    DEFAULT_GEMINI_MODEL,
+    ...GEMINI_FALLBACK_MODELS
+  ].map(normalizeGeminiModelId).filter(Boolean);
+
+  const queue = [];
+  const seen = new Set();
+  const pushUnique = (m, toFront = false) => {
+    const clean = normalizeGeminiModelId(m);
+    if (!clean || seen.has(clean) || queue.includes(clean)) return;
+    if (toFront) queue.unshift(clean);
+    else queue.push(clean);
+  };
+  initialCandidates.forEach(m => pushUnique(m, false));
+
   const payload = {
     contents: [{ role: "user", parts }],
     generationConfig: {
@@ -1390,23 +1457,55 @@ async function callGeminiJSON(apiKey, parts, systemInstruction) {
   if (systemInstruction) {
     payload.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
-  const resp = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  const json = await resp.json().catch(() => null);
-  if (!resp.ok) {
-    throw new Error(json?.error?.message || `Gemini API HTTP ${resp.status}`);
+
+  let didDiscover = false;
+  let lastErr = null;
+
+  while (queue.length > 0 || !didDiscover) {
+    if (!queue.length && !didDiscover) {
+      didDiscover = true;
+      const discovered = await discoverAvailableGeminiFlashModels(apiKey);
+      discovered.forEach(m => pushUnique(m, false));
+      if (!queue.length) break;
+    }
+    const model = queue.shift();
+    if (!model || seen.has(model)) continue;
+    seen.add(model);
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const json = await resp.json().catch(() => null);
+    if (!resp.ok) {
+      const errMsg = json?.error?.message || `Gemini API HTTP ${resp.status}`;
+      lastErr = new Error(errMsg);
+      const isModelIssue = [400, 404, 410].includes(resp.status)
+        && /no longer available|not found|not supported|deprecated|invalid.*model|models\//i.test(errMsg);
+      if (isModelIssue) {
+        const suggestedMatches = [...errMsg.matchAll(/models\/(gemini-[a-z0-9._-]+)/gi)].map(m => m[1]);
+        for (let i = suggestedMatches.length - 1; i >= 0; i--) {
+          pushUnique(suggestedMatches[i], true);
+        }
+        continue;
+      }
+      throw lastErr;
+    }
+
+    geminiDiscoveredModelCache.set(apiKey, { model, expiresAt: Date.now() + 6 * 3600 * 1000 });
+    const rawTxt = json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    if (!rawTxt) throw new Error("Gemini não retornou resposta estruturada.");
+    try {
+      return JSON.parse(rawTxt);
+    } catch {
+      const cleaned = rawTxt.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+      return JSON.parse(cleaned);
+    }
   }
-  const rawTxt = json?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  if (!rawTxt) throw new Error("Gemini não retornou resposta estruturada.");
-  try {
-    return JSON.parse(rawTxt);
-  } catch {
-    const cleaned = rawTxt.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-    return JSON.parse(cleaned);
-  }
+
+  throw lastErr || new Error("Nenhum modelo Gemini disponível para gerar a resposta.");
 }
 
 function base64Url(input) {
@@ -1416,37 +1515,88 @@ function base64Url(input) {
 
 function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, originHost) {
   let sa;
-  try { sa = JSON.parse(saJsonStr); } catch { throw new Error("JSON da Service Account do Google Wallet inválido."); }
+  try { sa = JSON.parse(saJsonStr); } catch { throw new Error("JSON da Service Account da Carteira do Google inválido."); }
   if (!sa.client_email || !sa.private_key) {
     throw new Error("Service Account precisa conter client_email e private_key.");
   }
-  const suffix = crypto.createHash("md5").update(`${activity.id || activity.name}-${activity.start || ""}`).digest("hex").slice(0, 12);
+  const act = activity && typeof activity === "object" ? activity : {};
+  const suffix = crypto.createHash("md5").update(`${act.id || act.name || "pass"}-${act.start || ""}`).digest("hex").slice(0, 12);
   const classId = `${issuerId}.ferias_pro_pass_v1`;
   const objectId = `${issuerId}.fp_${suffix}`;
-  const isFlight = activity.type === "Voo";
-  const subParts = [activity.type || "Atividade"];
-  if (activity.from || activity.to) subParts.push(`${activity.from || "?"} -> ${activity.to || "?"}`);
-  if (activity.start) subParts.push(activity.end && activity.end !== activity.start ? `${activity.start} ate ${activity.end}` : activity.start);
+  const actType = String(act.type || "Atividade");
+  const isTravel = ["Viagem", "Voo", "Trem", "Ônibus", "Navio"].includes(actType);
+  const typeBgColors = {
+    Voo: "#0284c7",
+    Navio: "#0e7490",
+    Trem: "#0d9488",
+    "Ônibus": "#d97706",
+    Hospedagem: "#059669",
+    Ingresso: "#4f46e5",
+    Evento: "#e11d48",
+    Passeio: "#9333ea",
+    Restaurante: "#ea580c",
+    Viagem: "#2563eb"
+  };
+  const dateLabel = act.end && act.end !== act.start ? `${act.start} até ${act.end}` : (act.start || "-");
+  const subParts = [actType];
+  if (act.from || act.to) subParts.push(`${act.from || "?"} -> ${act.to || "?"}`);
+  if (act.startTime) subParts.push(`${String(act.startTime).slice(0, 5)}`);
+  if (act.start) subParts.push(dateLabel);
+
+  const ticketsArr = Array.isArray(act.tickets) ? act.tickets.filter(t => (Number(t.qty) || 0) > 0 && (Number(t.unitPrice) || 0) > 0) : [];
+  const qrMap = { aztec: "AZTEC", pdf417: "PDF_417", code_128: "CODE_128" };
+  const barcodeType = qrMap[String(act.qrFormat || "").toLowerCase()] || "QR_CODE";
+  const barcodeValue = String(act.qrPayload || "").trim()
+    || `FERIASPRO|${act.id || suffix}|${act.name || ""}|${act.start || ""}|${act.bookingRef || ""}`;
+
+  const textModulesData = [
+    { id: "tipo", header: "Tipo", body: actType },
+    {
+      id: "data",
+      header: isTravel ? "Saída / Chegada" : "Data",
+      body: `${dateLabel}${act.startTime ? ` · ${String(act.startTime).slice(0, 5)}` : ""}`
+    }
+  ];
+  if (act.from || act.to) {
+    textModulesData.push({ id: "rota", header: actType === "Navio" ? "Porto / Rota" : "Origem -> Destino", body: `${act.from || "-"} -> ${act.to || "-"}` });
+  }
+  if (act.airline) {
+    textModulesData.push({ id: "companhia", header: actType === "Navio" ? "Navio / Companhia" : "Cia / Transporte", body: String(act.airline).slice(0, 120) });
+  }
+  if (act.bookingRef) {
+    textModulesData.push({ id: "reserva", header: "Localizador / Cabine / Código", body: String(act.bookingRef).slice(0, 120) });
+  }
+  if (act.km || act.drive || act.toll) {
+    const parts = [];
+    if (act.km) parts.push(`${act.km} km`);
+    if (act.drive) parts.push(`${act.drive} min`);
+    if (act.toll) parts.push(`Pedágio R$ ${Number(act.toll).toFixed(2).replace(".", ",")}`);
+    if (parts.length) textModulesData.push({ id: "rodovia", header: "Percurso", body: parts.join(" · ") });
+  }
+  if (ticketsArr.length || Number(act.extraCost) > 0) {
+    const listTxt = ticketsArr.map(t => `${t.qty}x ${t.label || "Item"} (R$ ${Number(t.unitPrice).toFixed(2).replace(".", ",")})`).join(", ");
+    const totalTxt = Number(act.extraCost) > 0 ? `R$ ${Number(act.extraCost).toFixed(2).replace(".", ",")}` : "";
+    textModulesData.push({ id: "valores", header: "Ingressos / Valor", body: [listTxt, totalTxt ? `Total: ${totalTxt}` : ""].filter(Boolean).join(" · ") });
+  }
+  if (act.notes) {
+    textModulesData.push({ id: "notas", header: "Observações", body: String(act.notes).slice(0, 400) });
+  }
 
   const genericObj = {
     id: objectId,
     classId,
     state: "ACTIVE",
     genericType: "GENERIC_TYPE_UNSPECIFIED",
-    hexBackgroundColor: "#4f46e5",
+    hexBackgroundColor: typeBgColors[actType] || "#4f46e5",
     cardTitle: { defaultValue: { language: "pt-BR", value: `Férias Pro · ${tripName || "Viagem"}` } },
-    header: { defaultValue: { language: "pt-BR", value: activity.name || "Reserva" } },
+    header: { defaultValue: { language: "pt-BR", value: act.name || "Reserva" } },
     subheader: { defaultValue: { language: "pt-BR", value: subParts.join(" · ") } },
     barcode: {
-      type: "QR_CODE",
-      value: `FERIASPRO|${activity.id || suffix}|${activity.name || ""}|${activity.start || ""}`
+      type: barcodeType,
+      value: barcodeValue,
+      alternateText: String(act.bookingRef || act.airline || `FP-${suffix.toUpperCase()}`).slice(0, 36)
     },
-    textModulesData: [
-      { id: "data", header: "Data", body: activity.end && activity.end !== activity.start ? `${activity.start} a ${activity.end}` : (activity.start || "-") },
-      ...(activity.from || activity.to ? [{ id: "rota", header: "Trecho / Local", body: `${activity.from || ""} -> ${activity.to || ""}` }] : []),
-      ...(activity.bookingRef ? [{ id: "reserva", header: "Localizador", body: String(activity.bookingRef) }] : []),
-      ...(activity.notes ? [{ id: "notas", header: "Notas", body: String(activity.notes).slice(0, 180) }] : [])
-    ]
+    textModulesData
   };
 
   const claims = {
@@ -1469,7 +1619,7 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
   return `https://pay.google.com/gp/v/save/${jwt}`;
 }
 
-/* ---------- ZERO-DEPENDENCY .PKPASS (ZIP) PARA GOOGLE WALLET ---------- */
+/* ---------- ZERO-DEPENDENCY .PKPASS (ZIP) PARA CARTEIRA DO GOOGLE ---------- */
 const CRC32_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
@@ -1573,6 +1723,7 @@ function buildPkpassBuffer(activity, tripName) {
 
   const bgColors = {
     Voo: "rgb(2, 132, 199)",
+    Navio: "rgb(14, 116, 144)",
     Trem: "rgb(13, 148, 136)",
     "Ônibus": "rgb(217, 119, 6)",
     Hospedagem: "rgb(5, 150, 105)",
@@ -1581,6 +1732,21 @@ function buildPkpassBuffer(activity, tripName) {
     Passeio: "rgb(147, 51, 234)",
     Restaurante: "rgb(234, 88, 12)",
     Viagem: "rgb(37, 99, 235)"
+  };
+
+  const qrMap = {
+    aztec: "PKBarcodeFormatAztec",
+    pdf417: "PKBarcodeFormatPDF417",
+    code_128: "PKBarcodeFormatCode128"
+  };
+  const pkBarcodeFormat = qrMap[String(act.qrFormat || "").toLowerCase()] || "PKBarcodeFormatQR";
+  const barcodeMsg = String(act.qrPayload || "").trim()
+    || `FERIASPRO|${act.id || suffix}|${cleanName}|${act.start || ""}|${act.bookingRef || ""}`;
+  const mainBarcode = {
+    message: barcodeMsg,
+    format: pkBarcodeFormat,
+    messageEncoding: pkBarcodeFormat === "PKBarcodeFormatQR" ? "utf-8" : "iso-8859-1",
+    altText: String(act.bookingRef || act.airline || `FP-${suffix.toUpperCase()}`).slice(0, 36)
   };
 
   const passObj = {
@@ -1594,12 +1760,8 @@ function buildPkpassBuffer(activity, tripName) {
     backgroundColor: bgColors[actType] || "rgb(79, 70, 229)",
     foregroundColor: "rgb(255, 255, 255)",
     labelColor: "rgb(224, 231, 255)",
-    barcodes: [{
-      message: `FERIASPRO|${act.id || suffix}|${cleanName}|${act.start || ""}|${act.bookingRef || ""}`,
-      format: "PKBarcodeFormatQR",
-      messageEncoding: "iso-8859-1",
-      altText: String(act.bookingRef || `FP-${suffix.toUpperCase()}`).slice(0, 36)
-    }]
+    barcode: mainBarcode,
+    barcodes: [mainBarcode]
   };
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(act.start || ""))) {
@@ -1607,30 +1769,52 @@ function buildPkpassBuffer(activity, tripName) {
     passObj.relevantDate = `${act.start}T${tStr}-03:00`;
   }
 
+  const isTravel = ["Viagem", "Voo", "Trem", "Ônibus", "Navio"].includes(actType);
   const secondaryFields = [
     { key: "trip", label: "VIAGEM", value: String(tripName || "Férias Pro").slice(0, 48) },
-    { key: "date", label: "DATA", value: dateLabel }
+    { key: "date", label: isTravel ? "SAÍDA / CHEGADA" : "DATA", value: dateLabel }
   ];
+  if (act.airline) {
+    secondaryFields.push({ key: "carrier", label: actType === "Navio" ? "NAVIO / CIA" : "CIA / EMPRESA", value: String(act.airline).slice(0, 48) });
+  }
   const auxiliaryFields = [];
-  if (totalTickets > 0) auxiliaryFields.push({ key: "tickets", label: "INGRESSOS", value: `${totalTickets} un.` });
-  if (totalCost > 0) auxiliaryFields.push({ key: "cost", label: "VALOR", value: `R$ ${totalCost.toFixed(2).replace(".", ",")}` });
   if (act.startTime) auxiliaryFields.push({ key: "time", label: "HORÁRIO", value: String(act.startTime).slice(0, 5) });
   if (act.bookingRef) auxiliaryFields.push({ key: "ref", label: "LOCALIZADOR", value: String(act.bookingRef).slice(0, 32) });
+  if (totalTickets > 0) auxiliaryFields.push({ key: "tickets", label: "INGRESSOS", value: `${totalTickets} un.` });
+  if (totalCost > 0) auxiliaryFields.push({ key: "cost", label: "VALOR", value: `R$ ${totalCost.toFixed(2).replace(".", ",")}` });
 
-  const backFields = [];
-  if (act.from || act.to) backFields.push({ key: "route", label: "Trecho / Trajeto", value: `${act.from || "-"} -> ${act.to || "-"}` });
+  const backFields = [
+    { key: "type_full", label: "Tipo de Atividade", value: actType },
+    { key: "dates_full", label: isTravel ? "Saída e Chegada" : "Período", value: dateLabel }
+  ];
+  if (act.from || act.to) backFields.push({ key: "route", label: actType === "Navio" ? "Porto / Rota" : "Origem -> Destino", value: `${act.from || "-"} -> ${act.to || "-"}` });
+  if (act.airline) backFields.push({ key: "airline_full", label: actType === "Navio" ? "Navio / Companhia" : "Companhia / Transporte", value: String(act.airline).slice(0, 120) });
+  if (act.bookingRef) backFields.push({ key: "booking_full", label: "Localizador / Reserva / Cabine", value: String(act.bookingRef).slice(0, 120) });
+  if (act.km || act.drive || act.toll) {
+    const road = [];
+    if (act.km) road.push(`${act.km} km`);
+    if (act.drive) road.push(`${act.drive} min`);
+    if (act.toll) road.push(`Pedágio R$ ${Number(act.toll).toFixed(2).replace(".", ",")}`);
+    if (road.length) backFields.push({ key: "road_info", label: "Dados do Percurso", value: road.join(" · ") });
+  }
   if (ticketsArr.length) {
     backFields.push({
       key: "ticket_detail",
-      label: "Detalhamento de Ingressos",
-      value: ticketsArr.map(t => `${t.qty}x ${t.label || "Ingresso"} @ R$ ${Number(t.unitPrice).toFixed(2).replace(".", ",")}`).join(" | ")
+      label: "Detalhamento de Ingressos / Passagens",
+      value: ticketsArr.map(t => `${t.qty}x ${t.label || "Item"} @ R$ ${Number(t.unitPrice).toFixed(2).replace(".", ",")}`).join(" | ")
     });
   }
   if (act.notes) backFields.push({ key: "notes", label: "Observações", value: String(act.notes).slice(0, 500) });
 
-  const isTransit = actType === "Voo" || actType === "Trem" || actType === "Ônibus";
+  const isTransit = actType === "Voo" || actType === "Trem" || actType === "Ônibus" || actType === "Navio";
   if (isTransit) {
-    const tType = actType === "Voo" ? "PKTransitTypeAir" : actType === "Trem" ? "PKTransitTypeTrain" : "PKTransitTypeBus";
+    const tType = actType === "Voo"
+      ? "PKTransitTypeAir"
+      : actType === "Trem"
+        ? "PKTransitTypeTrain"
+        : actType === "Navio"
+          ? "PKTransitTypeBoat"
+          : "PKTransitTypeBus";
     passObj.boardingPass = {
       transitType: tType,
       headerFields: [{ key: "type", label: "EMBARQUE", value: actType.toUpperCase() }],
@@ -1669,6 +1853,11 @@ function buildPkpassBuffer(activity, tripName) {
     entries.push({ name: "icon@2x.png", data: iconPng });
     entries.push({ name: "logo.png", data: iconPng });
   }
+  const manifestObj = {};
+  entries.forEach(e => {
+    manifestObj[e.name] = crypto.createHash("sha1").update(e.data).digest("hex");
+  });
+  entries.push({ name: "manifest.json", data: Buffer.from(JSON.stringify(manifestObj, null, 2), "utf8") });
   return buildZipBuffer(entries);
 }
 
@@ -1703,7 +1892,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true,
         mode: "multi-user",
-        version: "24",
+        version: "25",
         encryption: "aes-256-gcm",
         googleClientId: getServerGoogleClientId(),
         hasGemini: Boolean(sys.geminiKey),
@@ -2907,7 +3096,7 @@ const server = http.createServer(async (req, res) => {
         });
       }
       const sysPrompt = `Você é o planejador especialista do aplicativo Férias Pro.
-Analise TODOS os áudios, imagens (passagens aéreas, ingressos, reservas de hotel, documento CRLV de carro) e textos enviados pelo usuário.
+Analise TODOS os áudios, imagens (passagens aéreas, cruzeiros/navios, ingressos, reservas de hotel, documento CRLV de carro) e textos enviados pelo usuário.
 Retorne EXCLUSIVAMENTE um JSON válido com esta estrutura exata:
 {
   "tripName": "Nome claro das férias (ex: Férias Europa Julho 2027)",
@@ -2928,25 +3117,29 @@ Retorne EXCLUSIVAMENTE um JSON válido com esta estrutura exata:
   },
   "activities": [
     {
-      "type": "Viagem | Voo | Trem | Ônibus | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
+      "type": "Viagem | Voo | Trem | Ônibus | Navio | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
       "name": "Nome curto da atividade",
       "start": "YYYY-MM-DD",
       "end": "YYYY-MM-DD",
-      "from": "Cidade/Aeroporto/Estação origem (se Viagem, Voo, Trem ou Ônibus)",
-      "to": "Cidade/Aeroporto/Estação destino (se Viagem, Voo, Trem ou Ônibus)",
+      "startTime": "HH:MM (se houver horário)",
+      "from": "Cidade/Aeroporto/Estação/Porto origem (se Viagem, Voo, Trem, Ônibus ou Navio)",
+      "to": "Cidade/Aeroporto/Estação/Porto destino (se Viagem, Voo, Trem, Ônibus ou Navio)",
+      "airline": "Companhia aérea / Navio / Empresa + nº voo ou linha se houver",
       "km": 0,
       "drive": 0,
       "toll": 0,
       "extraCost": 0,
-      "bookingRef": "Código localizador/voucher se houver",
-      "notes": "Detalhes úteis (horários, voo, endereço, dicas)"
+      "bookingRef": "Código localizador/cabine/voucher se houver",
+      "qrPayload": "Conteúdo exato do QR Code / código de barras / BCBP se legível na imagem, senão vazio",
+      "qrFormat": "qr_code | aztec | pdf417 | code_128 | ",
+      "notes": "Detalhes úteis (horários, assento, portão, cabine, endereço, dicas)"
     }
   ],
   "checklist": [
     { "cat": "Categoria", "item": "Tarefa importante", "prio": "Alta | Média | Baixa", "notes": "" }
   ]
 }
-Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Converta datas relativas usando ${todayIso} no formato YYYY-MM-DD. Se extrair passagens/ingressos/hotéis das imagens, preencha valores em extraCost, localizadores em bookingRef e todas as datas.`;
+Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Converta datas relativas usando ${todayIso} no formato YYYY-MM-DD. Se extrair passagens aéreas, marítimas, ingressos ou hotéis das imagens, identifique o type exato, preencha valores em extraCost, localizadores em bookingRef, qrPayload (se legível) e todas as datas.`;
 
       try {
         const plan = await callGeminiJSON(creds.geminiKey, parts, sysPrompt);
@@ -2996,7 +3189,16 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
         return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key na Central de Integrações." });
       }
       const body = await readBody(req);
-      const parts = [{ text: `Extraia dados de atividade/passagem/ingresso/reserva/viagem desta entrada: ${String(body.prompt || "").trim()}` }];
+      const detectedBarcode = (body.detectedBarcode && body.detectedBarcode.rawValue)
+        ? {
+            rawValue: String(body.detectedBarcode.rawValue).slice(0, 1200),
+            format: String(body.detectedBarcode.format || "qr_code").slice(0, 40)
+          }
+        : null;
+      const barcodeHint = detectedBarcode
+        ? `\nCódigo de barras/QR detectado no bilhete (${detectedBarcode.format}): ${detectedBarcode.rawValue}`
+        : "";
+      const parts = [{ text: `Extraia dados completos de atividade/passagem/bilhete/reserva/viagem desta entrada: ${String(body.prompt || "").trim()}${barcodeHint}` }];
       if (Array.isArray(body.media)) {
         body.media.slice(0, 4).forEach(m => {
           const p = parseGeminiMediaPart(m);
@@ -3007,19 +3209,31 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
         const activity = await callGeminiJSON(
           creds.geminiKey,
           parts,
-          `Retorne JSON com uma atividade do Férias Pro:
+          `Você é especialista em leitura de tickets aéreos, cartões de embarque, reservas de navio/cruzeiro, trem, ônibus, hotéis e ingressos para o Férias Pro.
+Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para passagem aérea/embarque, "Navio" para cruzeiro/balsa/barco, "Trem", "Ônibus", "Viagem", "Hospedagem", "Ingresso", "Evento", etc.) e preencha TODOS os campos identificados em JSON:
 {
-  "type": "Viagem | Voo | Trem | Ônibus | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
-  "name": "Título curto",
-  "start": "YYYY-MM-DD",
-  "end": "YYYY-MM-DD",
-  "from": "Origem se Viagem, Voo, Trem ou Ônibus",
-  "to": "Destino se Viagem, Voo, Trem ou Ônibus",
+  "type": "Viagem | Voo | Trem | Ônibus | Navio | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
+  "name": "Título curto e claro (ex: Voo LATAM BSB-GRU ou Cruzeiro MSC Santos-Ilhabela)",
+  "start": "YYYY-MM-DD (data da saída / início)",
+  "end": "YYYY-MM-DD (data da chegada / fim — igual a start salvo se chegar/terminar em outro dia)",
+  "startTime": "HH:MM (horário de saída/embarque se houver)",
+  "from": "Aeroporto/Porto/Estação/Cidade de origem (se Viagem, Voo, Trem, Ônibus ou Navio)",
+  "to": "Aeroporto/Porto/Estação/Cidade de destino (se Viagem, Voo, Trem, Ônibus ou Navio)",
+  "airline": "Companhia aérea + nº do voo, navio/companhia ou viação se houver",
+  "km": 0,
+  "drive": 0,
   "extraCost": 0,
-  "bookingRef": "Código localizador/ingresso",
-  "notes": "Horário, companhia, local, poltrona ou detalhes úteis"
+  "tickets": [{ "label": "Descrição tarifa/ingresso se detalhado", "qty": 1, "unitPrice": 0 }],
+  "bookingRef": "Código localizador / PNR / cabine / número do ticket",
+  "qrPayload": "Texto completo legível do QR Code / Aztec / PDF417 / código de barras do ticket se houver, senão vazio",
+  "qrFormat": "qr_code | aztec | pdf417 | code_128 | ",
+  "notes": "Horários, terminal/portão, assento, cabine, franquia de bagagem, endereço ou detalhes importantes"
 }`
         );
+        if (detectedBarcode && activity && typeof activity === "object") {
+          if (!activity.qrPayload) activity.qrPayload = detectedBarcode.rawValue;
+          if (!activity.qrFormat) activity.qrFormat = detectedBarcode.format;
+        }
         return sendJson(res, 200, { ok: true, activity });
       } catch (err) {
         return sendJson(res, 502, { ok: false, error: err.message || "Erro ao analisar atividade com IA." });
@@ -3123,7 +3337,7 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
       }
     }
 
-    /* ---------- GOOGLE WALLET PASS SIGNER ---------- */
+    /* ---------- CARTEIRA DO GOOGLE PASS SIGNER ---------- */
     if (pathname === "/api/wallet/sign" && req.method === "POST") {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
@@ -3138,7 +3352,7 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
         const saveUrl = buildGoogleWalletSaveUrl(creds.walletIssuerId, creds.walletSaJson, body.activity, body.tripName || "Férias Pro", originHost);
         return sendJson(res, 200, { ok: true, configured: true, saveUrl });
       } catch (err) {
-        return sendJson(res, 400, { ok: false, error: err.message || "Falha ao assinar passe do Google Wallet." });
+        return sendJson(res, 400, { ok: false, error: err.message || "Falha ao assinar passe da Carteira do Google." });
       }
     }
 
@@ -3170,7 +3384,7 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
       }
       res.writeHead(200, {
         "Content-Type": "application/vnd.apple.pkpass",
-        "Content-Disposition": `inline; filename="${item.filename}"`,
+        "Content-Disposition": `attachment; filename="${item.filename}"`,
         "Content-Length": item.buf.length,
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff"

@@ -194,7 +194,9 @@ const parseHM = s => {
   return Math.round(parseFloat(s.replace(",", ".")) * 60) || 0;
 };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const label = a => (a.type === "Viagem" || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus") && (a.from || a.to) ? `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})` : a.name;
+const isTravelType = t => ["Viagem", "Voo", "Trem", "Ônibus", "Navio"].includes(t);
+const isTransitOrShip = t => t === "Trem" || t === "Ônibus" || t === "Navio";
+const label = a => isTravelType(a.type) && (a.from || a.to) ? `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})` : a.name;
 const sorted = () => {
   const trips = getSelectedTrips();
   if (trips.length <= 1) {
@@ -298,6 +300,7 @@ const COST_CATEGORY_STYLES = {
   Voo: { label: "Passagens Aéreas / Voos", color: "#38bdf8", gradient: "linear-gradient(90deg,#38bdf8,#0284c7)" },
   Trem: { label: "Passagens de Trem", color: "#14b8a6", gradient: "linear-gradient(90deg,#14b8a6,#0284c7)" },
   "Ônibus": { label: "Passagens de Ônibus", color: "#f59e0b", gradient: "linear-gradient(90deg,#f59e0b,#d97706)" },
+  Navio: { label: "Cruzeiros / Viagens de Navio", color: "#0891b2", gradient: "linear-gradient(90deg,#0891b2,#1d4ed8)" },
   Viagem_Extra: { label: "Extras em Viagens de Carro", color: "#6366f1", gradient: "linear-gradient(90deg,#6366f1,#22d3ee)" },
   Hospedagem: { label: "Hospedagem", color: "#10b981", gradient: "linear-gradient(90deg,#10b981,#0d9488)" },
   Ingresso: { label: "Ingressos & Tickets", color: "#c084fc", gradient: "linear-gradient(90deg,#8b5cf6,#ec4899)" },
@@ -846,7 +849,8 @@ function buildRightSummaryHTML(a) {
   const d = days(a);
   const metaParts = [];
   if (a.from || a.to) metaParts.push(`${a.from || "?"} ➔ ${a.to || "?"}`);
-  if (a.km > 0 && (a.type === "Trem" || a.type === "Ônibus")) metaParts.push(`${num(a.km)} km`);
+  if (a.airline) metaParts.push(a.airline);
+  if (a.km > 0 && (a.type === "Trem" || a.type === "Ônibus" || a.type === "Navio")) metaParts.push(`${num(a.km)} km`);
   if (a.extraCost > 0) metaParts.push(tktNote ? `${money(a.extraCost)} (${tktNote})` : money(a.extraCost));
   if (a.notes) metaParts.push(a.notes);
   const badgeTxt = d > 1 ? `${d} dias` : fmtShortBR(a.start);
@@ -919,6 +923,7 @@ function renderGantt(allSorted) {
   const todayISO = fmtISO(new Date());
 
   g.style.gridTemplateColumns = `${nameW}px repeat(${n}, ${DW}px)`;
+  g.style.setProperty("--gantt-name-w", `${nameW}px`);
 
   const dates = [];
   for (let i = 0; i < n; i++) {
@@ -941,7 +946,7 @@ function renderGantt(allSorted) {
   </div>`;
 
   monthSpans.forEach(ms => {
-    h += `<div class="g-month-head" style="grid-column:${ms.startCol} / span ${ms.span};grid-row:1">${ms.label}</div>`;
+    h += `<div class="g-month-head" style="grid-column:${ms.startCol} / span ${ms.span};grid-row:1"><span class="g-month-label">${ms.label}</span></div>`;
   });
 
   dates.forEach((d, i) => {
@@ -976,7 +981,7 @@ function renderGantt(allSorted) {
     const info = getTypeInfo(a.type);
     const row = rowIdx + (hasCityRow ? 4 : 3);
     const altCls = rowIdx % 2 ? "alt" : "";
-    const subLeft = (a.type === "Viagem" || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus") && (a.from || a.to)
+    const subLeft = isTravelType(a.type) && (a.from || a.to)
       ? `${a.from || "?"} ➔ ${a.to || "?"}`
       : `${fmtShortBR(a.start)}${days(a) > 1 ? ` · ${days(a)}d` : ""}`;
 
@@ -2069,7 +2074,7 @@ function renderTable(s, t) {
   const multi = isMultiTripMode();
 
   const ed = (a, f, type = "text", cls = "") =>
-    `<td class="ed ${cls}"><input data-id="${a.id}" data-f="${f}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(f === "drive" || f === "stopTime" ? (a.type === "Viagem" || ((a.type === "Trem" || a.type === "Ônibus") && f === "drive" && a.drive > 0) ? hm(a[f]) : "") : a[f] ?? "")}"></td>`;
+    `<td class="ed ${cls}"><input data-id="${a.id}" data-f="${f}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(f === "drive" || f === "stopTime" ? (a.type === "Viagem" || (isTransitOrShip(a.type) && f === "drive" && a.drive > 0) ? hm(a[f]) : "") : a[f] ?? "")}"></td>`;
   const nameCell = a => multi
     ? `<td class="ed wide"><div style="display:flex;align-items:center;gap:6px">${getTripBadgeHTML(a)}<input data-id="${a.id}" data-f="name" type="text" value="${esc(a.name ?? "")}"></div></td>`
     : ed(a, "name", "text", "wide");
@@ -2087,8 +2092,8 @@ function renderTable(s, t) {
   rows.forEach((a, i) => {
     const c = calc(a);
     const v = a.type === "Viagem";
-    const routeCols = (v || a.type === "Voo" || a.type === "Trem" || a.type === "Ônibus");
-    const hasDist = v || a.type === "Trem" || a.type === "Ônibus";
+    const routeCols = isTravelType(a.type);
+    const hasDist = v || isTransitOrShip(a.type);
     h += `<tr>
       <td>${i + 1}</td>
       ${typeSel(a)}
@@ -2367,7 +2372,7 @@ function renderParamTickets() {
     dateInp.value = (sorted()[0] && sorted()[0].start) || fmtISO(new Date());
   }
   if (!listEl) return;
-  const ticketItems = sorted().filter(a => a.extraCost > 0 || ["Ingresso", "Voo", "Trem", "Ônibus", "Hospedagem", "Evento", "Passeio"].includes(a.type));
+  const ticketItems = sorted().filter(a => a.extraCost > 0 || ["Ingresso", "Voo", "Trem", "Ônibus", "Navio", "Hospedagem", "Evento", "Passeio"].includes(a.type));
   if (!ticketItems.length) {
     listEl.innerHTML = `<p class="muted small">Nenhum ingresso, passagem ou reserva cadastrado ainda.</p>`;
     return;
@@ -2601,12 +2606,27 @@ let editing = null;
 let modalDraftId = "";
 let modalAttachments = [];
 let modalTickets = [];
+let modalQrPayload = "";
+let modalQrFormat = "";
+let modalStartTime = "";
 let stopsManualOverride = false;
 let lastRouteKey = "";
 let acFromCtrl = null;
 let acToCtrl = null;
 let acTFromCtrl = null;
 let acTToCtrl = null;
+
+function renderModalQrBadge() {
+  const wrap = $("#f-qrBadgeWrap");
+  const prev = $("#f-qrPreviewTxt");
+  if (!wrap) return;
+  const hasQr = Boolean(String(modalQrPayload || "").trim());
+  wrap.hidden = !hasQr;
+  if (prev) {
+    const clean = String(modalQrPayload || "").trim();
+    prev.textContent = hasQr ? `(${clean.slice(0, 32)}${clean.length > 32 ? "…" : ""})` : "";
+  }
+}
 
 function initAutocompleteControllers() {
   if (!acFromCtrl) acFromCtrl = window.FeriasMaps.attachAutocomplete($("#f-from"), $("#ac-from"), () => maybeAutoComputeRoute(true));
@@ -2620,6 +2640,7 @@ function getTicketBoxTitle(type) {
   if (type === "Voo") return "✈️ Passagens aéreas & Tarifas (Adulto / Criança / Bagagem)";
   if (type === "Trem") return "🚂 Passagens de Trem (Inteira / Meia / Classe)";
   if (type === "Ônibus") return "🚌 Passagens de Ônibus (Inteira / Meia / Leito)";
+  if (type === "Navio") return "🚢 Passagens de Navio / Cruzeiro / Cabine";
   if (type === "Hospedagem") return "🏨 Diárias, Quartos & Taxas";
   return "🎟️ Quantidade & Valores (ex: Inteira, Meia, VIP...)";
 }
@@ -2718,6 +2739,9 @@ function updateModalPreview() {
       ext.innerHTML = `<span>ℹ️ Sem Maps Key: informe manualmente ou abra no Google Maps</span>
         <a href="${window.FeriasMaps.buildLegUrl(a.from, a.to, "transit")}" target="_blank" rel="noopener" style="color:var(--accent2)">Ver horários no Maps ↗</a>`;
     }
+  } else if (a.type === "Navio") {
+    const ext = $("#transitMapsStatus");
+    if (ext) ext.innerHTML = `<span class="muted small">⚓ Informe portos, duração da travessia/cruzeiro, navio e cabine.</span>`;
   }
 
   if (a.type !== "Viagem") {
@@ -2910,6 +2934,9 @@ window.openModal = function (idOrOpts) {
   editing = id || null;
   modalDraftId = id || uid();
   modalAttachments = clone(a.attachments || []);
+  modalQrPayload = a.qrPayload || "";
+  modalQrFormat = a.qrFormat || "";
+  modalStartTime = a.startTime || "";
   if (Array.isArray(a.tickets) && a.tickets.length) {
     modalTickets = clone(a.tickets);
   } else if (a.extraCost > 0) {
@@ -2935,13 +2962,17 @@ window.openModal = function (idOrOpts) {
   $("#f-flightTo").value = a.type === "Voo" ? (a.to || "") : "";
   $("#f-airline").value = a.airline || "";
   $("#f-bookingRef").value = a.bookingRef || "";
-  $("#f-transitFrom").value = (a.type === "Trem" || a.type === "Ônibus") ? (a.from || "") : "";
-  $("#f-transitTo").value = (a.type === "Trem" || a.type === "Ônibus") ? (a.to || "") : "";
-  $("#f-transitKm").value = (a.type === "Trem" || a.type === "Ônibus") ? (a.km ?? "") : "";
-  $("#f-transitDrive").value = (a.type === "Trem" || a.type === "Ônibus") && a.drive ? hm(a.drive) : "";
-  $("#f-transitCarrier").value = (a.type === "Trem" || a.type === "Ônibus") ? (a.airline || "") : "";
-  $("#f-transitRef").value = (a.type === "Trem" || a.type === "Ônibus") ? (a.bookingRef || "") : "";
+  const trShip = isTransitOrShip(a.type);
+  $("#f-transitFrom").value = trShip ? (a.from || "") : "";
+  $("#f-transitTo").value = trShip ? (a.to || "") : "";
+  $("#f-transitKm").value = trShip ? (a.km ?? "") : "";
+  $("#f-transitDrive").value = trShip && a.drive ? hm(a.drive) : "";
+  $("#f-transitCarrier").value = trShip ? (a.airline || "") : "";
+  $("#f-transitRef").value = trShip ? (a.bookingRef || "") : "";
   $("#f-ticketRef").value = a.bookingRef || "";
+  if ($("#f-diffArrival")) {
+    $("#f-diffArrival").checked = Boolean(isTravelType(a.type) && a.start && a.end && a.end !== a.start);
+  }
   f.elements.drive.value = a.drive && a.type === "Viagem" ? hm(a.drive) : "";
   f.elements.stopTime.value = a.stopTime != null && a.type === "Viagem" && id ? hm(a.stopTime) : "";
 
@@ -2954,6 +2985,7 @@ window.openModal = function (idOrOpts) {
   $("#transitMapWrap").innerHTML = "";
   $("#btnDelete").style.visibility = $("#btnDuplicate").style.visibility = id ? "visible" : "hidden";
 
+  renderModalQrBadge();
   renderTicketRows();
   toggleTrip();
   updateModalMapsUI();
@@ -2963,18 +2995,76 @@ window.openModal = function (idOrOpts) {
   $("#modal").showModal();
 };
 
+function syncTravelArrivalUI() {
+  const t = $("#f-type")?.value || "Viagem";
+  const travel = isTravelType(t);
+  const startInp = $("#f-start");
+  const endInp = $("#f-end");
+  const lblStart = $("#lbl-start");
+  const lblEnd = $("#lbl-end");
+  const diffWrap = $("#f-diffArrivalWrap");
+  const diffChk = $("#f-diffArrival");
+  const box = endInp ? endInp.closest(".arrival-date-box") : null;
+
+  if (lblStart) lblStart.textContent = travel ? "Data da saída" : "Início";
+  if (lblEnd) lblEnd.textContent = travel ? "Data da chegada" : "Fim";
+  if (diffWrap) diffWrap.hidden = !travel;
+  if (!endInp || !startInp) return;
+
+  if (!travel) {
+    endInp.disabled = false;
+    endInp.min = "";
+    endInp.classList.remove("input-muted");
+    if (box) box.classList.remove("is-muted");
+    return;
+  }
+
+  const allowDiff = Boolean(diffChk && diffChk.checked);
+  if (!allowDiff) {
+    endInp.value = startInp.value || endInp.value;
+    endInp.disabled = true;
+    endInp.min = "";
+    endInp.classList.add("input-muted");
+    if (box) box.classList.add("is-muted");
+  } else {
+    endInp.disabled = false;
+    endInp.classList.remove("input-muted");
+    if (box) box.classList.remove("is-muted");
+    if (startInp.value) {
+      endInp.min = startInp.value;
+      if (!endInp.value || endInp.value < startInp.value) endInp.value = startInp.value;
+    }
+  }
+}
+
 function toggleTrip() {
   const t = $("#f-type").value;
-  const isTransit = t === "Trem" || t === "Ônibus";
+  const isTransit = isTransitOrShip(t);
+  const isShip = t === "Navio";
   $(".trip-only").hidden = t !== "Viagem";
   $(".trip-only").style.display = t === "Viagem" ? "" : "none";
   $(".flight-only").hidden = t !== "Voo";
   $(".transit-only").hidden = !isTransit;
   $(".transit-only").style.display = isTransit ? "" : "none";
-  if (isTransit && $("#transitBoxTitle")) {
-    $("#transitBoxTitle").textContent = t === "Trem" ? "🚂 Rota de Trem (Google Maps)" : "🚌 Rota de Ônibus (Google Maps)";
+  if (isTransit) {
+    if ($("#transitBoxTitle")) {
+      $("#transitBoxTitle").textContent = isShip
+        ? "🚢 Dados da Viagem de Navio / Cruzeiro"
+        : (t === "Trem" ? "🚂 Rota de Trem (Google Maps)" : "🚌 Rota de Ônibus (Google Maps)");
+    }
+    if ($("#lbl-transitFrom")) $("#lbl-transitFrom").textContent = isShip ? "Porto / Cidade Origem" : "Estação / Terminal / Cidade Origem";
+    if ($("#lbl-transitTo")) $("#lbl-transitTo").textContent = isShip ? "Porto / Cidade Destino" : "Estação / Terminal / Cidade Destino";
+    if ($("#f-transitFrom")) $("#f-transitFrom").placeholder = isShip ? "Ex: Porto de Santos" : "Origem";
+    if ($("#f-transitTo")) $("#f-transitTo").placeholder = isShip ? "Ex: Búzios / Ilhabela" : "Destino";
+    if ($("#lbl-transitCarrier")) $("#lbl-transitCarrier").textContent = isShip ? "Navio / Companhia" : "Empresa / Linha / Assento";
+    if ($("#f-transitCarrier")) $("#f-transitCarrier").placeholder = isShip ? "Ex: MSC Grandiosa, Costa..." : "Ex: Viação Cometa, Eurostar...";
+    if ($("#lbl-transitRef")) $("#lbl-transitRef").textContent = isShip ? "Cabine / Localizador" : "Localizador / Bilhete";
+    if ($("#f-transitRef")) $("#f-transitRef").placeholder = isShip ? "Ex: Cabine 9124 / RES123" : "Código reserva";
+    if ($("#btnCalcTransit")) $("#btnCalcTransit").hidden = isShip;
+    if (isShip && $("#transitMapWrap")) $("#transitMapWrap").hidden = true;
   }
   $("#f-ticketRefWrap").hidden = (t === "Viagem" || t === "Voo" || isTransit);
+  syncTravelArrivalUI();
   updateModalPreview();
 }
 
@@ -2986,17 +3076,27 @@ function readForm() {
     .filter(r => r.qty > 0 && r.unitPrice > 0);
   const computedCost = Math.round(calcTicketsTotal(cleanTickets) * 100) / 100;
 
+  const tVal = e.type.value;
+  const startVal = e.start.value;
+  const diffChecked = Boolean($("#f-diffArrival")?.checked);
+  const endVal = (isTravelType(tVal) && !diffChecked) ? startVal : (e.end.value || startVal);
+
   const a = {
-    type: e.type.value,
+    type: tVal,
     name: e.name.value.trim(),
-    start: e.start.value,
-    end: e.end.value || e.start.value,
+    start: startVal,
+    end: endVal,
     tickets: cleanTickets,
     extraCost: computedCost,
     notes: e.notes.value,
     attachments: clone(modalAttachments)
   };
   if (a.end < a.start) a.end = a.start;
+  if (modalStartTime) a.startTime = modalStartTime;
+  if (modalQrPayload) {
+    a.qrPayload = modalQrPayload;
+    a.qrFormat = modalQrFormat || "qr_code";
+  }
   if (a.type === "Viagem") {
     Object.assign(a, {
       from: e.from.value.trim(),
@@ -3014,7 +3114,7 @@ function readForm() {
     a.to = $("#f-flightTo").value.trim();
     a.airline = $("#f-airline").value.trim();
     a.bookingRef = $("#f-bookingRef").value.trim();
-  } else if (a.type === "Trem" || a.type === "Ônibus") {
+  } else if (isTransitOrShip(a.type)) {
     a.from = $("#f-transitFrom").value.trim();
     a.to = $("#f-transitTo").value.trim();
     a.km = $("#f-transitKm").value === "" ? null : parseFloat($("#f-transitKm").value);
@@ -4577,7 +4677,7 @@ async function loadAndRenderAdminVault() {
           </div>
 
           <div class="admin-vault-card">
-            <div class="admin-vault-head"><strong>💳 Google Wallet (Oficial)</strong>${srcBadgeHtml(src.wallet)}</div>
+            <div class="admin-vault-head"><strong>💳 Carteira do Google (Emissor Oficial do Sistema)</strong>${srcBadgeHtml(src.wallet)}</div>
             <div class="admin-vault-fields">
               <label>GOOGLE_WALLET_ISSUER_ID
                 <input type="text" id="vlt-walletIssuerId" value="${esc(s.walletIssuerId || "")}" placeholder="3388000000012345678">
@@ -4917,8 +5017,38 @@ if ($("#btnCloseAdminUser")) $("#btnCloseAdminUser").onclick = () => $("#adminUs
 if ($("#btnAdminUserDone")) $("#btnAdminUserDone").onclick = () => $("#adminUserModal").close();
 
 $("#btnAdd").onclick = () => openModal();
+if ($("#btnAddEventGantt")) $("#btnAddEventGantt").onclick = () => openModal();
 $("#btnCloseX").onclick = $("#btnCancel").onclick = () => $("#modal").close();
 $("#f-type").onchange = toggleTrip;
+
+const syncStartDateInput = () => {
+  if (isTravelType($("#f-type").value) && !$("#f-diffArrival")?.checked) {
+    $("#f-end").value = $("#f-start").value;
+  } else if (isTravelType($("#f-type").value) && $("#f-diffArrival")?.checked && $("#f-start").value) {
+    $("#f-end").min = $("#f-start").value;
+    if (!$("#f-end").value || $("#f-end").value < $("#f-start").value) {
+      $("#f-end").value = $("#f-start").value;
+    }
+  }
+  updateModalPreview();
+};
+$("#f-start").addEventListener("input", syncStartDateInput);
+$("#f-start").addEventListener("change", syncStartDateInput);
+if ($("#f-diffArrival")) {
+  $("#f-diffArrival").addEventListener("change", () => {
+    syncTravelArrivalUI();
+    if ($("#f-diffArrival").checked && $("#f-end")) $("#f-end").focus();
+    updateModalPreview();
+  });
+}
+if ($("#btnClearActQr")) {
+  $("#btnClearActQr").onclick = () => {
+    modalQrPayload = "";
+    modalQrFormat = "";
+    renderModalQrBadge();
+    prefetchModalWalletPass();
+  };
+}
 
 $("#btnSwapRoute").onclick = () => {
   const f = $("#f-from").value;
@@ -5173,7 +5303,7 @@ $("#form").onsubmit = e => {
   if (editing) {
     const o = tgtData.activities.find(x => x.id === editing);
     if (o) {
-      for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges", "airline", "bookingRef", "includeRouteCost"]) delete o[k];
+      for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges", "airline", "bookingRef", "includeRouteCost", "startTime", "qrPayload", "qrFormat"]) delete o[k];
       Object.assign(o, a);
     }
   } else {
@@ -5531,9 +5661,12 @@ $("#btnReapplyStops").onclick = () => {
   save(`⏱️ Paradas reaplicadas em ${count} viagem(ns)!`);
 };
 
-/* ---------- GOOGLE WALLET / PASSE POR ATIVIDADE ---------- */
+/* ---------- CARTEIRA DO GOOGLE / PASSE POR ATIVIDADE ---------- */
 function walletActSig(a) {
-  return [a.id || "", a.type || "", a.name || "", a.start || "", a.end || "", a.extraCost || 0, a.bookingRef || "", a.from || "", a.to || ""].join("|");
+  return [
+    a.id || "", a.type || "", a.name || "", a.start || "", a.end || "", a.startTime || "",
+    a.extraCost || 0, a.airline || "", a.bookingRef || "", a.from || "", a.to || "", a.qrPayload || "", a.notes || ""
+  ].join("|");
 }
 
 function prefetchModalWalletPass() {
@@ -5551,21 +5684,44 @@ function prefetchModalWalletPass() {
     .catch(() => {});
 }
 
-function triggerPkpassOpen(url) {
+function triggerPkpassOpen(url, filename) {
   const fullUrl = new URL(url, window.location.origin).href;
-  const isAndroid = /android/i.test(navigator.userAgent);
-  if (isAndroid && fullUrl.startsWith("https://")) {
-    const cleanHostPath = fullUrl.replace(/^https:\/\//, "");
-    const intentUrl = `intent://${cleanHostPath}#Intent;scheme=https;action=android.intent.action.VIEW;type=application/vnd.apple.pkpass;package=com.google.android.apps.walletnfcrel;S.browser_fallback_url=${encodeURIComponent(fullUrl)};end`;
-    window.location.href = intentUrl;
-    return;
-  }
+  const isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent);
   const link = document.createElement("a");
   link.href = fullUrl;
+  if (!isIOS) link.download = filename || "passe_ferias_pro.pkpass";
   link.style.display = "none";
   document.body.appendChild(link);
   link.click();
   setTimeout(() => link.remove(), 1200);
+}
+
+async function setupSharePkpassButton(btn, pkpassUrl, filename, title) {
+  if (!btn) return;
+  btn.hidden = true;
+  btn.onclick = null;
+  if (typeof navigator.share !== "function" || typeof File !== "function") return;
+  try {
+    const probe = new File(["pk"], filename || "passe.pkpass", { type: "application/vnd.apple.pkpass" });
+    if (navigator.canShare && !navigator.canShare({ files: [probe] })) return;
+  } catch {
+    return;
+  }
+  btn.hidden = false;
+  btn.onclick = async () => {
+    try {
+      btn.disabled = true;
+      const resp = await fetch(pkpassUrl, { credentials: "same-origin" });
+      if (!resp.ok) throw new Error("Passe expirado. Gere novamente.");
+      const blob = await resp.blob();
+      const file = new File([blob], filename || "passe_ferias_pro.pkpass", { type: "application/vnd.apple.pkpass" });
+      await navigator.share({ files: [file], title: title || "Carteira do Google — Férias Pro" });
+    } catch (err) {
+      if (err?.name !== "AbortError") toast("❌ " + (err.message || "Falha ao compartilhar o passe."));
+    } finally {
+      btn.disabled = false;
+    }
+  };
 }
 
 async function openWalletPassForCurrentActivity() {
@@ -5578,28 +5734,34 @@ async function openWalletPassForCurrentActivity() {
   const body = $("#walletBody");
   const openBtn = $("#btnOpenGoogleWallet");
   const pkBtn = $("#btnDownloadPkpass");
-  const setupDet = $("#walletSetupDetails");
+  const shareBtn = $("#btnSharePkpass");
   openBtn.hidden = true;
   if (pkBtn) pkBtn.hidden = true;
+  if (shareBtn) { shareBtn.hidden = true; shareBtn.onclick = null; }
 
   const sig = walletActSig(a);
   const hasServerWallet = Boolean(window.FeriasApi.getServerCaps && window.FeriasApi.getServerCaps().hasWallet);
+
+  const showPkpassReady = async pk => {
+    triggerPkpassOpen(pk.pkpassUrl, pk.filename);
+    if (pkBtn) {
+      pkBtn.href = pk.pkpassUrl;
+      pkBtn.setAttribute("download", pk.filename || "passe_ferias_pro.pkpass");
+      pkBtn.hidden = false;
+    }
+    await setupSharePkpassButton(shareBtn, pk.pkpassUrl, pk.filename, a.name);
+    const qrMsg = a.qrPayload ? " com o <b>QR Code do bilhete</b> replicado" : "";
+    body.innerHTML = `
+      <p>✅ <b>Passe da Carteira do Google gerado${qrMsg}!</b> Toque na notificação <b>Abrir</b> (ou em <b>📤 Enviar p/ Carteira do Google</b> / <b>💳 Abrir na Carteira do Google</b> abaixo) para importar diretamente.</p>`;
+    window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
+    modal.showModal();
+  };
 
   // Caminho instantâneo síncrono dentro do clique (evita bloqueio do gesto pelo navegador)
   if (!hasServerWallet && prefetchedPkpass && prefetchedPkpass.sig === sig) {
     const pk = prefetchedPkpass;
     prefetchedPkpass = null;
-    triggerPkpassOpen(pk.pkpassUrl);
-    if (pkBtn) {
-      pkBtn.href = pk.pkpassUrl;
-      pkBtn.removeAttribute("download");
-      pkBtn.hidden = false;
-    }
-    if (setupDet) setupDet.hidden = false;
-    body.innerHTML = `
-      <p>✅ <b>Passe enviado direto para o Google Wallet!</b> Caso o app não abra na hora, toque em <b>💳 Abrir Passe (.pkpass) no Google Wallet</b> abaixo ou salve o Passe QR.</p>`;
-    window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
-    modal.showModal();
+    await showPkpassReady(pk);
     prefetchModalWalletPass();
     return;
   }
@@ -5610,8 +5772,7 @@ async function openWalletPassForCurrentActivity() {
       window.open(res.saveUrl, "_blank", "noopener");
       openBtn.href = res.saveUrl;
       openBtn.hidden = false;
-      if (setupDet) setupDet.hidden = true;
-      body.innerHTML = `<p>✅ <b>Google Wallet aberto!</b> Autorize na janela do Google Wallet que abriu (ou toque em <b>💳 Autorizar no Google Wallet</b> abaixo).</p>`;
+      body.innerHTML = `<p>✅ <b>Carteira do Google aberta!</b> Confirme na janela que abriu (ou toque em <b>💳 Adicionar à Carteira do Google</b> abaixo).</p>`;
       window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
       modal.showModal();
       return;
@@ -5620,29 +5781,16 @@ async function openWalletPassForCurrentActivity() {
     if (window.FeriasApi.isServer() && window.FeriasApi.createPkpassUrl) {
       const pk = await window.FeriasApi.createPkpassUrl(a, state.title);
       if (pk && pk.pkpassUrl) {
-        triggerPkpassOpen(pk.pkpassUrl);
-        if (pkBtn) {
-          pkBtn.href = pk.pkpassUrl;
-          pkBtn.removeAttribute("download");
-          pkBtn.hidden = false;
-        }
-        if (setupDet) setupDet.hidden = false;
-        body.innerHTML = `
-          <p>✅ <b>Passe enviado para o Google Wallet!</b> Caso o navegador peça confirmação, toque em <b>Abrir</b> (ou no botão azul abaixo).</p>
-          <p class="muted small">Você também pode salvar o cartão visual QR ou ativar o link direto online (Issuer ID) abaixo.</p>`;
-        window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
-        modal.showModal();
+        await showPkpassReady(pk);
         return;
       }
     }
 
-    if (setupDet) setupDet.hidden = false;
     body.innerHTML = `
-      <p>📲 <b>Cartão pronto!</b> Baixe o Passe QR abaixo (<b>⬇️ Salvar Passe QR</b>), abra o app <b>Google Wallet</b> e toque em <b>"+ Adicionar à Carteira ➔ Foto"</b>.</p>`;
+      <p>📲 <b>Cartão pronto!</b> Salve o Passe QR abaixo (<b>⬇️ Salvar Passe QR</b>), abra o app <b>Carteira do Google</b> e toque em <b>"+ Adicionar à Carteira ➔ Foto"</b>.</p>`;
   } catch (err) {
-    if (setupDet) setupDet.hidden = false;
     body.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>
-      <p class="muted small">Você ainda pode salvar a imagem QR e importar direto pelo app Google Wallet.</p>`;
+      <p class="muted small">Você ainda pode salvar o cartão QR e importar direto pelo app Carteira do Google.</p>`;
   }
   window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
   modal.showModal();
@@ -5654,59 +5802,94 @@ $("#btnDownloadPassPng").onclick = () => {
   const c = $("#walletPassCanvas");
   const a = document.createElement("a");
   a.href = c.toDataURL("image/png");
-  a.download = `passe_ferias_pro.png`;
+  a.download = `passe_carteira_google_ferias_pro.png`;
   a.click();
   toast("🖼️ Passe QR salvo!");
 };
-if ($("#btnWalletPickFile")) {
-  $("#btnWalletPickFile").onclick = () => $("#walletInlineJsonFile").click();
-  $("#walletInlineJsonFile").onchange = async e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const issuer = $("#walletIssuerInline").value.trim();
-    if (!issuer) { e.target.value = ""; return toast("Informe o Issuer ID do Google Wallet primeiro."); }
-    try {
-      const jsonStr = await f.text();
-      await window.FeriasApi.saveIntegrations({ walletIssuerId: issuer, walletSaJson: jsonStr });
-      $("#walletFileStatus").textContent = "✅ Ativado! Reabrindo Google Wallet...";
-      toast("✅ Google Wallet 1-clique ativado!");
-      $("#walletModal").close();
-      openWalletPassForCurrentActivity();
-    } catch (err) {
-      $("#walletFileStatus").textContent = "❌ " + (err.message || err);
-    }
-    e.target.value = "";
-  };
-}
 
 /* ---------- IA GEMINI NA ATIVIDADE (PRINT DE VOO / TICKET / TEXTO) ---------- */
-function applyExtractedActivityToForm(act) {
+async function detectBarcodeFromFile(fileOrBlob) {
+  try {
+    if (!fileOrBlob || !String(fileOrBlob.type || "").startsWith("image/")) return null;
+    if (typeof window.BarcodeDetector !== "function" || typeof createImageBitmap !== "function") return null;
+    const formats = ["qr_code", "aztec", "pdf417", "code_128"];
+    const detector = new window.BarcodeDetector({ formats });
+    const bmp = await createImageBitmap(fileOrBlob);
+    try {
+      const codes = await detector.detect(bmp);
+      const hit = Array.isArray(codes) && codes.find(c => c && c.rawValue);
+      if (hit) {
+        return {
+          rawValue: String(hit.rawValue).slice(0, 1200),
+          format: String(hit.format || "qr_code")
+        };
+      }
+    } finally {
+      if (bmp && typeof bmp.close === "function") bmp.close();
+    }
+  } catch {}
+  return null;
+}
+
+function applyExtractedActivityToForm(act, detectedBarcode) {
   if (!act || typeof act !== "object") return;
   if (act.type && window.ACTIVITY_TYPES[act.type]) $("#f-type").value = act.type;
+  const curType = $("#f-type").value;
+  if (isTravelType(curType) && $("#f-diffArrival")) {
+    $("#f-diffArrival").checked = Boolean(act.start && act.end && act.end !== act.start);
+  }
   toggleTrip();
   if (act.name) $("#f-name").value = act.name;
   if (act.start) $("#f-start").value = act.start;
-  if (act.end) $("#f-end").value = act.end;
-  if (act.extraCost != null && Number(act.extraCost) > 0) {
-    modalTickets = [{ label: "IA", qty: 1, unitPrice: Number(act.extraCost) }];
+  if (act.end) {
+    $("#f-end").value = act.end;
+  } else if (isTravelType(curType) && act.start && !$("#f-diffArrival")?.checked) {
+    $("#f-end").value = act.start;
+  }
+  syncTravelArrivalUI();
+
+  if (Array.isArray(act.tickets) && act.tickets.some(t => Number(t.unitPrice) > 0)) {
+    modalTickets = act.tickets
+      .filter(t => Number(t.unitPrice) > 0)
+      .map(t => ({ label: String(t.label || "Tarifa").slice(0, 40), qty: Math.max(1, Number(t.qty) || 1), unitPrice: Number(t.unitPrice) }));
+    renderTicketRows();
+  } else if (act.extraCost != null && Number(act.extraCost) > 0) {
+    modalTickets = [{ label: curType === "Voo" ? "Passagem aérea" : (isTravelType(curType) ? "Passagem" : "IA"), qty: 1, unitPrice: Number(act.extraCost) }];
     renderTicketRows();
   }
-  if ($("#f-type").value === "Voo") {
+
+  if (curType === "Voo") {
     if (act.from) $("#f-flightFrom").value = act.from;
     if (act.to) $("#f-flightTo").value = act.to;
+    if (act.airline) $("#f-airline").value = act.airline;
     if (act.bookingRef) $("#f-bookingRef").value = act.bookingRef;
-  } else if ($("#f-type").value === "Trem" || $("#f-type").value === "Ônibus") {
+  } else if (isTransitOrShip(curType)) {
     if (act.from) $("#f-transitFrom").value = act.from;
     if (act.to) $("#f-transitTo").value = act.to;
+    if (act.km > 0) $("#f-transitKm").value = act.km;
+    if (act.drive > 0) $("#f-transitDrive").value = hm(act.drive);
+    if (act.airline) $("#f-transitCarrier").value = act.airline;
     if (act.bookingRef) $("#f-transitRef").value = act.bookingRef;
-  } else if ($("#f-type").value === "Viagem") {
+  } else if (curType === "Viagem") {
     if (act.from) $("#f-from").value = act.from;
     if (act.to) $("#f-to").value = act.to;
+    if (act.km > 0) $("#f-km").value = act.km;
+    if (act.drive > 0) $("#f-drive").value = hm(act.drive);
   } else if (act.bookingRef) {
     $("#f-ticketRef").value = act.bookingRef;
   }
+
+  modalStartTime = act.startTime ? String(act.startTime).slice(0, 5) : "";
+  const qrTxt = String(act.qrPayload || detectedBarcode?.rawValue || "").trim();
+  if (qrTxt) {
+    modalQrPayload = qrTxt.slice(0, 1200);
+    modalQrFormat = String(act.qrFormat || detectedBarcode?.format || "qr_code");
+  }
+  renderModalQrBadge();
+
   if (act.notes) $("#f-notes").value = act.notes;
   updateModalPreview();
+  prefetchModalWalletPass();
 }
 
 function fileToBase64Obj(file) {
@@ -5731,10 +5914,14 @@ $("#actAiFile").onchange = async e => {
   if (!f) return;
   toast("✨ Analisando documento com Gemini IA...");
   try {
-    const m = await fileToBase64Obj(f);
-    const act = await window.FeriasApi.aiAnalyzeActivity({ prompt: "Extraia dados completos deste bilhete/passagem/reserva/documento.", media: [m] });
-    applyExtractedActivityToForm(act);
-    toast("✅ Campos preenchidos com IA!");
+    const [m, detectedBarcode] = await Promise.all([fileToBase64Obj(f), detectBarcodeFromFile(f)]);
+    const act = await window.FeriasApi.aiAnalyzeActivity({
+      prompt: "Extraia todos os dados completos deste bilhete/passagem/reserva/documento (tipo, trecho, datas saída/chegada, cia/voo/navio, localizador, valor e QR Code).",
+      media: [m],
+      detectedBarcode
+    });
+    applyExtractedActivityToForm(act, detectedBarcode);
+    toast(detectedBarcode ? "✅ Campos e QR Code preenchidos com IA!" : "✅ Campos preenchidos com IA!");
   } catch (err) {
     toast(String(err.message).includes("GEMINI_NOT_CONFIGURED") ? "Configure sua Gemini Key em Parâmetros ou Planejar com IA." : "❌ " + (err.message || err));
   }
@@ -5747,7 +5934,7 @@ $("#btnActAiText").onclick = async () => {
   toast("✨ Extraindo dados com Gemini IA...");
   try {
     const act = await window.FeriasApi.aiAnalyzeActivity({ prompt: txt.trim(), media: [] });
-    applyExtractedActivityToForm(act);
+    applyExtractedActivityToForm(act, null);
     toast("✅ Campos preenchidos com IA!");
   } catch (err) {
     toast(String(err.message).includes("GEMINI_NOT_CONFIGURED") ? "Configure sua Gemini Key em Parâmetros ou Planejar com IA." : "❌ " + (err.message || err));
@@ -5814,7 +6001,10 @@ $("#btnAiUploadMedia").onclick = () => $("#aiMediaInput").click();
 $("#aiMediaInput").onchange = async e => {
   for (const f of [...e.target.files]) {
     try {
-      aiAttachedMedia.push(await fileToBase64Obj(f));
+      const obj = await fileToBase64Obj(f);
+      const bc = await detectBarcodeFromFile(f);
+      if (bc) obj.detectedBarcode = bc;
+      aiAttachedMedia.push(obj);
     } catch {}
   }
   renderAiMediaList();
@@ -5917,8 +6107,13 @@ $("#btnRunAiPlan").onclick = async () => {
   st.innerHTML = `<span>⏳ Gemini IA analisando áudios, imagens e roteiro...</span>`;
   let plan = null;
   try {
+    const bcNotes = aiAttachedMedia
+      .filter(m => m?.detectedBarcode?.rawValue)
+      .map(m => `${m.fileName} (${m.detectedBarcode.format}): ${m.detectedBarcode.rawValue}`)
+      .join(" | ");
+    const fullPrompt = bcNotes ? `${promptText}\n[QR/Códigos lidos dos anexos: ${bcNotes}]`.trim() : promptText;
     plan = await window.FeriasApi.aiPlanTrip({
-      prompt: promptText,
+      prompt: fullPrompt,
       baseDate: fmtISO(new Date()),
       baseVehicle: state.vehicle,
       media: aiAttachedMedia
@@ -5937,15 +6132,18 @@ $("#btnRunAiPlan").onclick = async () => {
     const tripTitle = plan.tripName || "Nova Viagem (IA)";
     const baseData = window.createBlankTripData(tripTitle, plan.vehicle || state.vehicle);
     if (plan.params) Object.assign(baseData.params, plan.params);
+    const firstImgQr = aiAttachedMedia.find(m => m?.detectedBarcode?.rawValue)?.detectedBarcode || null;
     if (Array.isArray(plan.activities)) {
-      baseData.activities = plan.activities.map(a => ({
+      baseData.activities = plan.activities.map((a, idx) => ({
         id: uid(),
         type: window.ACTIVITY_TYPES[a.type] ? a.type : "Outro",
         name: String(a.name || "Atividade"),
         start: /^\d{4}-\d{2}-\d{2}$/.test(a.start) ? a.start : fmtISO(new Date()),
         end: /^\d{4}-\d{2}-\d{2}$/.test(a.end) ? a.end : (/^\d{4}-\d{2}-\d{2}$/.test(a.start) ? a.start : fmtISO(new Date())),
+        ...(a.startTime ? { startTime: String(a.startTime).slice(0, 5) } : {}),
         from: a.from || "",
         to: a.to || "",
+        ...(a.airline ? { airline: String(a.airline) } : {}),
         km: Number(a.km) || 0,
         drive: Number(a.drive) || 0,
         stops: a.type === "Viagem" && a.drive ? computeAutoStops(Number(a.drive)).stops : 0,
@@ -5954,6 +6152,12 @@ $("#btnRunAiPlan").onclick = async () => {
         charges: a.type === "Viagem" ? 1 : undefined,
         extraCost: Number(a.extraCost) || 0,
         bookingRef: a.bookingRef || "",
+        ...((a.qrPayload || (idx === 0 && firstImgQr?.rawValue))
+          ? {
+              qrPayload: String(a.qrPayload || firstImgQr?.rawValue).slice(0, 1200),
+              qrFormat: String(a.qrFormat || firstImgQr?.format || "qr_code")
+            }
+          : {}),
         notes: a.notes || "",
         attachments: []
       }));
@@ -6076,8 +6280,6 @@ function openProfileModal() {
   refreshProfilePasswordSection(u);
   refreshProfileSessionsSection();
   $("#prof-geminiKey").value = "";
-  $("#prof-walletIssuer").value = u.integrations?.walletIssuerId || "";
-  $("#prof-walletSa").value = "";
   $("#profileModal").showModal();
 }
 
@@ -6111,16 +6313,6 @@ if ($("#prof-cep")) {
       }
     } catch {}
   });
-}
-if ($("#btnProfPickWalletJson")) {
-  $("#btnProfPickWalletJson").onclick = () => $("#prof-walletJsonFile").click();
-  $("#prof-walletJsonFile").onchange = async e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    $("#prof-walletSa").value = await f.text();
-    toast("📂 Chave .json carregada! Clique em Salvar Perfil.");
-    e.target.value = "";
-  };
 }
 $("#prof-waCountry").onchange = () => {
   const d = $("#prof-waCountry").value;
@@ -6176,14 +6368,8 @@ async function saveProfileAndCredentials() {
     address: $("#prof-address")?.value?.trim() || ""
   });
   const gk = $("#prof-geminiKey").value.trim();
-  const wi = $("#prof-walletIssuer").value.trim();
-  const wsa = $("#prof-walletSa").value.trim();
-  if (gk || wi || wsa) {
-    await window.FeriasApi.saveIntegrations({
-      ...(gk ? { geminiKey: gk } : {}),
-      walletIssuerId: wi,
-      ...(wsa ? { walletSaJson: wsa } : {})
-    });
+  if (gk) {
+    await window.FeriasApi.saveIntegrations({ geminiKey: gk });
   }
   updateUserMenu();
   renderParams();
