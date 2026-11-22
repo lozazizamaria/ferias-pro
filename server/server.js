@@ -3,6 +3,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const net = require("node:net");
 const tls = require("node:tls");
+const zlib = require("node:zlib");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
@@ -37,11 +38,14 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const DB_FILE = process.env.DB_FILE || path.join(DATA_DIR, "db.json");
 const LEGACY_STATE_FILE = process.env.DATA_FILE || path.join(DATA_DIR, "state.json");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
+const BACKUPS_DIR = path.join(DATA_DIR, "backups");
+const MAIL_LOGS_DIR = path.join(DATA_DIR, "logs", "mail");
 const STATIC_DIR = process.env.STATIC_DIR || path.resolve(__dirname, "..", "app");
 const SERVE_STATIC = process.env.SERVE_STATIC !== "0";
 const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || "").trim()
   || (process.env.DISABLE_DEFAULT_GOOGLE_CLIENT_ID === "1" ? "" : DEFAULT_GOOGLE_CLIENT_ID);
 const GOOGLE_CLIENT_SECRET = (process.env.GOOGLE_CLIENT_SECRET || "").trim();
+const GOOGLE_LOGIN_CLIENT_ID = (process.env.GOOGLE_LOGIN_CLIENT_ID || "").trim();
 const SUPER_ADMIN_EMAILS = new Set([
   "adelphi86@gmail.com",
   ...String(process.env.SUPER_ADMIN_EMAILS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean)
@@ -60,8 +64,15 @@ const SMTP_SECURE = (process.env.SMTP_SECURE || "").trim().toLowerCase();
 const RESEND_API_KEY = (process.env.RESEND_API_KEY || "").trim();
 const APP_BASE_URL = (process.env.APP_BASE_URL || "").trim().replace(/\/+$/, "");
 const MAX_BODY_BYTES = 32 * 1024 * 1024; // 32 MB (suporta áudios, imagens IA e anexos)
-const SESSION_TTL_MS = 30 * 24 * 3600 * 1000; // 30 dias
+const SESSION_TTL_HOURS = parseInt(process.env.SESSION_TTL_HOURS || "720", 10); // 30 dias padrão
+const SESSION_TTL_MS = Math.max(1, SESSION_TTL_HOURS) * 3600 * 1000;
 const PASS_RESET_TTL_MS = 30 * 60 * 1000; // 30 minutos
+const LOGIN_MAX_ATTEMPTS = Math.max(3, parseInt(process.env.LOGIN_MAX_ATTEMPTS || "8", 10) || 8);
+const SIGNUP_MAX_ATTEMPTS = Math.max(5, parseInt(process.env.SIGNUP_MAX_ATTEMPTS || "20", 10) || 20);
+const SCHEDULER_TICK_MS = Math.max(5000, parseInt(process.env.SCHEDULER_TICK_MS || "60000", 10) || 60000);
+const BACKUP_INTERVAL_HOURS = Math.max(0, parseInt(process.env.BACKUP_INTERVAL_HOURS || "24", 10) || 0);
+const BACKUP_RETENTION = Math.max(3, parseInt(process.env.BACKUP_RETENTION || "15", 10) || 15);
+const MASK_PLACEHOLDER = "••••••••";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -84,20 +95,91 @@ const uid = (prefix = "") => prefix + crypto.randomBytes(8).toString("hex");
 function ensureDirs() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+  fs.mkdirSync(MAIL_LOGS_DIR, { recursive: true });
+}
+
+let cachedMasterKey = null;
+function loadMasterKey() {
+  if (cachedMasterKey) return cachedMasterKey;
+  ensureDirs();
+  const envKey = String(process.env.MASTER_KEY || "").trim();
+  if (envKey.length >= 32) {
+    cachedMasterKey = crypto.createHash("sha256").update(envKey, "utf8").digest();
+    return cachedMasterKey;
+  }
+  const keyFile = path.join(DATA_DIR, ".master.key");
+  try {
+    if (fs.existsSync(keyFile)) {
+      const hex = fs.readFileSync(keyFile, "utf8").trim();
+      if (/^[a-f0-9]{64}$/i.test(hex)) {
+        cachedMasterKey = Buffer.from(hex, "hex");
+        return cachedMasterKey;
+      }
+    }
+  } catch {}
+  const fresh = crypto.randomBytes(32);
+  fs.writeFileSync(keyFile, fresh.toString("hex"), { mode: 0o600 });
+  cachedMasterKey = fresh;
+  return cachedMasterKey;
+}
+
+function encryptSecret(plaintext) {
+  const s = String(plaintext || "").trim();
+  if (!s) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", loadMasterKey(), iv);
+  const enc = Buffer.concat([cipher.update(s, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ["v1", iv.toString("base64url"), tag.toString("base64url"), enc.toString("base64url")].join(".");
+}
+
+function decryptSecret(payload) {
+  if (!payload) return "";
+  const raw = String(payload);
+  if (!raw.startsWith("v1.")) return raw; // Fallback transparente para dados legados não cifrados
+  const parts = raw.split(".");
+  if (parts.length !== 4) return "";
+  try {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", loadMasterKey(), Buffer.from(parts[1], "base64url"));
+    decipher.setAuthTag(Buffer.from(parts[2], "base64url"));
+    return Buffer.concat([decipher.update(Buffer.from(parts[3], "base64url")), decipher.final()]).toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
+function isMaskedSecret(val) {
+  const s = String(val || "").trim();
+  return !s || s === MASK_PLACEHOLDER || /^[•*]{4,}$/.test(s);
 }
 
 function emptyDb() {
-  return { users: {}, sessions: {}, trips: {}, shares: [], attachments: {}, passwordResets: {}, admins: [], meta: {} };
+  return {
+    users: {},
+    sessions: {},
+    trips: {},
+    shares: [],
+    attachments: {},
+    passwordResets: {},
+    admins: [],
+    systemSettings: {},
+    auditLogs: [],
+    meta: {}
+  };
 }
 
 function loadDb() {
   ensureDirs();
+  loadMasterKey();
   try {
     if (fs.existsSync(DB_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
       const merged = Object.assign(emptyDb(), parsed || {});
       if (!merged.passwordResets || typeof merged.passwordResets !== "object") merged.passwordResets = {};
       if (!Array.isArray(merged.admins)) merged.admins = [];
+      if (!merged.systemSettings || typeof merged.systemSettings !== "object") merged.systemSettings = {};
+      if (!Array.isArray(merged.auditLogs)) merged.auditLogs = [];
       if (!merged.meta || typeof merged.meta !== "object") merged.meta = {};
       return merged;
     }
@@ -190,16 +272,44 @@ function parseCookies(req) {
   return out;
 }
 
-function createSession(userId) {
-  const token = crypto.randomBytes(32).toString("hex");
+function getClientIp(req) {
+  const fwd = String(req?.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
+  return fwd || req?.socket?.remoteAddress || "unknown";
+}
+
+function hashSessionToken(rawToken) {
+  return crypto.createHash("sha256").update(String(rawToken || "")).digest("hex");
+}
+
+function createSession(userId, req) {
+  const token = crypto.randomBytes(48).toString("base64url");
+  const sidHash = hashSessionToken(token);
   const now = Date.now();
   // Limpa sessões expiradas
   for (const [k, s] of Object.entries(db.sessions)) {
     if (!s || s.expiresAt < now) delete db.sessions[k];
   }
-  db.sessions[token] = { userId, createdAt: now, expiresAt: now + SESSION_TTL_MS };
+  db.sessions[sidHash] = {
+    userId,
+    createdAt: now,
+    lastSeenAt: now,
+    expiresAt: now + SESSION_TTL_MS,
+    ip: getClientIp(req),
+    userAgent: String(req?.headers?.["user-agent"] || "").slice(0, 140)
+  };
   saveDb();
   return token;
+}
+
+function revokeUserSessions(userId, keepSessionKey = null) {
+  let count = 0;
+  for (const [k, s] of Object.entries(db.sessions || {})) {
+    if (s && s.userId === userId && k !== keepSessionKey) {
+      delete db.sessions[k];
+      count++;
+    }
+  }
+  return count;
 }
 
 function setSessionCookie(req, res, token) {
@@ -225,13 +335,73 @@ function getAuthUser(req) {
   const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
   const sid = cookies.fp_sid || bearer;
   if (!sid) return null;
-  const sess = db.sessions[sid];
-  if (!sess || sess.expiresAt < Date.now()) {
-    if (sess) { delete db.sessions[sid]; saveDb(); }
+  const sidHash = hashSessionToken(sid);
+  let sessKey = sidHash;
+  let sess = db.sessions[sidHash];
+  if (!sess && db.sessions[sid]) {
+    sess = db.sessions[sid];
+    sessKey = sid;
+  }
+  const now = Date.now();
+  if (!sess || sess.expiresAt < now) {
+    if (sess) { delete db.sessions[sessKey]; saveDb(); }
     return null;
   }
   const user = db.users[sess.userId];
-  return user ? { user, sid } : null;
+  if (!user) return null;
+  // Sliding expiration: renova sessão ativa no máximo a cada 5 min sem I/O excessivo
+  if (now - (sess.lastSeenAt || sess.createdAt || 0) > 5 * 60 * 1000) {
+    sess.lastSeenAt = now;
+    sess.expiresAt = now + SESSION_TTL_MS;
+    saveDb();
+  }
+  return { user, sid, sidKey: sessKey };
+}
+
+/* ---------- RATE LIMITING & AUDIT LOGS ---------- */
+const rateLimitBuckets = new Map();
+
+function pruneRateLimits() {
+  const now = Date.now();
+  for (const [k, b] of rateLimitBuckets.entries()) {
+    if (!b || b.resetAt <= now) rateLimitBuckets.delete(k);
+  }
+}
+
+function checkRateLimit(bucketKey, maxHits, windowMs) {
+  const now = Date.now();
+  if (rateLimitBuckets.size > 500) pruneRateLimits();
+  let rec = rateLimitBuckets.get(bucketKey);
+  if (!rec || rec.resetAt <= now) {
+    rec = { count: 0, resetAt: now + windowMs };
+    rateLimitBuckets.set(bucketKey, rec);
+  }
+  if (rec.count >= maxHits) {
+    const retryAfterSec = Math.max(1, Math.ceil((rec.resetAt - now) / 1000));
+    return { allowed: false, retryAfterSec };
+  }
+  rec.count++;
+  return { allowed: true, retryAfterSec: 0 };
+}
+
+function clearRateLimit(bucketKey) {
+  rateLimitBuckets.delete(bucketKey);
+}
+
+function auditLog(action, { userId = "", email = "", ip = "", detail = "" } = {}) {
+  try {
+    if (!Array.isArray(db.auditLogs)) db.auditLogs = [];
+    db.auditLogs.unshift({
+      id: uid("aud_"),
+      ts: Date.now(),
+      action: String(action || "").slice(0, 64),
+      userId: String(userId || "").slice(0, 64),
+      email: String(email || "").slice(0, 120),
+      ip: String(ip || "").slice(0, 64),
+      detail: String(detail || "").slice(0, 240)
+    });
+    if (db.auditLogs.length > 1000) db.auditLogs.length = 1000;
+  } catch {}
 }
 
 const VALID_BR_DDDS = new Set([
@@ -267,24 +437,78 @@ function validateServerWhatsApp(dial, rawNumber) {
   return { valid: true, dial: cleanDial, localDigits: local, full: `${cleanDial} ${local}`, e164Digits: `${dialDigits}${local}` };
 }
 
+function getGlobalConfig() {
+  const sys = (db.systemSettings && typeof db.systemSettings === "object") ? db.systemSettings : {};
+  const envClientId = (process.env.GOOGLE_CLIENT_ID || "").trim();
+  const envDefaultClientId = process.env.DISABLE_DEFAULT_GOOGLE_CLIENT_ID === "1" ? "" : DEFAULT_GOOGLE_CLIENT_ID;
+  const googleClientId = envClientId || String(sys.googleClientId || "").trim() || envDefaultClientId;
+  const googleLoginClientId = GOOGLE_LOGIN_CLIENT_ID || String(sys.googleLoginClientId || "").trim();
+  const googleClientSecret = GOOGLE_CLIENT_SECRET || decryptSecret(sys.googleClientSecretEnc);
+  const geminiKey = ENV_GEMINI_KEY || decryptSecret(sys.geminiKeyEnc);
+  const gmapsKey = ENV_GMAPS_KEY || decryptSecret(sys.gmapsKeyEnc);
+  const walletIssuerId = ENV_WALLET_ISSUER_ID || String(sys.walletIssuerId || "").trim();
+  let envSaRaw = ENV_WALLET_SA_JSON;
+  if (!envSaRaw && ENV_WALLET_SA_FILE && fs.existsSync(ENV_WALLET_SA_FILE)) {
+    try { envSaRaw = fs.readFileSync(ENV_WALLET_SA_FILE, "utf8"); } catch {}
+  }
+  const walletSaJson = (envSaRaw || decryptSecret(sys.walletSaJsonEnc) || "").trim();
+
+  const smtpHost = SMTP_HOST || String(sys.smtpHost || "").trim();
+  const smtpPort = SMTP_HOST ? SMTP_PORT : (parseInt(sys.smtpPort || "587", 10) || 587);
+  const smtpSecure = SMTP_HOST ? SMTP_SECURE : String(sys.smtpSecure || "").trim().toLowerCase();
+  const smtpUser = SMTP_HOST ? SMTP_USER : String(sys.smtpUser || "").trim();
+  const smtpPass = SMTP_HOST ? SMTP_PASS : decryptSecret(sys.smtpPassEnc);
+  const smtpFrom = (process.env.SMTP_FROM || "").trim() || String(sys.smtpFrom || "").trim() || smtpUser || "no-reply@feriaspro.app";
+  const resendApiKey = RESEND_API_KEY || decryptSecret(sys.resendApiKeyEnc);
+  const appBaseUrl = (APP_BASE_URL || String(sys.appBaseUrl || "").trim()).replace(/\/+$/, "");
+
+  return {
+    googleClientId,
+    googleLoginClientId,
+    googleClientSecret,
+    geminiKey,
+    gmapsKey,
+    walletIssuerId,
+    walletSaJson,
+    smtpHost,
+    smtpPort,
+    smtpSecure,
+    smtpUser,
+    smtpPass,
+    smtpFrom,
+    resendApiKey,
+    appBaseUrl,
+    sources: {
+      googleClientId: envClientId ? "env" : (sys.googleClientId ? "vault" : (envDefaultClientId ? "default" : "none")),
+      googleClientSecret: GOOGLE_CLIENT_SECRET ? "env" : (sys.googleClientSecretEnc ? "vault" : "none"),
+      geminiKey: ENV_GEMINI_KEY ? "env" : (sys.geminiKeyEnc ? "vault" : "none"),
+      gmapsKey: ENV_GMAPS_KEY ? "env" : (sys.gmapsKeyEnc ? "vault" : "none"),
+      wallet: (ENV_WALLET_ISSUER_ID && envSaRaw) ? "env" : ((sys.walletIssuerId && sys.walletSaJsonEnc) ? "vault" : "none"),
+      smtp: SMTP_HOST ? "env" : (sys.smtpHost ? "vault" : "none"),
+      resend: RESEND_API_KEY ? "env" : (sys.resendApiKeyEnc ? "vault" : "none")
+    }
+  };
+}
+
 function getServerGoogleClientId() {
-  if (GOOGLE_CLIENT_ID) return GOOGLE_CLIENT_ID;
+  const sys = getGlobalConfig();
+  if (sys.googleClientId) return sys.googleClientId;
   const u = Object.values(db.users).find(usr => usr?.integrations?.googleClientId);
   return u ? String(u.integrations.googleClientId || "").trim() : "";
 }
 
 function getEffectiveCredentials(user) {
   const integ = (user && user.integrations) || {};
-  let saRaw = integ.walletSaJson || ENV_WALLET_SA_JSON;
-  if (!saRaw && ENV_WALLET_SA_FILE && fs.existsSync(ENV_WALLET_SA_FILE)) {
-    try { saRaw = fs.readFileSync(ENV_WALLET_SA_FILE, "utf8"); } catch {}
-  }
+  const sys = getGlobalConfig();
+  const userGemini = decryptSecret(integ.geminiKeyEnc || integ.geminiKey);
+  const userMaps = decryptSecret(integ.gmapsKeyEnc || integ.gmapsKey);
+  const userWalletSa = decryptSecret(integ.walletSaJsonEnc || integ.walletSaJson);
   return {
-    geminiKey: (integ.geminiKey || ENV_GEMINI_KEY || "").trim(),
-    gmapsKey: (integ.gmapsKey || ENV_GMAPS_KEY || "").trim(),
-    googleClientId: (integ.googleClientId || GOOGLE_CLIENT_ID || "").trim(),
-    walletIssuerId: (integ.walletIssuerId || ENV_WALLET_ISSUER_ID || "").trim(),
-    walletSaJson: (saRaw || "").trim()
+    geminiKey: (userGemini || sys.geminiKey || "").trim(),
+    gmapsKey: (userMaps || sys.gmapsKey || "").trim(),
+    googleClientId: (integ.googleClientId || sys.googleClientId || "").trim(),
+    walletIssuerId: (integ.walletIssuerId || sys.walletIssuerId || "").trim(),
+    walletSaJson: (userWalletSa || sys.walletSaJson || "").trim()
   };
 }
 
@@ -576,13 +800,27 @@ function getTripAccess(trip, user) {
   return sh ? (sh.role || "editor") : null;
 }
 
+function applySecurityHeaders(res, extraHeaders = {}) {
+  const headers = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(self), microphone=(self), camera=()",
+    "Content-Security-Policy":
+      "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https:; " +
+      "script-src 'self' 'unsafe-inline' https:; connect-src 'self' https:; font-src 'self' data: https:; " +
+      "media-src 'self' blob: data:; frame-src 'self' https://accounts.google.com; frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
+    ...extraHeaders
+  };
+  return headers;
+}
+
 function sendJson(res, status, data) {
   const body = JSON.stringify(data);
-  res.writeHead(status, {
+  res.writeHead(status, applySecurityHeaders(res, {
     "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store, no-cache, must-revalidate",
-    "X-Content-Type-Options": "nosniff"
-  });
+    "Cache-Control": "no-store, no-cache, must-revalidate"
+  }));
   res.end(body);
 }
 
@@ -611,25 +849,45 @@ function readBody(req) {
   });
 }
 
-function serveStaticFile(reqPath, res) {
+function serveStaticFile(req, res, reqPath) {
   let cleanPath = reqPath === "/" ? "/index.html" : reqPath;
   if (cleanPath === "/sobre" || cleanPath === "/como-usar" || cleanPath === "/saiba-mais") {
     cleanPath = "/como-usar.html";
   }
+  const baseStatic = path.resolve(STATIC_DIR);
   const resolved = path.resolve(STATIC_DIR, "." + cleanPath);
-  if (!resolved.startsWith(path.resolve(STATIC_DIR))) {
-    res.writeHead(403);
+  if (resolved !== baseStatic && !resolved.startsWith(baseStatic + path.sep)) {
+    res.writeHead(403, applySecurityHeaders(res));
     return res.end("Forbidden");
   }
-  if (!fs.existsSync(resolved) || fs.statSync(resolved).isDirectory()) {
-    res.writeHead(404);
+  let stat;
+  try {
+    stat = fs.statSync(resolved);
+  } catch {
+    res.writeHead(404, applySecurityHeaders(res));
+    return res.end("Not Found");
+  }
+  if (stat.isDirectory()) {
+    res.writeHead(404, applySecurityHeaders(res));
     return res.end("Not Found");
   }
   const ext = path.extname(resolved).toLowerCase();
-  res.writeHead(200, {
+  const isMedia = ext === ".png" || ext === ".jpg" || ext === ".jpeg" || ext === ".webp" || ext === ".svg" || ext === ".ico";
+  const cacheControl = isMedia ? "public, max-age=86400" : "no-cache";
+  const etag = `W/"${stat.size}-${Math.floor(stat.mtimeMs)}"`;
+  if (req.headers["if-none-match"] === etag) {
+    res.writeHead(304, applySecurityHeaders(res, {
+      "ETag": etag,
+      "Cache-Control": cacheControl
+    }));
+    return res.end();
+  }
+  res.writeHead(200, applySecurityHeaders(res, {
     "Content-Type": MIME[ext] || "application/octet-stream",
-    "Cache-Control": ext === ".png" || ext === ".svg" ? "public, max-age=86400" : "no-cache"
-  });
+    "Cache-Control": cacheControl,
+    "ETag": etag,
+    "Last-Modified": stat.mtime.toUTCString()
+  }));
   fs.createReadStream(resolved).pipe(res);
 }
 
@@ -729,18 +987,20 @@ function buildTripIcs(trip) {
 }
 
 async function verifyGoogleIdToken(credential) {
-  const cid = getServerGoogleClientId();
-  if (!cid) throw new Error("GOOGLE_NOT_CONFIGURED");
+  const sys = getGlobalConfig();
+  const cids = [...new Set([getServerGoogleClientId(), sys.googleLoginClientId].filter(Boolean))];
+  if (!cids.length) throw new Error("GOOGLE_NOT_CONFIGURED");
   const resp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
   if (!resp.ok) throw new Error("GOOGLE_TOKEN_INVALID");
   const info = await resp.json();
-  if (info.aud !== cid) throw new Error("GOOGLE_AUD_MISMATCH");
+  if (!cids.includes(info.aud)) throw new Error("GOOGLE_AUD_MISMATCH");
   if (info.email_verified !== "true" && info.email_verified !== true) throw new Error("GOOGLE_EMAIL_UNVERIFIED");
   return info;
 }
 
 function getAppBaseUrl(req) {
-  if (APP_BASE_URL) return APP_BASE_URL;
+  const sys = getGlobalConfig();
+  if (sys.appBaseUrl) return sys.appBaseUrl;
   const rawHost = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
   const safeHost = /^[a-z0-9.-]+(:\d+)?$/i.test(rawHost) ? rawHost : `127.0.0.1:${PORT}`;
   const rawProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim().toLowerCase();
@@ -756,7 +1016,8 @@ function getSendmailPath() {
 }
 
 function isEmailTransportConfigured() {
-  return Boolean(RESEND_API_KEY || SMTP_HOST || getSendmailPath());
+  const sys = getGlobalConfig();
+  return Boolean(sys.resendApiKey || sys.smtpHost || getSendmailPath());
 }
 
 function extractEmailAddress(str) {
@@ -921,50 +1182,169 @@ async function sendSmtpEmail({ host, port, secure, user, pass, from, to, subject
   }
 }
 
-async function sendTransactionalEmail({ to, subject, text, html }) {
-  if (RESEND_API_KEY) {
-    const resp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ from: SMTP_FROM, to: [extractEmailAddress(to)], subject, text, html })
+function writeMailAuditFile({ to, subject, transport, status, error = "" }) {
+  try {
+    ensureDirs();
+    const day = new Date().toISOString().slice(0, 10);
+    const logPath = path.join(MAIL_LOGS_DIR, `mail-${day}.log`);
+    const entry = JSON.stringify({
+      ts: new Date().toISOString(),
+      to: maskEmail(extractEmailAddress(to)),
+      subject: String(subject || "").slice(0, 100),
+      transport,
+      status,
+      ...(error ? { error: String(error).slice(0, 200) } : {})
     });
-    if (!resp.ok) {
-      const errBody = await resp.text().catch(() => "");
-      throw new Error(`Resend HTTP ${resp.status}: ${errBody.slice(0, 200)}`);
+    fs.appendFileSync(logPath, entry + "\n", "utf8");
+  } catch {}
+}
+
+async function sendTransactionalEmail({ to, subject, text, html }) {
+  const sys = getGlobalConfig();
+  if (sys.resendApiKey) {
+    try {
+      const resp = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${sys.resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ from: sys.smtpFrom, to: [extractEmailAddress(to)], subject, text, html })
+      });
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => "");
+        throw new Error(`Resend HTTP ${resp.status}: ${errBody.slice(0, 200)}`);
+      }
+      writeMailAuditFile({ to, subject, transport: "resend", status: "sent" });
+      return { transport: "resend" };
+    } catch (err) {
+      writeMailAuditFile({ to, subject, transport: "resend", status: "failed", error: err.message });
+      throw err;
     }
-    return { transport: "resend" };
   }
 
-  if (SMTP_HOST) {
-    await sendSmtpEmail({
-      host: SMTP_HOST,
-      port: Number.isFinite(SMTP_PORT) && SMTP_PORT > 0 ? SMTP_PORT : 587,
-      secure: SMTP_SECURE,
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-      from: SMTP_FROM,
-      to,
-      subject,
-      text,
-      html
-    });
-    return { transport: "smtp" };
+  if (sys.smtpHost) {
+    try {
+      await sendSmtpEmail({
+        host: sys.smtpHost,
+        port: Number.isFinite(sys.smtpPort) && sys.smtpPort > 0 ? sys.smtpPort : 587,
+        secure: sys.smtpSecure,
+        user: sys.smtpUser,
+        pass: sys.smtpPass,
+        from: sys.smtpFrom,
+        to,
+        subject,
+        text,
+        html
+      });
+      writeMailAuditFile({ to, subject, transport: "smtp", status: "sent" });
+      return { transport: "smtp" };
+    } catch (err) {
+      writeMailAuditFile({ to, subject, transport: "smtp", status: "failed", error: err.message });
+      throw err;
+    }
   }
 
   const sendmail = getSendmailPath();
   if (sendmail) {
-    const mime = buildMimeEmail({ from: SMTP_FROM, to, subject, text, html });
-    await new Promise((resolve, reject) => {
-      const child = execFile(sendmail, ["-t", "-i"], err => (err ? reject(err) : resolve()));
-      child.stdin.end(mime);
-    });
-    return { transport: "sendmail" };
+    try {
+      const mime = buildMimeEmail({ from: sys.smtpFrom, to, subject, text, html });
+      await new Promise((resolve, reject) => {
+        const child = execFile(sendmail, ["-t", "-i"], err => (err ? reject(err) : resolve()));
+        child.stdin.end(mime);
+      });
+      writeMailAuditFile({ to, subject, transport: "sendmail", status: "sent" });
+      return { transport: "sendmail" };
+    } catch (err) {
+      writeMailAuditFile({ to, subject, transport: "sendmail", status: "failed", error: err.message });
+      throw err;
+    }
   }
 
+  writeMailAuditFile({ to, subject, transport: "none", status: "not_configured" });
   throw new Error("EMAIL_NOT_CONFIGURED");
+}
+
+/* ---------- BACKUPS COMPACTADOS (.json.gz + SHA-256, SEM .master.key) ---------- */
+function listBackups() {
+  ensureDirs();
+  const files = fs.readdirSync(BACKUPS_DIR).filter(f => f.endsWith(".json.gz"));
+  return files.map(file => {
+    const fullPath = path.join(BACKUPS_DIR, file);
+    const stat = fs.statSync(fullPath);
+    let meta = {};
+    try {
+      const metaPath = fullPath + ".meta.json";
+      if (fs.existsSync(metaPath)) meta = JSON.parse(fs.readFileSync(metaPath, "utf8")) || {};
+    } catch {}
+    return {
+      filename: file,
+      bytes: stat.size,
+      createdAt: meta.createdAt || stat.mtimeMs,
+      reason: meta.reason || "manual",
+      sha256: meta.sha256 || "",
+      usersCount: meta.usersCount ?? null,
+      tripsCount: meta.tripsCount ?? null,
+      attachmentsCount: meta.attachmentsCount ?? null
+    };
+  }).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function pruneBackups() {
+  const items = listBackups();
+  if (items.length <= BACKUP_RETENTION) return;
+  for (const old of items.slice(BACKUP_RETENTION)) {
+    try { fs.unlinkSync(path.join(BACKUPS_DIR, old.filename)); } catch {}
+    try { fs.unlinkSync(path.join(BACKUPS_DIR, old.filename + ".meta.json")); } catch {}
+  }
+}
+
+function createBackup(reason = "manual") {
+  ensureDirs();
+  const now = Date.now();
+  const stamp = new Date(now).toISOString().replace(/[:.]/g, "-");
+  const filename = `ferias-pro-backup-${stamp}.json.gz`;
+  const snapshot = {
+    version: 1,
+    createdAt: now,
+    reason,
+    db: {
+      users: db.users || {},
+      trips: db.trips || {},
+      shares: db.shares || [],
+      attachments: db.attachments || {},
+      admins: db.admins || [],
+      systemSettings: db.systemSettings || {},
+      auditLogs: (db.auditLogs || []).slice(0, 300),
+      meta: db.meta || {}
+    }
+  };
+  const gz = zlib.gzipSync(Buffer.from(JSON.stringify(snapshot), "utf8"), { level: 8 });
+  const sha256 = crypto.createHash("sha256").update(gz).digest("hex");
+  const fullPath = path.join(BACKUPS_DIR, filename);
+  fs.writeFileSync(fullPath, gz, { mode: 0o600 });
+  const meta = {
+    filename,
+    createdAt: now,
+    reason,
+    bytes: gz.length,
+    sha256,
+    usersCount: Object.keys(db.users || {}).length,
+    tripsCount: Object.keys(db.trips || {}).length,
+    attachmentsCount: Object.keys(db.attachments || {}).length
+  };
+  fs.writeFileSync(fullPath + ".meta.json", JSON.stringify(meta, null, 2), { mode: 0o600 });
+  pruneBackups();
+  return meta;
+}
+
+function resolveBackupFileSafe(rawName) {
+  const clean = path.basename(String(rawName || ""));
+  if (!/^ferias-pro-backup-[a-zA-Z0-9._-]+\.json\.gz$/.test(clean)) return null;
+  const base = path.resolve(BACKUPS_DIR) + path.sep;
+  const resolved = path.resolve(BACKUPS_DIR, clean);
+  if (!resolved.startsWith(base) || !fs.existsSync(resolved)) return null;
+  return { filename: clean, resolved };
 }
 
 function buildResetEmailContent(name, resetUrl) {
@@ -1319,30 +1699,40 @@ const server = http.createServer(async (req, res) => {
   try {
     /* ---------- HEALTH & CONFIG ---------- */
     if (pathname === "/api/health" && req.method === "GET") {
+      const sys = getGlobalConfig();
       return sendJson(res, 200, {
         ok: true,
         mode: "multi-user",
+        version: "24",
+        encryption: "aes-256-gcm",
         googleClientId: getServerGoogleClientId(),
-        hasGemini: Boolean(ENV_GEMINI_KEY),
-        hasMaps: Boolean(ENV_GMAPS_KEY),
-        hasWallet: Boolean(ENV_WALLET_ISSUER_ID && (ENV_WALLET_SA_JSON || ENV_WALLET_SA_FILE)),
-        hasEmailSender: isEmailTransportConfigured()
+        hasGemini: Boolean(sys.geminiKey),
+        hasMaps: Boolean(sys.gmapsKey),
+        hasWallet: Boolean(sys.walletIssuerId && sys.walletSaJson),
+        hasEmailSender: isEmailTransportConfigured(),
+        backupsCount: listBackups().length
       });
     }
 
     if (pathname === "/api/auth/config" && req.method === "GET") {
+      const sys = getGlobalConfig();
       return sendJson(res, 200, {
         ok: true,
         googleClientId: getServerGoogleClientId(),
-        hasGemini: Boolean(ENV_GEMINI_KEY),
-        hasMaps: Boolean(ENV_GMAPS_KEY),
-        hasWallet: Boolean(ENV_WALLET_ISSUER_ID && (ENV_WALLET_SA_JSON || ENV_WALLET_SA_FILE)),
+        hasGemini: Boolean(sys.geminiKey),
+        hasMaps: Boolean(sys.gmapsKey),
+        hasWallet: Boolean(sys.walletIssuerId && sys.walletSaJson),
         hasEmailSender: isEmailTransportConfigured()
       });
     }
 
     /* ---------- AUTH ---------- */
     if (pathname === "/api/auth/register" && req.method === "POST") {
+      const ip = getClientIp(req);
+      const rl = checkRateLimit(`signup:${ip}`, SIGNUP_MAX_ATTEMPTS, 60 * 60 * 1000);
+      if (!rl.allowed) {
+        return sendJson(res, 429, { ok: false, error: `Muitos cadastros deste endereço. Tente novamente em ${rl.retryAfterSec}s.` });
+      }
       const body = await readBody(req);
       const name = String(body.name || "").trim();
       const email = String(body.email || "").trim().toLowerCase();
@@ -1370,7 +1760,8 @@ const server = http.createServer(async (req, res) => {
       };
       linkSharesForUser(db.users[userId]);
       if (isSuperAdminEmail(email)) ensureAdminSeedDemoData(db.users[userId]);
-      const token = createSession(userId);
+      auditLog("auth.register", { userId, email, ip, detail: "Cadastro com e-mail e senha" });
+      const token = createSession(userId, req);
       setSessionCookie(req, res, token);
       return sendJson(res, 201, {
         ok: true,
@@ -1380,32 +1771,46 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === "/api/auth/login" && req.method === "POST") {
+      const ip = getClientIp(req);
       const body = await readBody(req);
       const email = String(body.email || "").trim().toLowerCase();
       const password = String(body.password || "");
+      const bucket = `login:${ip}:${email}`;
+      const rl = checkRateLimit(bucket, LOGIN_MAX_ATTEMPTS, 15 * 60 * 1000);
+      if (!rl.allowed) {
+        auditLog("auth.login_throttled", { email, ip, detail: `Bloqueado por ${rl.retryAfterSec}s` });
+        saveDb();
+        return sendJson(res, 429, { ok: false, error: `Muitas tentativas de login. Aguarde ${Math.ceil(rl.retryAfterSec / 60)} min e tente novamente.` });
+      }
       const user = Object.values(db.users).find(u => u.email === email);
       if (user && !user.passwordHash) {
         return sendJson(res, 401, { ok: false, error: "Esta conta usa login pelo Google e ainda não possui senha. Entre pelo Google ou clique em 'Esqueci minha senha' para criar uma senha." });
       }
       if (!user || !verifyPassword(password, user.passwordHash)) {
+        auditLog("auth.login_failed", { email, ip, detail: "Credenciais inválidas" });
+        saveDb();
         return sendJson(res, 401, { ok: false, error: "E-mail ou senha inválidos." });
       }
+      clearRateLimit(bucket);
       user.lastLoginAt = Date.now();
-      saveDb();
       linkSharesForUser(user);
       if (isSuperAdminEmail(user.email)) ensureAdminSeedDemoData(user);
-      const token = createSession(user.id);
+      auditLog("auth.login", { userId: user.id, email: user.email, ip, detail: "Login por senha" });
+      const token = createSession(user.id, req);
       setSessionCookie(req, res, token);
       return sendJson(res, 200, { ok: true, user: publicUser(user) });
     }
 
     if (pathname === "/api/auth/google" && req.method === "POST") {
+      const ip = getClientIp(req);
       const body = await readBody(req);
       if (!body.credential) return sendJson(res, 400, { ok: false, error: "Token do Google ausente." });
       let info;
       try {
         info = await verifyGoogleIdToken(body.credential);
       } catch (err) {
+        auditLog("auth.google_failed", { ip, detail: err.message });
+        saveDb();
         return sendJson(res, 401, { ok: false, error: "Falha ao validar login Google: " + err.message });
       }
       const email = String(info.email || "").trim().toLowerCase();
@@ -1430,10 +1835,10 @@ const server = http.createServer(async (req, res) => {
         if (!user.avatar && info.picture) user.avatar = info.picture;
         user.lastLoginAt = now;
       }
-      saveDb();
       linkSharesForUser(user);
       if (isSuperAdminEmail(user.email)) ensureAdminSeedDemoData(user);
-      const token = createSession(user.id);
+      auditLog("auth.google", { userId: user.id, email: user.email, ip, detail: "Login OAuth Google validado" });
+      const token = createSession(user.id, req);
       setSessionCookie(req, res, token);
       return sendJson(res, 200, {
         ok: true,
@@ -1445,7 +1850,8 @@ const server = http.createServer(async (req, res) => {
     if (pathname === "/api/auth/logout" && req.method === "POST") {
       const auth = getAuthUser(req);
       if (auth) {
-        delete db.sessions[auth.sid];
+        delete db.sessions[auth.sidKey];
+        auditLog("auth.logout", { userId: auth.user.id, email: auth.user.email, ip: getClientIp(req) });
         saveDb();
       }
       clearSessionCookie(res);
@@ -1456,6 +1862,50 @@ const server = http.createServer(async (req, res) => {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
       return sendJson(res, 200, { ok: true, user: publicUser(auth.user) });
+    }
+
+    if (pathname === "/api/auth/sessions" && req.method === "GET") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const now = Date.now();
+      const sessions = Object.entries(db.sessions || {})
+        .filter(([, s]) => s && s.userId === auth.user.id && s.expiresAt > now)
+        .map(([k, s]) => ({
+          id: k.slice(0, 16),
+          current: k === auth.sidKey,
+          createdAt: s.createdAt || null,
+          lastSeenAt: s.lastSeenAt || s.createdAt || null,
+          expiresAt: s.expiresAt,
+          ip: s.ip || "",
+          userAgent: s.userAgent || ""
+        }))
+        .sort((a, b) => Number(b.current) - Number(a.current) || (b.lastSeenAt || 0) - (a.lastSeenAt || 0));
+      return sendJson(res, 200, { ok: true, sessions });
+    }
+
+    if (pathname === "/api/auth/sessions/revoke-others" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const revoked = revokeUserSessions(auth.user.id, auth.sidKey);
+      auditLog("auth.sessions_revoke_others", { userId: auth.user.id, email: auth.user.email, ip: getClientIp(req), detail: `${revoked} sessão(ões)` });
+      saveDb();
+      return sendJson(res, 200, { ok: true, revoked });
+    }
+
+    const sessionDelMatch = pathname.match(/^\/api\/auth\/sessions\/([a-zA-Z0-9_-]{8,64})$/);
+    if (sessionDelMatch && req.method === "DELETE") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const prefix = sessionDelMatch[1];
+      let removed = 0;
+      for (const [k, s] of Object.entries(db.sessions || {})) {
+        if (s && s.userId === auth.user.id && k.startsWith(prefix) && k !== auth.sidKey) {
+          delete db.sessions[k];
+          removed++;
+        }
+      }
+      if (removed) saveDb();
+      return sendJson(res, 200, { ok: true, removed });
     }
 
     if (pathname === "/api/auth/password" && req.method === "POST") {
@@ -1488,15 +1938,22 @@ const server = http.createServer(async (req, res) => {
       }
 
       u.passwordHash = hashPassword(newPassword);
+      const revokedCount = revokeUserSessions(u.id, auth.sidKey);
+      auditLog("auth.password_change", { userId: u.id, email: u.email, ip: getClientIp(req), detail: `Demais sessões revogadas: ${revokedCount}` });
       saveDb();
-      return sendJson(res, 200, { ok: true, user: publicUser(u) });
+      return sendJson(res, 200, { ok: true, user: publicUser(u), revokedOtherSessions: revokedCount });
     }
 
     if (pathname === "/api/auth/forgot-password" && req.method === "POST") {
+      const ip = getClientIp(req);
       const body = await readBody(req);
       const email = String(body.email || "").trim().toLowerCase();
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return sendJson(res, 400, { ok: false, error: "Informe um e-mail válido." });
+      }
+      const rl = checkRateLimit(`reset:${ip}:${email}`, 5, 15 * 60 * 1000);
+      if (!rl.allowed) {
+        return sendJson(res, 429, { ok: false, error: `Muitas solicitações de redefinição. Aguarde ${Math.ceil(rl.retryAfterSec / 60)} min.` });
       }
       if (!isEmailTransportConfigured()) {
         return sendJson(res, 503, {
@@ -1580,12 +2037,10 @@ const server = http.createServer(async (req, res) => {
       for (const [k, r] of Object.entries(db.passwordResets || {})) {
         if (r.userId === user.id) delete db.passwordResets[k];
       }
-      // Revoga sessões anteriores e cria uma sessão nova autenticada
-      for (const [sid, s] of Object.entries(db.sessions || {})) {
-        if (s.userId === user.id) delete db.sessions[sid];
-      }
+      revokeUserSessions(user.id, null);
       linkSharesForUser(user);
-      const sidToken = createSession(user.id);
+      auditLog("auth.password_reset", { userId: user.id, email: user.email, ip: getClientIp(req), detail: "Redefinição concluída via token" });
+      const sidToken = createSession(user.id, req);
       setSessionCookie(req, res, sidToken);
       return sendJson(res, 200, { ok: true, user: publicUser(user) });
     }
@@ -1644,12 +2099,22 @@ const server = http.createServer(async (req, res) => {
       const u = auth.user;
       u.integrations = u.integrations || {};
       if (typeof body.geminiKey === "string") {
-        if (body.clearGemini) u.integrations.geminiKey = "";
-        else if (body.geminiKey.trim()) u.integrations.geminiKey = body.geminiKey.trim();
+        if (body.clearGemini) {
+          delete u.integrations.geminiKey;
+          delete u.integrations.geminiKeyEnc;
+        } else if (!isMaskedSecret(body.geminiKey)) {
+          u.integrations.geminiKeyEnc = encryptSecret(body.geminiKey.trim());
+          delete u.integrations.geminiKey;
+        }
       }
       if (typeof body.gmapsKey === "string") {
-        if (body.clearMaps) u.integrations.gmapsKey = "";
-        else if (body.gmapsKey.trim()) u.integrations.gmapsKey = body.gmapsKey.trim();
+        if (body.clearMaps) {
+          delete u.integrations.gmapsKey;
+          delete u.integrations.gmapsKeyEnc;
+        } else if (!isMaskedSecret(body.gmapsKey)) {
+          u.integrations.gmapsKeyEnc = encryptSecret(body.gmapsKey.trim());
+          delete u.integrations.gmapsKey;
+        }
       }
       if (typeof body.googleClientId === "string") {
         u.integrations.googleClientId = body.googleClientId.trim();
@@ -1658,9 +2123,15 @@ const server = http.createServer(async (req, res) => {
         u.integrations.walletIssuerId = body.walletIssuerId.trim();
       }
       if (typeof body.walletSaJson === "string") {
-        if (body.clearWalletSa) u.integrations.walletSaJson = "";
-        else if (body.walletSaJson.trim()) u.integrations.walletSaJson = body.walletSaJson.trim();
+        if (body.clearWalletSa) {
+          delete u.integrations.walletSaJson;
+          delete u.integrations.walletSaJsonEnc;
+        } else if (!isMaskedSecret(body.walletSaJson)) {
+          u.integrations.walletSaJsonEnc = encryptSecret(body.walletSaJson.trim());
+          delete u.integrations.walletSaJson;
+        }
       }
+      auditLog("user.integrations_update", { userId: u.id, email: u.email, ip: getClientIp(req), detail: "Integrações criptografadas (AES-256-GCM)" });
       saveDb();
       return sendJson(res, 200, { ok: true, user: publicUser(u) });
     }
@@ -1912,6 +2383,7 @@ const server = http.createServer(async (req, res) => {
         if (r.userId === target.id) delete db.passwordResets[rk];
       }
       db.admins = (db.admins || []).filter(e => e !== target.email);
+      auditLog("admin.user_delete", { userId: auth.user.id, email: auth.user.email, ip: getClientIp(req), detail: `Excluiu ${target.email}` });
       delete db.users[target.id];
       saveDb();
       return sendJson(res, 200, { ok: true });
@@ -1938,6 +2410,7 @@ const server = http.createServer(async (req, res) => {
       } else {
         db.admins = db.admins.filter(e => e !== email);
       }
+      auditLog("admin.delegate", { userId: auth.user.id, email: auth.user.email, ip: getClientIp(req), detail: `${action}: ${email}` });
       saveDb();
       return sendJson(res, 200, { ok: true, admins: db.admins });
     }
@@ -1947,7 +2420,182 @@ const server = http.createServer(async (req, res) => {
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
       if (!isAdminUser(auth.user)) return sendJson(res, 403, { ok: false, error: "Acesso restrito a administradores." });
       const seeded = ensureAdminSeedDemoData(auth.user, true);
+      auditLog("admin.seed_demo", { userId: auth.user.id, email: auth.user.email, ip: getClientIp(req) });
+      saveDb();
       return sendJson(res, 200, { ok: true, ...(seeded || {}) });
+    }
+
+    if (pathname === "/api/admin/audit" && req.method === "GET") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isAdminUser(auth.user)) return sendJson(res, 403, { ok: false, error: "Acesso restrito a administradores." });
+      const limit = Math.min(250, Math.max(10, parseInt(url.searchParams.get("limit") || "120", 10) || 120));
+      return sendJson(res, 200, {
+        ok: true,
+        logs: (db.auditLogs || []).slice(0, limit),
+        total: (db.auditLogs || []).length
+      });
+    }
+
+    if (pathname === "/api/admin/system-settings" && req.method === "GET") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isSuperAdminEmail(auth.user.email)) {
+        return sendJson(res, 403, { ok: false, error: "Apenas o Super Admin principal gerencia credenciais globais." });
+      }
+      const sys = getGlobalConfig();
+      const raw = db.systemSettings || {};
+      return sendJson(res, 200, {
+        ok: true,
+        encryption: "aes-256-gcm",
+        hasMasterKeyEnv: String(process.env.MASTER_KEY || "").trim().length >= 32,
+        settings: {
+          googleClientId: sys.googleClientId || "",
+          googleLoginClientId: sys.googleLoginClientId || "",
+          googleClientSecretHint: sys.googleClientSecret ? maskKeyHint(sys.googleClientSecret) : "",
+          hasGoogleClientSecret: Boolean(sys.googleClientSecret),
+          geminiHint: sys.geminiKey ? maskKeyHint(sys.geminiKey) : "",
+          hasGemini: Boolean(sys.geminiKey),
+          gmapsHint: sys.gmapsKey ? maskKeyHint(sys.gmapsKey) : "",
+          hasMaps: Boolean(sys.gmapsKey),
+          walletIssuerId: sys.walletIssuerId || "",
+          hasWalletSaJson: Boolean(sys.walletSaJson),
+          smtpHost: sys.smtpHost || "",
+          smtpPort: String(sys.smtpPort || 587),
+          smtpSecure: String(sys.smtpSecure || ""),
+          smtpUser: sys.smtpUser || "",
+          hasSmtpPass: Boolean(sys.smtpPass),
+          smtpPassHint: sys.smtpPass ? maskKeyHint(sys.smtpPass) : "",
+          smtpFrom: sys.smtpFrom || "",
+          hasResendApiKey: Boolean(sys.resendApiKey),
+          resendHint: sys.resendApiKey ? maskKeyHint(sys.resendApiKey) : "",
+          appBaseUrl: sys.appBaseUrl || "",
+          vaultHasGoogleClientSecret: Boolean(raw.googleClientSecretEnc),
+          vaultHasGemini: Boolean(raw.geminiKeyEnc),
+          vaultHasMaps: Boolean(raw.gmapsKeyEnc),
+          vaultHasWalletSaJson: Boolean(raw.walletSaJsonEnc),
+          vaultHasSmtpPass: Boolean(raw.smtpPassEnc),
+          vaultHasResend: Boolean(raw.resendApiKeyEnc)
+        },
+        sources: sys.sources
+      });
+    }
+
+    if (pathname === "/api/admin/system-settings" && req.method === "PUT") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isSuperAdminEmail(auth.user.email)) {
+        return sendJson(res, 403, { ok: false, error: "Apenas o Super Admin principal altera credenciais globais." });
+      }
+      const body = await readBody(req);
+      db.systemSettings = db.systemSettings || {};
+      const sys = db.systemSettings;
+
+      const setPlain = (field, maxLen = 200) => {
+        if (typeof body[field] === "string") sys[field] = body[field].trim().slice(0, maxLen);
+      };
+      const setSecret = (bodyField, clearField, encField) => {
+        if (body[clearField]) {
+          delete sys[encField];
+        } else if (typeof body[bodyField] === "string" && !isMaskedSecret(body[bodyField])) {
+          sys[encField] = encryptSecret(body[bodyField].trim());
+        }
+      };
+
+      setPlain("googleClientId", 240);
+      setPlain("googleLoginClientId", 240);
+      setPlain("walletIssuerId", 120);
+      setPlain("smtpHost", 180);
+      if (body.smtpPort !== undefined) {
+        const p = parseInt(body.smtpPort, 10);
+        sys.smtpPort = Number.isFinite(p) && p > 0 && p <= 65535 ? String(p) : "";
+      }
+      setPlain("smtpSecure", 16);
+      setPlain("smtpUser", 180);
+      setPlain("smtpFrom", 180);
+      if (typeof body.appBaseUrl === "string") {
+        sys.appBaseUrl = body.appBaseUrl.trim().replace(/\/+$/, "").slice(0, 240);
+      }
+
+      setSecret("googleClientSecret", "clearGoogleClientSecret", "googleClientSecretEnc");
+      setSecret("geminiKey", "clearGeminiKey", "geminiKeyEnc");
+      setSecret("gmapsKey", "clearGmapsKey", "gmapsKeyEnc");
+      setSecret("walletSaJson", "clearWalletSaJson", "walletSaJsonEnc");
+      setSecret("smtpPass", "clearSmtpPass", "smtpPassEnc");
+      setSecret("resendApiKey", "clearResendApiKey", "resendApiKeyEnc");
+
+      auditLog("admin.credentials_update", { userId: auth.user.id, email: auth.user.email, ip: getClientIp(req), detail: "Cofre de credenciais atualizado (AES-256-GCM)" });
+      saveDb();
+      return sendJson(res, 200, { ok: true, message: "Credenciais globais criptografadas e salvas com segurança." });
+    }
+
+    if (pathname === "/api/admin/test-smtp" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isSuperAdminEmail(auth.user.email)) {
+        return sendJson(res, 403, { ok: false, error: "Apenas o Super Admin pode testar envio de e-mail global." });
+      }
+      const body = await readBody(req);
+      const to = String(body.to || auth.user.email || "").trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+        return sendJson(res, 400, { ok: false, error: "Informe um e-mail destinatário válido." });
+      }
+      if (!isEmailTransportConfigured()) {
+        return sendJson(res, 503, { ok: false, error: "Nenhum transporte de e-mail (SMTP, Resend ou sendmail) configurado." });
+      }
+      try {
+        const result = await sendTransactionalEmail({
+          to,
+          subject: "Férias Pro — Teste de E-mail / SMTP",
+          text: `Teste de envio concluído com sucesso em ${new Date().toLocaleString("pt-BR")}.`,
+          html: `<p>Teste de envio do <b>Férias Pro</b> concluído com sucesso em ${new Date().toLocaleString("pt-BR")}.</p>`
+        });
+        auditLog("admin.test_smtp", { userId: auth.user.id, email: auth.user.email, ip: getClientIp(req), detail: `Enviado via ${result.transport} para ${maskEmail(to)}` });
+        saveDb();
+        return sendJson(res, 200, { ok: true, transport: result.transport, to });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: err.message || "Falha ao enviar e-mail de teste." });
+      }
+    }
+
+    if (pathname === "/api/admin/backups" && req.method === "GET") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isSuperAdminEmail(auth.user.email)) {
+        return sendJson(res, 403, { ok: false, error: "Apenas o Super Admin principal gerencia backups do banco." });
+      }
+      return sendJson(res, 200, { ok: true, backups: listBackups() });
+    }
+
+    if (pathname === "/api/admin/backups" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isSuperAdminEmail(auth.user.email)) {
+        return sendJson(res, 403, { ok: false, error: "Apenas o Super Admin principal cria backups do banco." });
+      }
+      const meta = createBackup("manual");
+      auditLog("backup.create", { userId: auth.user.id, email: auth.user.email, ip: getClientIp(req), detail: meta.filename });
+      saveDb();
+      return sendJson(res, 201, { ok: true, backup: meta, backups: listBackups() });
+    }
+
+    const backupDlMatch = pathname.match(/^\/api\/admin\/backups\/([a-zA-Z0-9._-]+)\/download$/);
+    if (backupDlMatch && req.method === "GET") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      if (!isSuperAdminEmail(auth.user.email)) {
+        return sendJson(res, 403, { ok: false, error: "Apenas o Super Admin principal pode baixar backups." });
+      }
+      const found = resolveBackupFileSafe(backupDlMatch[1]);
+      if (!found) return sendJson(res, 404, { ok: false, error: "Backup não encontrado." });
+      const stat = fs.statSync(found.resolved);
+      res.writeHead(200, applySecurityHeaders(res, {
+        "Content-Type": "application/gzip",
+        "Content-Disposition": `attachment; filename="${found.filename}"`,
+        "Content-Length": stat.size,
+        "Cache-Control": "no-store"
+      }));
+      return fs.createReadStream(found.resolved).pipe(res);
     }
 
     if (pathname === "/api/crossings" && req.method === "GET") {
@@ -2214,8 +2862,9 @@ const server = http.createServer(async (req, res) => {
       if (!access && !isAdminRead) return sendJson(res, 403, { ok: false, error: "Sem permissão." });
 
       if (req.method === "GET") {
+        const uploadsBase = path.resolve(UPLOADS_DIR) + path.sep;
         const filePath = path.resolve(UPLOADS_DIR, att.id);
-        if (!filePath.startsWith(path.resolve(UPLOADS_DIR)) || !fs.existsSync(filePath)) {
+        if (!filePath.startsWith(uploadsBase) || !fs.existsSync(filePath)) {
           return sendJson(res, 404, { ok: false, error: "Arquivo ausente no disco." });
         }
         res.writeHead(200, {
@@ -2560,18 +3209,58 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
     }
 
     if (SERVE_STATIC && req.method === "GET") {
-      return serveStaticFile(pathname, res);
+      return serveStaticFile(req, res, pathname);
     }
 
-    res.writeHead(404);
+    res.writeHead(404, applySecurityHeaders(res));
     res.end("Not Found");
   } catch (err) {
     console.error("Erro API:", err);
+    auditLog("system.error", { ip: getClientIp(req), detail: String(err?.message || err).slice(0, 180) });
     sendJson(res, 500, { ok: false, error: "Erro interno no servidor." });
   }
 });
 
+let schedulerTimer = null;
+function runSchedulerTick() {
+  try {
+    const now = Date.now();
+    let dirty = false;
+    for (const [k, s] of Object.entries(db.sessions || {})) {
+      if (!s || s.expiresAt < now) { delete db.sessions[k]; dirty = true; }
+    }
+    for (const [rk, r] of Object.entries(db.passwordResets || {})) {
+      if (!r || r.expiresAt <= now) { delete db.passwordResets[rk]; dirty = true; }
+    }
+    for (const [tk, v] of walletPassTokens.entries()) {
+      if (!v || v.expiresAt <= now) walletPassTokens.delete(tk);
+    }
+    pruneRateLimits();
+    if (dirty) saveDb();
+
+    if (BACKUP_INTERVAL_HOURS > 0 && Object.keys(db.users || {}).length > 0) {
+      const existing = listBackups();
+      const latestAt = existing[0]?.createdAt || 0;
+      if (now - latestAt >= BACKUP_INTERVAL_HOURS * 3600 * 1000) {
+        createBackup("scheduled");
+      }
+    }
+  } catch {}
+}
+
+schedulerTimer = setInterval(runSchedulerTick, SCHEDULER_TICK_MS);
+if (typeof schedulerTimer.unref === "function") schedulerTimer.unref();
+
+const gracefulShutdown = () => {
+  if (schedulerTimer) { clearInterval(schedulerTimer); schedulerTimer = null; }
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 3000).unref();
+};
+process.on("SIGINT", gracefulShutdown);
+process.on("SIGTERM", gracefulShutdown);
+
 server.listen(PORT, HOST, () => {
+  const sys = getGlobalConfig();
   console.log(`Férias Pro Server ativo em http://${HOST}:${PORT}`);
-  console.log(`DB: ${DB_FILE} | Google OAuth: ${GOOGLE_CLIENT_ID ? "Ativo" : "Não configurado"}`);
+  console.log(`DB: ${DB_FILE} | Google OAuth: ${sys.googleClientId ? "Ativo" : "Não configurado"} | AES-256-GCM: Ativo`);
 });

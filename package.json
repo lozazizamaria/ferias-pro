@@ -1,0 +1,14 @@
+{
+  "name": "ferias-pro",
+  "version": "24.0.0",
+  "description": "Planejador inteligente de viagens e férias com Gantt, Google Maps, IA Gemini multimodal, controle financeiro diário, multiusuário e Super Admin.",
+  "private": true,
+  "engines": {
+    "node": ">=18.10.0"
+  },
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "check": "node --check server/server.js && node --check app/app.js && node --check app/api.js && node --check app/sw.js"
+  }
+}

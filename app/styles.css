@@ -2431,7 +2431,9 @@ dialog.admin-user-dialog {
 #adminTab-users,
 #adminTab-trips,
 #adminTab-overlaps,
-#adminTab-shares {
+#adminTab-shares,
+#adminTab-audit,
+#adminTab-vault {
   min-width: 0;
 }
 .admin-trips-wrap {
@@ -2565,7 +2567,93 @@ dialog.admin-user-dialog {
   margin-left: 128px;
   min-width: 312px;
 }
+#adminSubTabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.admin-vault-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+  min-width: 0;
+}
+.admin-vault-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.admin-vault-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-src-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border: 1px solid var(--border);
+}
+.admin-src-badge.env { border-color: rgba(16, 185, 129, 0.45); background: rgba(16, 185, 129, 0.14); color: #10b981; }
+.admin-src-badge.vault { border-color: rgba(99, 102, 241, 0.45); background: rgba(99, 102, 241, 0.14); color: var(--accent2); }
+.admin-src-badge.default { border-color: rgba(6, 182, 212, 0.4); background: rgba(6, 182, 212, 0.12); color: #06b6d4; }
+.admin-src-badge.none { color: var(--muted); background: var(--surface); }
+.admin-vault-fields { display: grid; gap: 8px; min-width: 0; }
+.admin-vault-fields label { display: grid; gap: 4px; font-size: 0.78rem; color: var(--muted); font-weight: 600; min-width: 0; }
+.admin-vault-fields input,
+.admin-vault-fields select,
+.admin-vault-fields textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: var(--text-strong);
+  font-size: 0.84rem;
+}
+.admin-backup-list,
+.prof-sessions-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.admin-backup-row,
+.prof-session-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  min-width: 0;
+}
+.admin-backup-hash {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 720px) {
+  .admin-vault-grid { grid-template-columns: minmax(0, 1fr); }
+  .admin-vault-fields input,
+  .admin-vault-fields select,
+  .admin-vault-fields textarea { font-size: 16px; }
   #adminSubTabs {
     display: flex;
     flex-wrap: wrap;

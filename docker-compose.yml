@@ -1,0 +1,19 @@
+services:
+  ferias-pro:
+    build: .
+    container_name: ferias-pro
+    restart: always
+    ports:
+      - "127.0.0.1:3080:3080"
+    env_file:
+      - .env
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3080"
+      DATA_DIR: "/app/data"
+    volumes:
+      - ferias_data:/app/data
+
+volumes:
+  ferias_data:
+    driver: local

@@ -3519,6 +3519,20 @@ function download(name, blob) {
   setTimeout(() => URL.revokeObjectURL(u), 1000);
 }
 
+function sanitizeSpreadsheetCell(val) {
+  if (val === null || val === undefined || typeof val === "number" || typeof val === "boolean") return val;
+  const s = String(val);
+  return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+}
+
+function sanitizeSheetRows(list) {
+  return (list || []).map(row => {
+    const out = {};
+    for (const [k, v] of Object.entries(row || {})) out[k] = sanitizeSpreadsheetCell(v);
+    return out;
+  });
+}
+
 function exportXlsx() {
   if (!window.XLSX) return toast("Biblioteca Excel não carregou (sem internet?)");
   const wb = XLSX.utils.book_new();
@@ -3538,13 +3552,13 @@ function exportXlsx() {
       Tanques: v ? +c.tanks.toFixed(2) : "", Observações: a.notes || ""
     };
   });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Tabela Completa");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sanitizeSheetRows(rows)), "Tabela Completa");
   const par = VEHICLE_PARAM_DEFS.map(([k, l, u]) => ({ Parâmetro: l, Valor: state.vehicle[k], Unidade: u }));
   COST_PARAM_DEFS.forEach(d => par.push({ Parâmetro: d.label, Valor: state[d.group][d.key], Unidade: d.unit }));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(par), "Resumo & Parâmetros");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(state.checklist.map((c, i) => ({
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sanitizeSheetRows(par)), "Resumo & Parâmetros");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sanitizeSheetRows(state.checklist.map((c, i) => ({
     "#": i + 1, Categoria: c.cat, Item: c.item, Prioridade: c.prio, Status: c.status, Notas: c.notes
-  }))), "Checklist");
+  })))), "Checklist");
   XLSX.writeFile(wb, `${(state.title || "Ferias_Pro").replace(/[^\w\-]+/g, "_")}.xlsx`);
   toast("⬇️ Excel exportado");
 }
@@ -4243,6 +4257,13 @@ function renderAdminDashboard() {
   if ($("#admCountTrips")) $("#admCountTrips").textContent = String(trips.length);
   if ($("#admCountOverlaps")) $("#admCountOverlaps").textContent = String(globalCrossings.length);
   if ($("#admCountShares")) $("#admCountShares").textContent = String(shares.length);
+  if ($("#admTabBtnVault")) $("#admTabBtnVault").hidden = !isSuperAdmin;
+  if (!isSuperAdmin && adminSubTab === "vault") {
+    adminSubTab = "users";
+    if ($("#adminSubTabs")) {
+      $("#adminSubTabs").querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.admtab === "users"));
+    }
+  }
 
   renderAdminSubView(ovData);
 }
@@ -4252,8 +4273,9 @@ function renderAdminSubView(precomputedOv) {
   const q = ($("#adminSearch")?.value || "").trim().toLowerCase();
   const uFilter = $("#adminUserTypeFilter")?.value || "";
   if ($("#adminUserTypeFilter")) $("#adminUserTypeFilter").hidden = adminSubTab !== "users";
+  if ($("#adminFilterBar")) $("#adminFilterBar").hidden = adminSubTab === "vault";
 
-  ["users", "trips", "overlaps", "shares"].forEach(k => {
+  ["users", "trips", "overlaps", "shares", "audit", "vault"].forEach(k => {
     const el = $(`#adminTab-${k}`);
     if (el) el.hidden = adminSubTab !== k;
   });
@@ -4415,6 +4437,234 @@ function renderAdminSubView(precomputedOv) {
         </tr>`).join("")}
       </tbody>
     </table></div>`;
+  } else if (adminSubTab === "audit") {
+    loadAndRenderAdminAudit(q);
+  } else if (adminSubTab === "vault") {
+    loadAndRenderAdminVault();
+  }
+}
+
+async function loadAndRenderAdminAudit(q = "") {
+  const box = $("#adminTab-audit");
+  if (!box) return;
+  box.innerHTML = `<p class="muted">⏳ Carregando trilha de auditoria...</p>`;
+  try {
+    const res = await window.FeriasApi.adminAudit(150);
+    const logs = (res.logs || []).filter(item => {
+      if (!q) return true;
+      return `${item.action} ${item.email} ${item.ip} ${item.detail}`.toLowerCase().includes(q);
+    });
+    if (!logs.length) {
+      box.innerHTML = `<p class="muted">Nenhum evento de auditoria encontrado.</p>`;
+      return;
+    }
+    box.innerHTML = `<div class="admin-mini-table-wrap"><table class="admin-mini-table">
+      <thead><tr><th>Data / Hora</th><th>Ação</th><th>Usuário / E-mail</th><th>IP</th><th>Detalhes</th></tr></thead>
+      <tbody>
+        ${logs.map(l => `<tr>
+          <td>${fmtDateTimeBR(l.ts)}</td>
+          <td><span class="admin-badge">${esc(l.action)}</span></td>
+          <td>${esc(l.email || l.userId || "—")}</td>
+          <td><code class="small">${esc(l.ip || "—")}</code></td>
+          <td>${esc(l.detail || "—")}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table></div>`;
+  } catch (err) {
+    box.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>`;
+  }
+}
+
+function srcBadgeHtml(src) {
+  const map = {
+    env: ["✅ Ativo no .env", "env"],
+    vault: ["🔒 Cifrado AES-256-GCM", "vault"],
+    default: ["🌐 ID Público Padrão", "default"],
+    none: ["⚠️ Não configurado", "none"]
+  };
+  const [lbl, cls] = map[src] || map.none;
+  return `<span class="admin-src-badge ${cls}">${lbl}</span>`;
+}
+
+async function loadAndRenderAdminVault() {
+  const box = $("#adminTab-vault");
+  if (!box) return;
+  if (!adminCache?.isSuperAdmin) {
+    box.innerHTML = `<div class="auth-error">Acesso exclusivo ao Super Admin principal.</div>`;
+    return;
+  }
+  box.innerHTML = `<p class="muted">⏳ Carregando cofre criptografado (AES-256-GCM) e backups...</p>`;
+  try {
+    const [cfg, bkp] = await Promise.all([
+      window.FeriasApi.adminGetSystemSettings(),
+      window.FeriasApi.adminListBackups()
+    ]);
+    const s = cfg.settings || {};
+    const src = cfg.sources || {};
+    const backups = bkp.backups || [];
+    const maskVal = (hasVal) => (hasVal ? "••••••••" : "");
+
+    box.innerHTML = `
+      <form id="adminVaultForm" style="display:grid;gap:14px">
+        <div class="crossing-summary-box" style="padding:12px 14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+            <strong>🔐 Cofre Global de Credenciais (Criptografia AES-256-GCM)</strong>
+            <span class="pill ok">Chave externa: ${cfg.hasMasterKeyEnv ? "MASTER_KEY (.env)" : ".master.key (modo 0600)"}</span>
+          </div>
+          <p class="muted small" style="margin:0">As credenciais já definidas em <code>.env</code> permanecem preservadas com prioridade máxima. Campos secretos exibem <code>••••••••</code> para não expor nem sobrescrever chaves existentes.</p>
+        </div>
+
+        <div class="admin-vault-grid">
+          <div class="admin-vault-card">
+            <div class="admin-vault-head"><strong>🔑 Google OAuth (Login)</strong>${srcBadgeHtml(src.googleClientId)}</div>
+            <div class="admin-vault-fields">
+              <label>GOOGLE_CLIENT_ID (Público)
+                <input type="text" id="vlt-googleClientId" value="${esc(s.googleClientId || "")}" placeholder="107598...apps.googleusercontent.com">
+              </label>
+              <label>GOOGLE_LOGIN_CLIENT_ID (Opcional separado)
+                <input type="text" id="vlt-googleLoginClientId" value="${esc(s.googleLoginClientId || "")}" placeholder="Opcional">
+              </label>
+              <label>GOOGLE_CLIENT_SECRET ${s.hasGoogleClientSecret ? `(${esc(s.googleClientSecretHint || "Ativo")})` : ""}
+                <input type="password" id="vlt-googleClientSecret" value="${s.vaultHasGoogleClientSecret ? "••••••••" : ""}" placeholder="${s.hasGoogleClientSecret ? "Configurado via .env (preservado)" : "GOCSPX-..."}">
+              </label>
+            </div>
+          </div>
+
+          <div class="admin-vault-card">
+            <div class="admin-vault-head"><strong>✨ Gemini IA &amp; 🗺️ Google Maps</strong>${srcBadgeHtml(src.geminiKey === "env" || src.gmapsKey === "env" ? "env" : (src.geminiKey === "vault" || src.gmapsKey === "vault" ? "vault" : "none"))}</div>
+            <div class="admin-vault-fields">
+              <label>GEMINI_API_KEY ${s.hasGemini ? `(${esc(s.geminiHint || "Ativo")})` : ""}
+                <input type="password" id="vlt-geminiKey" value="${s.vaultHasGemini ? "••••••••" : ""}" placeholder="${s.hasGemini ? "Ativo — digite apenas para trocar" : "AIza..."}">
+              </label>
+              <label>GOOGLE_MAPS_API_KEY ${s.hasMaps ? `(${esc(s.gmapsHint || "Ativo")})` : ""}
+                <input type="password" id="vlt-gmapsKey" value="${s.vaultHasMaps ? "••••••••" : ""}" placeholder="${s.hasMaps ? "Ativo — digite apenas para trocar" : "AIza..."}">
+              </label>
+              <label>APP_BASE_URL (Links de reset de senha)
+                <input type="url" id="vlt-appBaseUrl" value="${esc(s.appBaseUrl || "")}" placeholder="https://feriaspro.digitalinpulse.com.br">
+              </label>
+            </div>
+          </div>
+
+          <div class="admin-vault-card">
+            <div class="admin-vault-head"><strong>📧 SMTP &amp; Resend (E-mail / Senha)</strong>${srcBadgeHtml(src.smtp === "env" || src.resend === "env" ? "env" : (src.smtp === "vault" || src.resend === "vault" ? "vault" : "none"))}</div>
+            <div class="admin-vault-fields">
+              <label>SMTP_HOST
+                <input type="text" id="vlt-smtpHost" value="${esc(s.smtpHost || "")}" placeholder="smtp.gmail.com">
+              </label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <label>SMTP_PORT<input type="number" id="vlt-smtpPort" value="${esc(s.smtpPort || "587")}"></label>
+                <label>SMTP_SECURE
+                  <select id="vlt-smtpSecure">
+                    <option value="" ${!s.smtpSecure ? "selected" : ""}>Auto (STARTTLS)</option>
+                    <option value="1" ${s.smtpSecure === "1" || s.smtpSecure === "true" ? "selected" : ""}>TLS Direto (465)</option>
+                    <option value="0" ${s.smtpSecure === "0" || s.smtpSecure === "false" ? "selected" : ""}>Sem TLS</option>
+                  </select>
+                </label>
+              </div>
+              <label>SMTP_USER
+                <input type="text" id="vlt-smtpUser" value="${esc(s.smtpUser || "")}" placeholder="seu@email.com">
+              </label>
+              <label>SMTP_PASS ${s.hasSmtpPass ? `(${esc(s.smtpPassHint || "Ativo")})` : ""}
+                <input type="password" id="vlt-smtpPass" value="${s.vaultHasSmtpPass ? "••••••••" : ""}" placeholder="${s.hasSmtpPass ? "Ativo — digite apenas para trocar" : "Senha/App Password SMTP"}">
+              </label>
+              <label>SMTP_FROM
+                <input type="text" id="vlt-smtpFrom" value="${esc(s.smtpFrom || "")}" placeholder="Férias Pro &lt;no-reply@...&gt;">
+              </label>
+              <label>RESEND_API_KEY (alternativa ao SMTP)
+                <input type="password" id="vlt-resendApiKey" value="${s.vaultHasResend ? "••••••••" : ""}" placeholder="${s.hasResendApiKey ? "Ativo" : "re_..."}">
+              </label>
+            </div>
+          </div>
+
+          <div class="admin-vault-card">
+            <div class="admin-vault-head"><strong>💳 Google Wallet (Oficial)</strong>${srcBadgeHtml(src.wallet)}</div>
+            <div class="admin-vault-fields">
+              <label>GOOGLE_WALLET_ISSUER_ID
+                <input type="text" id="vlt-walletIssuerId" value="${esc(s.walletIssuerId || "")}" placeholder="3388000000012345678">
+              </label>
+              <label>GOOGLE_WALLET_SA_JSON ${s.hasWalletSaJson ? "(Chave ativa)" : ""}
+                <textarea id="vlt-walletSaJson" rows="3" placeholder="${s.hasWalletSaJson ? "Service Account já configurada (cole novo JSON apenas para substituir)" : "Cole o JSON completo da Service Account"}"></textarea>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="inline-actions">
+          <button type="submit" class="btn primary small">💾 Salvar Credenciais Criptografadas</button>
+          <button type="button" class="btn ghost small" id="btnAdminTestSmtp">📩 Testar Envio de E-mail</button>
+        </div>
+      </form>
+
+      <div class="admin-vault-card" style="margin-top:16px">
+        <div class="admin-vault-head">
+          <div>
+            <strong>💾 Backups Compactados (.json.gz + SHA-256)</strong>
+            <div class="muted small">Snapshots portáteis sem chave mestra (.master.key isolada em disco). Exclusivo Super Admin.</div>
+          </div>
+          <button type="button" class="btn primary small" id="btnAdminCreateBackup">➕ Gerar Backup Agora</button>
+        </div>
+        <div class="admin-backup-list">
+          ${backups.length ? backups.map(b => `
+            <div class="admin-backup-row">
+              <div style="min-width:0">
+                <b>${esc(b.filename)}</b>
+                <div class="muted small">${fmtDateTimeBR(b.createdAt)} · ${fmtBytes(b.bytes)} · ${esc(b.reason)} · ${b.usersCount ?? "?"} usuários / ${b.tripsCount ?? "?"} viagens</div>
+                ${b.sha256 ? `<div class="admin-backup-hash">SHA-256: ${esc(b.sha256)}</div>` : ""}
+              </div>
+              <a class="btn ghost small" href="${esc(window.FeriasApi.adminBackupDownloadHref(b.filename))}" download>⬇️ Baixar .gz</a>
+            </div>
+          `).join("") : `<p class="muted small">Nenhum backup gerado ainda.</p>`}
+        </div>
+      </div>
+    `;
+
+    $("#adminVaultForm").onsubmit = async e => {
+      e.preventDefault();
+      try {
+        await window.FeriasApi.adminSaveSystemSettings({
+          googleClientId: $("#vlt-googleClientId").value.trim(),
+          googleLoginClientId: $("#vlt-googleLoginClientId").value.trim(),
+          googleClientSecret: $("#vlt-googleClientSecret").value.trim(),
+          geminiKey: $("#vlt-geminiKey").value.trim(),
+          gmapsKey: $("#vlt-gmapsKey").value.trim(),
+          appBaseUrl: $("#vlt-appBaseUrl").value.trim(),
+          smtpHost: $("#vlt-smtpHost").value.trim(),
+          smtpPort: $("#vlt-smtpPort").value.trim(),
+          smtpSecure: $("#vlt-smtpSecure").value,
+          smtpUser: $("#vlt-smtpUser").value.trim(),
+          smtpPass: $("#vlt-smtpPass").value.trim(),
+          smtpFrom: $("#vlt-smtpFrom").value.trim(),
+          resendApiKey: $("#vlt-resendApiKey").value.trim(),
+          walletIssuerId: $("#vlt-walletIssuerId").value.trim(),
+          walletSaJson: $("#vlt-walletSaJson").value.trim()
+        });
+        toast("🔐 Credenciais salvas com criptografia AES-256-GCM!");
+        await loadAndRenderAdminVault();
+      } catch (err) { toast("❌ " + (err.message || err)); }
+    };
+
+    if ($("#btnAdminTestSmtp")) {
+      $("#btnAdminTestSmtp").onclick = async () => {
+        const dest = prompt("Enviar e-mail de teste para:", window.FeriasApi.getUser()?.email || "");
+        if (!dest) return;
+        try {
+          const r = await window.FeriasApi.adminTestSmtp(dest.trim());
+          toast(`📩 E-mail de teste enviado via ${r.transport} para ${r.to}!`);
+        } catch (err) { toast("❌ " + (err.message || err)); }
+      };
+    }
+
+    if ($("#btnAdminCreateBackup")) {
+      $("#btnAdminCreateBackup").onclick = async () => {
+        try {
+          const r = await window.FeriasApi.adminCreateBackup();
+          toast(`💾 Backup ${r.backup.filename} gerado (${fmtBytes(r.backup.bytes)})!`);
+          await loadAndRenderAdminVault();
+        } catch (err) { toast("❌ " + (err.message || err)); }
+      };
+    }
+  } catch (err) {
+    box.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>`;
   }
 }
 
@@ -5768,6 +6018,46 @@ function refreshProfilePasswordSection(u) {
   }
 }
 
+async function refreshProfileSessionsSection() {
+  const listEl = $("#profSessionsList");
+  const detailsEl = $("#profSessionsDetails");
+  if (!listEl || !detailsEl) return;
+  if (!window.FeriasApi.isServer()) {
+    detailsEl.hidden = true;
+    return;
+  }
+  detailsEl.hidden = false;
+  listEl.innerHTML = `<p class="muted small">Carregando sessões ativas...</p>`;
+  try {
+    const r = await window.FeriasApi.listSessions();
+    const sessions = r.sessions || [];
+    if (!sessions.length) {
+      listEl.innerHTML = `<p class="muted small">Nenhuma sessão ativa encontrada.</p>`;
+      return;
+    }
+    listEl.innerHTML = sessions.map(s => `
+      <div class="prof-session-row">
+        <div style="min-width:0">
+          <div>${s.current ? `<span class="pill ok">Sessão Atual</span>` : `<span class="pill">Outro Dispositivo</span>`} <b>${esc(s.ip || "IP local")}</b></div>
+          <div class="muted small">${esc((s.userAgent || "Navegador").slice(0, 72))} · Acesso: ${fmtDateTimeBR(s.lastSeenAt)}</div>
+        </div>
+        ${s.current ? "" : `<button type="button" class="btn ghost small" data-rev-sess="${esc(s.id)}">Encerrar</button>`}
+      </div>
+    `).join("");
+    listEl.querySelectorAll("[data-rev-sess]").forEach(btn => {
+      btn.onclick = async () => {
+        try {
+          await window.FeriasApi.revokeSession(btn.dataset.revSess);
+          toast("🚪 Sessão encerrada.");
+          await refreshProfileSessionsSection();
+        } catch (err) { toast("❌ " + (err.message || err)); }
+      };
+    });
+  } catch {
+    listEl.innerHTML = `<p class="muted small">Não foi possível consultar sessões agora.</p>`;
+  }
+}
+
 function openProfileModal() {
   const u = window.FeriasApi.getUser() || {};
   $("#prof-name").value = u.name || "";
@@ -5784,10 +6074,21 @@ function openProfileModal() {
   $("#prof-waError").hidden = true;
   if ($("#prof-pwFeedback")) $("#prof-pwFeedback").hidden = true;
   refreshProfilePasswordSection(u);
+  refreshProfileSessionsSection();
   $("#prof-geminiKey").value = "";
   $("#prof-walletIssuer").value = u.integrations?.walletIssuerId || "";
   $("#prof-walletSa").value = "";
   $("#profileModal").showModal();
+}
+
+if ($("#btnRevokeOtherSessions")) {
+  $("#btnRevokeOtherSessions").onclick = async () => {
+    try {
+      const r = await window.FeriasApi.revokeOtherSessions();
+      toast(`🚪 ${r.revoked || 0} outra(s) sessão(ões) encerrada(s).`);
+      await refreshProfileSessionsSection();
+    } catch (err) { toast("❌ " + (err.message || err)); }
+  };
 }
 
 if ($("#btnOpenProfile")) $("#btnOpenProfile").onclick = openProfileModal;

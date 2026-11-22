@@ -34,9 +34,17 @@
         ...(opts.headers || {})
       }
     });
+    const isOfflineCached = res.headers.get("X-Offline-Cache") === "1";
     let data = null;
     try { data = await res.json(); } catch {}
-    return { ok: res.ok, status: res.status, data };
+    if (isOfflineCached && currentUser && status !== "offline") {
+      status = "offline";
+      notify();
+    } else if (!isOfflineCached && res.ok && currentUser && status === "offline") {
+      status = "synced";
+      notify();
+    }
+    return { ok: res.ok, status: res.status, offlineCached: isOfflineCached, data };
   }
 
   async function initServer() {
@@ -166,6 +174,73 @@
     const r = await req("/api/admin/seed-demo", { method: "POST" });
     if (!r.ok) throw new Error(r.data?.error || "Erro ao gerar usuário fictício.");
     return r.data;
+  }
+
+  async function listSessions() {
+    if (!serverAvailable) return { ok: true, sessions: [] };
+    const r = await req("/api/auth/sessions");
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao carregar sessões.");
+    return r.data;
+  }
+
+  async function revokeOtherSessions() {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/auth/sessions/revoke-others", { method: "POST" });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao encerrar outras sessões.");
+    return r.data;
+  }
+
+  async function revokeSession(id) {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req(`/api/auth/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao encerrar sessão.");
+    return r.data;
+  }
+
+  async function adminAudit(limit = 120) {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req(`/api/admin/audit?limit=${encodeURIComponent(String(limit))}`);
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao carregar logs de auditoria.");
+    return r.data;
+  }
+
+  async function adminGetSystemSettings() {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/admin/system-settings");
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao carregar credenciais globais.");
+    return r.data;
+  }
+
+  async function adminSaveSystemSettings(payload) {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/admin/system-settings", { method: "PUT", body: JSON.stringify(payload || {}) });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao salvar credenciais globais.");
+    return r.data;
+  }
+
+  async function adminTestSmtp(to) {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/admin/test-smtp", { method: "POST", body: JSON.stringify({ to }) });
+    if (!r.ok) throw new Error(r.data?.error || "Falha ao testar envio de e-mail.");
+    return r.data;
+  }
+
+  async function adminListBackups() {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/admin/backups");
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao listar backups.");
+    return r.data;
+  }
+
+  async function adminCreateBackup() {
+    if (!serverAvailable) throw new Error("Servidor offline.");
+    const r = await req("/api/admin/backups", { method: "POST" });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao gerar backup.");
+    return r.data;
+  }
+
+  function adminBackupDownloadHref(filename) {
+    return `/api/admin/backups/${encodeURIComponent(filename)}/download`;
   }
 
   async function logout() {
@@ -484,6 +559,16 @@
     adminDeleteUser,
     adminSetDelegate,
     adminSeedDemo,
+    listSessions,
+    revokeOtherSessions,
+    revokeSession,
+    adminAudit,
+    adminGetSystemSettings,
+    adminSaveSystemSettings,
+    adminTestSmtp,
+    adminListBackups,
+    adminCreateBackup,
+    adminBackupDownloadHref,
     createTrip,
     getTrip,
     updateTrip,

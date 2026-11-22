@@ -1,7 +1,12 @@
 app/config.local.js
 server/data/
+backups/
+.master.key
+*.master.key
+*.json.gz
 .env
 .env.*
+!.env.example
 *.log
 .DS_Store
 Thumbs.db
