@@ -5,6 +5,20 @@
 
   const proOriginMap = new WeakMap();
   const COVER_SWATCHES = ["", "#1d4ed8", "#0284c7", "#0ea5e9", "#10b981", "#6366f1", "#8b5cf6", "#f59e0b", "#ef4444", "#64748b"];
+  const ASSIGNEE_PALETTE = [
+    { darkBg: "rgba(37, 99, 235, 0.22)",  darkFg: "#93c5fd", darkBd: "rgba(59, 130, 246, 0.55)",  lightBg: "#dbeafe", lightFg: "#1e40af", lightBd: "#93c5fd", hex: "#3b82f6" },
+    { darkBg: "rgba(16, 185, 129, 0.22)", darkFg: "#6ee7b7", darkBd: "rgba(16, 185, 129, 0.55)", lightBg: "#d1fae5", lightFg: "#065f46", lightBd: "#6ee7b7", hex: "#10b981" },
+    { darkBg: "rgba(245, 158, 11, 0.22)", darkFg: "#fcd34d", darkBd: "rgba(245, 158, 11, 0.55)", lightBg: "#fef3c7", lightFg: "#92400e", lightBd: "#fcd34d", hex: "#f59e0b" },
+    { darkBg: "rgba(168, 85, 247, 0.22)", darkFg: "#d8b4fe", darkBd: "rgba(168, 85, 247, 0.55)", lightBg: "#f3e8ff", lightFg: "#6b21a8", lightBd: "#d8b4fe", hex: "#a855f7" },
+    { darkBg: "rgba(236, 72, 153, 0.22)", darkFg: "#f9a8d4", darkBd: "rgba(236, 72, 153, 0.55)", lightBg: "#fce7f3", lightFg: "#9d174d", lightBd: "#f9a8d4", hex: "#ec4899" },
+    { darkBg: "rgba(6, 182, 212, 0.22)",  darkFg: "#67e8f9", darkBd: "rgba(6, 182, 212, 0.55)",  lightBg: "#cffafe", lightFg: "#155e75", lightBd: "#67e8f9", hex: "#06b6d4" },
+    { darkBg: "rgba(249, 115, 22, 0.22)", darkFg: "#fdba74", darkBd: "rgba(249, 115, 22, 0.55)", lightBg: "#ffedd5", lightFg: "#9a3412", lightBd: "#fdba74", hex: "#f97316" },
+    { darkBg: "rgba(99, 102, 241, 0.22)", darkFg: "#a5b4fc", darkBd: "rgba(99, 102, 241, 0.55)", lightBg: "#e0e7ff", lightFg: "#3730a3", lightBd: "#a5b4fc", hex: "#6366f1" },
+    { darkBg: "rgba(20, 184, 166, 0.22)", darkFg: "#5eead4", darkBd: "rgba(20, 184, 166, 0.55)", lightBg: "#ccfbf1", lightFg: "#115e59", lightBd: "#5eead4", hex: "#14b8a6" },
+    { darkBg: "rgba(244, 63, 94, 0.22)",  darkFg: "#fda4af", darkBd: "rgba(244, 63, 94, 0.55)",  lightBg: "#ffe4e6", lightFg: "#9f1239", lightBd: "#fda4af", hex: "#f43f5e" }
+  ];
+  const BOARD_ZOOM_STEPS = [0.55, 0.65, 0.75, 0.85, 1, 1.15, 1.3];
+  let proBoardZoom = 1;
 
   let proBoardColSet = new Set();
   let proBoardTypeSet = new Set(Object.keys(window.PRO_ACTIVITY_TYPES || {}));
@@ -24,6 +38,7 @@
   let proFilterSearch = "";
   let proFilterPrio = "";
   let proFilterAssignee = "";
+  let proFilterTravel = "";
   let proFilterClient = "";
   let proFilterLocation = "";
   let proFilterDone = "";
@@ -33,6 +48,10 @@
   let proGanttColMsel = null;
   let proGanttLabelMsel = null;
   let proGanttTagMsel = null;
+  let proMapColMsel = null;
+  let proMapTypeMsel = null;
+  let proMapLabelMsel = null;
+  let proMapTagMsel = null;
   let proDashColMsel = null;
   let proDashTypeMsel = null;
   let proDashLabelMsel = null;
@@ -59,7 +78,7 @@
   let proFinFilter = "all";
   let proCheckFilter = "";
 
-  // Estado do modal de cartão Trello
+  // Estado do modal de cartão
   let editingProCardId = null;
   let editingProTripRef = null;
   let proModalDraftId = "";
@@ -69,6 +88,10 @@
   let proModalCoverColor = "";
   let proModalTagsMsel = null;
   let proModalDraftTags = [];
+  let proModalExtraAssignees = [];
+  let proModalLocationLat = null;
+  let proModalLocationLng = null;
+  let proLocationAcCtrl = null;
   let proAiRecorder = null;
   let proAiChunks = [];
   let proAiRecTimer = null;
@@ -264,10 +287,42 @@
       }
       a.client = String(a.client || "");
       a.assignee = String(a.assignee || "");
-      if (a.assignee && !merged.assignees.some(x => x.toLowerCase() === a.assignee.toLowerCase())) {
-        merged.assignees.push(a.assignee);
+      a.assigneeTravels = Boolean(a.assigneeTravels);
+      const normEntries = [];
+      const seenEntry = new Set();
+      const pushEntry = (rawName, travelsFlag) => {
+        const nm = String(rawName || "").trim();
+        if (!nm) return;
+        const k = nm.toLowerCase();
+        if (seenEntry.has(k)) {
+          const ex = normEntries.find(e => e.name.toLowerCase() === k);
+          if (ex && travelsFlag) ex.travels = true;
+          return;
+        }
+        seenEntry.add(k);
+        normEntries.push({ name: nm, travels: Boolean(travelsFlag) });
+        if (!merged.assignees.some(x => x.toLowerCase() === k)) {
+          merged.assignees.push(nm);
+        }
+      };
+      if (a.assignee) pushEntry(a.assignee, a.assigneeTravels);
+      if (Array.isArray(a.assigneesList)) {
+        a.assigneesList.forEach(item => {
+          if (item && typeof item === "object") pushEntry(item.name, item.travels);
+          else if (typeof item === "string") pushEntry(item, false);
+        });
       }
+      a.assigneesList = normEntries;
+      a.assignee = normEntries[0]?.name || "";
+      a.assigneeTravels = Boolean(normEntries[0]?.travels);
       a.location = String(a.location || "");
+      a.meetingLink = String(a.meetingLink || "");
+      if (!a.meetingLink && /^https?:\/\//i.test(a.location.trim())) {
+        a.meetingLink = a.location.trim();
+        a.location = "";
+      }
+      a.locationLat = (a.locationLat != null && isFinite(Number(a.locationLat))) ? Number(a.locationLat) : null;
+      a.locationLng = (a.locationLng != null && isFinite(Number(a.locationLng))) ? Number(a.locationLng) : null;
       a.coverColor = String(a.coverColor || "");
       a.labels = Array.isArray(a.labels) ? [...new Set(a.labels.map(String).filter(Boolean))] : [];
       a.tags = Array.isArray(a.tags) ? [...new Set(a.tags.map(t => String(t || "").trim()).filter(Boolean))] : [];
@@ -354,6 +409,62 @@
     return Array.isArray(st.labels) && st.labels.length ? st.labels : window.PRO_DEFAULT_LABELS;
   }
 
+  function getCardAssigneesList(a) {
+    if (!a) return [];
+    const out = [];
+    const seen = new Set();
+    const push = (nm, tr) => {
+      const clean = String(nm || "").trim();
+      if (!clean) return;
+      const k = clean.toLowerCase();
+      if (seen.has(k)) {
+        const ex = out.find(e => e.name.toLowerCase() === k);
+        if (ex && tr) ex.travels = true;
+        return;
+      }
+      seen.add(k);
+      out.push({ name: clean, travels: Boolean(tr) });
+    };
+    if (Array.isArray(a.assigneesList) && a.assigneesList.length) {
+      a.assigneesList.forEach(it => {
+        if (it && typeof it === "object") push(it.name, it.travels);
+        else if (typeof it === "string") push(it, false);
+      });
+    }
+    if (a.assignee) push(a.assignee, a.assigneeTravels);
+    return out;
+  }
+
+  function colorForAssignee(name) {
+    const clean = String(name || "").trim().toLowerCase();
+    const list = getAllProAssignees();
+    const idx = list.findIndex(x => x.toLowerCase() === clean);
+    let paletteIdx = idx;
+    if (paletteIdx < 0) {
+      let h = 0;
+      for (let i = 0; i < clean.length; i++) h = ((h * 31) + clean.charCodeAt(i)) >>> 0;
+      paletteIdx = h;
+    }
+    const p = ASSIGNEE_PALETTE[Math.abs(paletteIdx) % ASSIGNEE_PALETTE.length];
+    const isLight = document.documentElement.getAttribute("data-theme") === "light";
+    return {
+      bg: isLight ? p.lightBg : p.darkBg,
+      fg: isLight ? p.lightFg : p.darkFg,
+      bd: isLight ? p.lightBd : p.darkBd,
+      hex: p.hex
+    };
+  }
+
+  function renderAssigneeBadgesHTML(a) {
+    const list = getCardAssigneesList(a);
+    if (!list.length) return "";
+    return list.map(entry => {
+      const col = colorForAssignee(entry.name);
+      const travelIcon = entry.travels ? `<span class="asg-travel-tag" title="${core.esc(entry.name)} viaja nesta tarefa">✈️</span>` : "";
+      return `<span class="pro-assignee-badge" style="--asg-bg:${col.bg};--asg-fg:${col.fg};--asg-bd:${col.bd}" title="Responsável: ${core.esc(entry.name)}${entry.travels ? " (Viaja)" : ""}">👤 ${core.esc(entry.name)}${travelIcon}</span>`;
+    }).join("");
+  }
+
   function getAllProAssignees(extraCards = []) {
     const seen = new Set();
     const out = [];
@@ -366,14 +477,21 @@
         out.push(clean);
       }
     };
+    const addFromCard = a => {
+      if (!a) return;
+      add(a.assignee);
+      if (Array.isArray(a.assigneesList)) {
+        a.assigneesList.forEach(it => add(typeof it === "object" ? it?.name : it));
+      }
+    };
     const st = core?.getState?.();
     if (Array.isArray(st?.assignees)) st.assignees.forEach(add);
-    (st?.activities || []).forEach(a => add(a?.assignee));
+    (st?.activities || []).forEach(addFromCard);
     (core?.getSelectedTrips?.() || []).forEach(tr => {
       if (Array.isArray(tr?.data?.assignees)) tr.data.assignees.forEach(add);
-      (tr?.data?.activities || []).forEach(a => add(a?.assignee));
+      (tr?.data?.activities || []).forEach(addFromCard);
     });
-    (extraCards || []).forEach(a => add(a?.assignee));
+    (extraCards || []).forEach(addFromCard);
     return out;
   }
 
@@ -403,9 +521,15 @@
     const active = core.getActiveTrip();
     if (active?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
     const st = core.getState();
-    st.assignees = (st.assignees || []).filter(a => a.toLowerCase() !== String(name || "").toLowerCase());
+    const targetKey = String(name || "").toLowerCase();
+    st.assignees = (st.assignees || []).filter(a => a.toLowerCase() !== targetKey);
     (st.activities || []).forEach(a => {
-      if (String(a.assignee || "").toLowerCase() === String(name || "").toLowerCase()) a.assignee = "";
+      if (String(a.assignee || "").toLowerCase() === targetKey) a.assignee = "";
+      if (Array.isArray(a.assigneesList)) {
+        a.assigneesList = a.assigneesList.filter(e => String(e?.name || "").toLowerCase() !== targetKey);
+        a.assignee = a.assigneesList[0]?.name || "";
+        a.assigneeTravels = Boolean(a.assigneesList[0]?.travels);
+      }
     });
     core.save(`🗑️ Responsável "${name}" removido`);
   }
@@ -424,6 +548,7 @@
     [
       "#proBoardAssigneeFilter",
       "#proGanttAssigneeFilter",
+      "#proMapAssigneeFilter",
       "#proDashAssigneeFilter",
       "#proFinAssigneeFilter",
       "#proFilterAssignee"
@@ -436,6 +561,13 @@
         + list.map(a => `<option value="${core.esc(a)}">${core.esc(a)}</option>`).join("");
       if ([...el.options].some(o => o.value === prev)) el.value = prev;
     });
+    const quickMapSel = $("#proMapQuickAssignee");
+    if (quickMapSel) {
+      const prev = quickMapSel.value;
+      quickMapSel.innerHTML = `<option value="">👤 Todas as pessoas</option>`
+        + list.map(a => `<option value="${core.esc(a)}">👤 ${core.esc(a)}</option>`).join("");
+      if ([...quickMapSel.options].some(o => o.value === prev)) quickMapSel.value = prev;
+    }
   }
 
   function isCardDone(a, cols, paramsOpt = null) {
@@ -666,22 +798,26 @@
       onChange: onTagChange
     };
     if (!proGanttColMsel && $("#proGanttColFilter")) proGanttColMsel = core.createMultiSelect($("#proGanttColFilter"), colOptCfg);
+    if (!proMapColMsel && $("#proMapColFilter")) proMapColMsel = core.createMultiSelect($("#proMapColFilter"), colOptCfg);
     if (!proDashColMsel && $("#proDashColFilter")) proDashColMsel = core.createMultiSelect($("#proDashColFilter"), colOptCfg);
     if (!proFinColMsel && $("#proFinColFilter")) proFinColMsel = core.createMultiSelect($("#proFinColFilter"), colOptCfg);
     if (!proGanttTypeMsel && $("#proGanttTypeFilter")) proGanttTypeMsel = core.createMultiSelect($("#proGanttTypeFilter"), typeOptCfg);
+    if (!proMapTypeMsel && $("#proMapTypeFilter")) proMapTypeMsel = core.createMultiSelect($("#proMapTypeFilter"), typeOptCfg);
     if (!proDashTypeMsel && $("#proDashTypeFilter")) proDashTypeMsel = core.createMultiSelect($("#proDashTypeFilter"), typeOptCfg);
     if (!proFinTypeMsel && $("#proFinTypeFilter")) proFinTypeMsel = core.createMultiSelect($("#proFinTypeFilter"), typeOptCfg);
     if (!proGanttLabelMsel && $("#proGanttLabelFilter")) proGanttLabelMsel = core.createMultiSelect($("#proGanttLabelFilter"), labelOptCfg);
+    if (!proMapLabelMsel && $("#proMapLabelFilter")) proMapLabelMsel = core.createMultiSelect($("#proMapLabelFilter"), labelOptCfg);
     if (!proDashLabelMsel && $("#proDashLabelFilter")) proDashLabelMsel = core.createMultiSelect($("#proDashLabelFilter"), labelOptCfg);
     if (!proFinLabelMsel && $("#proFinLabelFilter")) proFinLabelMsel = core.createMultiSelect($("#proFinLabelFilter"), labelOptCfg);
     if (!proGanttTagMsel && $("#proGanttTagFilter")) proGanttTagMsel = core.createMultiSelect($("#proGanttTagFilter"), tagOptCfg);
+    if (!proMapTagMsel && $("#proMapTagFilter")) proMapTagMsel = core.createMultiSelect($("#proMapTagFilter"), tagOptCfg);
     if (!proDashTagMsel && $("#proDashTagFilter")) proDashTagMsel = core.createMultiSelect($("#proDashTagFilter"), tagOptCfg);
     if (!proFinTagMsel && $("#proFinTagFilter")) proFinTagMsel = core.createMultiSelect($("#proFinTagFilter"), tagOptCfg);
 
-    [proGanttColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setOptions(colItems, [...proGanttColSet]); });
-    [proGanttTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setOptions(typeItems, [...proGanttTypeSet]); });
-    [proGanttLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setOptions(labelItems, [...proGanttLabelSet]); });
-    [proGanttTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setOptions(tagItems, [...proGanttTagSet]); });
+    [proGanttColMsel, proMapColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setOptions(colItems, [...proGanttColSet]); });
+    [proGanttTypeMsel, proMapTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setOptions(typeItems, [...proGanttTypeSet]); });
+    [proGanttLabelMsel, proMapLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setOptions(labelItems, [...proGanttLabelSet]); });
+    [proGanttTagMsel, proMapTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setOptions(tagItems, [...proGanttTagSet]); });
     syncProFilterUIs();
 
     // Tabela filtros
@@ -748,11 +884,25 @@
     if (cfg.labelSet && cfg.labelSet.size > 0 && !(Array.isArray(a.labels) && a.labels.some(id => cfg.labelSet.has(id)))) return false;
     if (cfg.tagSet && cfg.tagSet.size > 0 && !(Array.isArray(a.tags) && a.tags.some(t => cfg.tagSet.has(t)))) return false;
     if (cfg.prio && a.priority !== cfg.prio) return false;
+    const asgList = getCardAssigneesList(a);
     if (cfg.assignee) {
       if (cfg.assignee === "__none__") {
-        if (String(a.assignee || "").trim()) return false;
-      } else if (String(a.assignee || "").trim().toLowerCase() !== cfg.assignee.toLowerCase()) {
-        return false;
+        if (asgList.length > 0) return false;
+      } else {
+        const targetAsg = cfg.assignee.toLowerCase();
+        if (!asgList.some(e => e.name.toLowerCase() === targetAsg)) return false;
+      }
+    }
+    if (cfg.travel) {
+      if (cfg.travel === "travels") {
+        if (cfg.assignee && cfg.assignee !== "__none__") {
+          const targetAsg = cfg.assignee.toLowerCase();
+          if (!asgList.some(e => e.name.toLowerCase() === targetAsg && e.travels)) return false;
+        } else if (!asgList.some(e => e.travels)) {
+          return false;
+        }
+      } else if (cfg.travel === "local") {
+        if (asgList.some(e => e.travels)) return false;
       }
     }
     if (cfg.client && !String(a.client || "").toLowerCase().includes(cfg.client)) return false;
@@ -779,13 +929,32 @@
     }
     if (cfg.q) {
       const subTxt = Array.isArray(a.subtasks) ? a.subtasks.map(s => s.text).join(" ") : "";
-      const hay = `${a.name} ${a.type} ${a.client || ""} ${a.assignee || ""} ${a.location || ""} ${a.notes || ""} ${(a.tags || []).join(" ")} ${subTxt}`.toLowerCase();
+      const asgTxt = asgList.map(e => e.name).join(" ");
+      const hay = `${a.name} ${a.type} ${a.client || ""} ${asgTxt} ${a.location || ""} ${a.meetingLink || ""} ${a.notes || ""} ${(a.tags || []).join(" ")} ${subTxt}`.toLowerCase();
       if (!hay.includes(cfg.q)) return false;
     }
     return true;
   }
 
-  /* ---------- 1. QUADRO KANBAN ESTILO TRELLO ---------- */
+  /* ---------- 1. QUADRO KANBAN ---------- */
+  function updateProBoardZoomReadout() {
+    const btn = $("#btnProBoardZoomReset");
+    if (btn) btn.textContent = `${Math.round(proBoardZoom * 100)}%`;
+    const board = $("#proBoard");
+    if (board) {
+      board.style.setProperty("--board-zoom", String(proBoardZoom));
+      board.setAttribute("data-zoom-compact", proBoardZoom < 0.85 ? "1" : "0");
+    }
+  }
+
+  function stepProBoardZoom(delta) {
+    let idx = BOARD_ZOOM_STEPS.findIndex(v => v >= proBoardZoom);
+    if (idx < 0) idx = BOARD_ZOOM_STEPS.length - 1;
+    const nextIdx = Math.max(0, Math.min(BOARD_ZOOM_STEPS.length - 1, idx + delta));
+    proBoardZoom = BOARD_ZOOM_STEPS[nextIdx];
+    updateProBoardZoomReadout();
+  }
+
   function getProBoardFilterCfg() {
     return {
       colSet: proBoardColSet,
@@ -795,6 +964,7 @@
       q: ($("#proBoardSearch")?.value || "").trim().toLowerCase(),
       prio: $("#proBoardPrioFilter")?.value || "",
       assignee: $("#proBoardAssigneeFilter")?.value || "",
+      travel: $("#proBoardTravelFilter")?.value || "",
       client: ($("#proBoardClientFilter")?.value || "").trim().toLowerCase(),
       location: ($("#proBoardLocationFilter")?.value || "").trim().toLowerCase(),
       done: $("#proBoardDoneFilter")?.value || "",
@@ -815,6 +985,7 @@
       + (proBoardTagSet.size > 0 ? 1 : 0)
       + (cfg.prio ? 1 : 0)
       + (cfg.assignee ? 1 : 0)
+      + (cfg.travel ? 1 : 0)
       + (cfg.client ? 1 : 0)
       + (cfg.location ? 1 : 0)
       + (cfg.done ? 1 : 0)
@@ -838,7 +1009,7 @@
     proBoardLabelSet.clear();
     proBoardTagSet.clear();
     [
-      "#proBoardSearch", "#proBoardPrioFilter", "#proBoardAssigneeFilter",
+      "#proBoardSearch", "#proBoardPrioFilter", "#proBoardAssigneeFilter", "#proBoardTravelFilter",
       "#proBoardClientFilter", "#proBoardLocationFilter", "#proBoardDoneFilter",
       "#proBoardFinDirFilter", "#proBoardFinStatusFilter", "#proBoardDateFrom", "#proBoardDateTo"
     ].forEach(sel => { if ($(sel)) $(sel).value = ""; });
@@ -852,6 +1023,7 @@
   function renderProBoard() {
     const board = $("#proBoard");
     if (!board) return;
+    updateProBoardZoomReadout();
     syncProBoardFilterUI();
     const st = core.getState();
     const trips = core.getSelectedTrips();
@@ -915,9 +1087,10 @@
             </div>
             <span class="chip ${info.cls}"${typeColStyle}>${core.esc(info.short)}</span>
           </div>
-          ${(c.client || c.assignee || c.startTime || c.location) ? `<div class="pro-card-sub">
+          ${(c.client || getCardAssigneesList(c).length || c.startTime || c.location) ? `<div class="pro-card-sub">
             ${c.client ? `<span>🏢 ${core.esc(c.client)}</span>` : ""}
-            ${c.assignee ? `<span>👤 ${core.esc(c.assignee)}</span>` : ""}
+            ${renderAssigneeBadgesHTML(c)}
+            ${c.location ? `<span>📍 ${core.esc(c.location.split(",")[0])}</span>` : ""}
             ${c.startTime ? `<span>🕒 ${core.esc(c.startTime)}</span>` : ""}
           </div>` : ""}
           <div class="pro-card-meta">
@@ -1130,6 +1303,7 @@
       q: proFilterSearch.trim().toLowerCase(),
       prio: proFilterPrio,
       assignee: proFilterAssignee,
+      travel: proFilterTravel,
       client: proFilterClient.trim().toLowerCase(),
       location: proFilterLocation.trim().toLowerCase(),
       done: proFilterDone,
@@ -1149,6 +1323,7 @@
       + (proGanttTagSet.size > 0 ? 1 : 0)
       + (proFilterPrio ? 1 : 0)
       + (proFilterAssignee ? 1 : 0)
+      + (proFilterTravel ? 1 : 0)
       + (proFilterClient.trim() ? 1 : 0)
       + (proFilterLocation.trim() ? 1 : 0)
       + (proFilterDone ? 1 : 0)
@@ -1172,29 +1347,31 @@
     const typesArr = [...proGanttTypeSet];
     const labelsArr = [...proGanttLabelSet];
     const tagsArr = [...proGanttTagSet];
-    [proGanttColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setSelected(colsArr); });
-    [proGanttTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setSelected(typesArr); });
-    [proGanttLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setSelected(labelsArr); });
-    [proGanttTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setSelected(tagsArr); });
+    [proGanttColMsel, proMapColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setSelected(colsArr); });
+    [proGanttTypeMsel, proMapTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setSelected(typesArr); });
+    [proGanttLabelMsel, proMapLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setSelected(labelsArr); });
+    [proGanttTagMsel, proMapTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setSelected(tagsArr); });
     const syncInps = (sels, val) => sels.forEach(s => { if ($(s) && $(s).value !== val) $(s).value = val; });
-    syncInps(["#proGanttSearch", "#proDashSearch", "#proFinSearch"], proFilterSearch);
-    syncInps(["#proGanttPrioFilter", "#proDashPrioFilter", "#proFinPrioFilter"], proFilterPrio);
-    syncInps(["#proGanttAssigneeFilter", "#proDashAssigneeFilter", "#proFinAssigneeFilter"], proFilterAssignee);
-    syncInps(["#proGanttClientFilter", "#proDashClientFilter", "#proFinClientFilter"], proFilterClient);
-    syncInps(["#proGanttLocationFilter", "#proDashLocationFilter", "#proFinLocationFilter"], proFilterLocation);
-    syncInps(["#proGanttDoneFilter", "#proDashDoneFilter", "#proFinDoneFilter"], proFilterDone);
-    syncInps(["#proGanttFinDirFilter", "#proDashFinDirFilter", "#proFinFinDirFilter"], proFilterFinDir);
-    syncInps(["#proGanttFinStatusFilter", "#proDashFinStatusFilter", "#proFinFinStatusFilter"], proFilterFinStatus);
-    syncInps(["#proGanttDateFrom", "#proDashDateFrom", "#proFinDateFrom"], proDateFrom);
-    syncInps(["#proGanttDateTo", "#proDashDateTo", "#proFinDateTo"], proDateTo);
+    syncInps(["#proGanttSearch", "#proMapSearch", "#proDashSearch", "#proFinSearch"], proFilterSearch);
+    syncInps(["#proGanttPrioFilter", "#proMapPrioFilter", "#proDashPrioFilter", "#proFinPrioFilter"], proFilterPrio);
+    syncInps(["#proGanttAssigneeFilter", "#proMapAssigneeFilter", "#proMapQuickAssignee", "#proDashAssigneeFilter", "#proFinAssigneeFilter"], proFilterAssignee);
+    syncInps(["#proGanttTravelFilter", "#proMapTravelFilter", "#proMapQuickTravel", "#proDashTravelFilter", "#proFinTravelFilter"], proFilterTravel);
+    syncInps(["#proGanttClientFilter", "#proMapClientFilter", "#proDashClientFilter", "#proFinClientFilter"], proFilterClient);
+    syncInps(["#proGanttLocationFilter", "#proMapLocationFilter", "#proDashLocationFilter", "#proFinLocationFilter"], proFilterLocation);
+    syncInps(["#proGanttDoneFilter", "#proMapDoneFilter", "#proDashDoneFilter", "#proFinDoneFilter"], proFilterDone);
+    syncInps(["#proGanttFinDirFilter", "#proMapFinDirFilter", "#proDashFinDirFilter", "#proFinFinDirFilter"], proFilterFinDir);
+    syncInps(["#proGanttFinStatusFilter", "#proMapFinStatusFilter", "#proDashFinStatusFilter", "#proFinFinStatusFilter"], proFilterFinStatus);
+    syncInps(["#proGanttDateFrom", "#proMapDateFrom", "#proDashDateFrom", "#proFinDateFrom"], proDateFrom);
+    syncInps(["#proGanttDateTo", "#proMapDateTo", "#proDashDateTo", "#proFinDateTo"], proDateTo);
 
     const activeCount = countActiveProUnifiedFilters();
     const dirty = activeCount > 0;
-    ["#btnProGanttClearFilters", "#btnProDashClearFilters", "#btnProFinClearFilters"].forEach(sel => {
+    ["#btnProGanttClearFilters", "#btnProMapClearFilters", "#btnProDashClearFilters", "#btnProFinClearFilters"].forEach(sel => {
       if ($(sel)) $(sel).hidden = !dirty;
     });
     [
       ["#btnProGanttFilterPop", "#proGanttFilterCount", activeCount],
+      ["#btnProMapFilterPop", "#proMapFilterCount", activeCount],
       ["#btnProDashFilterPop", "#proDashFilterCount", activeCount],
       ["#btnProFinFilterPop", "#proFinFilterCount", activeCount]
     ].forEach(([btnSel, cntSel, cnt]) => {
@@ -1215,6 +1392,7 @@
     const t = computeProTotals(filteredCards);
     renderProGantt(cards);
     renderProTimeline(cards);
+    renderProMap(filteredCards);
     renderProDashboard(filteredCards, t);
     renderProFinance(filteredCards, t);
   }
@@ -1229,6 +1407,7 @@
     proFilterSearch = "";
     proFilterPrio = "";
     proFilterAssignee = "";
+    proFilterTravel = "";
     proFilterClient = "";
     proFilterLocation = "";
     proFilterDone = "";
@@ -1817,6 +1996,259 @@
     });
   }
 
+  /* ---------- 2B. MAPA DE EVENTOS & VIAGENS DOS RESPONSÁVEIS ---------- */
+  const PRO_MENU_ITEMS = [
+    { id: "pro-board",     tabId: "tab-pro-board",     label: "🗂️ Quadro" },
+    { id: "pro-gantt",     tabId: "tab-pro-gantt",     label: "📅 Gantt & Timeline" },
+    { id: "pro-map",       tabId: "tab-pro-map",       label: "🗺️ Mapa" },
+    { id: "pro-dashboard", tabId: "tab-pro-dashboard", label: "📊 Dashboard" },
+    { id: "pro-finance",   tabId: "tab-pro-finance",   label: "💼 Financeiro" },
+    { id: "pro-table",     tabId: "tab-pro-table",     label: "🧾 Tabela" },
+    { id: "pro-checklist", tabId: "tab-pro-checklist", label: "✅ Checklist" }
+  ];
+
+  const PRO_DASH_WIDGETS = [
+    { id: "kpisExecution", label: "🎯 KPIs de Execução & Prazos" },
+    { id: "kpisFinance",   label: "💵 KPIs Financeiros (Recebimentos, Despesas e Saldo)" },
+    { id: "upcomingCard",  label: "📅 Cartão: Próximos Compromissos & Prazos" },
+    { id: "financeCard",   label: "💼 Cartão: Resumo Financeiro & Agenda" },
+    { id: "chartStage",    label: "🗂️ Gráfico: Distribuição por Lista (Funil)" },
+    { id: "chartType",     label: "📊 Gráfico: Carga por Tipo & Categoria" },
+    { id: "chartStatus",   label: "🍩 Gráfico Rosca: Status & Saúde dos Prazos" },
+    { id: "chartAssignee", label: "👤 Gráfico: Carga por Responsável & Viagens" },
+    { id: "chartPriority", label: "🚦 Gráfico: Distribuição por Prioridade" },
+    { id: "chartMonthly",  label: "📈 Gráfico: Evolução Mensal de Entregas" }
+  ];
+
+  function getVisibleProMenus(stOpt = null) {
+    const st = stOpt || core?.getState?.() || {};
+    const cfg = st.params?.visibleMenus;
+    const out = {};
+    PRO_MENU_ITEMS.forEach(m => {
+      out[m.id] = (cfg && typeof cfg === "object" && m.id in cfg) ? Boolean(cfg[m.id]) : true;
+    });
+    return out;
+  }
+
+  function getProDashWidgetsCfg(stOpt = null) {
+    const st = stOpt || core?.getState?.() || {};
+    const cfg = st.params?.dashWidgets;
+    const out = {};
+    PRO_DASH_WIDGETS.forEach(w => {
+      out[w.id] = (cfg && typeof cfg === "object" && w.id in cfg) ? Boolean(cfg[w.id]) : true;
+    });
+    return out;
+  }
+
+  function applyProVisibleMenusUI() {
+    const vis = getVisibleProMenus();
+    PRO_MENU_ITEMS.forEach(m => {
+      const btn = document.getElementById(m.tabId);
+      if (btn) btn.hidden = !vis[m.id];
+    });
+    const activeTab = document.querySelector("#tabsPro .tab.active");
+    if (activeTab && activeTab.hidden) {
+      const firstVis = PRO_MENU_ITEMS.find(m => vis[m.id]);
+      core?.switchProView?.(firstVis ? firstVis.id : "pro-params");
+    }
+  }
+
+  let proMapRenderSeq = 0;
+
+  async function resolveCardCoordinates(card) {
+    if (card.locationLat != null && card.locationLng != null && isFinite(Number(card.locationLat)) && isFinite(Number(card.locationLng))) {
+      return { lat: Number(card.locationLat), lng: Number(card.locationLng) };
+    }
+    const locStr = String(card.location || "").trim();
+    if (!locStr) return null;
+    if (window.FeriasMaps?.resolvePlaceStandard) {
+      const res = await window.FeriasMaps.resolvePlaceStandard(locStr);
+      if (res && isFinite(res.lat) && isFinite(res.lng)) {
+        card.locationLat = res.lat;
+        card.locationLng = res.lng;
+        return { lat: res.lat, lng: res.lng };
+      }
+    }
+    return null;
+  }
+
+  function renderProMapFallbackSvg(canvas, groups) {
+    const isLight = document.documentElement.getAttribute("data-theme") === "light";
+    const bg = isLight ? "#e2e8f0" : "#0b1325";
+    const gridCol = isLight ? "rgba(15,23,42,0.08)" : "rgba(148,163,184,0.1)";
+    if (!groups.length) {
+      canvas.innerHTML = `<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:8px">
+        <div style="font-size:1.8rem">🗺️</div>
+        <strong>Nenhum cartão com local para exibir neste filtro</strong>
+        <span class="muted small">Preencha o campo <b>Local</b> nos cartões (ex: Brasília, São Paulo, Rio de Janeiro...) para visualizá-los no mapa com a tag do título.</span>
+      </div>`;
+      return;
+    }
+    const lats = groups.map(g => g.lat);
+    const lngs = groups.map(g => g.lng);
+    let minLat = Math.min(...lats) - 2.5, maxLat = Math.max(...lats) + 2.5;
+    let minLng = Math.min(...lngs) - 3.5, maxLng = Math.max(...lngs) + 3.5;
+    if (maxLat - minLat < 4) { minLat -= 2; maxLat += 2; }
+    if (maxLng - minLng < 5) { minLng -= 2.5; maxLng += 2.5; }
+
+    const pinsHtml = groups.map(g => {
+      const xPct = Math.max(8, Math.min(92, ((g.lng - minLng) / (maxLng - minLng)) * 100));
+      const yPct = Math.max(10, Math.min(90, (1 - (g.lat - minLat) / (maxLat - minLat)) * 100));
+      const tagsHtml = g.cards.map(c => {
+        const asgList = getCardAssigneesList(c);
+        const primaryAsg = asgList.find(e => e.travels) || asgList[0];
+        const tagCol = primaryAsg ? colorForAssignee(primaryAsg.name).hex : (getProTypeInfo(c.type).color || "#38bdf8");
+        return `<button type="button" class="pro-map-tag" data-map-card="${core.esc(c.id)}" style="--tag-c:${core.esc(tagCol)}" title="${core.esc(c.name)} — ${core.esc(g.label)}">${core.esc(c.name)}</button>`;
+      }).join("");
+      const dotColor = g.cards.length ? (getProTypeInfo(g.cards[0].type).color || "#38bdf8") : "#38bdf8";
+      return `<div class="pro-map-tag-group" style="position:absolute;left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%;transform:translate(-50%,-100%);z-index:5">
+        ${tagsHtml}
+        <span class="pro-map-pin-dot" style="--tag-c:${core.esc(dotColor)}" title="${core.esc(g.label)}"></span>
+      </div>`;
+    }).join("");
+
+    canvas.innerHTML = `<div style="position:relative;width:100%;height:100%;background:${bg};background-image:linear-gradient(${gridCol} 1px, transparent 1px),linear-gradient(90deg, ${gridCol} 1px, transparent 1px);background-size:44px 44px;overflow:hidden">
+      ${pinsHtml}
+    </div>`;
+    canvas.querySelectorAll("[data-map-card]").forEach(btn => {
+      btn.onclick = () => openProCardModal(btn.dataset.mapCard);
+    });
+  }
+
+  async function renderProMap(filteredCardsOpt) {
+    const canvas = $("#proMapCanvas");
+    if (!canvas) return;
+    const seq = ++proMapRenderSeq;
+    const cards = filteredCardsOpt || applyProUnifiedFilters(getProSortedActivities());
+    const withLoc = cards.filter(c => String(c.location || "").trim());
+
+    // Resumo de deslocamentos/viagens por responsável ao longo do ano
+    const summaryEl = $("#proMapTravelSummary");
+    if (summaryEl) {
+      const byPerson = new Map();
+      cards.forEach(c => {
+        const loc = String(c.location || "").trim();
+        if (!loc) return;
+        getCardAssigneesList(c).forEach(entry => {
+          if (!entry.travels) return;
+          const k = entry.name.toLowerCase();
+          if (!byPerson.has(k)) byPerson.set(k, { name: entry.name, stops: [] });
+          byPerson.get(k).stops.push({ card: c, loc, date: c.start || c.end || "" });
+        });
+      });
+      if (!byPerson.size) {
+        summaryEl.hidden = true;
+        summaryEl.innerHTML = "";
+      } else {
+        summaryEl.hidden = false;
+        summaryEl.innerHTML = [...byPerson.values()].map(p => {
+          const col = colorForAssignee(p.name);
+          const stopsHtml = p.stops.map(s => {
+            const dt = s.date ? ` (${core.fmtShortBR(s.date)})` : "";
+            return `<button type="button" class="btn ghost small" data-map-jump-card="${core.esc(s.card.id)}" style="padding:2px 8px;min-height:24px;font-size:0.74rem">📍 ${core.esc(s.loc.split(",")[0])} · <b>${core.esc(s.card.name)}</b>${dt}</button>`;
+          }).join(" ➔ ");
+          return `<div class="pro-map-person-row">
+            <span class="pro-assignee-badge" style="--asg-bg:${col.bg};--asg-fg:${col.fg};--asg-bd:${col.bd}">✈️ ${core.esc(p.name)}</span>
+            <span class="muted small">Viaja para:</span>
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px">${stopsHtml}</div>
+          </div>`;
+        }).join("");
+        summaryEl.querySelectorAll("[data-map-jump-card]").forEach(b => {
+          b.onclick = () => openProCardModal(b.dataset.mapJumpCard);
+        });
+      }
+    }
+
+    const groupMap = new Map();
+    for (const c of withLoc) {
+      const coords = await resolveCardCoordinates(c);
+      if (seq !== proMapRenderSeq) return;
+      if (!coords) continue;
+      const gKey = `${coords.lat.toFixed(3)},${coords.lng.toFixed(3)}`;
+      if (!groupMap.has(gKey)) {
+        groupMap.set(gKey, { lat: coords.lat, lng: coords.lng, label: c.location, cards: [] });
+      }
+      groupMap.get(gKey).cards.push(c);
+    }
+
+    const groups = [...groupMap.values()];
+    if ($("#proMapCountBadge")) {
+      const totalCardsOnMap = groups.reduce((s, g) => s + g.cards.length, 0);
+      $("#proMapCountBadge").textContent = `${totalCardsOnMap} cartão(ões) em ${groups.length} local(is)`;
+    }
+
+    if (!groups.length || !window.FeriasMaps?.hasKey()) {
+      renderProMapFallbackSvg(canvas, groups);
+      return;
+    }
+
+    try {
+      await window.FeriasMaps.ensureLoaded();
+      if (seq !== proMapRenderSeq) return;
+      const { Map } = await google.maps.importLibrary("maps");
+      const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+      const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+
+      canvas.innerHTML = "";
+      const mapDiv = document.createElement("div");
+      mapDiv.style.width = "100%";
+      mapDiv.style.height = "100%";
+      canvas.appendChild(mapDiv);
+
+      const map = new Map(mapDiv, {
+        mapId: "DEMO_MAP_ID",
+        colorScheme: isDark ? "DARK" : "LIGHT",
+        center: { lat: groups[0].lat, lng: groups[0].lng },
+        zoom: groups.length === 1 ? 11 : 5,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: true
+      });
+
+      const bounds = new google.maps.LatLngBounds();
+      groups.forEach(g => {
+        const pos = { lat: g.lat, lng: g.lng };
+        bounds.extend(pos);
+        const content = document.createElement("div");
+        content.className = "pro-map-tag-group";
+        g.cards.forEach(c => {
+          const asgList = getCardAssigneesList(c);
+          const primaryAsg = asgList.find(e => e.travels) || asgList[0];
+          const tagCol = primaryAsg ? colorForAssignee(primaryAsg.name).hex : (getProTypeInfo(c.type).color || "#38bdf8");
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "pro-map-tag";
+          btn.style.setProperty("--tag-c", tagCol);
+          btn.textContent = c.name;
+          btn.title = `${c.name} — ${g.label}`;
+          btn.onclick = (ev) => {
+            ev.stopPropagation();
+            openProCardModal(c.id);
+          };
+          content.appendChild(btn);
+        });
+        const dot = document.createElement("span");
+        dot.className = "pro-map-pin-dot";
+        const firstCol = getProTypeInfo(g.cards[0].type).color || "#38bdf8";
+        dot.style.setProperty("--tag-c", firstCol);
+        content.appendChild(dot);
+
+        new AdvancedMarkerElement({
+          map,
+          position: pos,
+          content,
+          title: g.cards.map(c => c.name).join(" | ")
+        });
+      });
+
+      if (groups.length > 1) {
+        map.fitBounds(bounds, 56);
+      }
+    } catch {
+      renderProMapFallbackSvg(canvas, groups);
+    }
+  }
+
   /* ---------- 3. DASHBOARD EXECUTIVO ---------- */
   function renderProDashboard(allCardsOpt, tOpt) {
     const cards = allCardsOpt || getProSortedActivities();
@@ -1825,28 +2257,48 @@
     const revTarget = Number(st.params?.revenueTarget) || 0;
     const costBudget = Number(st.params?.costBudget) || 0;
     const today = core.fmtISO(new Date());
+    const widgets = getProDashWidgetsCfg(st);
+    const cols = getMergedColumns();
 
     const kpisEl = $("#proDashKpis");
     if (kpisEl) {
       const netColor = t.netPlanned >= 0 ? "#10b981" : "#f87171";
-      kpisEl.innerHTML = [
-        ["Recebimentos Previstos", core.money(t.totalIncome), `Liquidado: ${core.money(t.receivedIncome)}${revTarget > 0 ? ` · Meta ${Math.round(t.totalIncome / revTarget * 100)}%` : ""}`, "#10b981"],
-        ["Despesas & Custos", core.money(t.totalExpense), `Pago: ${core.money(t.paidExpense)}${costBudget > 0 ? ` · Teto ${core.money(costBudget)}` : ""}`, "#ef4444"],
-        ["Saldo Líquido Projetado", core.money(t.netPlanned - t.taxAmount), `Realizado: ${core.money(t.netRealized)}${t.taxAmount > 0 ? ` · Imp. ${core.money(t.taxAmount)}` : ""}`, netColor],
-        ["Execução dos Cartões", `${t.doneCards}/${t.totalCards}`, `Progresso médio ${Math.round(t.avgProgress)}%`, "#38bdf8"],
-        ["Prazos & Alertas", `${t.overdueCount} atrasado(s)`, `${t.dueSoonCount} vence(m) em 7 dias`, t.overdueCount > 0 ? "#f87171" : "#f59e0b"]
-      ].map(([l, v, s, c]) => `<div class="kpi" style="--c:${c}"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join("");
+      const kpiItems = [];
+      if (widgets.kpisFinance) {
+        kpiItems.push(
+          ["Recebimentos Previstos", core.money(t.totalIncome), `Liquidado: ${core.money(t.receivedIncome)}${revTarget > 0 ? ` · Meta ${Math.round(t.totalIncome / revTarget * 100)}%` : ""}`, "#10b981"],
+          ["Despesas & Custos", core.money(t.totalExpense), `Pago: ${core.money(t.paidExpense)}${costBudget > 0 ? ` · Teto ${core.money(costBudget)}` : ""}`, "#ef4444"],
+          ["Saldo Líquido Projetado", core.money(t.netPlanned - t.taxAmount), `Realizado: ${core.money(t.netRealized)}${t.taxAmount > 0 ? ` · Imp. ${core.money(t.taxAmount)}` : ""}`, netColor]
+        );
+      }
+      if (widgets.kpisExecution) {
+        kpiItems.push(
+          ["Execução dos Cartões", `${t.doneCards}/${t.totalCards}`, `Progresso médio ${Math.round(t.avgProgress)}%`, "#38bdf8"],
+          ["Prazos & Alertas", `${t.overdueCount} atrasado(s)`, `${t.dueSoonCount} vence(m) em 7 dias`, t.overdueCount > 0 ? "#f87171" : "#f59e0b"]
+        );
+      }
+      kpisEl.hidden = kpiItems.length === 0;
+      kpisEl.innerHTML = kpiItems.map(([l, v, s, c]) => `<div class="kpi" style="--c:${c}"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join("");
     }
 
+    if ($("#proDashUpcomingCard")) $("#proDashUpcomingCard").hidden = !widgets.upcomingCard;
+    if ($("#proDashFinanceCard")) $("#proDashFinanceCard").hidden = !widgets.financeCard;
+    if ($("#proDashTopGrid")) $("#proDashTopGrid").hidden = !widgets.upcomingCard && !widgets.financeCard;
+    if ($("#proDashChartStageCard")) $("#proDashChartStageCard").hidden = !widgets.chartStage;
+    if ($("#proDashChartTypeCard")) $("#proDashChartTypeCard").hidden = !widgets.chartType;
+    if ($("#proDashChartStatusCard")) $("#proDashChartStatusCard").hidden = !widgets.chartStatus;
+    if ($("#proDashChartAssigneeCard")) $("#proDashChartAssigneeCard").hidden = !widgets.chartAssignee;
+    if ($("#proDashChartPriorityCard")) $("#proDashChartPriorityCard").hidden = !widgets.chartPriority;
+    if ($("#proDashChartMonthlyCard")) $("#proDashChartMonthlyCard").hidden = !widgets.chartMonthly;
+
     const upEl = $("#proUpcoming");
-    if (upEl) {
-      const cols = getMergedColumns();
+    if (upEl && widgets.upcomingCard) {
       const pending = cards.filter(a => !isCardDone(a, cols));
       const next = pending.filter(a => a.start && (a.end || a.start) >= today).slice(0, 7);
       const list = next.length ? next : pending.slice(0, 7);
       upEl.innerHTML = list.map(a => {
         const info = getProTypeInfo(a.type);
-        const finTxt = formatProFinShort(a);
+        const finTxt = widgets.kpisFinance ? formatProFinShort(a) : "";
         const overdue = Boolean(a.start && (a.end || a.start) < today);
         const tCol = info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : "";
         const badgeEl = a.start
@@ -1865,7 +2317,7 @@
     }
 
     const dfEl = $("#proDashFinance");
-    if (dfEl) {
+    if (dfEl && widgets.financeCard) {
       const margin = t.totalIncome > 0 ? ((t.netPlanned - t.taxAmount) / t.totalIncome * 100) : 0;
       if ($("#proDashMarginBadge")) $("#proDashMarginBadge").textContent = t.totalIncome > 0 ? `Margem líquida ${core.num(margin, 1)}%` : "";
       const rows = [
@@ -1882,11 +2334,11 @@
     }
 
     const stageEl = $("#proStageBars");
-    if (stageEl) {
+    if (stageEl && widgets.chartStage) {
       const maxC = Math.max(1, ...Object.values(t.byColumn).map(c => c.count));
       stageEl.innerHTML = Object.values(t.byColumn).map(c => `
         <div class="bar-row" data-jump-col="${core.esc(c.id)}">
-          <div class="bar-top"><span>${core.esc(c.title)}</span><b>${c.count} cartão(ões)${c.amount > 0 ? ` · ${core.money(c.amount)}` : ""}</b></div>
+          <div class="bar-top"><span>${core.esc(c.title)}</span><b>${c.count} cartão(ões)${widgets.kpisFinance && c.amount > 0 ? ` · ${core.money(c.amount)}` : ""}</b></div>
           <div class="bar-track"><div style="width:${(c.count / maxC) * 100}%;background:${core.esc(c.color || "#2563eb")}"></div></div>
         </div>`).join("") || `<p class="muted small">Sem colunas configuradas.</p>`;
       stageEl.querySelectorAll("[data-jump-col]").forEach(el => {
@@ -1895,17 +2347,140 @@
     }
 
     const typeEl = $("#proTypeBars");
-    if (typeEl) {
+    if (typeEl && widgets.chartType) {
       const items = Object.values(t.byType).sort((a, b) => b.count - a.count);
       const maxT = Math.max(1, ...items.map(x => x.count));
       typeEl.innerHTML = items.map(it => {
         const info = getProTypeInfo(it.type);
-        const finStr = [it.income > 0 ? `+${core.money(it.income)}` : "", it.expense > 0 ? `-${core.money(it.expense)}` : ""].filter(Boolean).join(" / ");
+        const finStr = widgets.kpisFinance ? [it.income > 0 ? `+${core.money(it.income)}` : "", it.expense > 0 ? `-${core.money(it.expense)}` : ""].filter(Boolean).join(" / ") : "";
         return `<div class="bar-row" style="cursor:default">
           <div class="bar-top"><span>${info.icon} ${core.esc(it.type)}</span><b>${it.count} ${finStr ? `· ${finStr}` : ""}</b></div>
           <div class="bar-track"><div style="width:${(it.count / maxT) * 100}%;background:linear-gradient(90deg,#1d4ed8,#38bdf8)"></div></div>
         </div>`;
       }).join("") || `<p class="muted small">Sem cartões cadastrados.</p>`;
+    }
+
+    // Gráfico Rosca: Status & Saúde dos Prazos
+    const statusEl = $("#proStatusDonutChart");
+    if (statusEl && widgets.chartStatus) {
+      const total = Math.max(1, t.totalCards);
+      const done = t.doneCards;
+      const late = t.overdueCount;
+      const soon = t.dueSoonCount;
+      const onTrack = Math.max(0, t.totalCards - done - late - soon);
+      const p1 = Math.round((done / total) * 100);
+      const p2 = p1 + Math.round((onTrack / total) * 100);
+      const p3 = p2 + Math.round((soon / total) * 100);
+      const grad = t.totalCards
+        ? `conic-gradient(#10b981 0% ${p1}%, #38bdf8 ${p1}% ${p2}%, #f59e0b ${p2}% ${p3}%, #ef4444 ${p3}% 100%)`
+        : `conic-gradient(var(--border) 0% 100%)`;
+      const donePct = t.totalCards ? Math.round((done / t.totalCards) * 100) : 0;
+      statusEl.innerHTML = `<div class="pro-donut-wrap">
+        <div class="pro-donut-ring" style="background:${grad}">
+          <div class="pro-donut-hole">
+            <b>${donePct}%</b>
+            <small>${done}/${t.totalCards} concl.</small>
+          </div>
+        </div>
+        <div class="pro-donut-legend">
+          <div class="pro-donut-leg-row"><span class="pro-donut-leg-left"><i class="pro-donut-dot" style="background:#10b981"></i>Concluídos</span><b>${done}</b></div>
+          <div class="pro-donut-leg-row"><span class="pro-donut-leg-left"><i class="pro-donut-dot" style="background:#38bdf8"></i>Em dia</span><b>${onTrack}</b></div>
+          <div class="pro-donut-leg-row"><span class="pro-donut-leg-left"><i class="pro-donut-dot" style="background:#f59e0b"></i>Vencem em 7d</span><b>${soon}</b></div>
+          <div class="pro-donut-leg-row"><span class="pro-donut-leg-left"><i class="pro-donut-dot" style="background:#ef4444"></i>Atrasados</span><b>${late}</b></div>
+        </div>
+      </div>`;
+    }
+
+    // Gráfico: Carga por Responsável & Viagens
+    const asgChartEl = $("#proAssigneeBars");
+    if (asgChartEl && widgets.chartAssignee) {
+      const byAsg = new Map();
+      cards.forEach(c => {
+        const list = getCardAssigneesList(c);
+        const done = isCardDone(c, cols);
+        if (!list.length) {
+          const k = "__none__";
+          if (!byAsg.has(k)) byAsg.set(k, { name: "Sem responsável", count: 0, done: 0, travels: 0, hex: "#64748b" });
+          const b = byAsg.get(k);
+          b.count++;
+          if (done) b.done++;
+          return;
+        }
+        list.forEach(entry => {
+          const k = entry.name.toLowerCase();
+          if (!byAsg.has(k)) {
+            byAsg.set(k, { name: entry.name, count: 0, done: 0, travels: 0, hex: colorForAssignee(entry.name).hex });
+          }
+          const b = byAsg.get(k);
+          b.count++;
+          if (done) b.done++;
+          if (entry.travels) b.travels++;
+        });
+      });
+      const items = [...byAsg.values()].sort((a, b) => b.count - a.count);
+      const maxA = Math.max(1, ...items.map(x => x.count));
+      asgChartEl.innerHTML = items.map(it => `
+        <div class="bar-row" style="cursor:default">
+          <div class="bar-top">
+            <span>👤 ${core.esc(it.name)}</span>
+            <b>${it.count} cartão(ões) · ${it.done} concl.${it.travels ? ` · ✈️ ${it.travels} viagem(ns)` : ""}</b>
+          </div>
+          <div class="bar-track"><div style="width:${(it.count / maxA) * 100}%;background:${core.esc(it.hex)}"></div></div>
+        </div>`).join("") || `<p class="muted small">Sem cartões atribuídos.</p>`;
+    }
+
+    // Gráfico: Distribuição por Prioridade
+    const prioEl = $("#proPriorityChart");
+    if (prioEl && widgets.chartPriority) {
+      const prioMeta = [
+        ["Crítica", "#ef4444"],
+        ["Alta", "#f59e0b"],
+        ["Média", "#38bdf8"],
+        ["Baixa", "#94a3b8"]
+      ];
+      const counts = { "Crítica": 0, Alta: 0, "Média": 0, Baixa: 0 };
+      cards.forEach(c => { counts[c.priority] = (counts[c.priority] || 0) + 1; });
+      const maxP = Math.max(1, ...Object.values(counts));
+      prioEl.innerHTML = `<div class="pro-vbars-chart">${prioMeta.map(([lbl, col]) => {
+        const cnt = counts[lbl] || 0;
+        const hPct = cnt > 0 ? Math.max(8, Math.round((cnt / maxP) * 100)) : 0;
+        return `<div class="pro-vbar-col">
+          <span class="pro-vbar-val">${cnt}</span>
+          <div class="pro-vbar-track"><div class="pro-vbar-fill" style="height:${hPct}%;background:${col}"></div></div>
+          <span class="pro-vbar-lbl">${lbl}</span>
+        </div>`;
+      }).join("")}</div>`;
+    }
+
+    // Gráfico: Evolução Mensal de Entregas
+    const monthEl = $("#proMonthlyChart");
+    if (monthEl && widgets.chartMonthly) {
+      const byMonth = new Map();
+      cards.forEach(c => {
+        const iso = c.start || c.end;
+        if (!iso || iso.length < 7) return;
+        const ym = iso.slice(0, 7);
+        if (!byMonth.has(ym)) byMonth.set(ym, { ym, total: 0, done: 0 });
+        const b = byMonth.get(ym);
+        b.total++;
+        if (isCardDone(c, cols)) b.done++;
+      });
+      const mList = [...byMonth.values()].sort((a, b) => a.ym.localeCompare(b.ym)).slice(-8);
+      if (!mList.length) {
+        monthEl.innerHTML = `<p class="muted small">Adicione datas aos cartões para ver a evolução mensal.</p>`;
+      } else {
+        const maxM = Math.max(1, ...mList.map(m => m.total));
+        monthEl.innerHTML = `<div class="pro-vbars-chart">${mList.map(m => {
+          const [yr, mo] = m.ym.split("-");
+          const lbl = `${core.MON[parseInt(mo, 10) - 1]}/${yr.slice(2)}`;
+          const hPct = Math.max(10, Math.round((m.total / maxM) * 100));
+          return `<div class="pro-vbar-col" title="${lbl}: ${m.total} cartão(ões) (${m.done} concluídos)">
+            <span class="pro-vbar-val">${m.total}</span>
+            <div class="pro-vbar-track"><div class="pro-vbar-fill" style="height:${hPct}%;background:linear-gradient(180deg,#38bdf8,#2563eb)"></div></div>
+            <span class="pro-vbar-lbl">${lbl}</span>
+          </div>`;
+        }).join("")}</div>`;
+      }
     }
   }
 
@@ -2030,6 +2605,7 @@
       q: ($("#proSearch")?.value || "").trim().toLowerCase(),
       prio: $("#proFilterPrio")?.value || "",
       assignee: $("#proFilterAssignee")?.value || "",
+      travel: $("#proFilterTravel")?.value || "",
       client: ($("#proFilterClient")?.value || "").trim().toLowerCase(),
       location: ($("#proFilterLocation")?.value || "").trim().toLowerCase(),
       done: $("#proFilterDone")?.value || "",
@@ -2050,6 +2626,7 @@
       + (proTableTagSet.size > 0 ? 1 : 0)
       + (cfg.prio ? 1 : 0)
       + (cfg.assignee ? 1 : 0)
+      + (cfg.travel ? 1 : 0)
       + (cfg.client ? 1 : 0)
       + (cfg.location ? 1 : 0)
       + (cfg.done ? 1 : 0)
@@ -2073,7 +2650,7 @@
     proTableLabelSet.clear();
     proTableTagSet.clear();
     [
-      "#proSearch", "#proFilterPrio", "#proFilterAssignee", "#proFilterClient",
+      "#proSearch", "#proFilterPrio", "#proFilterAssignee", "#proFilterTravel", "#proFilterClient",
       "#proFilterLocation", "#proFilterDone", "#proFilterFinDir",
       "#proFilterFinStatus", "#proFilterDateFrom", "#proFilterDateTo"
     ].forEach(sel => { if ($(sel)) $(sel).value = ""; });
@@ -2335,23 +2912,74 @@
       });
     }
 
-    // Responsáveis do Projeto
+    // Responsáveis do Projeto (com cor exclusiva por pessoa)
     const asgMgr = $("#proAssigneesManager");
     if (asgMgr) {
       const assignees = getAllProAssignees(st.activities);
       if (!assignees.length) {
         asgMgr.innerHTML = `<span class="muted small">Nenhum responsável cadastrado ainda.</span>`;
       } else {
-        asgMgr.innerHTML = assignees.map(name => `
-          <span class="tag-pill" style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px">
+        asgMgr.innerHTML = assignees.map(name => {
+          const col = colorForAssignee(name);
+          return `<span class="pro-assignee-badge" style="--asg-bg:${col.bg};--asg-fg:${col.fg};--asg-bd:${col.bd};padding:4px 10px;gap:6px">
             <span>👤 ${core.esc(name)}</span>
-            <button type="button" class="icon-btn" data-passignee-del="${core.esc(name)}" title="Remover responsável" style="padding:0 4px;font-size:.75rem">✕</button>
-          </span>`).join("");
+            <button type="button" class="icon-btn" data-passignee-del="${core.esc(name)}" title="Remover responsável" style="padding:0 3px;font-size:.75rem;color:inherit">✕</button>
+          </span>`;
+        }).join("");
         asgMgr.querySelectorAll("[data-passignee-del]").forEach(b => {
           b.onclick = () => removeProAssignee(b.dataset.passigneeDel);
         });
       }
     }
+
+    // Menus Visíveis neste Projeto
+    const menusMgr = $("#proVisibleMenusManager");
+    if (menusMgr) {
+      const vis = getVisibleProMenus(st);
+      menusMgr.innerHTML = PRO_MENU_ITEMS.map(m => `
+        <label class="pro-toggle-item">
+          <input type="checkbox" data-pmenu-vis="${core.esc(m.id)}" ${vis[m.id] ? "checked" : ""}>
+          <span>${core.esc(m.label)}</span>
+        </label>`).join("");
+      menusMgr.querySelectorAll("[data-pmenu-vis]").forEach(cb => {
+        cb.onchange = () => {
+          const id = cb.dataset.pmenuVis;
+          if (!st.params.visibleMenus || typeof st.params.visibleMenus !== "object") {
+            st.params.visibleMenus = getVisibleProMenus(st);
+          }
+          st.params.visibleMenus[id] = cb.checked;
+          if (!Object.values(st.params.visibleMenus).some(Boolean)) {
+            st.params.visibleMenus[id] = true;
+            cb.checked = true;
+            return core.toast("Mantenha ao menos 1 menu visível no projeto.");
+          }
+          applyProVisibleMenusUI();
+          core.save("👁️ Menus visíveis do projeto atualizados");
+        };
+      });
+    }
+
+    // Seções & Gráficos do Dashboard
+    const dashMgr = $("#proDashWidgetsManager");
+    if (dashMgr) {
+      const wCfg = getProDashWidgetsCfg(st);
+      dashMgr.innerHTML = PRO_DASH_WIDGETS.map(w => `
+        <label class="pro-toggle-item">
+          <input type="checkbox" data-pdash-wid="${core.esc(w.id)}" ${wCfg[w.id] ? "checked" : ""}>
+          <span>${core.esc(w.label)}</span>
+        </label>`).join("");
+      dashMgr.querySelectorAll("[data-pdash-wid]").forEach(cb => {
+        cb.onchange = () => {
+          const id = cb.dataset.pdashWid;
+          if (!st.params.dashWidgets || typeof st.params.dashWidgets !== "object") {
+            st.params.dashWidgets = getProDashWidgetsCfg(st);
+          }
+          st.params.dashWidgets[id] = cb.checked;
+          core.save("📊 Painéis e gráficos do Dashboard atualizados");
+        };
+      });
+    }
+    applyProVisibleMenusUI();
   }
 
   /* ---------- 7. CHECKLIST EXECUTIVO ---------- */
@@ -2758,7 +3386,91 @@
     sel.innerHTML = allTypes.map(t => `<option value="${core.esc(t.id)}">${core.esc(t.short)}</option>`).join("");
   }
 
+  function renderProModalExtraAssignees() {
+    const box = $("#pc-extraAssigneesList");
+    if (!box) return;
+    const allList = getAllProAssignees();
+    if (!proModalExtraAssignees.length) {
+      box.innerHTML = "";
+      return;
+    }
+    box.innerHTML = proModalExtraAssignees.map((row, idx) => {
+      const items = [...allList];
+      if (row.name && !items.some(x => x.toLowerCase() === row.name.toLowerCase())) items.push(row.name);
+      const opts = `<option value="">— Selecionar responsável —</option>`
+        + items.map(a => `<option value="${core.esc(a)}" ${a.toLowerCase() === String(row.name || "").toLowerCase() ? "selected" : ""}>${core.esc(a)}</option>`).join("");
+      return `<div class="pro-extra-assignee-row" data-ex-asg-idx="${idx}">
+        <select data-ex-asg-sel="${idx}" aria-label="Responsável adicional">${opts}</select>
+        <label class="pro-travel-chk-label" title="Marque se este responsável viaja nesta tarefa">
+          <input type="checkbox" data-ex-asg-trv="${idx}" ${row.travels ? "checked" : ""}>
+          <span>✈️ Viaja</span>
+        </label>
+        <button type="button" class="icon-btn" data-ex-asg-del="${idx}" title="Remover responsável deste cartão">✕</button>
+      </div>`;
+    }).join("");
+
+    box.querySelectorAll("[data-ex-asg-sel]").forEach(sel => {
+      sel.onchange = () => {
+        const i = parseInt(sel.dataset.exAsgSel, 10);
+        if (proModalExtraAssignees[i]) proModalExtraAssignees[i].name = sel.value;
+      };
+    });
+    box.querySelectorAll("[data-ex-asg-trv]").forEach(chk => {
+      chk.onchange = () => {
+        const i = parseInt(chk.dataset.exAsgTrv, 10);
+        if (proModalExtraAssignees[i]) proModalExtraAssignees[i].travels = chk.checked;
+      };
+    });
+    box.querySelectorAll("[data-ex-asg-del]").forEach(btn => {
+      btn.onclick = () => {
+        const i = parseInt(btn.dataset.exAsgDel, 10);
+        proModalExtraAssignees.splice(i, 1);
+        renderProModalExtraAssignees();
+      };
+    });
+  }
+
+  function ensureProLocationAutocomplete() {
+    const inp = $("#pc-location");
+    const listEl = $("#ac-pro-location");
+    if (!inp || !listEl || proLocationAcCtrl) return;
+    if (window.FeriasMaps?.attachAutocomplete) {
+      proLocationAcCtrl = window.FeriasMaps.attachAutocomplete(inp, listEl, (place, display) => {
+        if (display) inp.value = display;
+        const loc = place?.location;
+        const lat = typeof loc?.lat === "function" ? loc.lat() : Number(loc?.lat);
+        const lng = typeof loc?.lng === "function" ? loc.lng() : Number(loc?.lng);
+        if (isFinite(lat) && isFinite(lng)) {
+          proModalLocationLat = lat;
+          proModalLocationLng = lng;
+        } else {
+          proModalLocationLat = null;
+          proModalLocationLng = null;
+        }
+      });
+    }
+    inp.addEventListener("change", async () => {
+      const val = inp.value.trim();
+      if (!val) {
+        proModalLocationLat = null;
+        proModalLocationLng = null;
+        return;
+      }
+      if (window.FeriasMaps?.resolvePlaceStandard) {
+        const std = await window.FeriasMaps.resolvePlaceStandard(val);
+        if (std) {
+          if (std.formatted) inp.value = std.formatted;
+          if (isFinite(std.lat) && isFinite(std.lng)) {
+            proModalLocationLat = std.lat;
+            proModalLocationLng = std.lng;
+          }
+        }
+      }
+    });
+  }
+
   function openProCardModal(idOrOpts) {
+    ensureProLocationAutocomplete();
     const opts = (idOrOpts && typeof idOrOpts === "object") ? idOrOpts : null;
     const id = typeof idOrOpts === "string" ? idOrOpts : null;
     const ctx = id ? findProCardContext(id) : null;
@@ -2815,8 +3527,19 @@
     proModalPrevProg = a ? (Number(a.prevProgress) < 100 ? Number(a.prevProgress) : (prog < 100 ? prog : 0)) : 0;
     updateProModalDoneBtn();
     $("#pc-client").value = a ? (a.client || "") : (core.getState().params?.clientDefault || "");
-    populateProAssigneeSelect(a ? (a.assignee || "") : "", editingProTripRef?.data || null);
+    const existingAsgList = a ? getCardAssigneesList(a) : [];
+    const primaryAsg = existingAsgList[0] || { name: a?.assignee || "", travels: Boolean(a?.assigneeTravels) };
+    populateProAssigneeSelect(primaryAsg.name, editingProTripRef?.data || null);
+    if ($("#pc-assigneeTravels")) $("#pc-assigneeTravels").checked = Boolean(primaryAsg.travels);
+    proModalExtraAssignees = existingAsgList.slice(1).map(e => ({ name: e.name, travels: Boolean(e.travels) }));
+    renderProModalExtraAssignees();
+
     $("#pc-location").value = a ? (a.location || "") : "";
+    if ($("#pc-meetingLink")) $("#pc-meetingLink").value = a ? (a.meetingLink || "") : "";
+    proModalLocationLat = (a && a.locationLat != null && isFinite(Number(a.locationLat))) ? Number(a.locationLat) : null;
+    proModalLocationLng = (a && a.locationLng != null && isFinite(Number(a.locationLng))) ? Number(a.locationLng) : null;
+    if (proLocationAcCtrl) proLocationAcCtrl.clearSelected();
+    if ($("#pc-attachLoading")) $("#pc-attachLoading").hidden = true;
 
     $("#pc-finDirection").value = initFinDir;
     $("#pc-amount").value = a && a.amount > 0 ? a.amount : "";
@@ -2854,13 +3577,34 @@
   }
 
   function readProCardForm() {
-    const startVal = $("#pc-start").value || "";
-    let endVal = startVal ? ($("#pc-end").value || startVal) : "";
+    let startVal = $("#pc-start").value || "";
+    let endVal = $("#pc-end").value || "";
+    if (!startVal && endVal) startVal = endVal;
+    if (startVal && !endVal) endVal = startVal;
     if (startVal && endVal < startVal) endVal = startVal;
     const finDirection = $("#pc-finDirection").value || "none";
     const amount = finDirection === "none" ? 0 : Math.max(0, parseFloat($("#pc-amount").value) || 0);
     const actualAmount = finDirection === "none" ? 0 : Math.max(0, parseFloat($("#pc-actualAmount").value) || 0);
     const tags = proModalTagsMsel ? proModalTagsMsel.getSelected() : proModalDraftTags;
+
+    const assigneesList = [];
+    const seenAsg = new Set();
+    const pushAsg = (nm, tr) => {
+      const clean = String(nm || "").trim();
+      if (!clean) return;
+      const k = clean.toLowerCase();
+      if (seenAsg.has(k)) {
+        const ex = assigneesList.find(e => e.name.toLowerCase() === k);
+        if (ex && tr) ex.travels = true;
+        return;
+      }
+      seenAsg.add(k);
+      assigneesList.push({ name: clean, travels: Boolean(tr) });
+    };
+    const primaryName = ($("#pc-assignee")?.value || "").trim();
+    const primaryTravels = Boolean($("#pc-assigneeTravels")?.checked);
+    if (primaryName) pushAsg(primaryName, primaryTravels);
+    proModalExtraAssignees.forEach(r => pushAsg(r.name, r.travels));
 
     return {
       type: $("#pc-type").value || "Desenvolvimento",
@@ -2873,8 +3617,13 @@
       priority: $("#pc-priority").value || "Média",
       progress: Math.max(0, Math.min(100, parseInt($("#pc-progress").value, 10) || 0)),
       client: $("#pc-client").value.trim(),
-      assignee: ($("#pc-assignee").value || "").trim(),
+      assignee: assigneesList[0]?.name || "",
+      assigneeTravels: Boolean(assigneesList[0]?.travels),
+      assigneesList,
       location: $("#pc-location").value.trim(),
+      locationLat: proModalLocationLat,
+      locationLng: proModalLocationLng,
+      meetingLink: ($("#pc-meetingLink")?.value || "").trim(),
       coverColor: proModalCoverColor,
       labels: [...proModalLabels],
       tags: [...new Set(tags.map(t => String(t).trim()).filter(Boolean))],
@@ -3103,6 +3852,7 @@
     [
       "#proBoardPrioFilter",
       "#proBoardAssigneeFilter",
+      "#proBoardTravelFilter",
       "#proBoardClientFilter",
       "#proBoardLocationFilter",
       "#proBoardDoneFilter",
@@ -3116,6 +3866,24 @@
     if ($("#btnProBoardClearFilters")) $("#btnProBoardClearFilters").onclick = resetProBoardFilters;
     if ($("#btnProBoardAdd")) $("#btnProBoardAdd").onclick = () => openProCardModal();
     if ($("#btnProBoardAddCol")) $("#btnProBoardAddCol").onclick = () => openProColumnModal();
+    if ($("#btnProBoardZoomOut")) $("#btnProBoardZoomOut").onclick = () => stepProBoardZoom(-1);
+    if ($("#btnProBoardZoomIn")) $("#btnProBoardZoomIn").onclick = () => stepProBoardZoom(1);
+    if ($("#btnProBoardZoomReset")) $("#btnProBoardZoomReset").onclick = () => { proBoardZoom = 1; updateProBoardZoomReadout(); };
+
+    // Mapa controls
+    if ($("#btnProMapAddCard")) $("#btnProMapAddCard").onclick = () => openProCardModal();
+    if ($("#proMapQuickAssignee")) {
+      $("#proMapQuickAssignee").onchange = e => {
+        proFilterAssignee = e.target.value || "";
+        applyAndRenderProFilteredViews();
+      };
+    }
+    if ($("#proMapQuickTravel")) {
+      $("#proMapQuickTravel").onchange = e => {
+        proFilterTravel = e.target.value || "";
+        applyAndRenderProFilteredViews();
+      };
+    }
 
     // Gantt controls
     if ($("#btnProAddCardGantt")) $("#btnProAddCardGantt").onclick = () => openProCardModal();
@@ -3147,14 +3915,14 @@
         core.save("↺ Ordem automática por Tipo de Cartão restaurada");
       };
     }
-    // Filtros unificados (Gantt / Dashboard / Financeiro)
+    // Filtros unificados (Gantt / Mapa / Dashboard / Financeiro)
     const bindUnifiedFilterGroup = (prefix, clearSel) => {
       const searchEl = $(`#${prefix}Search`);
       if (searchEl) {
         searchEl.oninput = () => {
-          proSearchQ = searchEl.value || "";
-          ["#proGanttSearch", "#proDashSearch", "#proFinSearch"].forEach(s => {
-            if ($(s) && $(s) !== searchEl) $(s).value = proSearchQ;
+          proFilterSearch = searchEl.value || "";
+          ["#proGanttSearch", "#proMapSearch", "#proDashSearch", "#proFinSearch"].forEach(s => {
+            if ($(s) && $(s) !== searchEl) $(s).value = proFilterSearch;
           });
           applyAndRenderProFilteredViews();
         };
@@ -3168,13 +3936,14 @@
           };
         }
       };
-      bindSel("PrioFilter", v => { proPrioFilter = v; });
-      bindSel("AssigneeFilter", v => { proAssigneeFilter = v; });
-      bindSel("ClientFilter", v => { proClientFilter = v; });
-      bindSel("LocationFilter", v => { proLocationFilter = v; });
-      bindSel("DoneFilter", v => { proDoneFilter = v; });
-      bindSel("FinDirFilter", v => { proFinDirFilter = v; });
-      bindSel("FinStatusFilter", v => { proFinStatusFilter = v; });
+      bindSel("PrioFilter", v => { proFilterPrio = v; });
+      bindSel("AssigneeFilter", v => { proFilterAssignee = v; });
+      bindSel("TravelFilter", v => { proFilterTravel = v; });
+      bindSel("ClientFilter", v => { proFilterClient = v; });
+      bindSel("LocationFilter", v => { proFilterLocation = v; });
+      bindSel("DoneFilter", v => { proFilterDone = v; });
+      bindSel("FinDirFilter", v => { proFilterFinDir = v; });
+      bindSel("FinStatusFilter", v => { proFilterFinStatus = v; });
       const fromEl = $(`#${prefix}DateFrom`);
       if (fromEl) {
         fromEl.onchange = () => {
@@ -3194,6 +3963,7 @@
       if ($(clearSel)) $(clearSel).onclick = resetProUnifiedFilters;
     };
     bindUnifiedFilterGroup("proGantt", "#btnProGanttClearFilters");
+    bindUnifiedFilterGroup("proMap", "#btnProMapClearFilters");
     bindUnifiedFilterGroup("proDash", "#btnProDashClearFilters");
     bindUnifiedFilterGroup("proFin", "#btnProFinClearFilters");
 
@@ -3259,6 +4029,7 @@
     [
       "#proFilterPrio",
       "#proFilterAssignee",
+      "#proFilterTravel",
       "#proFilterClient",
       "#proFilterLocation",
       "#proFilterDone",
@@ -3294,9 +4065,25 @@
         if (!raw || !raw.trim()) return;
         const clean = registerProAssignee(raw, true);
         if (clean) {
-          populateProAssigneeSelect(clean, editingProTripRef?.data || null);
-          if ($("#pc-assignee")) $("#pc-assignee").value = clean;
+          const curPrimary = ($("#pc-assignee")?.value || "").trim();
+          if (!curPrimary) {
+            populateProAssigneeSelect(clean, editingProTripRef?.data || null);
+            if ($("#pc-assignee")) $("#pc-assignee").value = clean;
+          } else {
+            populateProAssigneeSelect(curPrimary, editingProTripRef?.data || null);
+            proModalExtraAssignees.push({ name: clean, travels: false });
+          }
+          renderProModalExtraAssignees();
         }
+      };
+    }
+    if ($("#btnProAddCardAssigneeRow")) {
+      $("#btnProAddCardAssigneeRow").onclick = () => {
+        const all = getAllProAssignees();
+        const used = new Set([($("#pc-assignee")?.value || "").toLowerCase(), ...proModalExtraAssignees.map(e => String(e.name || "").toLowerCase())]);
+        const nextPick = all.find(a => !used.has(a.toLowerCase())) || "";
+        proModalExtraAssignees.push({ name: nextPick, travels: false });
+        renderProModalExtraAssignees();
       };
     }
     const bindParam = (id, key, isNum = false) => {
@@ -3459,14 +4246,23 @@
         const files = [...(e.target.files || [])];
         if (!files.length) return;
         const tTripId = (!$("#pc-targetTripWrap")?.hidden && $("#pc-targetTrip")?.value) ? $("#pc-targetTrip").value : (editingProTripRef?.id || core.getActiveTrip()?.id || "local");
-        for (const f of files) {
+        const loadEl = $("#pc-attachLoading");
+        const loadTxt = $("#pc-attachLoadingText");
+        const btn = $("#btnProAttachFile");
+        if (btn) btn.disabled = true;
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
           try {
+            if (loadEl) loadEl.hidden = false;
+            if (loadTxt) loadTxt.textContent = `Carregando arquivo "${f.name}" (${i + 1}/${files.length})...`;
             const up = await window.FeriasApi.uploadAttachment(tTripId, proModalDraftId, f);
             proModalAttachments.push(up);
             renderProModalAttachments();
             core.toast(`📎 "${f.name}" anexado`);
           } catch (err) { core.toast("❌ " + (err.message || err)); }
         }
+        if (loadEl) loadEl.hidden = true;
+        if (btn) btn.disabled = false;
         e.target.value = "";
       };
     }
@@ -3583,11 +4379,25 @@
 
         const tgtData = targetTrip?.data || core.getState();
         if (!Array.isArray(tgtData.activities)) tgtData.activities = [];
-        if (data.assignee) {
+        if (Array.isArray(data.assigneesList) && data.assigneesList.length) {
           if (!Array.isArray(tgtData.assignees)) tgtData.assignees = [];
-          if (!tgtData.assignees.some(x => String(x).toLowerCase() === data.assignee.toLowerCase())) {
-            tgtData.assignees.push(data.assignee);
-          }
+          data.assigneesList.forEach(entry => {
+            if (entry?.name && !tgtData.assignees.some(x => String(x).toLowerCase() === entry.name.toLowerCase())) {
+              tgtData.assignees.push(entry.name);
+            }
+          });
+        }
+        if (data.location && (data.locationLat == null || data.locationLng == null) && window.FeriasMaps?.resolvePlaceStandard) {
+          try {
+            const std = await window.FeriasMaps.resolvePlaceStandard(data.location);
+            if (std) {
+              if (std.formatted) data.location = std.formatted;
+              if (isFinite(std.lat) && isFinite(std.lng)) {
+                data.locationLat = std.lat;
+                data.locationLng = std.lng;
+              }
+            }
+          } catch {}
         }
         const tgtCols = Array.isArray(tgtData.columns) && tgtData.columns.length ? tgtData.columns : getMergedColumns();
         if (data.columnId && !tgtCols.some(c => c.id === data.columnId) && tgtCols[0]?.id) {
@@ -3821,6 +4631,7 @@
   function renderAll() {
     if (!core) return;
     bindProEvents();
+    applyProVisibleMenusUI();
     const cards = getProSortedActivities();
     refreshProFilterOptions(cards);
     const filteredCards = applyProUnifiedFilters(cards, false);
@@ -3828,6 +4639,7 @@
     renderProBoard();
     renderProGantt(cards);
     renderProTimeline(cards);
+    renderProMap(filteredCards);
     renderProDashboard(filteredCards, t);
     renderProFinance(filteredCards, t);
     renderProTable(cards);
@@ -3846,6 +4658,7 @@
     renderAll,
     renderProGantt,
     renderProTimeline,
+    renderProMap,
     renderProBoard,
     buildProSummaryHTML,
     openProCardModal,

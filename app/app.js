@@ -5739,6 +5739,7 @@ function switchProView(viewId) {
   $("#tabs")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.view === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
   if (viewId === "admin") loadAndRenderAdmin();
+  if (viewId === "pro-map" && window.MyPlanPro?.renderProMap) window.MyPlanPro.renderProMap();
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();
 }
@@ -5757,13 +5758,11 @@ async function setAppMode(nextMode, opts = {}) {
   if ($("#brandModeTag")) $("#brandModeTag").textContent = isPro ? "PRO" : "Pessoal";
   const swBtn = $("#btnModeSwitch");
   if (swBtn) {
-    const ico = swBtn.querySelector(".mode-switch-ico");
     const full = swBtn.querySelector(".mode-switch-full");
     const short = swBtn.querySelector(".mode-switch-short");
-    if (ico) ico.textContent = isPro ? "🌴" : "💼";
     if (full) full.textContent = isPro ? "Mudar para Pessoal" : "Mudar para Profissional";
     if (short) short.textContent = isPro ? "Pessoal" : "Pro";
-    swBtn.title = isPro ? "Mudar para o Modo Pessoal (Férias & Viagens)" : "Mudar para o Modo Profissional (Trello, Gantt & Projetos)";
+    swBtn.title = isPro ? "Mudar para o Modo Pessoal (Férias & Viagens)" : "Mudar para o Modo Profissional (Quadro, Gantt & Projetos)";
   }
 
   if ($("#tabs")) $("#tabs").hidden = isPro;
@@ -6665,9 +6664,15 @@ $("#btnAttachFile").onclick = () => $("#f-attachInput").click();
 $("#f-attachInput").onchange = async e => {
   const files = [...e.target.files];
   if (!files.length) return;
-  for (const file of files) {
+  const loadEl = $("#f-attachLoading");
+  const loadTxt = $("#f-attachLoadingText");
+  const btn = $("#btnAttachFile");
+  if (btn) btn.disabled = true;
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
     try {
-      toast(`📎 Enviando ${file.name}...`);
+      if (loadEl) loadEl.hidden = false;
+      if (loadTxt) loadTxt.textContent = `Carregando arquivo "${file.name}" (${i + 1}/${files.length})...`;
       const att = await window.FeriasApi.uploadAttachment(activeTrip.id, modalDraftId, file);
       modalAttachments.push(att);
       renderModalAttachments();
@@ -6676,6 +6681,8 @@ $("#f-attachInput").onchange = async e => {
       toast("❌ " + err.message);
     }
   }
+  if (loadEl) loadEl.hidden = true;
+  if (btn) btn.disabled = false;
   e.target.value = "";
 };
 

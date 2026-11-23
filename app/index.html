@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=37">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=37">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=37">
+<link rel="manifest" href="/manifest.webmanifest?v=38">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=38">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=38">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=37">
+<link rel="stylesheet" href="styles.css?v=38">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=37" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=38" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=37" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=38" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -146,8 +146,7 @@
       </div>
 
       <div class="actions">
-        <button type="button" class="btn small mode-switch-btn" id="btnModeSwitch" title="Alternar entre Modo Pessoal e Modo Profissional">
-          <span class="mode-switch-ico" aria-hidden="true">💼</span>
+        <button type="button" class="btn ghost small btn-learn-more mode-switch-btn" id="btnModeSwitch" title="Alternar entre Modo Pessoal e Modo Profissional">
           <span class="mode-switch-full">Mudar para Profissional</span>
           <span class="mode-switch-short">Pro</span>
         </button>
@@ -216,6 +215,7 @@
     <nav class="tabs tabs-pro" id="tabsPro" aria-label="Navegação profissional" hidden>
       <button class="tab active" data-pro-view="pro-board" id="tab-pro-board" type="button">🗂️ Quadro</button>
       <button class="tab" data-pro-view="pro-gantt" id="tab-pro-gantt" type="button">📅 Gantt &amp; Timeline</button>
+      <button class="tab" data-pro-view="pro-map" id="tab-pro-map" type="button">🗺️ Mapa</button>
       <button class="tab" data-pro-view="pro-dashboard" id="tab-pro-dashboard" type="button">📊 Dashboard</button>
       <button class="tab" data-pro-view="pro-finance" id="tab-pro-finance" type="button">💼 Financeiro</button>
       <button class="tab" data-pro-view="pro-table" id="tab-pro-table" type="button">🧾 Tabela</button>
@@ -737,11 +737,19 @@
                   </select>
                 </div>
                 <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Deslocamento / Viagem</span>
+                  <select id="proBoardTravelFilter" aria-label="Filtrar responsáveis que viajam no quadro">
+                    <option value="">Todos</option>
+                    <option value="travels">✈️ Com responsável que viaja</option>
+                    <option value="local">🏢 Sem viagem</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
                   <span class="gantt-pop-lbl">Cliente / Conta</span>
                   <input type="search" id="proBoardClientFilter" placeholder="Filtrar cliente...">
                 </div>
                 <div class="gantt-pop-field">
-                  <span class="gantt-pop-lbl">Local / Link</span>
+                  <span class="gantt-pop-lbl">Local</span>
                   <input type="search" id="proBoardLocationFilter" placeholder="Filtrar local...">
                 </div>
                 <div class="gantt-pop-field">
@@ -780,6 +788,11 @@
                 </div>
               </div>
             </div>
+          </div>
+          <div class="gantt-zoom-group" id="proBoardZoomGroup" role="group" aria-label="Zoom das listas do Quadro">
+            <button type="button" class="btn ghost small icon-compact" id="btnProBoardZoomOut" title="Zoom Out (diminuir listas para ver mais colunas)">−</button>
+            <button type="button" class="btn ghost small gantt-zoom-readout" id="btnProBoardZoomReset" title="Resetar zoom do Quadro (100%)">100%</button>
+            <button type="button" class="btn ghost small icon-compact" id="btnProBoardZoomIn" title="Zoom In (aumentar listas)">+</button>
           </div>
           <div class="gantt-toolbar-right">
             <span class="pill gantt-shared-pill" id="proBoardRoleBadge" hidden>Compartilhado</span>
@@ -847,11 +860,19 @@
                     </select>
                   </div>
                   <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Deslocamento / Viagem</span>
+                    <select id="proGanttTravelFilter" aria-label="Filtrar responsáveis que viajam no Gantt">
+                      <option value="">Todos</option>
+                      <option value="travels">✈️ Com responsável que viaja</option>
+                      <option value="local">🏢 Sem viagem</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
                     <span class="gantt-pop-lbl">Cliente / Conta</span>
                     <input type="search" id="proGanttClientFilter" placeholder="Filtrar cliente...">
                   </div>
                   <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Local / Link</span>
+                    <span class="gantt-pop-lbl">Local</span>
                     <input type="search" id="proGanttLocationFilter" placeholder="Filtrar local...">
                   </div>
                   <div class="gantt-pop-field">
@@ -952,6 +973,135 @@
       </div>
     </section>
 
+    <!-- MODO PROFISSIONAL: MAPA DE EVENTOS & VIAGENS DOS RESPONSÁVEIS -->
+    <section class="view" id="view-pro-map">
+      <div class="card pro-board-toolbar-card">
+        <div class="gantt-controls gantt-toolbar-row pro-compact-toolbar">
+          <div class="gantt-pop-host">
+            <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProMapFilterPop" aria-expanded="false" aria-controls="proMapFilterPopPanel" title="Filtros do Mapa">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              <span>Filtros</span>
+              <span class="gantt-pop-count" id="proMapFilterCount" hidden></span>
+            </button>
+            <div class="gantt-pop-panel" id="proMapFilterPopPanel" hidden>
+              <div class="gantt-pop-head">
+                <strong>Filtros do Mapa</strong>
+                <button type="button" class="btn ghost small" id="btnProMapClearFilters" hidden>✕ Limpar</button>
+              </div>
+              <div class="gantt-pop-grid">
+                <div class="gantt-pop-field span2">
+                  <span class="gantt-pop-lbl">Buscar (Título, Notas, Local)</span>
+                  <input type="search" id="proMapSearch" placeholder="🔎 Buscar cartão, cliente, local ou nota...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Lista</span>
+                  <div id="proMapColFilter" class="msel-host msel-compact" aria-label="Filtrar listas no mapa"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Tipo</span>
+                  <div id="proMapTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no mapa"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Etiqueta</span>
+                  <div id="proMapLabelFilter" class="msel-host msel-compact" aria-label="Filtrar etiquetas no mapa"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Tags</span>
+                  <div id="proMapTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no mapa"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Prioridade</span>
+                  <select id="proMapPrioFilter" aria-label="Filtrar prioridade no mapa">
+                    <option value="">Todas prioridades</option>
+                    <option value="Crítica">Crítica</option>
+                    <option value="Alta">Alta</option>
+                    <option value="Média">Média</option>
+                    <option value="Baixa">Baixa</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Responsável</span>
+                  <select id="proMapAssigneeFilter" aria-label="Filtrar responsável no mapa">
+                    <option value="">Todos</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Deslocamento / Viagem</span>
+                  <select id="proMapTravelFilter" aria-label="Filtrar responsáveis que viajam no mapa">
+                    <option value="">Todos</option>
+                    <option value="travels">✈️ Com responsável que viaja</option>
+                    <option value="local">🏢 Sem viagem</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Cliente / Conta</span>
+                  <input type="search" id="proMapClientFilter" placeholder="Filtrar cliente...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Local</span>
+                  <input type="search" id="proMapLocationFilter" placeholder="Filtrar local...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Progresso / Conclusão</span>
+                  <select id="proMapDoneFilter" aria-label="Filtrar conclusão no mapa">
+                    <option value="">Todos</option>
+                    <option value="pending">Pendentes (&lt; 100%)</option>
+                    <option value="done">Concluídos (100%)</option>
+                    <option value="nodate">Sem data / Sem prazo</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Movimento Fin.</span>
+                  <select id="proMapFinDirFilter" aria-label="Filtrar movimento financeiro no mapa">
+                    <option value="">Todos</option>
+                    <option value="income">💵 Recebimento (+)</option>
+                    <option value="expense">💳 Despesa (−)</option>
+                    <option value="none">Sem lançamento</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Status Financeiro</span>
+                  <select id="proMapFinStatusFilter" aria-label="Filtrar status financeiro no mapa">
+                    <option value="">Todos</option>
+                    <option value="Previsto">⏳ Previsto</option>
+                    <option value="Liquidado">✅ Liquidado</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">De</span>
+                  <input type="date" id="proMapDateFrom" aria-label="Data inicial no mapa">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Até</span>
+                  <input type="date" id="proMapDateTo" aria-label="Data final no mapa">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pro-map-quick-filters">
+            <select id="proMapQuickAssignee" class="pro-map-quick-sel" aria-label="Ver viagens por pessoa no mapa">
+              <option value="">👤 Todas as pessoas</option>
+            </select>
+            <select id="proMapQuickTravel" class="pro-map-quick-sel" aria-label="Filtrar apenas quem viaja">
+              <option value="">📍 Todos os locais com cartão</option>
+              <option value="travels">✈️ Apenas onde há pessoa viajando</option>
+            </select>
+          </div>
+
+          <div class="gantt-toolbar-right">
+            <span class="pill" id="proMapCountBadge">0 locais</span>
+            <button type="button" class="btn primary small" id="btnProMapAddCard">➕ Novo Cartão</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card pro-map-card">
+        <div id="proMapCanvas" class="pro-map-canvas" aria-label="Mapa de eventos com tags de título dos cartões"></div>
+        <div id="proMapTravelSummary" class="pro-map-travel-summary" hidden></div>
+      </div>
+    </section>
+
     <!-- MODO PROFISSIONAL: DASHBOARD EXECUTIVO -->
     <section class="view" id="view-pro-dashboard">
       <div class="view-filter-bar pro-compact-filter-bar" aria-label="Filtros do dashboard profissional">
@@ -1004,11 +1154,19 @@
                 </select>
               </div>
               <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Deslocamento / Viagem</span>
+                <select id="proDashTravelFilter" aria-label="Filtrar responsáveis que viajam no dashboard">
+                  <option value="">Todos</option>
+                  <option value="travels">✈️ Com responsável que viaja</option>
+                  <option value="local">🏢 Sem viagem</option>
+                </select>
+              </div>
+              <div class="gantt-pop-field">
                 <span class="gantt-pop-lbl">Cliente / Conta</span>
                 <input type="search" id="proDashClientFilter" placeholder="Filtrar cliente...">
               </div>
               <div class="gantt-pop-field">
-                <span class="gantt-pop-lbl">Local / Link</span>
+                <span class="gantt-pop-lbl">Local</span>
                 <input type="search" id="proDashLocationFilter" placeholder="Filtrar local...">
               </div>
               <div class="gantt-pop-field">
@@ -1050,15 +1208,15 @@
         </div>
       </div>
       <div class="kpis" id="proDashKpis"></div>
-      <div class="grid2">
-        <div class="card">
+      <div class="grid2" id="proDashTopGrid">
+        <div class="card" id="proDashUpcomingCard">
           <div class="card-head">
             <h2>📅 Próximos Compromissos &amp; Prazos</h2>
             <button type="button" class="btn ghost small" id="btnProDashAddCard">➕ Novo Cartão</button>
           </div>
           <ul class="upcoming" id="proUpcoming"></ul>
         </div>
-        <div class="card">
+        <div class="card" id="proDashFinanceCard">
           <div class="card-head">
             <h2>💼 Resumo Financeiro &amp; Agenda</h2>
             <span class="muted small" id="proDashMarginBadge"></span>
@@ -1070,20 +1228,48 @@
           </div>
         </div>
       </div>
-      <div class="grid2">
-        <div class="card">
+      <div class="grid2" id="proDashChartsGrid">
+        <div class="card" id="proDashChartStageCard">
           <div class="card-head">
-            <h2>🗂️ Distribuição por Lista (Funil Trello)</h2>
-            <span class="muted small">Clique para filtrar</span>
+            <h2>🗂️ Distribuição por Lista (Funil)</h2>
+            <span class="muted small">Clique para abrir no Quadro</span>
           </div>
           <div id="proStageBars" class="tripbars"></div>
         </div>
-        <div class="card">
+        <div class="card" id="proDashChartTypeCard">
           <div class="card-head">
             <h2>📊 Carga por Tipo &amp; Categoria</h2>
             <span class="muted small">Volume e financeiro</span>
           </div>
           <div id="proTypeBars" class="tripbars"></div>
+        </div>
+        <div class="card" id="proDashChartStatusCard">
+          <div class="card-head">
+            <h2>🎯 Status &amp; Saúde dos Prazos</h2>
+            <span class="muted small">Concluídos, em dia e atrasados</span>
+          </div>
+          <div id="proStatusDonutChart"></div>
+        </div>
+        <div class="card" id="proDashChartAssigneeCard">
+          <div class="card-head">
+            <h2>👤 Carga por Responsável &amp; Viagens</h2>
+            <span class="muted small">Cartões, concluídos e deslocamentos</span>
+          </div>
+          <div id="proAssigneeBars" class="tripbars"></div>
+        </div>
+        <div class="card" id="proDashChartPriorityCard">
+          <div class="card-head">
+            <h2>🚦 Distribuição por Prioridade</h2>
+            <span class="muted small">Crítica, Alta, Média e Baixa</span>
+          </div>
+          <div id="proPriorityChart"></div>
+        </div>
+        <div class="card" id="proDashChartMonthlyCard">
+          <div class="card-head">
+            <h2>📈 Evolução Mensal de Entregas</h2>
+            <span class="muted small">Volume de cartões por mês</span>
+          </div>
+          <div id="proMonthlyChart"></div>
         </div>
       </div>
     </section>
@@ -1140,11 +1326,19 @@
                 </select>
               </div>
               <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Deslocamento / Viagem</span>
+                <select id="proFinTravelFilter" aria-label="Filtrar responsáveis que viajam no financeiro">
+                  <option value="">Todos</option>
+                  <option value="travels">✈️ Com responsável que viaja</option>
+                  <option value="local">🏢 Sem viagem</option>
+                </select>
+              </div>
+              <div class="gantt-pop-field">
                 <span class="gantt-pop-lbl">Cliente / Conta</span>
                 <input type="search" id="proFinClientFilter" placeholder="Filtrar cliente...">
               </div>
               <div class="gantt-pop-field">
-                <span class="gantt-pop-lbl">Local / Link</span>
+                <span class="gantt-pop-lbl">Local</span>
                 <input type="search" id="proFinLocationFilter" placeholder="Filtrar local...">
               </div>
               <div class="gantt-pop-field">
@@ -1283,11 +1477,19 @@
                     </select>
                   </div>
                   <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Deslocamento / Viagem</span>
+                    <select id="proFilterTravel" aria-label="Filtrar responsáveis que viajam na tabela">
+                      <option value="">Todos</option>
+                      <option value="travels">✈️ Com responsável que viaja</option>
+                      <option value="local">🏢 Sem viagem</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
                     <span class="gantt-pop-lbl">Cliente / Conta</span>
                     <input type="search" id="proFilterClient" placeholder="Filtrar cliente...">
                   </div>
                   <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Local / Link</span>
+                    <span class="gantt-pop-lbl">Local</span>
                     <input type="search" id="proFilterLocation" placeholder="Filtrar local...">
                   </div>
                   <div class="gantt-pop-field">
@@ -1390,13 +1592,33 @@
 
         <div class="card">
           <div class="card-head">
-            <h2>🗂️ Listas do Quadro Trello &amp; Etiquetas</h2>
+            <h2>🗂️ Listas do Quadro &amp; Etiquetas</h2>
             <button type="button" class="btn primary small" id="btnProAddColumn">➕ Nova Lista</button>
           </div>
           <div id="proColumnsManager" class="pro-cols-manager"></div>
           <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
           <strong style="font-size:0.86rem;display:block;margin-bottom:8px">🏷️ Etiquetas do Quadro</strong>
           <div id="proLabelsManager" class="pro-labels-manager"></div>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:14px">
+        <div class="card" style="margin-bottom:0">
+          <div class="card-head">
+            <h2>👁️ Menus Visíveis neste Projeto</h2>
+            <span class="muted small">Oculte abas que não for usar</span>
+          </div>
+          <p class="muted small" style="margin-top:0">Desmarque menus que não se aplicam a este projeto (ex: Financeiro, Checklist ou Tabela) para despoluir a barra superior:</p>
+          <div id="proVisibleMenusManager" class="pro-toggles-grid"></div>
+        </div>
+
+        <div class="card" style="margin-bottom:0">
+          <div class="card-head">
+            <h2>📊 Seções &amp; Gráficos do Dashboard</h2>
+            <span class="muted small">Personalize o Dashboard</span>
+          </div>
+          <p class="muted small" style="margin-top:0">Escolha quais blocos, cartões financeiros e gráficos aparecem na aba Dashboard deste projeto:</p>
+          <div id="proDashWidgetsManager" class="pro-toggles-grid"></div>
         </div>
       </div>
 
@@ -1755,6 +1977,10 @@
           </div>
         </div>
         <input type="file" id="f-attachInput" multiple accept=".pdf,image/*,.doc,.docx,.txt" hidden>
+        <div id="f-attachLoading" class="modal-ai-status is-loading" role="status" aria-live="polite" hidden style="margin-top:8px">
+          <span class="ai-spinner" aria-hidden="true"></span>
+          <span id="f-attachLoadingText">Carregando arquivo...</span>
+        </div>
         <div id="modalAttachList" class="attach-list"></div>
       </div>
 
@@ -2309,6 +2535,10 @@
             </div>
           </div>
           <input type="file" id="pc-attachInput" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.txt" hidden>
+          <div id="pc-attachLoading" class="modal-ai-status is-loading" role="status" aria-live="polite" hidden style="margin-top:8px">
+            <span class="ai-spinner" aria-hidden="true"></span>
+            <span id="pc-attachLoadingText">Carregando arquivo...</span>
+          </div>
           <div id="pc-attachList" class="attach-list"></div>
         </div>
       </div>
@@ -2317,10 +2547,10 @@
       <div class="pro-card-side-col">
         <div class="pro-side-card">
           <div class="form-grid">
-            <label>Lista (Coluna Trello)
+            <label>Lista (Coluna)
               <div class="pro-type-picker-row">
                 <select id="pc-column"></select>
-                <button type="button" class="btn ghost small icon-compact" id="btnProQuickAddCol" title="Adicionar nova Lista (Coluna Trello)">+</button>
+                <button type="button" class="btn ghost small icon-compact" id="btnProQuickAddCol" title="Adicionar nova Lista (Coluna)">+</button>
               </div>
             </label>
             <label>Tipo de cartão
@@ -2330,11 +2560,11 @@
                 <button type="button" class="btn ghost small icon-compact" id="btnProQuickAddType" title="Criar novo tipo de cartão">+</button>
               </div>
             </label>
-            <label>Data inicial <small class="muted">(opcional)</small>
-              <input type="date" id="pc-start">
-            </label>
             <label>Data final / Prazo
               <input type="date" id="pc-end">
+            </label>
+            <label>Data inicial
+              <input type="date" id="pc-start">
             </label>
             <label>Hora início
               <input type="time" id="pc-startTime">
@@ -2359,17 +2589,31 @@
             <label>Responsável
               <div class="pro-type-picker-row">
                 <select id="pc-assignee" aria-label="Responsável pelo cartão"></select>
-                <button type="button" class="btn ghost small icon-compact" id="btnProQuickAddAssignee" title="Inserir novo responsável">+</button>
+                <button type="button" class="btn ghost small icon-compact" id="btnProQuickAddAssignee" title="Adicionar outro responsável ao cartão ou criar novo">+</button>
               </div>
             </label>
-            <label class="span2">Local / Link da Reunião
-              <input type="text" id="pc-location" placeholder="Ex: Meet, Escritório, São Paulo - SP">
+            <div class="span2 pro-assignees-box" id="pc-assigneesBox">
+              <div class="pro-primary-travel-row">
+                <label class="pro-travel-chk-label" title="Marque se este responsável vai viajar para o local desta tarefa">
+                  <input type="checkbox" id="pc-assigneeTravels">
+                  <span>✈️ Este responsável viaja nesta tarefa</span>
+                </label>
+                <button type="button" class="btn ghost small" id="btnProAddCardAssigneeRow" title="Adicionar mais um responsável neste cartão">➕ Outro responsável</button>
+              </div>
+              <div id="pc-extraAssigneesList" class="pro-extra-assignees-list"></div>
+            </div>
+            <label class="span2 ac-wrap">Local (Padronizado Google Maps)
+              <input type="text" id="pc-location" placeholder="Digite cidade, aeroporto ou endereço (busca Google Maps)..." autocomplete="off">
+              <div class="ac-list" id="ac-pro-location" hidden></div>
+            </label>
+            <label class="span2">Link da Reunião
+              <input type="url" id="pc-meetingLink" placeholder="Ex: https://meet.google.com/... ou link Teams / Zoom">
             </label>
           </div>
         </div>
 
         <div class="pro-side-card">
-          <span class="pro-side-title">🎨 Capa &amp; Etiquetas Trello</span>
+          <span class="pro-side-title">🎨 Capa &amp; Etiquetas</span>
           <div id="pc-coverColors" class="pro-cover-swatches"></div>
           <div id="pc-labelsBox" class="pro-labels-picker" style="margin-top:8px"></div>
           <div class="form-grid" style="margin-top:8px">
@@ -2495,15 +2739,15 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=37"></script>
-<script src="vehicles.js?v=37"></script>
-<script src="countries.js?v=37"></script>
-<script src="data.js?v=37"></script>
-<script src="maps.js?v=37"></script>
-<script src="calendar.js?v=37"></script>
-<script src="report.js?v=37"></script>
-<script src="api.js?v=37"></script>
-<script src="pro.js?v=37"></script>
-<script src="app.js?v=37"></script>
+<script src="config.example.js?v=38"></script>
+<script src="vehicles.js?v=38"></script>
+<script src="countries.js?v=38"></script>
+<script src="data.js?v=38"></script>
+<script src="maps.js?v=38"></script>
+<script src="calendar.js?v=38"></script>
+<script src="report.js?v=38"></script>
+<script src="api.js?v=38"></script>
+<script src="pro.js?v=38"></script>
+<script src="app.js?v=38"></script>
 </body>
 </html>

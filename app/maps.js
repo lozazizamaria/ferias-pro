@@ -332,7 +332,7 @@
                 const place = pred.toPlace();
                 await place.fetchFields({ fields: ["displayName", "formattedAddress", "location"] });
                 sessionToken = new AutocompleteSessionToken();
-                const display = place.displayName || pred.text.toString();
+                const display = place.formattedAddress || place.displayName || pred.text.toString();
                 inputEl.value = display;
                 selectedPlace = place;
                 selectedText = display.trim();
@@ -391,6 +391,129 @@
     });
   }
 
+  const BUILTIN_CITY_COORDS = {
+    "brasilia": { lat: -15.793889, lng: -47.882778, formatted: "Brasília - DF, Brasil" },
+    "sao paulo": { lat: -23.55052, lng: -46.633308, formatted: "São Paulo - SP, Brasil" },
+    "rio de janeiro": { lat: -22.906847, lng: -43.172896, formatted: "Rio de Janeiro - RJ, Brasil" },
+    "belo horizonte": { lat: -19.916681, lng: -43.934493, formatted: "Belo Horizonte - MG, Brasil" },
+    "curitiba": { lat: -25.428954, lng: -49.267137, formatted: "Curitiba - PR, Brasil" },
+    "porto alegre": { lat: -30.034647, lng: -51.217658, formatted: "Porto Alegre - RS, Brasil" },
+    "florianopolis": { lat: -27.59487, lng: -48.54822, formatted: "Florianópolis - SC, Brasil" },
+    "navegantes": { lat: -26.898889, lng: -48.654167, formatted: "Navegantes - SC, Brasil" },
+    "pirassununga": { lat: -21.996111, lng: -47.425833, formatted: "Pirassununga - SP, Brasil" },
+    "campinas": { lat: -22.909938, lng: -47.062633, formatted: "Campinas - SP, Brasil" },
+    "sao jose dos campos": { lat: -23.1896, lng: -45.8841, formatted: "São José dos Campos - SP, Brasil" },
+    "gaviao peixoto": { lat: -21.8389, lng: -48.4947, formatted: "Gavião Peixoto - SP, Brasil" },
+    "anapolis": { lat: -16.328547, lng: -48.953403, formatted: "Anápolis - GO, Brasil" },
+    "goiania": { lat: -16.686891, lng: -49.264794, formatted: "Goiânia - GO, Brasil" },
+    "salvador": { lat: -12.977749, lng: -38.50163, formatted: "Salvador - BA, Brasil" },
+    "recife": { lat: -8.057838, lng: -34.882897, formatted: "Recife - PE, Brasil" },
+    "fortaleza": { lat: -3.731862, lng: -38.52667, formatted: "Fortaleza - CE, Brasil" },
+    "natal": { lat: -5.79448, lng: -35.211, formatted: "Natal - RN, Brasil" },
+    "manaus": { lat: -3.119028, lng: -60.021731, formatted: "Manaus - AM, Brasil" },
+    "belem": { lat: -1.455755, lng: -48.49018, formatted: "Belém - PA, Brasil" },
+    "canoas": { lat: -29.918889, lng: -51.183611, formatted: "Canoas - RS, Brasil" },
+    "gramado": { lat: -29.374636, lng: -50.876435, formatted: "Gramado - RS, Brasil" },
+    "guarulhos": { lat: -23.454163, lng: -46.534096, formatted: "Guarulhos - SP, Brasil" },
+    "vitoria": { lat: -20.3155, lng: -40.3128, formatted: "Vitória - ES, Brasil" },
+    "cuiaba": { lat: -15.601411, lng: -56.097892, formatted: "Cuiabá - MT, Brasil" },
+    "campo grande": { lat: -20.469711, lng: -54.620121, formatted: "Campo Grande - MS, Brasil" },
+    "maceio": { lat: -9.649849, lng: -35.708949, formatted: "Maceió - AL, Brasil" },
+    "linkoping": { lat: 58.410807, lng: 15.621373, formatted: "Linköping, Suécia" },
+    "estocolmo": { lat: 59.329323, lng: 18.068581, formatted: "Estocolmo, Suécia" },
+    "lisboa": { lat: 38.722252, lng: -9.139337, formatted: "Lisboa, Portugal" },
+    "madrid": { lat: 40.416775, lng: -3.70379, formatted: "Madrid, Espanha" },
+    "paris": { lat: 48.856614, lng: 2.352222, formatted: "Paris, França" },
+    "londres": { lat: 51.507351, lng: -0.127758, formatted: "Londres, Reino Unido" },
+    "miami": { lat: 25.76168, lng: -80.19179, formatted: "Miami, FL, EUA" },
+    "orlando": { lat: 28.538335, lng: -81.379236, formatted: "Orlando, FL, EUA" },
+    "nova york": { lat: 40.712775, lng: -74.005973, formatted: "Nova York, NY, EUA" },
+    "washington": { lat: 38.907192, lng: -77.036871, formatted: "Washington, DC, EUA" }
+  };
+
+  const geocodeCache = new Map();
+
+  function normLocKey(str) {
+    return String(str || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  function lookupBuiltinLocation(query) {
+    const k = normLocKey(query);
+    if (!k) return null;
+    if (BUILTIN_CITY_COORDS[k]) return BUILTIN_CITY_COORDS[k];
+    for (const [cityKey, info] of Object.entries(BUILTIN_CITY_COORDS)) {
+      if (k.includes(cityKey)) return info;
+    }
+    return null;
+  }
+
+  async function resolvePlaceStandard(rawQuery) {
+    const q = String(rawQuery || "").trim();
+    if (!q) return null;
+    const cacheKey = normLocKey(q);
+    if (geocodeCache.has(cacheKey)) return geocodeCache.get(cacheKey);
+
+    if (hasKey()) {
+      try {
+        await ensureLoaded();
+        const { AutocompleteSuggestion } = await google.maps.importLibrary("places");
+        const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input: q,
+          language: "pt-BR",
+          region: "br",
+          internalUsageAttributionIds: [ATTR_ID]
+        });
+        const pred = suggestions?.[0]?.placePrediction;
+        if (pred) {
+          const place = pred.toPlace();
+          await place.fetchFields({ fields: ["displayName", "formattedAddress", "location"] });
+          const loc = place.location;
+          const lat = typeof loc?.lat === "function" ? loc.lat() : Number(loc?.lat);
+          const lng = typeof loc?.lng === "function" ? loc.lng() : Number(loc?.lng);
+          const formatted = place.formattedAddress || place.displayName || pred.text.toString();
+          if (isFinite(lat) && isFinite(lng)) {
+            const out = { formatted, lat, lng };
+            geocodeCache.set(cacheKey, out);
+            geocodeCache.set(normLocKey(formatted), out);
+            return out;
+          }
+        }
+      } catch {}
+    }
+
+    const builtin = lookupBuiltinLocation(q);
+    if (builtin) {
+      const out = { formatted: builtin.formatted, lat: builtin.lat, lng: builtin.lng };
+      geocodeCache.set(cacheKey, out);
+      return out;
+    }
+
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=pt-BR&q=${encodeURIComponent(q)}`;
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (res.ok) {
+        const arr = await res.json();
+        if (Array.isArray(arr) && arr[0]) {
+          const lat = parseFloat(arr[0].lat);
+          const lng = parseFloat(arr[0].lon);
+          const parts = String(arr[0].display_name || q).split(",").map(s => s.trim()).filter(Boolean);
+          const formatted = parts.length > 3 ? `${parts[0]}, ${parts[1]} - ${parts[parts.length - 1]}` : (arr[0].display_name || q);
+          if (isFinite(lat) && isFinite(lng)) {
+            const out = { formatted, lat, lng };
+            geocodeCache.set(cacheKey, out);
+            geocodeCache.set(normLocKey(formatted), out);
+            return out;
+          }
+        }
+      }
+    } catch {}
+    return null;
+  }
+
   window.FeriasMaps = {
     getKey,
     hasKey,
@@ -399,6 +522,8 @@
     computeTripRoute,
     renderRouteOnMap,
     attachAutocomplete,
+    resolvePlaceStandard,
+    lookupBuiltinLocation,
     buildLegUrl,
     buildFullRouteUrl,
     testApiKey
