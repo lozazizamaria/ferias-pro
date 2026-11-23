@@ -18,18 +18,49 @@
   const PRO_TYPE_COLORS = {
     Desenvolvimento: ["#2563eb", "#1d4ed8"],
     "Reunião": ["#0284c7", "#0369a1"],
+    Viagem: ["#d97706", "#b45309"],
     "Viagem Corp.": ["#d97706", "#b45309"],
     Recebimento: ["#10b981", "#059669"],
     Despesa: ["#ef4444", "#dc2626"],
     Entrega: ["#6366f1", "#4338ca"],
     Marco: ["#0ea5e9", "#0284c7"],
+    Proposta: ["#8b5cf6", "#6d28d9"],
     "Follow-up": ["#8b5cf6", "#6d28d9"],
     Outro: ["#64748b", "#475569"]
   };
 
-  function getTypeColorPair(type, isPro) {
-    if (isPro) return PRO_TYPE_COLORS[type] || TYPE_COLORS[type] || PRO_TYPE_COLORS.Outro;
-    return TYPE_COLORS[type] || TYPE_COLORS.Outro;
+  function getTypeColorPair(type, isPro, infoOpt = null) {
+    if (infoOpt?.isCustom && infoOpt.color) return [infoOpt.color, infoOpt.color];
+    const mapped = (window.PRO_LEGACY_TYPE_MAP && window.PRO_LEGACY_TYPE_MAP[type]) || type;
+    if (isPro) return PRO_TYPE_COLORS[mapped] || TYPE_COLORS[mapped] || (infoOpt?.color ? [infoOpt.color, infoOpt.color] : PRO_TYPE_COLORS.Outro);
+    return TYPE_COLORS[mapped] || TYPE_COLORS.Outro;
+  }
+
+  function drawProIconOnCanvas(ctx, info, cx, cy, size = 15) {
+    const ic = info?.iconId && window.PRO_ICON_MAP ? window.PRO_ICON_MAP[info.iconId] : null;
+    if (ic && typeof Path2D !== "undefined") {
+      ctx.save();
+      ctx.translate(cx - size / 2, cy - size / 2);
+      ctx.scale(size / 24, size / 24);
+      const p = new Path2D(ic.d);
+      if (ic.mode === "fill") {
+        ctx.fillStyle = "#ffffff";
+        ctx.fill(p);
+      } else {
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2.1;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.stroke(p);
+      }
+      ctx.restore();
+      return;
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 13px Outfit, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(String(info?.icon || "•").replace(/<[^>]*>/g, "") || "•", cx, cy + 5);
+    ctx.textAlign = "left";
   }
 
   function esc(s) {
@@ -127,7 +158,7 @@
     .pg-grid { display: grid; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; font-size: 7pt; width: 100%; }
     .pg-corner { grid-row: 1 / span 3; grid-column: 1; background: #f1f5f9; font-weight: 700; display: flex; align-items: center; padding: 4px 8px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
     .pg-grid.is-week-only .pg-corner { grid-row: 1 / span 2; }
-    .pg-month { background: #e2e8f0; font-weight: 700; font-size: 6.7pt; text-transform: uppercase; padding: 2px 5px; border-right: 1px solid #94a3b8; border-bottom: 1px solid #cbd5e1; color: #0f172a; }
+    .pg-month { background: #e2e8f0; font-weight: 700; font-size: 6.7pt; text-transform: uppercase; text-align: center; padding: 2px 4px; border-right: 1px solid #94a3b8; border-bottom: 1px solid #cbd5e1; color: #0f172a; }
     .pg-month.m-odd { background: #dbeafe; color: #1e3a8a; }
     .pg-week { background: #f8fafc; font-weight: 700; font-size: 6pt; text-align: center; padding: 2px 2px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; color: #334155; }
     .pg-week.w-odd { background: #eef2ff; color: #1e3a8a; }
@@ -157,6 +188,8 @@
     .pg-u-pill { display: inline-block; font-size: 5.5pt; font-weight: 800; padding: 0 3px; border-radius: 3px; margin-right: 3px; }
     .pg-u-pill.pro { background: #1e3a8a; color: #dbeafe; }
     .pg-u-pill.per { background: #0f766e; color: #d1fae5; }
+    .pro-ico-svg { width: 10px; height: 10px; display: inline-block; vertical-align: -1.5px; flex-shrink: 0; }
+    .pg-dot .pro-ico-svg { width: 9px; height: 9px; vertical-align: 0; }
   `;
 
   function buildGanttHtmlBlock(activities, fromISO, toISO, helpers, compactTitle, opts = {}) {
@@ -168,7 +201,7 @@
     const rows = filterActivitiesByRange(activities, fromISO, toISO);
     if (!rows.length) return `<p style="color:#64748b">Nenhuma atividade nas datas selecionadas.</p>`;
 
-    const mNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const mNames = helpers.MON_ABBR || ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
     const leftW = opts.slimRail ? 150 : 210;
 
     if (isWeekOnly) {
@@ -188,7 +221,8 @@
         if (prevM && prevM.key === mKey) prevM.span++;
         else {
           mStart = i > 0;
-          monthSpans.push({ key: mKey, label: `${mNames[thu.getMonth()]}/${String(thu.getFullYear()).slice(2)}`, col: i + 2, span: 1, mOdd: monthSpans.length % 2 === 1 });
+          const mLabel = weeksCount > 24 ? mNames[thu.getMonth()] : `${mNames[thu.getMonth()]} ${thu.getFullYear()}`;
+          monthSpans.push({ key: mKey, label: mLabel, col: i + 2, span: 1, mOdd: monthSpans.length % 2 === 1 });
         }
         weeks.push({ idx: i, week: wi.week, wOdd: i % 2 === 1, mStart });
       }
@@ -198,7 +232,7 @@
         cells += `<div class="pg-month ${ms.mOdd ? "m-odd" : "m-even"}" style="grid-column:${ms.col} / span ${ms.span};grid-row:1">${ms.label}</div>`;
       });
       weeks.forEach(w => {
-        cells += `<div class="pg-week ${w.wOdd ? "w-odd" : "w-even"}" style="grid-column:${w.idx + 2};grid-row:2">${weeksCount > 24 ? `S${w.week}` : `Sem ${w.week}`}</div>`;
+        cells += `<div class="pg-week ${w.wOdd ? "w-odd" : "w-even"}" style="grid-column:${w.idx + 2};grid-row:2">${weeksCount > 18 ? String(w.week) : `Sem ${w.week}`}</div>`;
       });
 
       rows.forEach((a, rIdx) => {
@@ -206,7 +240,7 @@
         const um = isUnified ? opts.unifiedLookup.get(a.id) : null;
         const effPro = um ? (um.mode === "professional") : isPro;
         const info = getTypeInfo(a.type);
-        const colors = getTypeColorPair(a.type, effPro);
+        const colors = getTypeColorPair(a.type, effPro, info);
         const finBadge = effPro ? formatProFinBadge(a, money) : "";
         const c = (!effPro && calc) ? calc(a) : { total: 0, extra: 0 };
         const costVal = c.total + c.extra;
@@ -283,10 +317,11 @@
 
     let cells = `<div class="pg-corner">${esc(compactTitle || (isUnified ? "Agenda Completa" : (isPro ? "Cartão / Entrega" : "Atividade")))}</div>`;
     monthSpans.forEach(ms => {
-      cells += `<div class="pg-month ${ms.mOdd ? "m-odd" : "m-even"}" style="grid-column:${ms.col} / span ${ms.span};grid-row:1">${ms.label}</div>`;
+      const mText = ms.span < 10 ? mNames[Number(ms.key.split("-")[1])] : ms.label;
+      cells += `<div class="pg-month ${ms.mOdd ? "m-odd" : "m-even"}" style="grid-column:${ms.col} / span ${ms.span};grid-row:1">${mText}</div>`;
     });
     weekSpans.forEach(ws => {
-      const wLbl = ws.span >= 4 ? `Sem ${ws.week}` : (ws.span >= 2 ? `S${ws.week}` : String(ws.week));
+      const wLbl = ws.span >= 4 ? `Sem ${ws.week}` : String(ws.week);
       cells += `<div class="pg-week ${ws.wOdd ? "w-odd" : "w-even"}" style="grid-column:${ws.col} / span ${ws.span};grid-row:2">${wLbl}</div>`;
     });
     const compactDays = nDays > 45;
@@ -317,7 +352,7 @@
       const um = isUnified ? opts.unifiedLookup.get(a.id) : null;
       const effPro = um ? (um.mode === "professional") : isPro;
       const info = getTypeInfo(a.type);
-      const colors = getTypeColorPair(a.type, effPro);
+      const colors = getTypeColorPair(a.type, effPro, info);
       let meta = "";
       let finBadge = "";
       if (effPro) {
@@ -487,7 +522,10 @@
       ctx.strokeRect(x, topY, w, monthH);
       ctx.fillStyle = isPro && ms.mOdd ? "#1e3a8a" : "#0f172a";
       ctx.font = "700 12px Outfit, system-ui, sans-serif";
-      ctx.fillText(ms.label, x + 8, topY + 16);
+      const lblText = w < 90 ? ms.label.split(" ")[0] : ms.label;
+      ctx.textAlign = "center";
+      ctx.fillText(lblText, x + w / 2, topY + 16);
+      ctx.textAlign = "left";
     });
 
     if (isWeekOnly) {
@@ -509,7 +547,7 @@
         ctx.fillStyle = w.wOdd ? "#1e3a8a" : "#334155";
         ctx.font = "700 13px Outfit, system-ui, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(nCols > 24 ? `S${w.week}` : `Sem ${w.week}`, x + colW / 2, topY + monthH + 19);
+        ctx.fillText(colW < 48 ? String(w.week) : `Sem ${w.week}`, x + colW / 2, topY + monthH + 19);
         ctx.textAlign = "left";
       });
     } else {
@@ -524,7 +562,7 @@
         ctx.fillStyle = ws.wOdd ? "#1e3a8a" : "#475569";
         ctx.font = "700 11px Outfit, system-ui, sans-serif";
         ctx.textAlign = "center";
-        const lbl = w > 56 ? `Sem ${ws.week}` : (w > 24 ? `S${ws.week}` : String(ws.week));
+        const lbl = w >= 48 ? `Sem ${ws.week}` : String(ws.week);
         ctx.fillText(lbl, x + w / 2, topY + monthH + 15);
         ctx.textAlign = "left";
       });
@@ -602,7 +640,7 @@
       const um = isUnified ? opts.unifiedLookup.get(a.id) : null;
       const effPro = um ? (um.mode === "professional") : isPro;
       const info = getTypeInfo(a.type);
-      const colors = getTypeColorPair(a.type, effPro);
+      const colors = getTypeColorPair(a.type, effPro, info);
       const finBadge = effPro ? formatProFinBadge(a, money) : "";
       const c = (!effPro && calc) ? calc(a) : { total: 0, extra: 0 };
       const costVal = c.total + c.extra;
@@ -616,11 +654,7 @@
       ctx.beginPath();
       ctx.roundRect(padX + 10, y + (rowH - 24) / 2, 24, 24, 6);
       ctx.fill();
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "700 13px Outfit, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(info.icon, padX + 22, y + rowH / 2 + 5);
-      ctx.textAlign = "left";
+      drawProIconOnCanvas(ctx, info, padX + 22, y + rowH / 2, 15);
 
       ctx.fillStyle = "#0f172a";
       ctx.font = "700 15px Outfit, sans-serif";
@@ -744,7 +778,7 @@
     const colMap = opts.colMap || new Map();
     const listHtml = rows.map(a => {
       const info = getTypeInfo(a.type);
-      const colors = getTypeColorPair(a.type, isPro);
+      const colors = getTypeColorPair(a.type, isPro, info);
       const d = parseD(a.start);
       let meta = "";
       if (isPro) {
@@ -787,6 +821,7 @@
         .rtl-body b { display: block; font-size: 8.2pt; }
         .rtl-body span { font-size: 7.4pt; color: #475569; }
         .rbadge { font-size: 6.8pt; padding: 1px 6px; border-radius: 99px; font-weight: 700; vertical-align: middle; }
+        .pro-ico-svg { width: 10px; height: 10px; display: inline-block; vertical-align: -1.5px; }
       </style></head><body>
       <div class="rhead">
         <div>
@@ -1552,7 +1587,7 @@
 
     const timelineHtml = sorted.map(a => {
       const info = getTypeInfo(a.type);
-      const colors = getTypeColorPair(a.type, true);
+      const colors = getTypeColorPair(a.type, true, info);
       const d = parseD(a.start);
       const fin = formatProFinBadge(a, money);
       const meta = [`${days(a)}d`, colMap.get(a.columnId) || "", a.client || "", a.progress > 0 ? `${a.progress}%` : "", fin, a.notes || ""].filter(Boolean).join(" · ");

@@ -5,7 +5,7 @@ const THEME_KEY = "ferias-pro-theme";
 const PWA_DISMISS_KEY = "ferias-pro-pwa-dismissed";
 const APP_MODE_KEY = "myplan-app-mode";
 const SELECTED_TRIPS_PRO_KEY = "myplan-selected-trips-pro";
-const GANTT_ZOOM_STEPS = [10, 13, 16, 19, 21, 22, 26, 32, 38, 44, 50, 58, 68, 82, 98, 116];
+const GANTT_ZOOM_STEPS = [2.5, 3, 3.5, 4.5, 6, 8, 10, 13, 16, 19, 21, 22, 26, 32, 38, 44, 50, 58, 68, 82, 98, 116];
 
 let appMode = localStorage.getItem(APP_MODE_KEY) === "professional" ? "professional" : "personal";
 let lastPersonalView = "gantt";
@@ -13,6 +13,9 @@ let lastProView = "pro-board";
 let activeGanttPrintCtx = null;
 let ganttUnifiedMode = false;
 let ganttConflictsOnly = false;
+let unifiedSelectedTripIds = null;
+let unifiedSelectionCustomized = false;
+let unifiedCalMenuOpenBarId = null;
 let personalDateFrom = "";
 let personalDateTo = "";
 const unifiedMetaMap = new WeakMap();
@@ -34,6 +37,7 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const DAY = 864e5;
 const WD = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const MON = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const MON_ABBR = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 const MON_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
 const SELECTED_TRIPS_KEY = "ferias-pro-selected-trips";
@@ -636,11 +640,13 @@ function createMultiSelect(hostEl, cfg = {}) {
         grpHtml = `<div class="msel-group">${esc(it.group)}</div>`;
       }
       const checked = selectedSet.has(it.id) ? "checked" : "";
-      const prefix = it.icon ? `${it.icon} ` : "";
+      const iconNode = it.iconHtml
+        ? `<span class="msel-ico"${it.color ? ` style="--t-color:${esc(it.color)}"` : ""}>${it.iconHtml}</span>`
+        : (it.icon ? `<span class="msel-ico">${esc(it.icon)}</span>` : "");
       return `${grpHtml}<div class="msel-opt">
         <label class="msel-check">
           <input type="checkbox" value="${esc(it.id)}" ${checked}>
-          <span class="msel-txt">${esc(prefix + it.label)}</span>
+          <span class="msel-txt">${iconNode}<span>${esc(it.label)}</span></span>
         </label>
         ${showOnly ? `<button type="button" class="msel-only" data-ms-only="${esc(it.id)}" title="Selecionar somente este">Só</button>` : ""}
       </div>`;
@@ -873,7 +879,7 @@ function registerCustomTag(rawName, extraSelected = []) {
 function formatTypesLabel(sel, items) {
   if (!sel.length) return "Nenhum tipo";
   if (sel.length >= items.length) return "Tipos";
-  if (sel.length === 1) return `${sel[0].icon ? sel[0].icon + " " : ""}${sel[0].short || sel[0].label}`;
+  if (sel.length === 1) return `${!sel[0].iconHtml && sel[0].icon ? sel[0].icon + " " : ""}${sel[0].short || sel[0].label}`;
   if (sel.length === 2) return `${sel[0].short || sel[0].label}, ${sel[1].short || sel[1].label}`;
   return `${sel.length} tipos`;
 }
@@ -954,6 +960,17 @@ function syncPersonalFilterUIs(allActsOpt) {
     const el = $(s);
     if (el) el.hidden = !active;
   });
+  const totalTypes = allTypes.length;
+  const activeCount = (ganttFilterTypes.size < totalTypes ? 1 : 0)
+    + (ganttFilterTags.size > 0 ? 1 : 0)
+    + ((personalDateFrom || personalDateTo) ? 1 : 0);
+  const fBtn = $("#btnGanttFilterPop");
+  const fCnt = $("#ganttFilterCount");
+  if (fBtn) fBtn.classList.toggle("has-active", activeCount > 0);
+  if (fCnt) {
+    fCnt.textContent = activeCount ? String(activeCount) : "";
+    fCnt.hidden = !activeCount;
+  }
 }
 
 function applyAndRenderPersonalViews() {
@@ -1425,15 +1442,115 @@ function detectUnifiedConflicts(items) {
   });
 }
 
+function getUnifiedTripsStorageKey() {
+  const uId = window.FeriasApi?.getUser?.()?.id || "local";
+  return `myplan-unified-trips-${uId}`;
+}
+
+function getAllUnifiedTripEntries() {
+  const byId = new Map();
+  const upsert = (id, patch) => {
+    if (!id) return;
+    const prev = byId.get(id) || {};
+    byId.set(id, { ...prev, ...patch, id });
+  };
+  (tripsCache.ownTrips || []).forEach(t => upsert(t.id, {
+    name: t.name,
+    mode: getTripMode(t),
+    role: "owner",
+    ownerName: t.ownerName || ""
+  }));
+  (tripsCache.sharedTrips || []).forEach(t => {
+    const prev = byId.get(t.id);
+    if (prev?.role === "owner") return;
+    upsert(t.id, {
+      name: t.name,
+      mode: getTripMode(t),
+      role: t.role || "viewer",
+      ownerName: t.ownerName || ""
+    });
+  });
+  loadedTripsMap.forEach(tr => {
+    if (!tr || !tr.id) return;
+    const prev = byId.get(tr.id);
+    const r = prev?.role || tr.role || "owner";
+    upsert(tr.id, {
+      name: tr.data?.title || tr.name || prev?.name || "Agenda",
+      mode: getTripMode(tr),
+      role: r,
+      ownerName: tr.ownerName || prev?.ownerName || ""
+    });
+  });
+  const list = [...byId.values()].map(e => ({
+    ...e,
+    name: e.name || "Agenda",
+    mode: e.mode === "professional" ? "professional" : "personal",
+    calColor: colorForUnifiedTrip(e.id)
+  }));
+  list.sort((a, b) => {
+    const aOwned = a.role === "owner" ? 0 : 1;
+    const bOwned = b.role === "owner" ? 0 : 1;
+    if (aOwned !== bOwned) return aOwned - bOwned;
+    if (a.mode !== b.mode) return a.mode === "professional" ? -1 : 1;
+    return a.name.localeCompare(b.name, "pt-BR");
+  });
+  return list;
+}
+
+function getUnifiedDefaultTripIds(entries) {
+  const owned = entries.filter(e => e.role === "owner").map(e => e.id);
+  return owned.length ? owned : entries.map(e => e.id);
+}
+
+function ensureUnifiedSelection(entries) {
+  const validIds = new Set(entries.map(e => e.id));
+  if (unifiedSelectedTripIds === null) {
+    let loadedArr = null;
+    try {
+      const raw = localStorage.getItem(getUnifiedTripsStorageKey());
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) loadedArr = parsed;
+      }
+    } catch {}
+    if (loadedArr !== null) {
+      unifiedSelectionCustomized = true;
+      const kept = loadedArr.filter(id => validIds.has(id));
+      if (kept.length > 0 || loadedArr.length === 0) {
+        unifiedSelectedTripIds = new Set(kept);
+      } else {
+        unifiedSelectionCustomized = false;
+        unifiedSelectedTripIds = new Set(getUnifiedDefaultTripIds(entries));
+      }
+    } else {
+      unifiedSelectionCustomized = false;
+      unifiedSelectedTripIds = new Set(getUnifiedDefaultTripIds(entries));
+    }
+  } else if (!unifiedSelectionCustomized) {
+    unifiedSelectedTripIds = new Set(getUnifiedDefaultTripIds(entries));
+  } else {
+    unifiedSelectedTripIds = new Set([...unifiedSelectedTripIds].filter(id => validIds.has(id)));
+  }
+  return unifiedSelectedTripIds;
+}
+
+function saveUnifiedSelection() {
+  try {
+    localStorage.setItem(getUnifiedTripsStorageKey(), JSON.stringify([...(unifiedSelectedTripIds || [])]));
+  } catch {}
+}
+
 function buildUnifiedItems() {
   const items = [];
+  const entries = getAllUnifiedTripEntries();
+  const selectedIds = ensureUnifiedSelection(entries);
   const seenTripIds = new Set();
   const orderedTrips = [];
   const metaIndex = new Map();
   [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])].forEach(t => metaIndex.set(t.id, t));
 
   loadedTripsMap.forEach(tr => {
-    if (!tr || seenTripIds.has(tr.id)) return;
+    if (!tr || seenTripIds.has(tr.id) || !selectedIds.has(tr.id)) return;
     seenTripIds.add(tr.id);
     orderedTrips.push(tr);
   });
@@ -1470,23 +1587,98 @@ function renderUnifiedStatusBar(barEl, allUnified, visibleUnified, onRefresh) {
   if (!ganttUnifiedMode) {
     barEl.hidden = true;
     barEl.innerHTML = "";
+    if (unifiedCalMenuOpenBarId === barEl.id) unifiedCalMenuOpenBarId = null;
     return;
   }
-  const proCnt = allUnified.filter(x => unifiedMetaMap.get(x)?.mode === "professional").length;
-  const perCnt = allUnified.filter(x => unifiedMetaMap.get(x)?.mode === "personal").length;
+  const entries = getAllUnifiedTripEntries();
+  const activeIds = ensureUnifiedSelection(entries);
+  const selCount = activeIds.size;
+  const isOpen = unifiedCalMenuOpenBarId === barEl.id;
   const conflictCnt = allUnified.filter(x => unifiedConflictMap.has(x)).length;
   const crossCnt = allUnified.filter(x => unifiedConflictMap.get(x)?.isCrossMode).length;
+
+  const renderGroup = (mode, title) => {
+    const grp = entries.filter(e => e.mode === mode);
+    if (!grp.length) return "";
+    const rowsHtml = grp.map(e => `
+      <label class="unified-cal-opt">
+        <input type="checkbox" data-unif-trip="${esc(e.id)}" ${activeIds.has(e.id) ? "checked" : ""}>
+        <span class="unified-cal-dot" style="background:${e.calColor}"></span>
+        <span class="unified-cal-name">${esc(e.name)}</span>
+        ${e.role !== "owner" ? `<span class="unified-cal-shared" title="Compartilhada por ${esc(e.ownerName || "outro")}">Compart.</span>` : ""}
+      </label>`).join("");
+    return `<div class="unified-cal-group"><div class="unified-cal-gtitle">${title}</div>${rowsHtml}</div>`;
+  };
+
   barEl.hidden = false;
   barEl.innerHTML = `
-    <div class="unified-legend">
-      <span class="unified-pill-pro">💼 Profissional (${proCnt})</span>
-      <span class="unified-pill-per">🌴 Pessoal (${perCnt})</span>
-      <span class="unified-conflict-pill">${conflictCnt ? `⚠️ ${conflictCnt} em conflito${crossCnt ? ` (${crossCnt} Pessoal×Pro)` : ""}` : "✅ Sem conflitos de data/hora"}</span>
+    <div class="unified-bar-left">
+      <div class="unified-cal-host">
+        <button type="button" class="btn ghost small unified-cal-trigger" data-unif-cal-trig aria-expanded="${isOpen ? "true" : "false"}">
+          📅 Agendas (${selCount}/${entries.length}) <span class="msel-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="unified-cal-menu" data-unif-cal-menu ${isOpen ? "" : "hidden"}>
+          <div class="unified-cal-presets">
+            <button type="button" class="btn ghost small" data-unif-preset="mine">Só minhas</button>
+            <button type="button" class="btn ghost small" data-unif-preset="all">Todas</button>
+            <button type="button" class="btn ghost small" data-unif-preset="none">Limpar</button>
+          </div>
+          ${renderGroup("professional", "💼 Profissional")}
+          ${renderGroup("personal", "🌴 Pessoal")}
+        </div>
+      </div>
+      <span class="unified-conflict-pill">${selCount === 0
+        ? "Selecione ao menos 1 agenda"
+        : (conflictCnt ? `⚠️ ${conflictCnt} em conflito${crossCnt ? ` (${crossCnt} Pessoal×Pro)` : ""}` : "✅ Sem conflitos")}</span>
     </div>
     <div class="inline-actions">
-      ${conflictCnt ? `<button type="button" class="btn ghost small" data-unif-conflicts>${ganttConflictsOnly ? "👁️ Mostrar todos" : "🔍 Ver só conflitos"}</button>` : ""}
-      <button type="button" class="btn ghost small" data-unif-exit>✕ Sair da Agenda Completa</button>
+      ${conflictCnt ? `<button type="button" class="btn ghost small" data-unif-conflicts>${ganttConflictsOnly ? "👁️ Mostrar todos" : "🔍 Só conflitos"}</button>` : ""}
+      <button type="button" class="btn ghost small" data-unif-exit>✕ Sair</button>
     </div>`;
+
+  const trig = barEl.querySelector("[data-unif-cal-trig]");
+  const menu = barEl.querySelector("[data-unif-cal-menu]");
+  if (trig && menu) {
+    if (isOpen) positionFloatingMenu(menu, trig);
+    trig.onclick = ev => {
+      ev.stopPropagation();
+      closeAllGanttPopovers();
+      const nextOpen = menu.hidden;
+      unifiedCalMenuOpenBarId = nextOpen ? barEl.id : null;
+      menu.hidden = !nextOpen;
+      trig.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+      if (nextOpen) positionFloatingMenu(menu, trig);
+    };
+  }
+  barEl.querySelectorAll("[data-unif-trip]").forEach(cb => {
+    cb.onchange = () => {
+      const id = cb.dataset.unifTrip;
+      const cur = new Set(ensureUnifiedSelection(entries));
+      if (cb.checked) cur.add(id);
+      else cur.delete(id);
+      unifiedSelectedTripIds = cur;
+      unifiedSelectionCustomized = true;
+      saveUnifiedSelection();
+      unifiedCalMenuOpenBarId = barEl.id;
+      if (cb.checked && !loadedTripsMap.has(id) && window.FeriasApi?.isServer()) {
+        resolveTripRefById(id).then(() => onRefresh()).catch(() => {});
+      }
+      onRefresh();
+    };
+  });
+  barEl.querySelectorAll("[data-unif-preset]").forEach(btn => {
+    btn.onclick = ev => {
+      ev.stopPropagation();
+      const mode = btn.dataset.unifPreset;
+      unifiedSelectionCustomized = true;
+      if (mode === "mine") unifiedSelectedTripIds = new Set(getUnifiedDefaultTripIds(entries));
+      else if (mode === "all") unifiedSelectedTripIds = new Set(entries.map(e => e.id));
+      else unifiedSelectedTripIds = new Set();
+      saveUnifiedSelection();
+      unifiedCalMenuOpenBarId = barEl.id;
+      onRefresh();
+    };
+  });
   const btnOnly = barEl.querySelector("[data-unif-conflicts]");
   if (btnOnly) btnOnly.onclick = () => { ganttConflictsOnly = !ganttConflictsOnly; onRefresh(); };
   const btnEx = barEl.querySelector("[data-unif-exit]");
@@ -1500,12 +1692,38 @@ function buildGanttScale(rows, zoomPx, isMobile) {
   const todayISO = fmtISO(todayDt);
   const currentWeekKey = getIsoWeekInfo(todayDt).key;
 
+  const formatMonthLabel = (mIdx, year, widthPx) => {
+    if (widthPx < 24) return MON_ABBR[mIdx][0];
+    if (widthPx < 92) return MON_ABBR[mIdx];
+    if (widthPx < 156) return `${MON_ABBR[mIdx]} ${year}`;
+    return `${MON_FULL[mIdx]} ${year}`;
+  };
+
   if (isWeekOnly) {
-    const minMon = getIsoWeekMonday(parseD(rows[0].start));
+    const dataMinMon = getIsoWeekMonday(parseD(rows[0].start));
     const maxS = rows.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, rows[0].start);
-    const maxMon = getIsoWeekMonday(parseD(maxS));
-    const weeksCount = Math.max(4, Math.min(160, Math.round((maxMon.getTime() - minMon.getTime()) / (7 * DAY)) + 2));
-    const colW = Math.max(46, Math.round(Number(zoomPx) * 4.4));
+    const dataMaxMon = getIsoWeekMonday(parseD(maxS));
+    const dataSpanWeeks = Math.max(4, Math.round((dataMaxMon.getTime() - dataMinMon.getTime()) / (7 * DAY)) + 2);
+    const colW = Math.max(12, Math.round(Number(zoomPx) * 4.4));
+
+    let minMon = dataMinMon;
+    let weeksCount = dataSpanWeeks;
+    if (colW <= 28) {
+      const refYear = parseD(rows[0].start).getFullYear();
+      const yearJan4Mon = getIsoWeekMonday(new Date(refYear, 0, 4));
+      const totalIsoWeeksInYear = getIsoWeekInfo(new Date(refYear, 11, 28)).week || 52;
+      const yearEndMonTs = yearJan4Mon.getTime() + (totalIsoWeeksInYear - 1) * 7 * DAY;
+      if (dataMinMon.getTime() >= yearJan4Mon.getTime() && dataMaxMon.getTime() <= yearEndMonTs) {
+        minMon = yearJan4Mon;
+        weeksCount = Math.max(totalIsoWeeksInYear, Math.min(160, dataSpanWeeks));
+      } else {
+        weeksCount = Math.max(52, Math.min(160, dataSpanWeeks));
+      }
+    } else if (colW <= 44) {
+      weeksCount = Math.max(dataSpanWeeks, Math.min(53, Math.ceil(920 / colW)));
+    }
+    weeksCount = Math.max(4, Math.min(160, weeksCount));
+
     const weeks = [];
     const monthSpans = [];
     const colMeta = [];
@@ -1526,6 +1744,8 @@ function buildGanttScale(rows, zoomPx, isMobile) {
         mStart = i > 0;
         monthSpans.push({
           key: mKey,
+          monthIdx: thu.getMonth(),
+          year: thu.getFullYear(),
           label: `${MON_FULL[thu.getMonth()]} ${thu.getFullYear()}`,
           startCol: i + 2,
           span: 1,
@@ -1545,6 +1765,7 @@ function buildGanttScale(rows, zoomPx, isMobile) {
         sundayISO,
         week: wi.week,
         isoYear: wi.isoYear,
+        weekLabel: colW < 48 ? String(wi.week) : `Sem ${wi.week}`,
         key: wi.key,
         wOdd,
         mOdd,
@@ -1555,8 +1776,15 @@ function buildGanttScale(rows, zoomPx, isMobile) {
       colMeta.push({ wOdd, mOdd, wStart: true, mStart, we: false, isToday: wi.key === currentWeekKey });
     }
 
+    monthSpans.forEach(ms => {
+      const widthPx = ms.span * colW;
+      ms.label = formatMonthLabel(ms.monthIdx, ms.year, widthPx);
+      ms.isCentered = true;
+    });
+
     return {
       isWeekOnly: true,
+      isYearView: colW <= 26,
       colW,
       nCols: weeksCount,
       todayISO,
@@ -1573,7 +1801,8 @@ function buildGanttScale(rows, zoomPx, isMobile) {
         const off = Math.max(0, Math.round((sMon.getTime() - minMon.getTime()) / (7 * DAY)));
         const endOff = Math.max(off, Math.round((eMon.getTime() - minMon.getTime()) / (7 * DAY)));
         const span = Math.max(1, endOff - off + 1);
-        return { off, span, barW: Math.max(24, span * colW - 6), unitDays: 7 };
+        const minBar = Math.min(24, Math.max(11, colW - 3));
+        return { off, span, barW: Math.max(minBar, span * colW - 4), unitDays: 7 };
       }
     };
   }
@@ -1603,6 +1832,8 @@ function buildGanttScale(rows, zoomPx, isMobile) {
       mStart = idx > 0;
       monthSpans.push({
         key: mKey,
+        monthIdx: d.getMonth(),
+        year: d.getFullYear(),
         label: `${MON_FULL[d.getMonth()]} ${d.getFullYear()}`,
         startCol: idx + 2,
         span: 1,
@@ -1640,8 +1871,19 @@ function buildGanttScale(rows, zoomPx, isMobile) {
     });
   });
 
+  monthSpans.forEach(ms => {
+    const widthPx = ms.span * DW;
+    ms.label = formatMonthLabel(ms.monthIdx, ms.year, widthPx);
+    ms.isCentered = widthPx <= 420;
+  });
+  weekSpans.forEach(ws => {
+    const widthPx = ws.span * DW;
+    ws.weekLabel = widthPx < 48 ? String(ws.week) : `Sem ${ws.week}`;
+  });
+
   return {
     isWeekOnly: false,
+    isYearView: false,
     colW: DW,
     nCols,
     todayISO,
@@ -1718,26 +1960,21 @@ function renderGantt(allSorted) {
   const tlWrap = $("#timelineWrap");
   const trips = getSelectedTrips();
   const multiTrip = trips.length > 1;
-  const planTitle = $("#ganttPlanTitle");
-  if (planTitle) {
-    planTitle.textContent = ganttUnifiedMode
-      ? "Agenda Completa (Pessoal + Profissional)"
-      : (multiTrip ? `${trips.length} viagens combinadas` : (state.title || "Cronograma"));
-  }
 
   const unifBtn = $("#btnGanttUnified");
   if (unifBtn) unifBtn.setAttribute("aria-pressed", String(ganttUnifiedMode));
+  const vBtn = $("#btnGanttViewPop");
+  const vLbl = $("#ganttViewPopLabel");
+  const vDot = $("#ganttViewUnifDot");
+  if (vBtn) vBtn.classList.toggle("has-active", ganttUnifiedMode);
+  if (vLbl) vLbl.textContent = ganttMode === "timeline" ? "Timeline" : "Gantt";
+  if (vDot) vDot.hidden = !ganttUnifiedMode;
+  if ($("#ganttZoomGroup")) $("#ganttZoomGroup").hidden = ganttMode !== "gantt";
 
   const roleBadge = $("#tripRoleBadge");
   if (roleBadge) {
-    if (ganttUnifiedMode) {
-      roleBadge.textContent = "Unificada";
-      roleBadge.hidden = false;
-    } else if (multiTrip) {
-      roleBadge.textContent = trips.map(t => t.data?.title || t.name).join(" + ");
-      roleBadge.hidden = false;
-    } else if (activeTrip && activeTrip.role !== "owner") {
-      roleBadge.textContent = `Compartilhada (${activeTrip.ownerName || "outro usuário"})`;
+    if (!ganttUnifiedMode && !multiTrip && activeTrip && activeTrip.role !== "owner") {
+      roleBadge.textContent = `Compartilhada (${activeTrip.ownerName || "outro"})`;
       roleBadge.hidden = false;
     } else {
       roleBadge.hidden = true;
@@ -1770,7 +2007,12 @@ function renderGantt(allSorted) {
 
   if (!s.length) {
     g.style.gridTemplateColumns = "1fr";
-    if (allSorted.length > 0 || ganttUnifiedMode) {
+    const unifEmpty = ganttUnifiedMode && ensureUnifiedSelection(getAllUnifiedTripEntries()).size === 0;
+    if (unifEmpty) {
+      g.innerHTML = `<div style="padding:28px;text-align:center">
+        <p class="muted">Nenhuma agenda selecionada na Agenda Completa. Marque 1 ou mais agendas em <b>Agendas</b> acima.</p>
+      </div>`;
+    } else if (allSorted.length > 0 || ganttUnifiedMode) {
       g.innerHTML = `<div style="padding:28px;text-align:center">
         <p class="muted">Nenhuma atividade corresponde aos filtros selecionados.</p>
         <button type="button" class="btn primary" id="btnGanttResetFilter">☑️ Limpar filtros</button>
@@ -1789,9 +2031,10 @@ function renderGantt(allSorted) {
   const scale = buildGanttScale(s, ganttZoom, window.innerWidth < 720);
   const DW = scale.colW;
   const n = scale.nCols;
-  const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 265);
+  const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : (scale.isYearView && DW <= 18 ? 205 : 265));
   const todayISO = scale.todayISO;
 
+  g.classList.toggle("zoom-year", Boolean(scale.isYearView));
   g.style.gridTemplateColumns = `${nameW}px repeat(${n}, ${DW}px)`;
   g.style.setProperty("--gantt-name-w", `${nameW}px`);
   g.dataset.unitDays = scale.isWeekOnly ? "7" : "1";
@@ -1803,17 +2046,16 @@ function renderGantt(allSorted) {
   </div>`;
 
   scale.monthSpans.forEach(ms => {
-    h += `<div class="g-month-head ${ms.mOdd ? "m-odd" : "m-even"}" style="grid-column:${ms.startCol} / span ${ms.span};grid-row:1"><span class="g-month-label">${ms.label}</span></div>`;
+    h += `<div class="g-month-head ${ms.mOdd ? "m-odd" : "m-even"}${ms.isCentered ? " is-centered" : ""}" style="grid-column:${ms.startCol} / span ${ms.span};grid-row:1"><span class="g-month-label">${ms.label}</span></div>`;
   });
 
   if (scale.isWeekOnly) {
     scale.weekSpans.forEach(ws => {
-      h += `<div class="g-week-head ${ws.wOdd ? "w-odd" : "w-even"} ${ws.isCurrentWeek ? "today" : ""}" style="grid-column:${ws.col};grid-row:2" data-date="${ws.mondayISO}" data-end-date="${ws.sundayISO}" title="Semana ${ws.week} (${fmtShortBR(ws.mondayISO)}–${fmtShortBR(ws.sundayISO)})">Sem ${ws.week}</div>`;
+      h += `<div class="g-week-head ${ws.wOdd ? "w-odd" : "w-even"} ${ws.isCurrentWeek ? "today" : ""}" style="grid-column:${ws.col};grid-row:2" data-date="${ws.mondayISO}" data-end-date="${ws.sundayISO}" title="Semana ${ws.week} (${fmtShortBR(ws.mondayISO)}–${fmtShortBR(ws.sundayISO)})">${ws.weekLabel}</div>`;
     });
   } else {
     scale.weekSpans.forEach(ws => {
-      const lbl = ws.span >= 3 ? `Sem ${ws.week}` : (ws.span >= 2 ? `S${ws.week}` : String(ws.week));
-      h += `<div class="g-week-head ${ws.wOdd ? "w-odd" : "w-even"} ${ws.isCurrentWeek ? "today" : ""}" style="grid-column:${ws.startCol} / span ${ws.span};grid-row:2" title="Semana ${ws.week} de ${ws.isoYear}">${lbl}</div>`;
+      h += `<div class="g-week-head ${ws.wOdd ? "w-odd" : "w-even"} ${ws.isCurrentWeek ? "today" : ""}" style="grid-column:${ws.startCol} / span ${ws.span};grid-row:2" title="Semana ${ws.week} de ${ws.isoYear}">${ws.weekLabel}</div>`;
     });
     const numStep = DW <= 24 ? 2 : 1;
     scale.dates.forEach((d, i) => {
@@ -1852,14 +2094,22 @@ function renderGantt(allSorted) {
     const row = rowIdx + baseRow;
     const altCls = rowIdx % 2 ? "alt" : "";
     const conf = unifiedConflictMap.get(a);
-    const rowStyleExtra = meta ? `--cal-color:${meta.calColor}` : "";
-    const subLeft = meta?.mode === "professional"
+    const isProRow = meta?.mode === "professional";
+    const rowDone = isProRow && Boolean(a.completed || Number(a.progress) >= 100 || a.columnId === "done" || (meta?.tripRef?.data?.params?.doneColumnId && a.columnId === meta.tripRef.data.params.doneColumnId));
+    const typeColAttr = info.isCustom && info.color ? `--t-color:${esc(info.color)};` : "";
+    const rowStyleExtra = `${meta ? `--cal-color:${meta.calColor};` : ""}${typeColAttr}`;
+    const subLeft = isProRow
       ? `${fmtShortBR(a.start)}${a.startTime ? ` ${a.startTime}` : ""}${days(a) > 1 ? ` · ${days(a)}d` : ""}`
       : (isTravelType(a.type) && (a.from || a.to)
         ? `${a.from || "?"} ➔ ${a.to || "?"}`
         : `${fmtShortBR(a.start)}${days(a) > 1 ? ` · ${days(a)}d` : ""}`);
 
-    h += `<div class="g-name ${altCls}${meta ? " is-unified-row" : ""}" style="grid-column:1;grid-row:${row};${rowStyleExtra}" data-id="${esc(a.id)}" data-umode="${meta ? meta.mode : "personal"}" title="${esc(conf ? `${label(a)} — ${conf.summary}` : label(a))}">
+    const doneBtnHtml = isProRow
+      ? `<button type="button" class="g-done-btn${rowDone ? " is-done" : ""}" data-gantt-done="${esc(a.id)}" title="${rowDone ? "Reabrir tarefa" : "Marcar como concluída"}" aria-label="${rowDone ? "Reabrir tarefa" : "Marcar como concluída"}">✓</button>`
+      : "";
+
+    h += `<div class="g-name ${altCls}${meta ? " is-unified-row" : ""}${rowDone ? " is-done" : ""}" style="grid-column:1;grid-row:${row};${rowStyleExtra}" data-id="${esc(a.id)}" data-umode="${meta ? meta.mode : "personal"}" title="${esc(conf ? `${label(a)} — ${conf.summary}` : label(a))}">
+      ${doneBtnHtml}
       <span class="g-type-dot ${info.cls}">${info.icon}</span>
       <div class="g-name-txt">
         <div class="g-name-title">${esc(a.name)}${conf ? " ⚠️" : ""}</div>
@@ -1876,18 +2126,18 @@ function renderGantt(allSorted) {
         const insideTxt = (scale.isWeekOnly || (DW <= 20 && lenDays === 1))
           ? `${info.icon}${scale.isWeekOnly && DW >= 52 ? ` ${esc(a.name.slice(0, 12))}` : ""}`
           : (lenDays > 1 ? `${info.icon} ${lenDays}d` : info.icon);
-        const resizeHandle = (!scale.isWeekOnly && (lenDays > 1 || a.type === "Período" || a.type === "Hospedagem" || meta?.mode === "professional")) || scale.isWeekOnly
+        const resizeHandle = (!scale.isWeekOnly && (lenDays > 1 || a.type === "Período" || a.type === "Hospedagem" || isProRow)) || scale.isWeekOnly
           ? `<span class="g-resize" data-resize="${esc(a.id)}" title="Arraste para alterar duração"></span>` : "";
         const unifCls = getUnifiedBarExtraClasses(a);
-        const progBar = (meta?.mode === "professional" && Number(a.progress) > 0)
+        const progBar = (isProRow && Number(a.progress) > 0)
           ? `<span class="g-bar-prog" style="width:${Number(a.progress)}%"></span>` : "";
-        const summaryHtml = meta?.mode === "professional" && window.MyPlanPro?.buildProSummaryHTML
+        const summaryHtml = isProRow && window.MyPlanPro?.buildProSummaryHTML
           ? window.MyPlanPro.buildProSummaryHTML(a, renderUnifiedCardSubBadges(a))
           : buildRightSummaryHTML(a, meta ? renderUnifiedCardSubBadges(a) : null);
 
         inner = `
           <div class="g-event-wrap" style="left:3px">
-            <div class="g-bar ${info.cls} ${lenDays === 1 && !scale.isWeekOnly ? "single-day" : ""}${unifCls}" data-id="${esc(a.id)}" data-umode="${meta ? meta.mode : "personal"}" style="width:${pos.barW}px" title="${esc(conf ? conf.summary : a.name)}">
+            <div class="g-bar ${info.cls} ${lenDays === 1 && !scale.isWeekOnly ? "single-day" : ""}${unifCls}${rowDone ? " is-done" : ""}" data-id="${esc(a.id)}" data-umode="${meta ? meta.mode : "personal"}" style="width:${pos.barW}px;${typeColAttr}" title="${esc(conf ? conf.summary : a.name)}">
               ${progBar}<span>${insideTxt}</span>${resizeHandle}
             </div>
             ${summaryHtml}
@@ -1911,8 +2161,17 @@ function renderGantt(allSorted) {
     if (uMode === "professional" && window.MyPlanPro) window.MyPlanPro.openProCardModal(id);
     else openModal(id);
   };
+  g.querySelectorAll("[data-gantt-done]").forEach(btn => {
+    btn.onclick = ev => {
+      ev.stopPropagation();
+      window.MyPlanPro?.toggleProCardDone?.(btn.dataset.ganttDone);
+    };
+  });
   g.querySelectorAll(".g-name[data-id], .g-summary[data-id]").forEach(el => {
-    el.onclick = () => openTargetItem(el);
+    el.onclick = ev => {
+      if (ev.target.closest("[data-gantt-done]")) return;
+      openTargetItem(el);
+    };
   });
   g.querySelectorAll(".g-bar").forEach(bindDrag);
   g.querySelectorAll(".g-resize").forEach(bindResize);
@@ -2030,9 +2289,12 @@ function renderTimeline(allSorted) {
     s = applyPersonalFilters(allSorted);
   }
   if (!s.length) {
-    tl.innerHTML = allSorted.length > 0 || ganttUnifiedMode
-      ? `<p class="muted">Nenhuma atividade corresponde aos filtros selecionados. <button type="button" class="link-btn" id="btnTlResetFilter">Limpar filtros</button></p>`
-      : `<p class="muted">Nenhuma atividade encontrada.</p>`;
+    const unifEmpty = ganttUnifiedMode && ensureUnifiedSelection(getAllUnifiedTripEntries()).size === 0;
+    tl.innerHTML = unifEmpty
+      ? `<p class="muted">Nenhuma agenda selecionada na Agenda Completa. Marque 1 ou mais agendas em <b>Agendas</b> acima.</p>`
+      : (allSorted.length > 0 || ganttUnifiedMode
+        ? `<p class="muted">Nenhuma atividade corresponde aos filtros selecionados. <button type="button" class="link-btn" id="btnTlResetFilter">Limpar filtros</button></p>`
+        : `<p class="muted">Nenhuma atividade encontrada.</p>`);
     const rst = $("#btnTlResetFilter");
     if (rst) rst.onclick = () => { ganttConflictsOnly = false; resetGanttTypeFilter(); };
     return;
@@ -3303,9 +3565,9 @@ function renderParamTickets() {
     const info = getTypeInfo(a.type);
     const tktNote = formatTicketsNote(a);
     return `<div class="param-ticket-row">
-      <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1">
+      <div class="param-ticket-info">
         <span class="chip ${info.cls}">${info.icon} ${esc(info.short)}</span>
-        <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label(a))}</strong>
+        <strong class="param-ticket-title">${esc(label(a))}</strong>
         <span class="muted small">${fmtBR(a.start)}${tktNote ? ` · ${esc(tktNote)}` : ""}</span>
       </div>
       <div class="inline-actions">
@@ -4962,10 +5224,12 @@ async function boot() {
       buildGanttScale,
       buildUnifiedItems,
       clone,
+      closeAllGanttPopovers,
       createMultiSelect,
       DAY,
       days,
       detectUnifiedConflicts,
+      ensureUnifiedSelection,
       ensureUnifiedTripsLoaded,
       esc,
       fileToBase64Obj,
@@ -4976,6 +5240,7 @@ async function boot() {
       GANTT_ZOOM_STEPS,
       getActiveTrip: () => activeTrip,
       getAllAvailableTags,
+      getAllUnifiedTripEntries,
       getSelectedTrips,
       getState: () => state,
       getTypeInfoAny,
@@ -4983,6 +5248,7 @@ async function boot() {
       getUnifiedState: () => ({ unified: ganttUnifiedMode, conflictsOnly: ganttConflictsOnly }),
       isMultiTripMode,
       MON,
+      MON_ABBR,
       MON_FULL,
       money,
       MULTI_TRIP_COLORS,
@@ -5211,10 +5477,14 @@ $("#authForm").onsubmit = async e => {
 
 $("#btnLogout").onclick = async () => {
   selectedTripIds = [];
+  unifiedSelectedTripIds = null;
+  unifiedSelectionCustomized = false;
+  unifiedCalMenuOpenBarId = null;
   loadedTripsMap.clear();
   try {
     localStorage.removeItem(SELECTED_TRIPS_KEY);
     localStorage.removeItem(SELECTED_TRIPS_PRO_KEY);
+    localStorage.removeItem(getUnifiedTripsStorageKey());
   } catch {}
   await window.FeriasApi.logout();
   location.reload();
@@ -5306,6 +5576,8 @@ function switchAppView(viewId) {
   $("#tabsPro")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.proView === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
   if (viewId === "admin") loadAndRenderAdmin();
+  closeAllGanttPopovers();
+  closeAllUnifiedCalMenus();
 }
 
 function switchProView(viewId) {
@@ -5314,6 +5586,8 @@ function switchProView(viewId) {
   $("#tabs")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.view === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
   if (viewId === "admin") loadAndRenderAdmin();
+  closeAllGanttPopovers();
+  closeAllUnifiedCalMenus();
 }
 
 async function setAppMode(nextMode, opts = {}) {
@@ -5323,6 +5597,8 @@ async function setAppMode(nextMode, opts = {}) {
   document.documentElement.setAttribute("data-mode", mode);
   applyTheme(isDarkTheme() ? "dark" : "light");
   exitAnyGanttFullscreen();
+  closeAllGanttPopovers();
+  closeAllUnifiedCalMenus();
 
   const isPro = mode === "professional";
   if ($("#brandModeTag")) $("#brandModeTag").textContent = isPro ? "PRO" : "Pessoal";
@@ -6610,13 +6886,13 @@ function stepGanttZoom(delta) {
   const nextZoom = GANTT_ZOOM_STEPS[nextIdx];
   if (nextZoom === ganttZoom) return;
   const wrap = $("#ganttWrap");
-  const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 265);
-  const oldUnitW = ganttZoom < 22 ? Math.max(46, Math.round(ganttZoom * 4.4)) / 7 : ganttZoom;
+  const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : (ganttZoom <= 4 ? 205 : 265));
+  const oldUnitW = ganttZoom < 22 ? Math.max(12, Math.round(ganttZoom * 4.4)) / 7 : ganttZoom;
   const centerRatio = wrap ? Math.max(0, (wrap.scrollLeft + (wrap.clientWidth - nameW) / 2) / Math.max(1, oldUnitW)) : 0;
   ganttZoom = nextZoom;
   updateGanttZoomReadout();
   renderGantt(sorted());
-  const newUnitW = ganttZoom < 22 ? Math.max(46, Math.round(ganttZoom * 4.4)) / 7 : ganttZoom;
+  const newUnitW = ganttZoom < 22 ? Math.max(12, Math.round(ganttZoom * 4.4)) / 7 : ganttZoom;
   if (wrap && centerRatio > 0) {
     wrap.scrollLeft = Math.max(0, centerRatio * newUnitW - (wrap.clientWidth - nameW) / 2);
   }
@@ -6631,16 +6907,72 @@ function fitGanttZoom() {
   const maxS = s.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, s[0].start);
   const n = Math.max(5, Math.round((parseD(maxS) - minTs) / DAY) + 6);
   const avail = Math.max(240, wrap.clientWidth - nameW - 24);
-  ganttZoom = Math.max(10, Math.min(94, Math.floor(avail / n)));
+  ganttZoom = Math.max(2.5, Math.min(94, Math.floor((avail / n) * 10) / 10));
   updateGanttZoomReadout();
   renderGantt(sorted());
   wrap.scrollLeft = 0;
 }
 
+function positionFloatingMenu(menuEl, trigEl) {
+  if (!menuEl || !trigEl) return;
+  if (window.innerWidth <= 720) {
+    const r = trigEl.getBoundingClientRect();
+    const topPx = Math.max(8, Math.min(window.innerHeight - 160, Math.round(r.bottom + 6)));
+    menuEl.style.top = `${topPx}px`;
+  } else {
+    menuEl.style.top = "";
+  }
+}
+
+function closeAllUnifiedCalMenus() {
+  unifiedCalMenuOpenBarId = null;
+  document.querySelectorAll("[data-unif-cal-menu]").forEach(m => { m.hidden = true; });
+  document.querySelectorAll("[data-unif-cal-trig]").forEach(t => t.setAttribute("aria-expanded", "false"));
+}
+
+function closeAllGanttPopovers(exceptPanel = null) {
+  document.querySelectorAll(".gantt-pop-panel").forEach(panel => {
+    if (exceptPanel && panel === exceptPanel) return;
+    panel.hidden = true;
+    const host = panel.closest(".gantt-pop-host");
+    const trig = host?.querySelector(".gantt-pop-trigger");
+    if (trig) trig.setAttribute("aria-expanded", "false");
+  });
+}
+
+function setupGanttPopovers() {
+  [
+    ["#btnGanttFilterPop", "#ganttFilterPopPanel"],
+    ["#btnGanttViewPop", "#ganttViewPopPanel"],
+    ["#btnProGanttFilterPop", "#proGanttFilterPopPanel"],
+    ["#btnProGanttViewPop", "#proGanttViewPopPanel"]
+  ].forEach(([trigSel, panelSel]) => {
+    const trig = $(trigSel);
+    const panel = $(panelSel);
+    if (!trig || !panel || trig.dataset.popBound) return;
+    trig.dataset.popBound = "1";
+    trig.onclick = ev => {
+      ev.stopPropagation();
+      const willOpen = panel.hidden;
+      closeAllUnifiedCalMenus();
+      closeAllGanttPopovers(willOpen ? panel : null);
+      panel.hidden = !willOpen;
+      trig.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      if (willOpen) positionFloatingMenu(panel, trig);
+    };
+  });
+}
+setupGanttPopovers();
+
+document.addEventListener("click", ev => {
+  if (!ev.target.closest(".gantt-pop-host")) closeAllGanttPopovers();
+  if (!ev.target.closest(".unified-cal-host")) closeAllUnifiedCalMenus();
+});
+
 function setFullscreenBtnState(btnEl, active) {
   if (!btnEl) return;
   btnEl.setAttribute("aria-pressed", active ? "true" : "false");
-  btnEl.innerHTML = active ? `⤡ <span>Sair</span>` : `⛶ <span class="hide-xs">Tela cheia</span>`;
+  btnEl.innerHTML = active ? `⤡ <span>Sair</span>` : `⛶`;
   btnEl.title = active ? "Sair da tela cheia (Esc)" : "Ampliar Gantt em tela inteira";
 }
 
@@ -6661,6 +6993,7 @@ function exitAnyGanttFullscreen(skipNativeExit = false) {
 
 function toggleGanttFullscreen(cardEl, btnEl, onChange) {
   if (!cardEl) return;
+  closeAllGanttPopovers();
   const willEnter = !cardEl.classList.contains("is-fullscreen");
   exitAnyGanttFullscreen();
   if (willEnter) {
@@ -6686,7 +7019,14 @@ document.addEventListener("fullscreenchange", () => {
 });
 
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && document.querySelector(".gantt-card.is-fullscreen")) {
+  if (e.key !== "Escape") return;
+  const hasOpenPop = Boolean(document.querySelector(".gantt-pop-panel:not([hidden]), [data-unif-cal-menu]:not([hidden])"));
+  if (hasOpenPop) {
+    closeAllGanttPopovers();
+    closeAllUnifiedCalMenus();
+    return;
+  }
+  if (document.querySelector(".gantt-card.is-fullscreen")) {
     exitAnyGanttFullscreen();
     if (appMode === "professional" && window.MyPlanPro) window.MyPlanPro.renderProGantt();
     else renderGantt(sorted());
@@ -6697,12 +7037,13 @@ $("#ganttModeSeg").querySelectorAll("button").forEach(b => {
   b.onclick = () => {
     ganttMode = b.dataset.gmode;
     $("#ganttModeSeg").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+    closeAllGanttPopovers();
     const s = sorted();
     renderGantt(s);
     renderTimeline(s);
   };
 });
-if ($("#btnGanttUnified")) $("#btnGanttUnified").onclick = () => toggleUnifiedGanttMode();
+if ($("#btnGanttUnified")) $("#btnGanttUnified").onclick = () => { closeAllGanttPopovers(); toggleUnifiedGanttMode(); };
 if ($("#btnGanttZoomOut")) $("#btnGanttZoomOut").onclick = () => stepGanttZoom(-1);
 if ($("#btnGanttZoomIn")) $("#btnGanttZoomIn").onclick = () => stepGanttZoom(1);
 if ($("#btnGanttZoomReset")) {
@@ -6717,6 +7058,7 @@ if ($("#btnGanttFullscreen")) {
   $("#btnGanttFullscreen").onclick = () => toggleGanttFullscreen($("#view-gantt .gantt-card"), $("#btnGanttFullscreen"), () => renderGantt(sorted()));
 }
 $("#btnGanttToday").onclick = () => {
+  closeAllGanttPopovers();
   const wrap = $("#ganttWrap");
   const todayHead = wrap.querySelector(".g-head.today, .g-week-head.today");
   wrap.scrollTo({ left: todayHead ? Math.max(0, todayHead.offsetLeft - 180) : 0, behavior: "smooth" });
@@ -6737,12 +7079,18 @@ function reportHelpers() {
     calc,
     getTypeInfo: t => {
       if (window.ACTIVITY_TYPES?.[t] && appMode !== "professional") return getTypeInfo(t);
-      if (window.MyPlanPro && window.PRO_ACTIVITY_TYPES?.[t]) return window.MyPlanPro.getProTypeInfo(t);
+      const legacy = window.PRO_LEGACY_TYPE_MAP?.[t] || t;
+      if (window.MyPlanPro) {
+        const allPro = window.MyPlanPro.getAllProTypes?.();
+        if (allPro?.[legacy]) return allPro[legacy];
+        if (window.PRO_ACTIVITY_TYPES?.[legacy]) return window.MyPlanPro.getProTypeInfo(legacy);
+      }
       return getTypeInfo(t);
     },
     getIsoWeekInfo,
     getIsoWeekMonday,
     WD,
+    MON_ABBR,
     MON_FULL,
     DAY
   };
@@ -8284,15 +8632,19 @@ function renderImpCalPreviewList() {
   if (!list) return;
   const targetMode = getImpCalTargetMode();
   const typesDict = targetMode === "professional"
-    ? (window.PRO_ACTIVITY_TYPES || window.ACTIVITY_TYPES)
+    ? (window.MyPlanPro?.getAllProTypes?.() || window.PRO_ACTIVITY_TYPES || window.ACTIVITY_TYPES)
     : (window.ACTIVITY_TYPES || {});
   const typeOpts = Object.values(typesDict);
   const fallbackType = targetMode === "professional" ? "Outro" : "Evento";
 
   list.innerHTML = impCalEvents.map((ev, i) => {
-    const mappedType = typesDict[ev.type] ? ev.type : fallbackType;
+    const rawMapped = targetMode === "professional" ? (window.PRO_LEGACY_TYPE_MAP?.[ev.type] || ev.type) : ev.type;
+    const mappedType = typesDict[rawMapped] ? rawMapped : fallbackType;
     ev.type = mappedType;
-    const typeSelect = typeOpts.map(t => `<option value="${esc(t.id)}"${t.id === mappedType ? " selected" : ""}>${t.icon} ${esc(t.short)}</option>`).join("");
+    const typeSelect = typeOpts.map(t => {
+      const optTxt = t.iconHtml ? t.short : `${t.icon} ${t.short}`;
+      return `<option value="${esc(t.id)}"${t.id === mappedType ? " selected" : ""}>${esc(optTxt)}</option>`;
+    }).join("");
     return `<div class="imp-cal-ev-row" data-icrow="${i}">
       <input type="checkbox" data-icchk="${i}" ${ev._checked !== false ? "checked" : ""} aria-label="Selecionar evento">
       <div class="imp-cal-ev-dates">
@@ -8441,9 +8793,11 @@ if ($("#btnImpCalConfirm")) {
     btn.disabled = true;
 
     try {
+      const allProTypes = isPro ? (window.MyPlanPro?.getAllProTypes?.() || window.PRO_ACTIVITY_TYPES || {}) : {};
       const toActivity = (ev, defaultColId) => {
         if (isPro) {
-          const validType = window.PRO_ACTIVITY_TYPES?.[ev.type] ? ev.type : "Outro";
+          const legType = window.PRO_LEGACY_TYPE_MAP?.[ev.type] || ev.type;
+          const validType = allProTypes[legType] ? legType : "Outro";
           const finDir = ["income", "expense", "none"].includes(ev.finDirection)
             ? ev.finDirection
             : (validType === "Recebimento" ? "income" : (validType === "Despesa" ? "expense" : "none"));

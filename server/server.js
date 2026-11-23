@@ -1572,6 +1572,7 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
     Despesa: "#dc2626",
     Entrega: "#4f46e5",
     Marco: "#0ea5e9",
+    Proposta: "#7c3aed",
     "Follow-up": "#7c3aed"
   };
   const dateLabel = act.end && act.end !== act.start ? `${act.start} até ${act.end}` : (act.start || "-");
@@ -1792,6 +1793,7 @@ function buildPkpassBuffer(activity, tripName) {
     Despesa: "rgb(220, 38, 38)",
     Entrega: "rgb(79, 70, 229)",
     Marco: "rgb(14, 165, 233)",
+    Proposta: "rgb(124, 58, 237)",
     "Follow-up": "rgb(124, 58, 237)"
   };
 
@@ -3227,7 +3229,7 @@ Retorne EXCLUSIVAMENTE JSON válido:
         ...mediaParts
       ];
       const validTypes = isPro
-        ? "Desenvolvimento | Reunião | Viagem Corp. | Recebimento | Despesa | Entrega | Marco | Follow-up | Outro"
+        ? "Desenvolvimento | Reunião | Viagem | Recebimento | Despesa | Entrega | Marco | Proposta | Outro"
         : "Viagem | Voo | Trem | Ônibus | Navio | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro";
       const sysImportCal = `Você é o extrator visual de calendários do aplicativo My Plan.
 O usuário enviou 1 ou mais imagens/PDFs contendo um calendário ou cronograma (ex.: planilha Excel, tabela de datas, calendário de parede/mensal, print de agenda, Trello, Notion, roteiro ou cronograma customizado).
@@ -3337,7 +3339,7 @@ Retorne EXCLUSIVAMENTE um JSON válido com esta estrutura exata:
   },
   "activities": [
     {
-      "type": "Desenvolvimento | Reunião | Viagem Corp. | Recebimento | Despesa | Entrega | Marco | Follow-up | Outro",
+      "type": "Desenvolvimento | Reunião | Viagem | Recebimento | Despesa | Entrega | Marco | Proposta | Outro",
       "columnId": "backlog | todo | doing | review | done",
       "name": "Título curto e objetivo do cartão",
       "start": "YYYY-MM-DD",
@@ -3357,7 +3359,7 @@ Retorne EXCLUSIVAMENTE um JSON válido com esta estrutura exata:
     }
   ],
   "checklist": [
-    { "cat": "Escopo | Financeiro | Operacional | Entrega | Viagem Corp.", "item": "Tarefa importante", "prio": "Alta | Média | Baixa", "notes": "" }
+    { "cat": "Escopo | Financeiro | Operacional | Entrega | Viagem", "item": "Tarefa importante", "prio": "Alta | Média | Baixa", "notes": "" }
   ]
 }
 Regras: Converta datas relativas usando ${todayIso} no formato YYYY-MM-DD. Se o item for um recebimento/faturamento use type="Recebimento" e finDirection="income". Se for despesa/pagamento/passagem use finDirection="expense".`
@@ -3479,7 +3481,7 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
           ? `Você é especialista em produtividade executiva e extração de dados para o My Plan (Modo Profissional).
 Analise áudios, textos, prints de contratos, notas fiscais, convites de reunião e passagens corporativas. Converta datas relativas usando ${todayIso} para YYYY-MM-DD e retorne JSON:
 {
-  "type": "Desenvolvimento | Reunião | Viagem Corp. | Recebimento | Despesa | Entrega | Marco | Follow-up | Outro",
+  "type": "Desenvolvimento | Reunião | Viagem | Recebimento | Despesa | Entrega | Marco | Proposta | Outro",
   "columnId": "backlog | todo | doing | review | done",
   "name": "Título curto e claro do cartão",
   "start": "YYYY-MM-DD",

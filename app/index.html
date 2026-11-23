@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=29">
+<link rel="manifest" href="/manifest.webmanifest?v=31">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=29">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=31">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=29">
+<link rel="stylesheet" href="styles.css?v=31">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=29" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=31" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=29" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=31" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -232,48 +232,85 @@
     <!-- CRONOGRAMA (1ª ABA) -->
     <section class="view active" id="view-gantt">
       <div class="card gantt-card">
-        <div class="gantt-header">
-          <div class="gantt-title-group">
-            <h2 id="ganttPlanTitle">Cronograma</h2>
-            <button type="button" class="btn primary small btn-add-event-gantt" id="btnAddEventGantt" title="Adicionar novo evento ou viagem">
-              <svg class="plus-ico" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
-              <span>Adicionar Evento</span>
-            </button>
-            <span class="pill" id="tripRoleBadge" hidden>Compartilhada</span>
-          </div>
-          <div class="gantt-controls">
-            <div class="gantt-filter-pair" role="group" aria-label="Filtros por tipo, tag e período">
-              <div id="ganttTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no cronograma"></div>
-              <div id="ganttTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no cronograma"></div>
-              <label class="date-filter-chip" title="Filtrar a partir da data">
-                <span>De</span>
-                <input type="date" id="ganttDateFrom" aria-label="Data inicial do filtro">
-              </label>
-              <label class="date-filter-chip" title="Filtrar até a data">
-                <span>Até</span>
-                <input type="date" id="ganttDateTo" aria-label="Data final do filtro">
-              </label>
-              <button type="button" class="btn ghost small icon-compact" id="btnGanttClearFilters" title="Limpar filtros de tipo, tag e data" hidden>✕</button>
+        <div class="gantt-header gantt-header-compact">
+          <div class="gantt-controls gantt-toolbar-row">
+            <div class="gantt-pop-host">
+              <button type="button" class="btn ghost small gantt-pop-trigger" id="btnGanttFilterPop" aria-expanded="false" aria-controls="ganttFilterPopPanel" title="Filtros">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                <span class="hide-xs">Filtros</span>
+                <span class="gantt-pop-count" id="ganttFilterCount" hidden></span>
+              </button>
+              <div class="gantt-pop-panel" id="ganttFilterPopPanel" hidden>
+                <div class="gantt-pop-head">
+                  <strong>Filtros</strong>
+                  <button type="button" class="btn ghost small" id="btnGanttClearFilters" hidden>✕ Limpar</button>
+                </div>
+                <div class="gantt-pop-grid">
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tipo</span>
+                    <div id="ganttTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no cronograma"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tags</span>
+                    <div id="ganttTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no cronograma"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">De</span>
+                    <input type="date" id="ganttDateFrom" aria-label="Data inicial do filtro">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Até</span>
+                    <input type="date" id="ganttDateTo" aria-label="Data final do filtro">
+                  </div>
+                </div>
+              </div>
             </div>
-            <button type="button" class="btn ghost small unified-toggle-btn" id="btnGanttUnified" aria-pressed="false" title="Ver calendário Pessoal + Profissional juntos para identificar conflitos">🔀 <span class="hide-xs">Agenda Completa</span></button>
-            <div class="seg" id="ganttModeSeg" role="group" aria-label="Modo de visualização">
-              <button type="button" class="active" data-gmode="gantt">Gantt</button>
-              <button type="button" data-gmode="timeline">Linha do Tempo</button>
+
+            <div class="gantt-pop-host">
+              <button type="button" class="btn ghost small gantt-pop-trigger" id="btnGanttViewPop" aria-expanded="false" aria-controls="ganttViewPopPanel" title="Modo de visualização">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="12" height="4" rx="1"/><rect x="7" y="16" width="14" height="4" rx="1"/></svg>
+                <span id="ganttViewPopLabel">Gantt</span>
+                <span class="gantt-pop-dot" id="ganttViewUnifDot" hidden title="Agenda Completa ativa"></span>
+                <span class="msel-caret" aria-hidden="true">▾</span>
+              </button>
+              <div class="gantt-pop-panel gantt-view-pop" id="ganttViewPopPanel" hidden>
+                <div class="gantt-pop-section">
+                  <span class="gantt-pop-lbl">Visualização</span>
+                  <div class="seg" id="ganttModeSeg" role="group" aria-label="Modo de visualização">
+                    <button type="button" class="active" data-gmode="gantt">Gantt</button>
+                    <button type="button" data-gmode="timeline">Linha do Tempo</button>
+                  </div>
+                </div>
+                <div class="gantt-pop-section">
+                  <span class="gantt-pop-lbl">Calendários &amp; Atalhos</span>
+                  <div class="gantt-pop-actions">
+                    <button type="button" class="btn ghost small unified-toggle-btn" id="btnGanttUnified" aria-pressed="false" title="Ver calendário Pessoal + Profissional juntos">🔀 Agenda Completa</button>
+                    <button type="button" class="btn ghost small" id="btnGanttToday" title="Ir para o início ou hoje">🎯 Hoje</button>
+                  </div>
+                </div>
+              </div>
             </div>
+
             <div class="gantt-zoom-group" id="ganttZoomGroup" role="group" aria-label="Zoom do Gantt">
               <button type="button" class="btn ghost small icon-compact" id="btnGanttZoomOut" title="Zoom Out (afastar)">−</button>
               <button type="button" class="btn ghost small gantt-zoom-readout" id="btnGanttZoomReset" title="Resetar zoom (100%)">100%</button>
               <button type="button" class="btn ghost small icon-compact" id="btnGanttZoomIn" title="Zoom In (aproximar)">+</button>
               <button type="button" class="btn ghost small" id="btnGanttFit" title="Ajustar período inteiro na tela">⬌</button>
             </div>
-            <button type="button" class="btn ghost small gantt-fs-btn" id="btnGanttFullscreen" title="Ampliar Gantt em tela inteira" aria-pressed="false">⛶ <span class="hide-xs">Tela cheia</span></button>
-            <button type="button" class="btn ghost small gantt-print-btn" id="btnPrintGantt" title="Imprimir ou salvar exatamente o que está visível no Gantt">🖨️ <span class="gantt-print-lbl">Gantt</span><span class="gantt-pdf-lbl">PDF</span></button>
-            <button type="button" class="btn ghost small" id="btnGanttToday" title="Ir para o início ou hoje">🎯 Hoje</button>
+
+            <div class="gantt-toolbar-right">
+              <span class="pill gantt-shared-pill" id="tripRoleBadge" hidden>Compartilhada</span>
+              <button type="button" class="btn ghost small gantt-print-btn" id="btnPrintGantt" title="Imprimir / PDF">🖨️<span class="gantt-pdf-lbl"> PDF</span></button>
+              <button type="button" class="btn ghost small gantt-fs-btn" id="btnGanttFullscreen" title="Ampliar Gantt em tela inteira" aria-pressed="false">⛶</button>
+              <button type="button" class="btn primary small btn-add-event-gantt" id="btnAddEventGantt" title="Adicionar evento ou viagem">
+                <svg class="plus-ico" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
+                <span class="hide-sm">Novo</span>
+              </button>
+            </div>
           </div>
         </div>
 
         <div id="ganttUnifiedBar" class="unified-status-bar" hidden></div>
-        <p class="muted small gantt-hint">Toque em uma barra para editar, anexar, abrir na Agenda ou Carteira do Google. Zoom abaixo de 44% agrupa por semana.</p>
 
         <div class="gantt-wrap" id="ganttWrap">
           <div id="gantt" class="gantt"></div>
@@ -285,7 +322,7 @@
     <!-- DASHBOARD -->
     <section class="view" id="view-dashboard">
       <div class="view-filter-bar" aria-label="Filtros do dashboard">
-        <span class="vf-title">🔍 Filtros</span>
+        <span class="vf-title" title="Filtros"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
         <div id="dashTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no dashboard"></div>
         <div id="dashTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no dashboard"></div>
         <label class="date-filter-chip" title="Filtrar a partir da data">
@@ -349,7 +386,7 @@
     <!-- FINANCEIRO (LINHA DO TEMPO DIÁRIA, GRÁFICOS E CONTROLE REAL) -->
     <section class="view" id="view-finance">
       <div class="view-filter-bar" aria-label="Filtros do financeiro">
-        <span class="vf-title">🔍 Filtros</span>
+        <span class="vf-title" title="Filtros"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
         <div id="finTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no financeiro"></div>
         <div id="finTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no financeiro"></div>
         <label class="date-filter-chip" title="Filtrar a partir da data">
@@ -383,10 +420,7 @@
 
       <div class="card fin-controls-card">
         <div class="card-head">
-          <div>
-            <h2>💰 Planejamento Diário, Economia &amp; Redistribuição</h2>
-            <p class="muted small">Viagens, combustível, pedágios e ingressos caem no dia exato. Alimentação, diárias de hospedagem, fixos e reserva são rateados linearmente por dia.</p>
-          </div>
+          <h2>💰 Planejamento Diário &amp; Economia</h2>
           <div class="fin-presets" role="group" aria-label="Presets de economia">
             <button type="button" class="btn ghost small fin-save-preset" data-savepct="0">Base (0%)</button>
             <button type="button" class="btn ghost small fin-save-preset" data-savepct="5">-5% Econ.</button>
@@ -423,10 +457,7 @@
 
       <div class="card fin-chart-card">
         <div class="card-head">
-          <div>
-            <h2>📊 Gráfico Diário: Previsto vs Executado</h2>
-            <p class="muted small">Toque em qualquer coluna do dia para lançar ou detalhar o consumo real.</p>
-          </div>
+          <h2>📊 Gráfico Diário: Previsto vs Executado</h2>
           <div class="seg" id="finFilterSeg" role="group" aria-label="Filtrar dias no financeiro">
             <button type="button" class="active" data-ffilter="all">Todos os dias</button>
             <button type="button" data-ffilter="events">Com viagem/evento</button>
@@ -461,16 +492,14 @@
     <section class="view" id="view-table">
       <div class="card">
         <div class="card-head">
-          <h2>Tabela completa</h2>
           <div class="filters">
             <input type="search" id="search" placeholder="🔎 Buscar...">
             <div id="filterType" class="msel-host msel-compact" aria-label="Filtrar tipos na tabela"></div>
             <div id="filterTag" class="msel-host msel-compact" aria-label="Filtrar tags na tabela"></div>
             <button type="button" class="btn ghost small" id="btnTableAdd">➕ Novo item</button>
-            <button type="button" class="btn primary small" id="btnTablePdf">📄 Baixar Tabela (A4 Horizontal)</button>
+            <button type="button" class="btn primary small" id="btnTablePdf">📄 PDF</button>
           </div>
         </div>
-        <p class="muted small">Edite células diretamente. Ingressos, passagens aéreas, hospedagens e atividades sincronizam automaticamente com Dashboard, Gantt e Relatório.</p>
         <div class="table-wrap desktop-table-wrap"><table id="mainTable"></table></div>
         <div id="mobileTableCards" class="mobile-cards"></div>
       </div>
@@ -536,7 +565,6 @@
 
         <div class="card">
           <h2>💰 Orçamento Flexível, Hospedagem &amp; Tarifas</h2>
-          <p class="muted small" style="margin-top:-6px">A hospedagem vale para as férias inteiras (ou noites definidas), sem vínculo obrigatório com “Período”.</p>
           <div id="costParamsList" class="params-form"></div>
         </div>
       </div>
@@ -545,7 +573,6 @@
       <div class="card">
         <div class="card-head">
           <h2>🎟️ Ingressos, Tickets, Passagens &amp; Extras da Viagem</h2>
-          <span class="muted small">Tudo lançado aqui entra direto no Cronograma, Gantt e Composição de Custos</span>
         </div>
         <form id="paramTicketForm" class="ticket-inline-form">
           <select id="pt-type" aria-label="Tipo do item">
@@ -651,7 +678,6 @@
             <button class="btn primary small" id="btnAddCheck" type="button">➕ Item</button>
           </div>
         </div>
-        <p class="muted small">Arraste pelo ícone <b>⋮⋮</b> (ou use ▲ ▼ no celular) para reordenar a prioridade dos itens.</p>
         <div class="progress"><div id="checkBar"></div></div>
         <div class="table-wrap desktop-table-wrap"><table id="checkTable"></table></div>
         <div id="mobileCheckCards" class="mobile-cards"></div>
@@ -662,10 +688,6 @@
     <section class="view" id="view-pro-board">
       <div class="card pro-board-toolbar-card">
         <div class="pro-board-toolbar">
-          <div class="pro-board-title-group">
-            <h2 id="proBoardTitle">Quadro de Projetos</h2>
-            <span class="pill" id="proBoardRoleBadge" hidden>Compartilhado</span>
-          </div>
           <div class="pro-board-filters">
             <input type="search" id="proBoardSearch" placeholder="🔎 Buscar cartão, cliente ou nota...">
             <div id="proBoardTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no quadro"></div>
@@ -677,6 +699,7 @@
               <option value="Média">Média</option>
               <option value="Baixa">Baixa</option>
             </select>
+            <span class="pill" id="proBoardRoleBadge" hidden>Compartilhado</span>
             <button type="button" class="btn ghost small" id="btnProBoardAddCol">➕ Nova Lista</button>
             <button type="button" class="btn primary small" id="btnProBoardAdd">➕ Novo Cartão</button>
           </div>
@@ -690,53 +713,96 @@
     <!-- MODO PROFISSIONAL: GANTT AVANÇADO & LINHA DO TEMPO -->
     <section class="view" id="view-pro-gantt">
       <div class="card gantt-card" id="proGanttCard">
-        <div class="gantt-header">
-          <div class="gantt-title-group">
-            <h2 id="proGanttPlanTitle">Gantt Profissional</h2>
-            <button type="button" class="btn primary small btn-add-event-gantt" id="btnProAddCardGantt" title="Adicionar novo cartão profissional">
-              <svg class="plus-ico" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
-              <span>Novo Cartão</span>
-            </button>
-            <span class="pill" id="proTripRoleBadge" hidden>Compartilhado</span>
-          </div>
-          <div class="gantt-controls">
-            <div class="gantt-filter-pair" role="group" aria-label="Filtros profissionais">
-              <div id="proGanttTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no Gantt profissional"></div>
-              <div id="proGanttColFilter" class="msel-host msel-compact" aria-label="Filtrar listas no Gantt profissional"></div>
-              <div id="proGanttTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no Gantt profissional"></div>
-              <label class="date-filter-chip" title="Filtrar a partir da data">
-                <span>De</span>
-                <input type="date" id="proGanttDateFrom" aria-label="Data inicial no Gantt profissional">
-              </label>
-              <label class="date-filter-chip" title="Filtrar até a data">
-                <span>Até</span>
-                <input type="date" id="proGanttDateTo" aria-label="Data final no Gantt profissional">
-              </label>
-              <button type="button" class="btn ghost small icon-compact" id="btnProGanttClearFilters" title="Limpar filtros de tipo, tag e data" hidden>✕</button>
+        <div class="gantt-header gantt-header-compact">
+          <div class="gantt-controls gantt-toolbar-row">
+            <div class="gantt-pop-host">
+              <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProGanttFilterPop" aria-expanded="false" aria-controls="proGanttFilterPopPanel" title="Filtros">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                <span class="hide-xs">Filtros</span>
+                <span class="gantt-pop-count" id="proGanttFilterCount" hidden></span>
+              </button>
+              <div class="gantt-pop-panel" id="proGanttFilterPopPanel" hidden>
+                <div class="gantt-pop-head">
+                  <strong>Filtros</strong>
+                  <button type="button" class="btn ghost small" id="btnProGanttClearFilters" hidden>✕ Limpar</button>
+                </div>
+                <div class="gantt-pop-grid">
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tipo</span>
+                    <div id="proGanttTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no Gantt profissional"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Lista</span>
+                    <div id="proGanttColFilter" class="msel-host msel-compact" aria-label="Filtrar listas no Gantt profissional"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tags</span>
+                    <div id="proGanttTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no Gantt profissional"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">De</span>
+                    <input type="date" id="proGanttDateFrom" aria-label="Data inicial no Gantt profissional">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Até</span>
+                    <input type="date" id="proGanttDateTo" aria-label="Data final no Gantt profissional">
+                  </div>
+                </div>
+              </div>
             </div>
-            <button type="button" class="btn ghost small unified-toggle-btn" id="btnProGanttUnified" aria-pressed="false" title="Ver calendário Profissional + Pessoal juntos para identificar conflitos">🔀 <span class="hide-xs">Agenda Completa</span></button>
-            <div class="seg" id="proGanttModeSeg" role="group" aria-label="Modo de visualização">
-              <button type="button" class="active" data-pgmode="gantt">Gantt</button>
-              <button type="button" data-pgmode="timeline">Linha do Tempo</button>
+
+            <div class="gantt-pop-host">
+              <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProGanttViewPop" aria-expanded="false" aria-controls="proGanttViewPopPanel" title="Modo de visualização">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="12" height="4" rx="1"/><rect x="7" y="16" width="14" height="4" rx="1"/></svg>
+                <span id="proGanttViewPopLabel">Gantt</span>
+                <span class="gantt-pop-dot" id="proGanttViewUnifDot" hidden title="Agenda Completa ativa"></span>
+                <span class="msel-caret" aria-hidden="true">▾</span>
+              </button>
+              <div class="gantt-pop-panel gantt-view-pop" id="proGanttViewPopPanel" hidden>
+                <div class="gantt-pop-section">
+                  <span class="gantt-pop-lbl">Visualização</span>
+                  <div class="seg" id="proGanttModeSeg" role="group" aria-label="Modo de visualização">
+                    <button type="button" class="active" data-pgmode="gantt">Gantt</button>
+                    <button type="button" data-pgmode="timeline">Linha do Tempo</button>
+                  </div>
+                </div>
+                <div class="gantt-pop-section">
+                  <span class="gantt-pop-lbl">Agrupamento</span>
+                  <div class="seg" id="proGanttGroupSeg" role="group" aria-label="Agrupamento no Gantt">
+                    <button type="button" class="active" data-pgroup="none" title="Ordem cronológica">Crono</button>
+                    <button type="button" data-pgroup="column" title="Agrupar por Lista Trello">Por Lista</button>
+                    <button type="button" data-pgroup="type" title="Agrupar por Tipo">Por Tipo</button>
+                  </div>
+                </div>
+                <div class="gantt-pop-section">
+                  <span class="gantt-pop-lbl">Calendários &amp; Atalhos</span>
+                  <div class="gantt-pop-actions">
+                    <button type="button" class="btn ghost small unified-toggle-btn" id="btnProGanttUnified" aria-pressed="false" title="Ver calendário Profissional + Pessoal juntos">🔀 Agenda Completa</button>
+                    <button type="button" class="btn ghost small" id="btnProGanttToday" title="Ir para hoje">🎯 Hoje</button>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="seg" id="proGanttGroupSeg" role="group" aria-label="Agrupamento no Gantt">
-              <button type="button" class="active" data-pgroup="none" title="Ordem cronológica">Crono</button>
-              <button type="button" data-pgroup="column" title="Agrupar por Lista Trello">Por Lista</button>
-              <button type="button" data-pgroup="type" title="Agrupar por Tipo">Por Tipo</button>
-            </div>
+
             <div class="gantt-zoom-group" id="proGanttZoomGroup" role="group" aria-label="Zoom do Gantt profissional">
               <button type="button" class="btn ghost small icon-compact" id="btnProGanttZoomOut" title="Zoom Out (afastar)">−</button>
               <button type="button" class="btn ghost small gantt-zoom-readout" id="btnProGanttZoomReset" title="Resetar zoom (100%)">100%</button>
               <button type="button" class="btn ghost small icon-compact" id="btnProGanttZoomIn" title="Zoom In (aproximar)">+</button>
               <button type="button" class="btn ghost small" id="btnProGanttFit" title="Ajustar período inteiro na tela">⬌</button>
             </div>
-            <button type="button" class="btn ghost small gantt-fs-btn" id="btnProGanttFullscreen" title="Ampliar Gantt em tela inteira" aria-pressed="false">⛶ <span class="hide-xs">Tela cheia</span></button>
-            <button type="button" class="btn ghost small gantt-print-btn" id="btnProPrintGantt" title="Imprimir ou salvar exatamente o que está visível no Gantt">🖨️ <span class="gantt-print-lbl">Gantt</span><span class="gantt-pdf-lbl">PDF</span></button>
-            <button type="button" class="btn ghost small" id="btnProGanttToday" title="Ir para hoje">🎯 Hoje</button>
+
+            <div class="gantt-toolbar-right">
+              <span class="pill gantt-shared-pill" id="proTripRoleBadge" hidden>Compartilhado</span>
+              <button type="button" class="btn ghost small gantt-print-btn" id="btnProPrintGantt" title="Imprimir / PDF">🖨️<span class="gantt-pdf-lbl"> PDF</span></button>
+              <button type="button" class="btn ghost small gantt-fs-btn" id="btnProGanttFullscreen" title="Ampliar Gantt em tela inteira" aria-pressed="false">⛶</button>
+              <button type="button" class="btn primary small btn-add-event-gantt" id="btnProAddCardGantt" title="Adicionar novo cartão profissional">
+                <svg class="plus-ico" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
+                <span class="hide-sm">Cartão</span>
+              </button>
+            </div>
           </div>
         </div>
         <div id="proGanttUnifiedBar" class="unified-status-bar" hidden></div>
-        <p class="muted small gantt-hint">Arraste barras para reprogramar datas, puxe a borda direita para ajustar duração ou clique para abrir o cartão. Zoom abaixo de 44% agrupa por semana.</p>
         <div class="gantt-wrap" id="proGanttWrap">
           <div id="proGantt" class="gantt"></div>
         </div>
@@ -747,7 +813,7 @@
     <!-- MODO PROFISSIONAL: DASHBOARD EXECUTIVO -->
     <section class="view" id="view-pro-dashboard">
       <div class="view-filter-bar" aria-label="Filtros do dashboard profissional">
-        <span class="vf-title">🔍 Filtros</span>
+        <span class="vf-title" title="Filtros"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
         <div id="proDashTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no dashboard profissional"></div>
         <div id="proDashTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no dashboard profissional"></div>
         <label class="date-filter-chip" title="Filtrar a partir da data">
@@ -802,7 +868,7 @@
     <!-- MODO PROFISSIONAL: FINANCEIRO EXECUTIVO (FLUXO DE CAIXA) -->
     <section class="view" id="view-pro-finance">
       <div class="view-filter-bar" aria-label="Filtros do financeiro profissional">
-        <span class="vf-title">🔍 Filtros</span>
+        <span class="vf-title" title="Filtros"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
         <div id="proFinTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no financeiro profissional"></div>
         <div id="proFinTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no financeiro profissional"></div>
         <label class="date-filter-chip" title="Filtrar a partir da data">
@@ -818,10 +884,7 @@
       <div class="kpis fin-kpis" id="proFinKpis"></div>
       <div class="card fin-controls-card">
         <div class="card-head">
-          <div>
-            <h2>💼 Fluxo de Caixa Profissional (Recebimentos × Despesas)</h2>
-            <p class="muted small">Recebimentos, viagens corporativas e despesas cadastradas nos cartões entram automaticamente aqui. Liquide com 1 clique.</p>
-          </div>
+          <h2>💼 Fluxo de Caixa Profissional (Recebimentos × Despesas)</h2>
           <div class="inline-actions">
             <button type="button" class="btn primary small" id="btnProFinAddIncome">💵 + Recebimento</button>
             <button type="button" class="btn ghost small" id="btnProFinAddExpense">💳 + Despesa</button>
@@ -841,10 +904,7 @@
 
       <div class="card fin-chart-card">
         <div class="card-head">
-          <div>
-            <h2>📊 Fluxo Diário: Entradas vs Saídas</h2>
-            <p class="muted small">Visualize o saldo diário previsto e realizado ao longo do projeto.</p>
-          </div>
+          <h2>📊 Fluxo Diário: Entradas vs Saídas</h2>
         </div>
         <div class="fin-legend">
           <span><i style="background:#10b981"></i> Recebimentos (+)</span>
@@ -869,7 +929,6 @@
     <section class="view" id="view-pro-table">
       <div class="card">
         <div class="card-head">
-          <h2>Tabela Executiva</h2>
           <div class="filters">
             <input type="search" id="proSearch" placeholder="🔎 Buscar cartão, cliente, nota...">
             <div id="proFilterCol" class="msel-host msel-compact" aria-label="Filtrar listas na tabela"></div>
@@ -883,10 +942,9 @@
               <option value="Baixa">Baixa</option>
             </select>
             <button type="button" class="btn ghost small" id="btnProTableAdd">➕ Novo Cartão</button>
-            <button type="button" class="btn primary small" id="btnProTablePdf">📄 Baixar Tabela (A4 Horizontal)</button>
+            <button type="button" class="btn primary small" id="btnProTablePdf">📄 PDF</button>
           </div>
         </div>
-        <p class="muted small">Edite lista, datas, progresso %, prioridade, valor e status diretamente na planilha. Tudo sincroniza com o Quadro Trello, Gantt e Fluxo de Caixa.</p>
         <div class="table-wrap desktop-table-wrap"><table id="proMainTable"></table></div>
         <div id="proMobileTableCards" class="mobile-cards"></div>
       </div>
@@ -934,6 +992,11 @@
               <input id="pp-remTime" type="time">
               <span class="u">h:m</span>
             </label>
+            <label class="param-row">
+              <span>Mover ao concluir para</span>
+              <select id="pp-doneColumnId" aria-label="Lista destino ao concluir tarefa"></select>
+              <span class="u">lista</span>
+            </label>
           </div>
         </div>
 
@@ -942,12 +1005,19 @@
             <h2>🗂️ Listas do Quadro Trello &amp; Etiquetas</h2>
             <button type="button" class="btn primary small" id="btnProAddColumn">➕ Nova Lista</button>
           </div>
-          <p class="muted small">Personalize as etapas do seu quadro Kanban e as etiquetas coloridas dos cartões.</p>
           <div id="proColumnsManager" class="pro-cols-manager"></div>
           <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
           <strong style="font-size:0.86rem;display:block;margin-bottom:8px">🏷️ Etiquetas do Quadro</strong>
           <div id="proLabelsManager" class="pro-labels-manager"></div>
         </div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="card-head">
+          <h2>🧩 Tipos de Cartões (Modo Profissional)</h2>
+          <button type="button" class="btn primary small" id="btnProAddCardType">➕ Novo Tipo</button>
+        </div>
+        <div id="proCardTypesManager" class="pro-types-manager"></div>
       </div>
 
       <div class="card" style="margin-top:14px">
@@ -996,7 +1066,6 @@
             <button class="btn primary small" id="btnProAddCheck" type="button">➕ Item</button>
           </div>
         </div>
-        <p class="muted small">Arraste pelo ícone <b>⋮⋮</b> (ou use ▲ ▼ no celular) para priorizar entregas e tarefas operacionais.</p>
         <div class="progress"><div id="proCheckBar"></div></div>
         <div class="table-wrap desktop-table-wrap"><table id="proCheckTable"></table></div>
         <div id="proMobileCheckCards" class="mobile-cards"></div>
@@ -1766,6 +1835,7 @@
     <div class="modal-head">
       <div class="modal-head-left">
         <h2 id="proCardModalTitle">Cartão Profissional</h2>
+        <button type="button" class="btn ghost small btn-modal-done" id="btnProCardDoneToggle" aria-pressed="false" title="Marcar tarefa como concluída (100%)">☐ Concluir</button>
         <button type="button" class="btn ghost small btn-modal-dup" id="btnProCardDuplicate" title="Duplicar este cartão" hidden>⧉ Duplicar</button>
         <button type="button" class="btn ghost small btn-modal-google" id="btnProHeadCal" title="Adicionar ao Google Agenda (calendário dedicado deste projeto)" hidden>
           <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="3" fill="#ffffff" stroke="#4285F4" stroke-width="2"/><path d="M3 9h18" stroke="#4285F4" stroke-width="2"/><rect x="7" y="2" width="2.2" height="4" rx="1" fill="#EA4335"/><rect x="14.8" y="2" width="2.2" height="4" rx="1" fill="#34A853"/><text x="12" y="18.2" text-anchor="middle" font-size="7.5" font-weight="800" fill="#1d4ed8" font-family="sans-serif">31</text></svg>
@@ -1845,7 +1915,11 @@
               <select id="pc-column"></select>
             </label>
             <label>Tipo de cartão
-              <select id="pc-type"></select>
+              <div class="pro-type-picker-row">
+                <span id="pc-typeIconPreview" class="pro-type-ico-preview" aria-hidden="true"></span>
+                <select id="pc-type"></select>
+                <button type="button" class="btn ghost small icon-compact" id="btnProQuickAddType" title="Criar novo tipo de cartão">+</button>
+              </div>
             </label>
             <label>Data inicial *
               <input type="date" id="pc-start" required>
@@ -1963,19 +2037,54 @@
   </form>
 </dialog>
 
+<!-- MODAL CRIAR / EDITAR TIPO DE CARTÃO PROFISSIONAL -->
+<dialog id="proTypeModal" class="pro-type-dialog">
+  <form id="proTypeForm" method="dialog">
+    <div class="modal-head">
+      <h2 id="proTypeModalTitle">Novo Tipo de Cartão</h2>
+      <button type="button" class="icon-btn modal-close" id="btnProTypeClose" aria-label="Fechar">✕</button>
+    </div>
+    <div class="form-grid">
+      <label class="span2">Nome único do tipo * <small class="muted">(apenas uma palavra, sem espaços ou &ldquo;/&rdquo;)</small>
+        <input id="pct-name" required maxlength="24" autocomplete="off" placeholder="Ex: Missão, Briefing, Sprint, Voo">
+      </label>
+      <div class="field-box span2">
+        <label>Ícone clean do tipo</label>
+        <div id="pct-iconPicker" class="pro-ico-dd-host"></div>
+      </div>
+      <label>Cor do tipo
+        <input type="color" id="pct-color" value="#2563eb" style="height:38px;padding:3px">
+      </label>
+      <label>Impacto financeiro padrão
+        <select id="pct-defaultFin">
+          <option value="none">Sem lançamento padrão</option>
+          <option value="income">Recebimento (+)</option>
+          <option value="expense">Despesa (−)</option>
+        </select>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn danger-ghost" id="btnProTypeDelete" hidden>🗑️ Excluir Tipo</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnProTypeCancel">Cancelar</button>
+      <button type="submit" class="btn primary" id="btnProTypeSave">Salvar Tipo</button>
+    </div>
+  </form>
+</dialog>
+
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=29"></script>
-<script src="vehicles.js?v=29"></script>
-<script src="countries.js?v=29"></script>
-<script src="data.js?v=29"></script>
-<script src="maps.js?v=29"></script>
-<script src="calendar.js?v=29"></script>
-<script src="report.js?v=29"></script>
-<script src="api.js?v=29"></script>
-<script src="pro.js?v=29"></script>
-<script src="app.js?v=29"></script>
+<script src="config.example.js?v=31"></script>
+<script src="vehicles.js?v=31"></script>
+<script src="countries.js?v=31"></script>
+<script src="data.js?v=31"></script>
+<script src="maps.js?v=31"></script>
+<script src="calendar.js?v=31"></script>
+<script src="report.js?v=31"></script>
+<script src="api.js?v=31"></script>
+<script src="pro.js?v=31"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>

@@ -57,16 +57,91 @@
   // Estado do modal de lista/coluna
   let editingProColId = null;
 
+  // Estado do modal de tipo de cartão customizado & conclusão
+  let editingProTypeId = null;
+  let proTypeModalCallback = null;
+  let proTypePickedIcon = "flag";
+  let proModalCompleted = false;
+  let proModalPrevColId = "";
+  let proModalPrevProg = 0;
+  const knownProTypeIds = new Set(Object.keys(window.PRO_ACTIVITY_TYPES || {}));
+
   function $(sel, el = document) { return el.querySelector(sel); }
 
-  function getProTypeInfo(type) {
-    return (window.PRO_ACTIVITY_TYPES && window.PRO_ACTIVITY_TYPES[type]) || {
-      id: type || "Outro",
-      label: type || "Outro",
-      short: type || "Outro",
-      icon: "📌",
+  function sanitizeProTypeName(raw) {
+    const clean = String(raw || "").trim();
+    if (!clean || /\s|\//.test(clean)) return "";
+    return clean.slice(0, 24);
+  }
+
+  function resolveProIconHtml(iconId) {
+    if (window.renderProIconSvg) return window.renderProIconSvg(iconId);
+    return "•";
+  }
+
+  function getAllProTypes(dataOpt = null) {
+    const out = {};
+    const builtIn = window.PRO_ACTIVITY_TYPES || {};
+    Object.values(builtIn).forEach(t => {
+      const iconHtml = t.iconHtml || t.icon || resolveProIconHtml(t.iconId);
+      out[t.id] = {
+        ...t,
+        label: t.id,
+        short: t.id,
+        icon: iconHtml,
+        iconHtml,
+        isCustom: false
+      };
+    });
+
+    const dataList = [];
+    if (dataOpt) dataList.push(dataOpt);
+    const st = core?.getState?.();
+    if (st) dataList.push(st);
+    (core?.getSelectedTrips?.() || []).forEach(tr => { if (tr?.data) dataList.push(tr.data); });
+
+    dataList.forEach(d => {
+      const customs = Array.isArray(d?.customCardTypes) ? d.customCardTypes : [];
+      customs.forEach(ct => {
+        const name = sanitizeProTypeName(ct?.id || ct?.name);
+        if (!name || out[name]) return;
+        const iconId = (window.PRO_ICON_MAP && window.PRO_ICON_MAP[ct.iconId]) ? ct.iconId : "flag";
+        const color = /^#[0-9a-f]{3,8}$/i.test(String(ct.color || "")) ? String(ct.color) : "#2563eb";
+        const defaultFin = ["income", "expense", "none"].includes(ct.defaultFin) ? ct.defaultFin : "none";
+        const iconHtml = resolveProIconHtml(iconId);
+        out[name] = {
+          id: name,
+          label: name,
+          short: name,
+          iconId,
+          icon: iconHtml,
+          iconHtml,
+          color,
+          cls: "pro-custom",
+          defaultFin,
+          isCustom: true
+        };
+      });
+    });
+    return out;
+  }
+
+  function getProTypeInfo(type, dataOpt = null) {
+    const mapped = (window.PRO_LEGACY_TYPE_MAP && window.PRO_LEGACY_TYPE_MAP[type]) || type || "Outro";
+    const all = getAllProTypes(dataOpt);
+    if (all[mapped]) return all[mapped];
+    const iconHtml = resolveProIconHtml("pin");
+    return {
+      id: mapped,
+      label: mapped,
+      short: mapped,
+      iconId: "pin",
+      icon: iconHtml,
+      iconHtml,
+      color: "#64748b",
       cls: "pro-outro",
-      defaultFin: "none"
+      defaultFin: "none",
+      isCustom: false
     };
   }
 
@@ -74,6 +149,7 @@
     const def = core.clone(window.createBlankProData ? window.createBlankProData() : window.PRO_DEFAULT_DATA);
     const s = raw && typeof raw === "object" ? raw : {};
     const validTypes = window.PRO_ACTIVITY_TYPES || {};
+    const legacyMap = window.PRO_LEGACY_TYPE_MAP || {};
     const cols = Array.isArray(s.columns) && s.columns.length
       ? s.columns.map(c => ({
           id: String(c?.id || core.uid()),
@@ -92,15 +168,37 @@
         }))
       : core.clone(def.labels);
 
+    const customCardTypes = [];
+    const seenCustom = new Set();
+    if (Array.isArray(s.customCardTypes)) {
+      s.customCardTypes.forEach(ct => {
+        const name = sanitizeProTypeName(ct?.id || ct?.name);
+        if (!name || validTypes[name] || seenCustom.has(name)) return;
+        seenCustom.add(name);
+        customCardTypes.push({
+          id: name,
+          name,
+          iconId: (window.PRO_ICON_MAP && window.PRO_ICON_MAP[ct.iconId]) ? ct.iconId : "flag",
+          color: /^#[0-9a-f]{3,8}$/i.test(String(ct.color || "")) ? String(ct.color) : "#2563eb",
+          defaultFin: ["income", "expense", "none"].includes(ct.defaultFin) ? ct.defaultFin : "none"
+        });
+      });
+    }
+    const customTypeMap = new Map(customCardTypes.map(ct => [ct.id, ct]));
+
+    const params = Object.assign({}, def.params, s.params || {});
+    params.doneColumnId = params.doneColumnId && colIds.has(String(params.doneColumnId)) ? String(params.doneColumnId) : "";
+
     const merged = {
       mode: "professional",
       title: s.title || def.title,
       customTags: Array.isArray(s.customTags)
         ? [...new Set(s.customTags.map(t => String(t || "").trim()).filter(Boolean))]
         : [],
+      customCardTypes,
       columns: cols,
       labels,
-      params: Object.assign({}, def.params, s.params || {}),
+      params,
       activities: Array.isArray(s.activities) ? core.clone(s.activities) : [],
       checklist: Array.isArray(s.checklist) ? core.clone(s.checklist) : [],
       finance: s.finance && typeof s.finance === "object"
@@ -111,13 +209,21 @@
     const today = core.fmtISO(new Date());
     merged.activities.forEach((a, idx) => {
       if (!a.id) a.id = core.uid();
-      if (!validTypes[a.type]) a.type = "Desenvolvimento";
+      const mappedType = legacyMap[a.type] || a.type;
+      a.type = (validTypes[mappedType] || customTypeMap.has(mappedType)) ? mappedType : "Desenvolvimento";
       if (!a.columnId || !colIds.has(a.columnId)) a.columnId = firstColId;
       if (a.order == null || !isFinite(Number(a.order))) a.order = idx;
       if (!a.start) a.start = today;
       if (!a.end || a.end < a.start) a.end = a.start;
       if (!["Crítica", "Alta", "Média", "Baixa"].includes(a.priority)) a.priority = "Média";
       a.progress = Math.max(0, Math.min(100, Math.round(Number(a.progress) || 0)));
+      if (typeof a.completed !== "boolean") {
+        a.completed = Boolean((params.doneColumnId && a.columnId === params.doneColumnId) || a.progress >= 100);
+      }
+      a.prevColumnId = a.prevColumnId && colIds.has(a.prevColumnId) ? String(a.prevColumnId) : "";
+      if (a.prevProgress != null && isFinite(Number(a.prevProgress))) {
+        a.prevProgress = Math.max(0, Math.min(100, Math.round(Number(a.prevProgress))));
+      }
       a.client = String(a.client || "");
       a.assignee = String(a.assignee || "");
       a.location = String(a.location || "");
@@ -128,7 +234,7 @@
       a.subtasks = Array.isArray(a.subtasks)
         ? a.subtasks.map(st => ({ id: st?.id || core.uid(), text: String(st?.text || "").trim(), done: Boolean(st?.done) })).filter(st => st.text)
         : [];
-      const tInfo = getProTypeInfo(a.type);
+      const tInfo = getProTypeInfo(a.type, merged);
       if (!["income", "expense", "none"].includes(a.finDirection)) {
         a.finDirection = (Number(a.amount) > 0 && tInfo.defaultFin !== "none") ? tInfo.defaultFin : (tInfo.defaultFin || "none");
       }
@@ -207,10 +313,54 @@
     return Array.isArray(st.labels) && st.labels.length ? st.labels : window.PRO_DEFAULT_LABELS;
   }
 
-  function isCardDone(a, cols) {
-    const col = cols.find(c => c.id === a.columnId);
+  function isCardDone(a, cols, paramsOpt = null) {
+    if (a.completed === true) return true;
+    const p = paramsOpt || core.getState()?.params;
+    const doneColId = String(p?.doneColumnId || "");
+    if (doneColId && a.columnId === doneColId) return true;
+    if (a.completed === false) return false;
+    const col = (cols || []).find(c => c.id === a.columnId);
     const title = String(col?.title || "").toLowerCase();
     return a.columnId === "done" || /conclu|finaliz|entregue|feito/.test(title) || Number(a.progress) >= 100;
+  }
+
+  function toggleProCardDone(cardId) {
+    const ctx = findProCardContext(cardId);
+    if (!ctx) return;
+    if (ctx.trip?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+    const a = ctx.activity;
+    const cols = ctx.data?.columns || getMergedColumns();
+    const params = ctx.data?.params || core.getState()?.params || {};
+    const doneColId = String(params.doneColumnId || "");
+    const validDoneCol = doneColId ? cols.find(c => c.id === doneColId) : null;
+    const currentlyDone = isCardDone(a, cols, params);
+
+    if (!currentlyDone) {
+      if (!validDoneCol || a.columnId !== validDoneCol.id) a.prevColumnId = a.columnId;
+      a.prevProgress = Number(a.progress) < 100 ? (Number(a.progress) || 0) : 0;
+      a.completed = true;
+      a.progress = 100;
+      if (validDoneCol) {
+        a.columnId = validDoneCol.id;
+        a.order = (ctx.data.activities || []).filter(x => x.columnId === validDoneCol.id && x.id !== a.id).length;
+        core.saveTripRecord(ctx.trip, `✅ "${a.name}" concluída e movida para "${validDoneCol.title}"!`);
+      } else {
+        core.saveTripRecord(ctx.trip, `✅ "${a.name}" marcada como concluída (100%)!`);
+      }
+      return;
+    }
+
+    a.completed = false;
+    a.progress = (a.prevProgress != null && a.prevProgress < 100) ? a.prevProgress : 0;
+    if ((validDoneCol && a.columnId === validDoneCol.id) || a.columnId === "done") {
+      if (a.prevColumnId && cols.some(c => c.id === a.prevColumnId && c.id !== a.columnId)) {
+        a.columnId = a.prevColumnId;
+      } else if (validDoneCol && a.columnId === validDoneCol.id) {
+        const fallback = cols.find(c => c.id !== validDoneCol.id);
+        if (fallback) a.columnId = fallback.id;
+      }
+    }
+    core.saveTripRecord(ctx.trip, `↩️ "${a.name}" reaberta (${a.progress}%).`);
   }
 
   function computeProTotals(cardsOpt) {
@@ -290,8 +440,20 @@
   function refreshProFilterOptions(allCards) {
     const cols = getMergedColumns();
     const labels = getMergedLabels();
-    const typeItems = Object.values(window.PRO_ACTIVITY_TYPES || {}).map(t => ({
-      id: t.id, label: t.short, icon: t.icon
+    const allProTypes = getAllProTypes();
+    Object.keys(allProTypes).forEach(tid => {
+      if (!knownProTypeIds.has(tid)) {
+        knownProTypeIds.add(tid);
+        proBoardTypeSet.add(tid);
+        proGanttTypeSet.add(tid);
+        proTableTypeSet.add(tid);
+      }
+    });
+    const typeItems = Object.values(allProTypes).map(t => ({
+      id: t.id,
+      label: t.short,
+      iconHtml: t.iconHtml || t.icon,
+      color: t.color
     }));
     const colItems = cols.map(c => ({ id: c.id, label: c.title }));
     const labelItems = labels.map(l => ({ id: l.id, label: l.name }));
@@ -411,15 +573,9 @@
     const multi = trips.length > 1;
     const active = core.getActiveTrip();
 
-    if ($("#proBoardTitle")) {
-      $("#proBoardTitle").textContent = multi ? `${trips.length} projetos combinados` : (st.title || "Quadro de Projetos");
-    }
     const roleBadge = $("#proBoardRoleBadge");
     if (roleBadge) {
-      if (multi) {
-        roleBadge.textContent = trips.map(t => t.data?.title || t.name).join(" + ");
-        roleBadge.hidden = false;
-      } else if (active && active.role !== "owner") {
+      if (!multi && active && active.role !== "owner") {
         roleBadge.textContent = `Compartilhado (${active.ownerName || "usuário"})`;
         roleBadge.hidden = false;
       } else {
@@ -470,13 +626,17 @@
         const prioCls = c.priority === "Crítica" ? "p-crit" : (c.priority === "Alta" ? "p-alta" : "");
         const attCount = Array.isArray(c.attachments) ? c.attachments.length : 0;
         const moveOpts = cols.map(mc => `<option value="${core.esc(mc.id)}" ${mc.id === c.columnId ? "selected" : ""}>${core.esc(mc.title)}</option>`).join("");
+        const typeColStyle = info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : "";
 
-        return `<article class="pro-card" draggable="true" data-card-id="${core.esc(c.id)}">
+        return `<article class="pro-card${done ? " is-done" : ""}" draggable="true" data-card-id="${core.esc(c.id)}"${typeColStyle}>
           ${c.coverColor ? `<div class="pro-card-cover" style="--cover-c:${core.esc(c.coverColor)}"></div>` : ""}
           ${lblsHtml ? `<div class="pro-card-labels">${lblsHtml}</div>` : ""}
           <div class="pro-card-top">
-            <div class="pro-card-title">${info.icon} ${core.esc(c.name)}</div>
-            <span class="chip ${info.cls}">${core.esc(info.short)}</span>
+            <div class="pro-card-title" style="display:flex;align-items:flex-start;gap:6px">
+              <button type="button" class="pro-done-btn${done ? " is-done" : ""}" data-pro-toggle-done="${core.esc(c.id)}" title="${done ? "Reabrir tarefa" : "Marcar como concluída"}" aria-label="${done ? "Reabrir tarefa" : "Marcar como concluída"}">✓</button>
+              <span>${info.icon} ${core.esc(c.name)}</span>
+            </div>
+            <span class="chip ${info.cls}"${typeColStyle}>${core.esc(info.short)}</span>
           </div>
           ${(c.client || c.assignee || c.startTime || c.location) ? `<div class="pro-card-sub">
             ${c.client ? `<span>🏢 ${core.esc(c.client)}</span>` : ""}
@@ -566,6 +726,12 @@
       });
     });
 
+    board.querySelectorAll("[data-pro-toggle-done]").forEach(btn => {
+      btn.onclick = e => {
+        e.stopPropagation();
+        toggleProCardDone(btn.dataset.proToggleDone);
+      };
+    });
     board.querySelectorAll("[data-move-card]").forEach(sel => {
       sel.onclick = e => e.stopPropagation();
       sel.onchange = e => {
@@ -652,8 +818,16 @@
     const card = ctx.activity;
     const cols = ctx.data.columns || getMergedColumns();
     const targetCol = cols.find(c => c.id === targetColId);
+    const doneColId = String(ctx.data.params?.doneColumnId || "");
+    const wasDoneCol = (doneColId && card.columnId === doneColId) || card.columnId === "done";
+    const isNowDoneCol = (doneColId && targetColId === doneColId) || targetColId === "done";
     card.columnId = targetColId;
-    if (isCardDone(card, cols) && card.progress < 100) card.progress = 100;
+    if (isNowDoneCol) {
+      card.completed = true;
+      if (card.progress < 100) card.progress = 100;
+    } else if (wasDoneCol && !isNowDoneCol) {
+      card.completed = false;
+    }
 
     const siblings = acts
       .filter(a => a.columnId === targetColId && a.id !== cardId)
@@ -671,8 +845,8 @@
 
   /* ---------- 2. GANTT PROFISSIONAL, LINHA DO TEMPO & FILTROS UNIFICADOS ---------- */
   function hasActiveProFilters() {
-    const totalTypes = Object.keys(window.PRO_ACTIVITY_TYPES || {}).length;
-    return proGanttTypeSet.size < totalTypes || proGanttTagSet.size > 0 || Boolean(proDateFrom) || Boolean(proDateTo);
+    const totalTypes = Object.keys(getAllProTypes()).length;
+    return proGanttTypeSet.size < totalTypes || proGanttColSet.size > 0 || proGanttTagSet.size > 0 || Boolean(proDateFrom) || Boolean(proDateTo);
   }
 
   function applyProUnifiedFilters(allCards, includeCol = false) {
@@ -701,6 +875,18 @@
     ["#btnProGanttClearFilters", "#btnProDashClearFilters", "#btnProFinClearFilters"].forEach(sel => {
       if ($(sel)) $(sel).hidden = !dirty;
     });
+    const totalTypes = Object.keys(getAllProTypes()).length;
+    const activeCount = (proGanttTypeSet.size < totalTypes ? 1 : 0)
+      + (proGanttColSet.size > 0 ? 1 : 0)
+      + (proGanttTagSet.size > 0 ? 1 : 0)
+      + ((proDateFrom || proDateTo) ? 1 : 0);
+    const fBtn = $("#btnProGanttFilterPop");
+    const fCnt = $("#proGanttFilterCount");
+    if (fBtn) fBtn.classList.toggle("has-active", activeCount > 0);
+    if (fCnt) {
+      fCnt.textContent = activeCount ? String(activeCount) : "";
+      fCnt.hidden = !activeCount;
+    }
   }
 
   function applyAndRenderProFilteredViews() {
@@ -715,7 +901,7 @@
   }
 
   function resetProUnifiedFilters() {
-    proGanttTypeSet = new Set(Object.keys(window.PRO_ACTIVITY_TYPES || {}));
+    proGanttTypeSet = new Set(Object.keys(getAllProTypes()));
     proGanttColSet.clear();
     proGanttTagSet.clear();
     proDateFrom = "";
@@ -731,7 +917,7 @@
   function getProUnifiedFilteredItems() {
     const all = core.buildUnifiedItems();
     const unifiedState = core.getUnifiedState ? core.getUnifiedState() : { unified: true, conflictsOnly: false };
-    const proTotal = Object.keys(window.PRO_ACTIVITY_TYPES || {}).length;
+    const proTotal = Object.keys(getAllProTypes()).length;
     const proPartial = proGanttTypeSet.size < proTotal;
     const filtered = all.filter(it => {
       const meta = core.unifiedMetaMap?.get(it);
@@ -769,7 +955,8 @@
     if (a.startTime) metaParts.push(a.startTime);
     if (subs.length) metaParts.push(`☑ ${subsDone}/${subs.length}`);
 
-    return `<div class="g-summary ${info.cls}" data-id="${core.esc(a.id)}" data-umode="${meta ? meta.mode : "professional"}">
+    const typeColAttr = info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : "";
+    return `<div class="g-summary ${info.cls}" data-id="${core.esc(a.id)}" data-umode="${meta ? meta.mode : "professional"}"${typeColAttr}>
       <span class="g-summary-title">${core.esc(a.name)}</span>
       <span class="g-summary-badge">${meta?.mode !== "personal" && a.progress > 0 ? `${a.progress}%` : core.fmtShortBR(a.start)}</span>
       ${finTxt ? `<span class="g-summary-badge">${core.esc(finTxt)}</span>` : ""}
@@ -789,20 +976,20 @@
   }
 
   function stepProGanttZoom(delta) {
-    const steps = core.GANTT_ZOOM_STEPS || [10, 13, 16, 19, 21, 22, 26, 32, 38, 44, 50, 58, 68, 82, 98, 116];
+    const steps = core.GANTT_ZOOM_STEPS || [2.5, 3, 3.5, 4.5, 6, 8, 10, 13, 16, 19, 21, 22, 26, 32, 38, 44, 50, 58, 68, 82, 98, 116];
     let idx = steps.findIndex(v => v >= proGanttZoom);
     if (idx < 0) idx = steps.length - 1;
     const nextIdx = Math.max(0, Math.min(steps.length - 1, idx + delta));
     const nextZoom = steps[nextIdx];
     if (nextZoom === proGanttZoom) return;
     const wrap = $("#proGanttWrap");
-    const nameW = proGanttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 265);
-    const oldUnitW = proGanttZoom < 22 ? Math.max(46, Math.round(proGanttZoom * 4.4)) / 7 : proGanttZoom;
+    const nameW = proGanttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : (proGanttZoom <= 4 ? 205 : 265));
+    const oldUnitW = proGanttZoom < 22 ? Math.max(12, Math.round(proGanttZoom * 4.4)) / 7 : proGanttZoom;
     const centerRatio = wrap ? Math.max(0, (wrap.scrollLeft + (wrap.clientWidth - nameW) / 2) / Math.max(1, oldUnitW)) : 0;
     proGanttZoom = nextZoom;
     updateProZoomReadout();
     renderProGantt();
-    const newUnitW = proGanttZoom < 22 ? Math.max(46, Math.round(proGanttZoom * 4.4)) / 7 : proGanttZoom;
+    const newUnitW = proGanttZoom < 22 ? Math.max(12, Math.round(proGanttZoom * 4.4)) / 7 : proGanttZoom;
     if (wrap && centerRatio > 0) {
       wrap.scrollLeft = Math.max(0, centerRatio * newUnitW - (wrap.clientWidth - nameW) / 2);
     }
@@ -818,7 +1005,7 @@
     const maxS = s.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, s[0].start);
     const n = Math.max(5, Math.round((core.parseD(maxS) - minTs) / core.DAY) + 8);
     const avail = Math.max(240, wrap.clientWidth - nameW - 24);
-    const ideal = Math.max(10, Math.min(94, Math.floor(avail / n)));
+    const ideal = Math.max(2.5, Math.min(94, Math.floor((avail / n) * 10) / 10));
     proGanttZoom = ideal;
     updateProZoomReadout();
     renderProGantt();
@@ -837,23 +1024,20 @@
     const active = core.getActiveTrip();
     const unified = Boolean(core.getUnifiedState?.().unified);
 
-    if ($("#proGanttPlanTitle")) {
-      $("#proGanttPlanTitle").textContent = unified
-        ? "Agenda Completa (Profissional + Pessoal)"
-        : (multi ? `${trips.length} projetos combinados` : (st.title || "Gantt Profissional"));
-    }
     if ($("#btnProGanttUnified")) {
       $("#btnProGanttUnified").setAttribute("aria-pressed", String(unified));
     }
+    const vBtn = $("#btnProGanttViewPop");
+    const vLbl = $("#proGanttViewPopLabel");
+    const vDot = $("#proGanttViewUnifDot");
+    if (vBtn) vBtn.classList.toggle("has-active", unified);
+    if (vLbl) vLbl.textContent = proGanttMode === "timeline" ? "Timeline" : "Gantt";
+    if (vDot) vDot.hidden = !unified;
+    if ($("#proGanttZoomGroup")) $("#proGanttZoomGroup").hidden = proGanttMode !== "gantt";
+
     const roleBadge = $("#proTripRoleBadge");
     if (roleBadge) {
-      if (unified) {
-        roleBadge.textContent = "Unificada";
-        roleBadge.hidden = false;
-      } else if (multi) {
-        roleBadge.textContent = trips.map(t => t.data?.title || t.name).join(" + ");
-        roleBadge.hidden = false;
-      } else if (active && active.role !== "owner") {
+      if (!unified && !multi && active && active.role !== "owner") {
         roleBadge.textContent = `Compartilhado (${active.ownerName || "usuário"})`;
         roleBadge.hidden = false;
       } else {
@@ -888,9 +1072,13 @@
 
     if (!s.length) {
       g.style.gridTemplateColumns = "1fr";
-      g.innerHTML = (allSorted.length > 0 || unified)
-        ? `<div style="padding:28px;text-align:center"><p class="muted">Nenhum cartão ou compromisso corresponde aos filtros selecionados.</p><button type="button" class="btn primary" id="btnProGanttResetFilter">☑️ Limpar filtros</button></div>`
-        : `<div style="padding:28px;text-align:center"><p class="muted">Nenhum cartão cadastrado neste projeto ainda.</p><button type="button" class="btn primary" id="btnProGanttFirstCard">➕ Criar primeiro cartão</button></div>`;
+      const unifEmpty = unified && core.ensureUnifiedSelection && core.getAllUnifiedTripEntries
+        && core.ensureUnifiedSelection(core.getAllUnifiedTripEntries()).size === 0;
+      g.innerHTML = unifEmpty
+        ? `<div style="padding:28px;text-align:center"><p class="muted">Nenhuma agenda selecionada na Agenda Completa. Marque 1 ou mais agendas em <b>Agendas</b> acima.</p></div>`
+        : ((allSorted.length > 0 || unified)
+          ? `<div style="padding:28px;text-align:center"><p class="muted">Nenhum cartão ou compromisso corresponde aos filtros selecionados.</p><button type="button" class="btn primary" id="btnProGanttResetFilter">☑️ Limpar filtros</button></div>`
+          : `<div style="padding:28px;text-align:center"><p class="muted">Nenhum cartão cadastrado neste projeto ainda.</p><button type="button" class="btn primary" id="btnProGanttFirstCard">➕ Criar primeiro cartão</button></div>`);
       if ($("#btnProGanttResetFilter")) {
         $("#btnProGanttResetFilter").onclick = () => resetProUnifiedFilters();
       }
@@ -901,9 +1089,10 @@
     const scale = core.buildGanttScale(s, proGanttZoom, window.innerWidth < 720);
     const DW = scale.colW;
     const n = scale.nCols;
-    const nameW = proGanttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 265);
+    const nameW = proGanttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : (scale.isYearView && DW <= 18 ? 205 : 265));
     const todayISO = scale.todayISO;
 
+    g.classList.toggle("zoom-year", Boolean(scale.isYearView));
     g.style.gridTemplateColumns = `${nameW}px repeat(${n}, ${DW}px)`;
     g.style.setProperty("--gantt-name-w", `${nameW}px`);
     g.dataset.unitDays = scale.isWeekOnly ? "7" : "1";
@@ -915,17 +1104,16 @@
     </div>`;
 
     scale.monthSpans.forEach(ms => {
-      h += `<div class="g-month-head ${ms.mOdd ? "m-odd" : "m-even"}" style="grid-column:${ms.startCol} / span ${ms.span};grid-row:1"><span class="g-month-label">${ms.label}</span></div>`;
+      h += `<div class="g-month-head ${ms.mOdd ? "m-odd" : "m-even"}${ms.isCentered ? " is-centered" : ""}" style="grid-column:${ms.startCol} / span ${ms.span};grid-row:1"><span class="g-month-label">${ms.label}</span></div>`;
     });
 
     if (scale.isWeekOnly) {
       scale.weekSpans.forEach(ws => {
-        h += `<div class="g-week-head ${ws.wOdd ? "w-odd" : "w-even"} ${ws.isCurrentWeek ? "today" : ""}" style="grid-column:${ws.col};grid-row:2" data-date="${ws.mondayISO}" data-end-date="${ws.sundayISO}" title="Semana ${ws.week} (${core.fmtShortBR(ws.mondayISO)}–${core.fmtShortBR(ws.sundayISO)})">Sem ${ws.week}</div>`;
+        h += `<div class="g-week-head ${ws.wOdd ? "w-odd" : "w-even"} ${ws.isCurrentWeek ? "today" : ""}" style="grid-column:${ws.col};grid-row:2" data-date="${ws.mondayISO}" data-end-date="${ws.sundayISO}" title="Semana ${ws.week} (${core.fmtShortBR(ws.mondayISO)}–${core.fmtShortBR(ws.sundayISO)})">${ws.weekLabel}</div>`;
       });
     } else {
       scale.weekSpans.forEach(ws => {
-        const lbl = ws.span >= 3 ? `Sem ${ws.week}` : (ws.span >= 2 ? `S${ws.week}` : String(ws.week));
-        h += `<div class="g-week-head ${ws.wOdd ? "w-odd" : "w-even"} ${ws.isCurrentWeek ? "today" : ""}" style="grid-column:${ws.startCol} / span ${ws.span};grid-row:2" title="Semana ${ws.week} de ${ws.isoYear}">${lbl}</div>`;
+        h += `<div class="g-week-head ${ws.wOdd ? "w-odd" : "w-even"} ${ws.isCurrentWeek ? "today" : ""}" style="grid-column:${ws.startCol} / span ${ws.span};grid-row:2" title="Semana ${ws.week} de ${ws.isoYear}">${ws.weekLabel}</div>`;
       });
       const numStep = DW <= 24 ? 2 : 1;
       scale.dates.forEach((d, i) => {
@@ -949,11 +1137,11 @@
         if (!collapsedGanttGroups.has(gid)) items.forEach(a => renderItems.push({ kind: "card", a }));
       });
     } else if (!unified && proGanttGroup === "type") {
-      Object.values(window.PRO_ACTIVITY_TYPES || {}).forEach(tp => {
+      Object.values(getAllProTypes()).forEach(tp => {
         const items = s.filter(a => a.type === tp.id);
         if (!items.length) return;
         const gid = `type:${tp.id}`;
-        renderItems.push({ kind: "group", gid, label: `${tp.icon} ${tp.short}`, count: items.length, color: "#2563eb" });
+        renderItems.push({ kind: "group", gid, label: tp.short, iconHtml: tp.iconHtml, count: items.length, color: tp.color || "#2563eb" });
         if (!collapsedGanttGroups.has(gid)) items.forEach(a => renderItems.push({ kind: "card", a }));
       });
     } else {
@@ -966,7 +1154,7 @@
       if (entry.kind === "group") {
         const isCollapsed = collapsedGanttGroups.has(entry.gid);
         h += `<div class="g-group-corner" style="grid-column:1;grid-row:${row};border-left:3px solid ${core.esc(entry.color || "#2563eb")}" data-pgroup-toggle="${core.esc(entry.gid)}">
-          <span>${isCollapsed ? "▸" : "▾"} ${proGanttSlimRail ? "" : core.esc(entry.label)}</span>
+          <span>${isCollapsed ? "▸" : "▾"} ${proGanttSlimRail ? "" : `${entry.iconHtml ? entry.iconHtml + " " : ""}${core.esc(entry.label)}`}</span>
           <span class="pill" style="padding:1px 6px;font-size:0.68rem">${entry.count}</span>
         </div>`;
         h += `<div class="g-group-band" style="grid-column:2 / span ${n};grid-row:${row}">${proGanttSlimRail ? core.esc(entry.label) : ""}</div>`;
@@ -984,12 +1172,18 @@
       if (a.startTime) subParts.push(a.startTime);
       if (umode !== "personal" && a.columnTitle) subParts.push(a.columnTitle);
       if (finTxt) subParts.push(finTxt);
-      const done = umode === "personal" ? Boolean(a.done) : isCardDone(a, cols);
+      const cardParams = meta?.tripRef?.data?.params || core.getState()?.params;
+      const done = umode === "personal" ? Boolean(a.done) : isCardDone(a, cols, cardParams);
       const overdue = umode !== "personal" && !done && (a.end || a.start) < todayISO;
-      const rowStyleExtra = meta ? `--cal-color:${meta.calColor}` : "";
+      const typeColStyle = info.isCustom && info.color ? `--t-color:${core.esc(info.color)};` : "";
+      const rowStyleExtra = `${meta ? `--cal-color:${meta.calColor};` : ""}${typeColStyle}`;
       const badgeHtml = meta ? core.renderUnifiedCardSubBadges(a) : getCardTripBadgeHTML(a);
+      const doneBtnHtml = umode === "professional"
+        ? `<button type="button" class="g-done-btn${done ? " is-done" : ""}" data-gantt-done="${core.esc(a.id)}" title="${done ? "Reabrir tarefa" : "Marcar como concluída"}" aria-label="${done ? "Reabrir tarefa" : "Marcar como concluída"}">✓</button>`
+        : "";
 
-      h += `<div class="g-name ${altCls}${meta ? " is-unified-row" : ""}" style="grid-column:1;grid-row:${row};${rowStyleExtra}" data-id="${core.esc(a.id)}" data-umode="${umode}" title="${core.esc(conf ? `${a.name} — ${conf.summary}` : a.name)}">
+      h += `<div class="g-name ${altCls}${meta ? " is-unified-row" : ""}${done ? " is-done" : ""}" style="grid-column:1;grid-row:${row};${rowStyleExtra}" data-id="${core.esc(a.id)}" data-umode="${umode}" title="${core.esc(conf ? `${a.name} — ${conf.summary}` : a.name)}">
+        ${doneBtnHtml}
         <span class="g-type-dot ${info.cls}">${info.icon}</span>
         <div class="g-name-txt">
           <div class="g-name-title">${core.esc(a.name)}${conf ? " ⚠️" : ""}</div>
@@ -1007,15 +1201,15 @@
         if (i === pos.off) {
           const barW = isMilestone ? 24 : pos.barW;
           const insideTxt = isMilestone
-            ? "◆"
+            ? (info.icon || "◆")
             : (scale.isWeekOnly
-              ? `${info.icon}${DW >= 52 ? ` ${core.esc(a.name.slice(0, 12))}` : ""}`
+              ? `${barW >= 14 ? info.icon : ""}${DW >= 52 ? ` ${core.esc(a.name.slice(0, 12))}` : ""}`
               : (DW <= 20 && len === 1 ? info.icon : (len > 1 ? `${info.icon} ${len}d` : info.icon)));
           const progBar = (umode === "professional" && !isMilestone && a.progress > 0) ? `<span class="g-bar-prog" style="width:${a.progress}%"></span>` : "";
-          const resizeHandle = !isMilestone ? `<span class="g-resize" data-resize="${core.esc(a.id)}" title="Arraste para ajustar duração"></span>` : "";
+          const resizeHandle = !isMilestone && barW >= 18 ? `<span class="g-resize" data-resize="${core.esc(a.id)}" title="Arraste para ajustar duração"></span>` : "";
           const unifCls = meta ? core.getUnifiedBarExtraClasses(a) : "";
           inner = `<div class="g-event-wrap" style="left:3px">
-            <div class="g-bar ${info.cls} ${len === 1 && !scale.isWeekOnly ? "single-day" : ""}${isMilestone ? " is-milestone" : ""}${overdue ? " is-overdue" : ""}${unifCls}" data-id="${core.esc(a.id)}" data-umode="${umode}" style="width:${barW}px" title="${core.esc(conf ? conf.summary : a.name)}">
+            <div class="g-bar ${info.cls} ${len === 1 && !scale.isWeekOnly ? "single-day" : ""}${isMilestone ? " is-milestone" : ""}${overdue ? " is-overdue" : ""}${done ? " is-done" : ""}${unifCls}" data-id="${core.esc(a.id)}" data-umode="${umode}" style="width:${barW}px;${typeColStyle}" title="${core.esc(conf ? conf.summary : a.name)}">
               ${progBar}<span class="g-bar-txt">${insideTxt}</span>${resizeHandle}
             </div>
             ${buildProSummaryHTML(a, meta ? core.renderUnifiedCardSubBadges(a) : null)}
@@ -1039,12 +1233,21 @@
         renderProGantt();
       };
     });
+    g.querySelectorAll("[data-gantt-done]").forEach(btn => {
+      btn.onclick = ev => {
+        ev.stopPropagation();
+        toggleProCardDone(btn.dataset.ganttDone);
+      };
+    });
     const openTarget = el => {
       if (el.dataset.umode === "personal") core.openModal(el.dataset.id);
       else openProCardModal(el.dataset.id);
     };
     g.querySelectorAll(".g-name[data-id], .g-summary[data-id]").forEach(el => {
-      el.onclick = () => openTarget(el);
+      el.onclick = ev => {
+        if (ev.target.closest("[data-gantt-done]")) return;
+        openTarget(el);
+      };
     });
     g.querySelectorAll(".g-bar").forEach(bindProGanttDrag);
     g.querySelectorAll(".g-resize").forEach(bindProGanttResize);
@@ -1149,11 +1352,24 @@
     const tl = $("#proTimelineWrap");
     if (!tl || proGanttMode !== "timeline") return;
     const unified = Boolean(core.getUnifiedState?.().unified);
-    const s = unified
-      ? getProUnifiedFilteredItems().filtered
-      : getFilteredProGanttRows(allSortedOpt || getProSortedActivities());
+    let s;
+    if (unified) {
+      const u = getProUnifiedFilteredItems();
+      s = u.filtered;
+      core.renderUnifiedStatusBar?.($("#proGanttUnifiedBar"), u.allUnified, u.filtered, () => {
+        renderProGantt();
+        renderProTimeline();
+      });
+    } else {
+      core.renderUnifiedStatusBar?.($("#proGanttUnifiedBar"), [], [], null);
+      s = getFilteredProGanttRows(allSortedOpt || getProSortedActivities());
+    }
     if (!s.length) {
-      tl.innerHTML = `<p class="muted">Nenhum cartão ou compromisso encontrado com os filtros atuais.</p>`;
+      const unifEmpty = unified && core.ensureUnifiedSelection && core.getAllUnifiedTripEntries
+        && core.ensureUnifiedSelection(core.getAllUnifiedTripEntries()).size === 0;
+      tl.innerHTML = unifEmpty
+        ? `<p class="muted">Nenhuma agenda selecionada na Agenda Completa. Marque 1 ou mais agendas em <b>Agendas</b> acima.</p>`
+        : `<p class="muted">Nenhum cartão ou compromisso encontrado com os filtros atuais.</p>`;
       return;
     }
     tl.innerHTML = s.map(a => {
@@ -1176,13 +1392,14 @@
         conf ? `⚠️ ${conf.summary}` : ""
       ].filter(Boolean).join(" · ");
       const badgesHtml = metaObj ? core.renderUnifiedCardSubBadges(a) : getCardTripBadgeHTML(a);
-      const unifStyle = metaObj ? `--cal-color:${metaObj.calColor}` : "";
+      const tCol = info.isCustom && info.color ? `--t-color:${core.esc(info.color)};` : "";
+      const unifStyle = `${metaObj ? `--cal-color:${metaObj.calColor};` : ""}${tCol}`;
       return `<div class="tl-item ${info.cls}${conf ? " has-conflict" : ""}" data-id="${core.esc(a.id)}" data-umode="${umode}" style="${unifStyle}">
         <div class="date-badge"><b>${d.getDate()}</b>${core.MON[d.getMonth()]}</div>
         <div class="tl-body">
           <div class="tl-top">
             <span class="tl-title">${info.icon} ${core.esc(a.name)} ${badgesHtml} ${attCount ? `<small class="muted">📎 ${attCount}</small>` : ""}</span>
-            <span class="chip ${info.cls}">${core.esc(info.short)}</span>
+            <span class="chip ${info.cls}"${tCol ? ` style="${tCol}"` : ""}>${core.esc(info.short)}</span>
           </div>
           <div class="tl-meta">${core.WD[d.getDay()]} · ${core.fmtBR(a.start)}${core.days(a) > 1 ? ` até ${core.fmtBR(a.end)}` : ""}</div>
           <div class="tl-meta">${core.esc(meta)}</div>
@@ -1228,13 +1445,14 @@
         const info = getProTypeInfo(a.type);
         const finTxt = formatProFinShort(a);
         const overdue = (a.end || a.start) < today;
-        return `<li data-id="${core.esc(a.id)}">
+        const tCol = info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : "";
+        return `<li data-id="${core.esc(a.id)}"${tCol}>
           <span class="date-badge"><b>${a.start.slice(8, 10)}</b>${core.MON[+a.start.slice(5, 7) - 1]}</span>
           <div style="min-width:0;flex:1">
             <b>${info.icon} ${core.esc(a.name)}</b>
             <small>${core.esc(a.columnTitle || a.type)}${a.client ? ` · ${core.esc(a.client)}` : ""}${finTxt ? ` · ${core.esc(finTxt)}` : ""}${overdue ? " · ⚠️ Atrasado" : ""}</small>
           </div>
-          <span class="chip ${info.cls}">${a.progress || 0}%</span>
+          <span class="chip ${info.cls}"${tCol}>${a.progress || 0}%</span>
         </li>`;
       }).join("") || `<li class="muted" style="cursor:default">Nenhum compromisso pendente 🎉</li>`;
       upEl.querySelectorAll("li[data-id]").forEach(li => { li.onclick = () => openProCardModal(li.dataset.id); });
@@ -1247,7 +1465,7 @@
       const rows = [
         ["Recebimentos Liquidados", t.receivedIncome, Math.max(t.totalIncome, revTarget, 1), "#10b981"],
         ["Recebimentos a Receber", t.pendingIncome, Math.max(t.totalIncome, revTarget, 1), "#38bdf8"],
-        ["Despesas & Viagens Corp.", t.totalExpense, Math.max(t.totalIncome, costBudget, t.totalExpense, 1), "#ef4444"],
+        ["Despesas & Viagens", t.totalExpense, Math.max(t.totalIncome, costBudget, t.totalExpense, 1), "#ef4444"],
         ["Impostos Estimados", t.taxAmount, Math.max(t.totalIncome, 1), "#f59e0b"]
       ];
       dfEl.innerHTML = rows.map(([lbl, val, den, col]) => `
@@ -1419,7 +1637,7 @@
     if (!tb || !mc) return;
     const cols = getMergedColumns();
     const rows = getFilteredProTableRows(allCardsOpt);
-    const typeOpts = Object.keys(window.PRO_ACTIVITY_TYPES || {});
+    const typeOpts = Object.keys(getAllProTypes());
 
     let h = `<thead><tr>
       <th>#</th><th>Lista</th><th>Tipo</th><th>Cartão / Título</th><th>Cliente</th>
@@ -1492,9 +1710,10 @@
     mc.innerHTML = rows.map(a => {
       const info = getProTypeInfo(a.type);
       const finTxt = formatProFinShort(a);
+      const tCol = info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : "";
       return `<div class="m-card">
         <div class="m-card-head">
-          <div><span class="chip ${info.cls}">${info.icon} ${core.esc(a.type)}</span> <b>${core.esc(a.name)}</b></div>
+          <div><span class="chip ${info.cls}"${tCol}>${info.icon} ${core.esc(a.type)}</span> <b>${core.esc(a.name)}</b></div>
           <div class="inline-actions">
             <button type="button" class="icon-btn" data-pedit="${core.esc(a.id)}">✏️</button>
             <button type="button" class="icon-btn" data-pdel="${core.esc(a.id)}">🗑️</button>
@@ -1546,6 +1765,45 @@
 
     // Listas Trello
     const cols = getMergedColumns();
+    const doneSel = $("#pp-doneColumnId");
+    if (doneSel) {
+      const doneVal = String(st.params?.doneColumnId || "");
+      doneSel.innerHTML = `<option value="">Não mover (apenas marcar concluída e 100%)</option>`
+        + cols.map(c => `<option value="${core.esc(c.id)}">${core.esc(c.title)}</option>`).join("");
+      doneSel.value = cols.some(c => c.id === doneVal) ? doneVal : "";
+    }
+
+    // Tipos de Cartão (Padrão + Customizados)
+    const typesMgr = $("#proCardTypesManager");
+    if (typesMgr) {
+      const allTypes = Object.values(getAllProTypes(st));
+      typesMgr.innerHTML = allTypes.map(t => {
+        const badgeStyle = `style="--t-color:${core.esc(t.color || "#2563eb")}"`;
+        const finHint = t.defaultFin === "income" ? " · +Receb." : (t.defaultFin === "expense" ? " · −Desp." : "");
+        const btns = t.isCustom
+          ? `<div class="inline-actions">
+              <button type="button" class="icon-btn" data-ptedit="${core.esc(t.id)}" title="Editar tipo">✏️</button>
+              <button type="button" class="icon-btn" data-ptdel="${core.esc(t.id)}" title="Excluir tipo">🗑️</button>
+            </div>`
+          : `<span class="pill" style="font-size:0.68rem">Padrão</span>`;
+        return `<div class="pro-type-row">
+          <div class="pro-type-row-left">
+            <span class="pro-type-row-badge" ${badgeStyle}>${t.iconHtml}</span>
+            <div style="min-width:0">
+              <div class="pro-type-row-name">${core.esc(t.short)}</div>
+              <div class="muted" style="font-size:0.7rem">${t.isCustom ? "Personalizado" : "Sistema"}${finHint}</div>
+            </div>
+          </div>
+          ${btns}
+        </div>`;
+      }).join("");
+      typesMgr.querySelectorAll("[data-ptedit]").forEach(b => {
+        b.onclick = () => openProTypeModal({ editId: b.dataset.ptedit });
+      });
+      typesMgr.querySelectorAll("[data-ptdel]").forEach(b => {
+        b.onclick = () => deleteProCustomType(b.dataset.ptdel);
+      });
+    }
     const colsMgr = $("#proColumnsManager");
     if (colsMgr) {
       colsMgr.innerHTML = cols.map((c, idx) => `
@@ -1886,10 +2144,122 @@
     if (row) row.hidden = dir === "none";
   }
 
-  function populateProTypeSelect() {
+  function updateProModalTypePreview() {
+    const sel = $("#pc-type");
+    const prev = $("#pc-typeIconPreview");
+    if (!sel || !prev) return;
+    const info = getProTypeInfo(sel.value);
+    prev.innerHTML = info.iconHtml || info.icon;
+    prev.style.setProperty("--t-color", info.color || "#38bdf8");
+    prev.title = info.short;
+  }
+
+  function updateProModalDoneBtn() {
+    const btn = $("#btnProCardDoneToggle");
+    if (!btn) return;
+    btn.setAttribute("aria-pressed", proModalCompleted ? "true" : "false");
+    btn.textContent = proModalCompleted ? "✅ Concluída" : "☐ Concluir";
+    btn.title = proModalCompleted ? "Tarefa concluída (clique para reabrir)" : "Marcar tarefa como concluída (100%)";
+  }
+
+  function renderProIconDropdown(hostEl, selectedIconId, colorHex, onPick) {
+    if (!hostEl) return;
+    const catalog = window.PRO_ICON_CATALOG || [];
+    const current = (window.PRO_ICON_MAP && window.PRO_ICON_MAP[selectedIconId]) || catalog[0] || { id: "flag", label: "Missão" };
+    const groups = [];
+    const byGroup = new Map();
+    catalog.forEach(ic => {
+      const g = ic.group || "Ícones";
+      if (!byGroup.has(g)) { byGroup.set(g, []); groups.push(g); }
+      byGroup.get(g).push(ic);
+    });
+
+    const groupsHtml = groups.map(g => {
+      const optsHtml = byGroup.get(g).map(ic => `
+        <button type="button" class="pro-ico-dd-opt${ic.id === current.id ? " active" : ""}" data-ico-id="${core.esc(ic.id)}">
+          ${window.renderProIconSvg(ic.id)}
+          <span>${core.esc(ic.label)}</span>
+        </button>`).join("");
+      return `<div class="pro-ico-dd-group"><div class="pro-ico-dd-gtitle">${core.esc(g)}</div><div class="pro-ico-dd-grid">${optsHtml}</div></div>`;
+    }).join("");
+
+    hostEl.innerHTML = `
+      <button type="button" class="pro-ico-dd-trigger" id="pct-iconTrigger" aria-haspopup="listbox" aria-expanded="false">
+        <span class="pro-ico-dd-val" style="--t-color:${core.esc(colorHex || "#2563eb")}">
+          ${window.renderProIconSvg(current.id)}
+          <span>${core.esc(current.label)}</span>
+        </span>
+        <span class="msel-caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="pro-ico-dd-menu" id="pct-iconMenu" role="listbox" hidden>${groupsHtml}</div>`;
+
+    const trig = hostEl.querySelector("#pct-iconTrigger");
+    const menu = hostEl.querySelector("#pct-iconMenu");
+    if (trig && menu) {
+      trig.onclick = ev => {
+        ev.stopPropagation();
+        const willOpen = menu.hidden;
+        menu.hidden = !willOpen;
+        trig.setAttribute("aria-expanded", String(willOpen));
+      };
+      menu.querySelectorAll("[data-ico-id]").forEach(btn => {
+        btn.onclick = ev => {
+          ev.stopPropagation();
+          const picked = btn.dataset.icoId;
+          proTypePickedIcon = picked;
+          menu.hidden = true;
+          trig.setAttribute("aria-expanded", "false");
+          renderProIconDropdown(hostEl, picked, $("#pct-color")?.value || colorHex, onPick);
+          if (typeof onPick === "function") onPick(picked);
+        };
+      });
+    }
+  }
+
+  function openProTypeModal({ editId = null, onCreated = null } = {}) {
+    const active = core.getActiveTrip();
+    if (active?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+    const st = core.getState();
+    const existing = editId ? (st.customCardTypes || []).find(t => t.id === editId) : null;
+    editingProTypeId = existing ? existing.id : null;
+    proTypeModalCallback = typeof onCreated === "function" ? onCreated : null;
+    proTypePickedIcon = existing?.iconId || "jet-gripen";
+
+    if ($("#proTypeModalTitle")) $("#proTypeModalTitle").textContent = existing ? "Editar Tipo de Cartão" : "Novo Tipo de Cartão";
+    if ($("#pct-name")) $("#pct-name").value = existing ? existing.id : "";
+    const col = existing?.color || "#2563eb";
+    if ($("#pct-color")) $("#pct-color").value = col;
+    if ($("#pct-defaultFin")) $("#pct-defaultFin").value = existing?.defaultFin || "none";
+    if ($("#btnProTypeDelete")) $("#btnProTypeDelete").hidden = !existing;
+    renderProIconDropdown($("#pct-iconPicker"), proTypePickedIcon, col, id => { proTypePickedIcon = id; });
+
+    const dlg = $("#proTypeModal");
+    if (dlg) {
+      dlg.showModal();
+      setTimeout(() => $("#pct-name")?.focus(), 40);
+    }
+  }
+
+  function deleteProCustomType(typeId) {
+    const active = core.getActiveTrip();
+    if (active?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+    const st = core.getState();
+    st.customCardTypes = (st.customCardTypes || []).filter(t => t.id !== typeId);
+    let reassigned = 0;
+    (st.activities || []).forEach(a => {
+      if (a.type === typeId) { a.type = "Outro"; reassigned++; }
+    });
+    proBoardTypeSet.delete(typeId);
+    proGanttTypeSet.delete(typeId);
+    proTableTypeSet.delete(typeId);
+    core.save(`🗑️ Tipo "${typeId}" removido${reassigned ? ` (${reassigned} cartão(ões) movidos para Outro)` : ""}`);
+  }
+
+  function populateProTypeSelect(dataOpt = null) {
     const sel = $("#pc-type");
     if (!sel) return;
-    sel.innerHTML = Object.values(window.PRO_ACTIVITY_TYPES || {}).map(t => `<option value="${core.esc(t.id)}">${core.esc(t.label)}</option>`).join("");
+    const allTypes = Object.values(getAllProTypes(dataOpt));
+    sel.innerHTML = allTypes.map(t => `<option value="${core.esc(t.id)}">${core.esc(t.short)}</option>`).join("");
   }
 
   function openProCardModal(idOrOpts) {
@@ -1910,15 +2280,16 @@
       targetTripWrap.hidden = false;
     }
 
-    populateProTypeSelect();
+    populateProTypeSelect(editingProTripRef?.data || null);
     const cols = editingProTripRef?.data?.columns || getMergedColumns();
     if ($("#pc-column")) {
       $("#pc-column").innerHTML = cols.map(c => `<option value="${core.esc(c.id)}">${core.esc(c.title)}</option>`).join("");
     }
 
     const today = core.fmtISO(new Date());
-    const initType = a ? a.type : (opts?.type || "Desenvolvimento");
-    const tInfo = getProTypeInfo(initType);
+    const rawInitType = a ? a.type : (opts?.type || "Desenvolvimento");
+    const initType = getProTypeInfo(rawInitType, editingProTripRef?.data || null).id;
+    const tInfo = getProTypeInfo(initType, editingProTripRef?.data || null);
     const initFinDir = a ? a.finDirection : (opts?.finDirection || tInfo.defaultFin || "none");
 
     $("#proCardModalTitle").textContent = a ? `Editar Cartão` : "Novo Cartão Profissional";
@@ -1926,6 +2297,7 @@
     $("#pc-notes").value = a ? (a.notes || "") : "";
     $("#pc-column").value = a ? a.columnId : (opts?.columnId || cols[0]?.id || "todo");
     $("#pc-type").value = initType;
+    updateProModalTypePreview();
     $("#pc-start").value = a ? a.start : (opts?.start || today);
     $("#pc-end").value = a ? (a.end || a.start) : (opts?.end || today);
     $("#pc-startTime").value = a ? (a.startTime || "") : "";
@@ -1934,6 +2306,11 @@
     const prog = a ? (Number(a.progress) || 0) : 0;
     $("#pc-progress").value = String(prog);
     if ($("#pc-progressVal")) $("#pc-progressVal").textContent = `${prog}%`;
+    const cardParams = editingProTripRef?.data?.params || core.getState()?.params;
+    proModalCompleted = a ? isCardDone(a, cols, cardParams) : false;
+    proModalPrevColId = a ? (a.prevColumnId || a.columnId || "") : (opts?.columnId || cols[0]?.id || "todo");
+    proModalPrevProg = a ? (Number(a.prevProgress) < 100 ? Number(a.prevProgress) : (prog < 100 ? prog : 0)) : 0;
+    updateProModalDoneBtn();
     $("#pc-client").value = a ? (a.client || "") : (core.getState().params?.clientDefault || "");
     $("#pc-assignee").value = a ? (a.assignee || "") : "";
     $("#pc-location").value = a ? (a.location || "") : "";
@@ -2051,7 +2428,12 @@
   function applyProAiExtracted(act) {
     if (!act || typeof act !== "object") return 0;
     let count = 0;
-    if (act.type && window.PRO_ACTIVITY_TYPES[act.type]) { $("#pc-type").value = act.type; count++; }
+    const mappedAiType = (window.PRO_LEGACY_TYPE_MAP && window.PRO_LEGACY_TYPE_MAP[act.type]) || act.type;
+    if (mappedAiType && getAllProTypes()[mappedAiType]) {
+      $("#pc-type").value = mappedAiType;
+      updateProModalTypePreview();
+      count++;
+    }
     if (act.columnId && getMergedColumns().some(c => c.id === act.columnId)) { $("#pc-column").value = act.columnId; count++; }
     if (act.name) { $("#pc-name").value = String(act.name); count++; }
     if (act.start && /^\d{4}-\d{2}-\d{2}$/.test(act.start)) { $("#pc-start").value = act.start; count++; }
@@ -2216,6 +2598,7 @@
       b.onclick = () => {
         proGanttMode = b.dataset.pgmode;
         $("#proGanttModeSeg").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+        core.closeAllGanttPopovers?.();
         renderProGantt();
         renderProTimeline();
       };
@@ -2224,6 +2607,7 @@
       b.onclick = () => {
         proGanttGroup = b.dataset.pgroup;
         $("#proGanttGroupSeg").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+        core.closeAllGanttPopovers?.();
         renderProGantt();
       };
     });
@@ -2250,7 +2634,10 @@
     bindDateFilterPair("#proFinDateFrom", "#proFinDateTo", "#btnProFinClearFilters");
 
     if ($("#btnProGanttUnified")) {
-      $("#btnProGanttUnified").onclick = () => core.setUnifiedState && core.setUnifiedState();
+      $("#btnProGanttUnified").onclick = () => {
+        core.closeAllGanttPopovers?.();
+        core.setUnifiedState && core.setUnifiedState();
+      };
     }
     if ($("#btnProGanttZoomOut")) $("#btnProGanttZoomOut").onclick = () => stepProGanttZoom(-1);
     if ($("#btnProGanttZoomIn")) $("#btnProGanttZoomIn").onclick = () => stepProGanttZoom(1);
@@ -2261,6 +2648,7 @@
     }
     if ($("#btnProGanttToday")) {
       $("#btnProGanttToday").onclick = () => {
+        core.closeAllGanttPopovers?.();
         const wrap = $("#proGanttWrap");
         const todayHead = wrap?.querySelector(".g-head.today, .g-week-head.today");
         wrap?.scrollTo({ left: todayHead ? Math.max(0, todayHead.offsetLeft - 180) : 0, behavior: "smooth" });
@@ -2338,7 +2726,53 @@
     bindParam("#pp-taxRatePct", "taxRatePct", true);
     bindParam("#pp-hourlyRate", "hourlyRate", true);
     bindParam("#pp-remTime", "calendarReminderTime", false);
+    bindParam("#pp-doneColumnId", "doneColumnId", false);
     if ($("#btnProAddColumn")) $("#btnProAddColumn").onclick = () => openProColumnModal();
+    if ($("#btnProAddCardType")) $("#btnProAddCardType").onclick = () => openProTypeModal({});
+    if ($("#btnProQuickAddType")) {
+      $("#btnProQuickAddType").onclick = () => {
+        openProTypeModal({
+          onCreated(newType) {
+            populateProTypeSelect();
+            if ($("#pc-type")) {
+              $("#pc-type").value = newType.id;
+              updateProModalTypePreview();
+              if (!editingProCardId && newType.defaultFin && newType.defaultFin !== "none" && $("#pc-finDirection")) {
+                $("#pc-finDirection").value = newType.defaultFin;
+                toggleProFinFields();
+              }
+            }
+          }
+        });
+      };
+    }
+    if ($("#btnProCardDoneToggle")) {
+      $("#btnProCardDoneToggle").onclick = () => {
+        const curColId = $("#pc-column")?.value || "";
+        const curProg = parseInt($("#pc-progress")?.value || "0", 10) || 0;
+        const cardParams = editingProTripRef?.data?.params || core.getState()?.params || {};
+        const doneColId = String(cardParams.doneColumnId || "");
+        const cols = editingProTripRef?.data?.columns || getMergedColumns();
+        const validDone = doneColId ? cols.find(c => c.id === doneColId) : null;
+
+        proModalCompleted = !proModalCompleted;
+        if (proModalCompleted) {
+          if (!validDone || curColId !== validDone.id) proModalPrevColId = curColId;
+          if (curProg < 100) proModalPrevProg = curProg;
+          if ($("#pc-progress")) $("#pc-progress").value = "100";
+          if ($("#pc-progressVal")) $("#pc-progressVal").textContent = "100%";
+          if (validDone && $("#pc-column")) $("#pc-column").value = validDone.id;
+        } else {
+          const restoreProg = proModalPrevProg < 100 ? proModalPrevProg : 0;
+          if ($("#pc-progress")) $("#pc-progress").value = String(restoreProg);
+          if ($("#pc-progressVal")) $("#pc-progressVal").textContent = `${restoreProg}%`;
+          if ($("#pc-column") && validDone && curColId === validDone.id && proModalPrevColId && cols.some(c => c.id === proModalPrevColId && c.id !== validDone.id)) {
+            $("#pc-column").value = proModalPrevColId;
+          }
+        }
+        updateProModalDoneBtn();
+      };
+    }
     if ($("#btnProSaveGeminiKey")) {
       $("#btnProSaveGeminiKey").onclick = async () => {
         const val = $("#proGeminiKeyInput").value.trim();
@@ -2370,7 +2804,18 @@
     if ($("#btnProCardCancel")) $("#btnProCardCancel").onclick = () => $("#proCardModal").close();
     if ($("#proCardModal")) $("#proCardModal").addEventListener("close", () => stopProAiRecording(true));
     if ($("#pc-progress")) {
-      $("#pc-progress").oninput = e => { if ($("#pc-progressVal")) $("#pc-progressVal").textContent = `${e.target.value}%`; };
+      $("#pc-progress").oninput = e => {
+        const val = parseInt(e.target.value, 10) || 0;
+        if ($("#pc-progressVal")) $("#pc-progressVal").textContent = `${val}%`;
+        if (val >= 100 && !proModalCompleted) {
+          proModalCompleted = true;
+          updateProModalDoneBtn();
+        } else if (val < 100 && proModalCompleted) {
+          proModalCompleted = false;
+          proModalPrevProg = val;
+          updateProModalDoneBtn();
+        }
+      };
     }
     if ($("#pc-type")) {
       $("#pc-type").onchange = e => {
@@ -2379,6 +2824,7 @@
           $("#pc-finDirection").value = tInfo.defaultFin;
           toggleProFinFields();
         }
+        updateProModalTypePreview();
         updateProModalCalLink();
       };
     }
@@ -2486,6 +2932,10 @@
         if (targetTrip?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
 
         const data = readProCardForm();
+        data.completed = Boolean(proModalCompleted || data.progress >= 100);
+        data.prevColumnId = proModalPrevColId || "";
+        data.prevProgress = proModalPrevProg;
+        if (data.completed && data.progress < 100) data.progress = 100;
         const tgtData = targetTrip?.data || core.getState();
         if (!Array.isArray(tgtData.activities)) tgtData.activities = [];
         const tgtCols = Array.isArray(tgtData.columns) && tgtData.columns.length ? tgtData.columns : getMergedColumns();
@@ -2620,6 +3070,87 @@
         core.save(editingProColId ? "✏️ Lista atualizada" : "➕ Lista criada no quadro!");
       };
     }
+
+    // Modal Tipo de Cartão Profissional
+    if ($("#btnProTypeClose")) $("#btnProTypeClose").onclick = () => $("#proTypeModal").close();
+    if ($("#btnProTypeCancel")) $("#btnProTypeCancel").onclick = () => $("#proTypeModal").close();
+    if ($("#pct-color")) {
+      $("#pct-color").oninput = e => {
+        const valEl = $("#pct-iconPicker .pro-ico-dd-val");
+        if (valEl) valEl.style.setProperty("--t-color", e.target.value || "#2563eb");
+      };
+    }
+    if ($("#btnProTypeDelete")) {
+      $("#btnProTypeDelete").onclick = () => {
+        const delId = editingProTypeId;
+        $("#proTypeModal").close();
+        if (delId) deleteProCustomType(delId);
+      };
+    }
+    if ($("#proTypeModal")) {
+      $("#proTypeModal").addEventListener("click", ev => {
+        const menu = $("#pct-iconMenu");
+        const trig = $("#pct-iconTrigger");
+        if (menu && !menu.hidden && !ev.target.closest("#pct-iconPicker")) {
+          menu.hidden = true;
+          if (trig) trig.setAttribute("aria-expanded", "false");
+        }
+      });
+    }
+    if ($("#proTypeForm")) {
+      $("#proTypeForm").onsubmit = e => {
+        e.preventDefault();
+        const active = core.getActiveTrip();
+        if (active?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+        const raw = $("#pct-name")?.value || "";
+        const clean = sanitizeProTypeName(raw);
+        if (!clean) {
+          return core.toast("⚠️ O nome do tipo deve ter apenas uma palavra única (sem espaços nem '/').");
+        }
+        const st = core.getState();
+        if (!Array.isArray(st.customCardTypes)) st.customCardTypes = [];
+        const builtIn = window.PRO_ACTIVITY_TYPES || {};
+        if (builtIn[clean] || (st.customCardTypes.some(t => t.id.toLowerCase() === clean.toLowerCase() && t.id !== editingProTypeId))) {
+          return core.toast(`⚠️ Já existe um tipo chamado "${clean}".`);
+        }
+
+        const iconId = (window.PRO_ICON_MAP && window.PRO_ICON_MAP[proTypePickedIcon]) ? proTypePickedIcon : "flag";
+        const color = $("#pct-color")?.value || "#2563eb";
+        const defaultFin = $("#pct-defaultFin")?.value || "none";
+        const nextObj = { id: clean, name: clean, iconId, color, defaultFin };
+
+        if (editingProTypeId) {
+          const idx = st.customCardTypes.findIndex(t => t.id === editingProTypeId);
+          if (idx >= 0) st.customCardTypes[idx] = nextObj;
+          else st.customCardTypes.push(nextObj);
+          if (editingProTypeId !== clean) {
+            (st.activities || []).forEach(a => { if (a.type === editingProTypeId) a.type = clean; });
+            [proBoardTypeSet, proGanttTypeSet, proTableTypeSet].forEach(set => {
+              if (set.has(editingProTypeId)) { set.delete(editingProTypeId); set.add(clean); }
+            });
+          }
+        } else {
+          st.customCardTypes.push(nextObj);
+          knownProTypeIds.add(clean);
+          proBoardTypeSet.add(clean);
+          proGanttTypeSet.add(clean);
+          proTableTypeSet.add(clean);
+        }
+
+        if (editingProTripRef && editingProTripRef.data && editingProTripRef.data !== st) {
+          if (!Array.isArray(editingProTripRef.data.customCardTypes)) editingProTripRef.data.customCardTypes = [];
+          const eIdx = editingProTripRef.data.customCardTypes.findIndex(t => t.id === (editingProTypeId || clean));
+          if (eIdx >= 0) editingProTripRef.data.customCardTypes[eIdx] = nextObj;
+          else editingProTripRef.data.customCardTypes.push(nextObj);
+        }
+
+        const cb = proTypeModalCallback;
+        proTypeModalCallback = null;
+        $("#proTypeModal").close();
+        core.save(editingProTypeId ? `✏️ Tipo "${clean}" atualizado!` : `🧩 Tipo "${clean}" criado!`);
+        if (cb) cb(nextObj);
+      };
+    }
   }
 
   function renderAll() {
@@ -2642,7 +3173,9 @@
   window.MyPlanPro = {
     init(c) { core = c; bindProEvents(); },
     migrateProState,
+    getAllProTypes,
     getProTypeInfo,
+    toggleProCardDone,
     getProSortedActivities,
     computeProTotals,
     renderAll,
