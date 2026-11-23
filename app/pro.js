@@ -565,9 +565,39 @@
   }
 
   /* ---------- 1. QUADRO KANBAN ESTILO TRELLO ---------- */
+  function syncProBoardFilterUI() {
+    const totalTypes = Object.keys(getAllProTypes()).length;
+    const q = ($("#proBoardSearch")?.value || "").trim();
+    const prio = $("#proBoardPrioFilter")?.value || "";
+    const activeCount = (q ? 1 : 0)
+      + (proBoardTypeSet.size < totalTypes ? 1 : 0)
+      + (proBoardLabelSet.size > 0 ? 1 : 0)
+      + (prio ? 1 : 0);
+    const fBtn = $("#btnProBoardFilterPop");
+    const fCnt = $("#proBoardFilterCount");
+    const clearBtn = $("#btnProBoardClearFilters");
+    if (fBtn) fBtn.classList.toggle("has-active", activeCount > 0);
+    if (fCnt) {
+      fCnt.textContent = activeCount ? String(activeCount) : "";
+      fCnt.hidden = !activeCount;
+    }
+    if (clearBtn) clearBtn.hidden = activeCount === 0;
+  }
+
+  function resetProBoardFilters() {
+    proBoardTypeSet = new Set(Object.keys(getAllProTypes()));
+    proBoardLabelSet.clear();
+    if ($("#proBoardSearch")) $("#proBoardSearch").value = "";
+    if ($("#proBoardPrioFilter")) $("#proBoardPrioFilter").value = "";
+    if (proBoardTypeMsel) proBoardTypeMsel.setSelected([...proBoardTypeSet]);
+    if (proBoardLabelMsel) proBoardLabelMsel.setSelected([]);
+    renderProBoard();
+  }
+
   function renderProBoard() {
     const board = $("#proBoard");
     if (!board) return;
+    syncProBoardFilterUI();
     const st = core.getState();
     const trips = core.getSelectedTrips();
     const multi = trips.length > 1;
@@ -876,17 +906,26 @@
       if ($(sel)) $(sel).hidden = !dirty;
     });
     const totalTypes = Object.keys(getAllProTypes()).length;
-    const activeCount = (proGanttTypeSet.size < totalTypes ? 1 : 0)
+    const ganttCount = (proGanttTypeSet.size < totalTypes ? 1 : 0)
       + (proGanttColSet.size > 0 ? 1 : 0)
       + (proGanttTagSet.size > 0 ? 1 : 0)
       + ((proDateFrom || proDateTo) ? 1 : 0);
-    const fBtn = $("#btnProGanttFilterPop");
-    const fCnt = $("#proGanttFilterCount");
-    if (fBtn) fBtn.classList.toggle("has-active", activeCount > 0);
-    if (fCnt) {
-      fCnt.textContent = activeCount ? String(activeCount) : "";
-      fCnt.hidden = !activeCount;
-    }
+    const dashFinCount = (proGanttTypeSet.size < totalTypes ? 1 : 0)
+      + (proGanttTagSet.size > 0 ? 1 : 0)
+      + ((proDateFrom || proDateTo) ? 1 : 0);
+    [
+      ["#btnProGanttFilterPop", "#proGanttFilterCount", ganttCount],
+      ["#btnProDashFilterPop", "#proDashFilterCount", dashFinCount],
+      ["#btnProFinFilterPop", "#proFinFilterCount", dashFinCount]
+    ].forEach(([btnSel, cntSel, cnt]) => {
+      const fBtn = $(btnSel);
+      const fCnt = $(cntSel);
+      if (fBtn) fBtn.classList.toggle("has-active", cnt > 0);
+      if (fCnt) {
+        fCnt.textContent = cnt ? String(cnt) : "";
+        fCnt.hidden = !cnt;
+      }
+    });
   }
 
   function applyAndRenderProFilteredViews() {
@@ -1614,6 +1653,38 @@
   }
 
   /* ---------- 5. TABELA EXECUTIVA ---------- */
+  function syncProTableFilterUI() {
+    const totalTypes = Object.keys(getAllProTypes()).length;
+    const q = ($("#proSearch")?.value || "").trim();
+    const prio = $("#proFilterPrio")?.value || "";
+    const activeCount = (q ? 1 : 0)
+      + (proTableColSet.size > 0 ? 1 : 0)
+      + (proTableTypeSet.size < totalTypes ? 1 : 0)
+      + (proTableTagSet.size > 0 ? 1 : 0)
+      + (prio ? 1 : 0);
+    const fBtn = $("#btnProTableFilterPop");
+    const fCnt = $("#proTableFilterCount");
+    const clearBtn = $("#btnProTableClearFilters");
+    if (fBtn) fBtn.classList.toggle("has-active", activeCount > 0);
+    if (fCnt) {
+      fCnt.textContent = activeCount ? String(activeCount) : "";
+      fCnt.hidden = !activeCount;
+    }
+    if (clearBtn) clearBtn.hidden = activeCount === 0;
+  }
+
+  function resetProTableFilters() {
+    proTableColSet.clear();
+    proTableTypeSet = new Set(Object.keys(getAllProTypes()));
+    proTableTagSet.clear();
+    if ($("#proSearch")) $("#proSearch").value = "";
+    if ($("#proFilterPrio")) $("#proFilterPrio").value = "";
+    if (proTableColMsel) proTableColMsel.setSelected([]);
+    if (proTableTypeMsel) proTableTypeMsel.setSelected([...proTableTypeSet]);
+    if (proTableTagMsel) proTableTagMsel.setSelected([]);
+    renderProTable();
+  }
+
   function getFilteredProTableRows(allCardsOpt) {
     const q = ($("#proSearch")?.value || "").toLowerCase();
     const prio = $("#proFilterPrio")?.value || "";
@@ -1635,6 +1706,7 @@
     const tb = $("#proMainTable");
     const mc = $("#proMobileTableCards");
     if (!tb || !mc) return;
+    syncProTableFilterUI();
     const cols = getMergedColumns();
     const rows = getFilteredProTableRows(allCardsOpt);
     const typeOpts = Object.keys(getAllProTypes());
@@ -2589,6 +2661,7 @@
     // Board controls
     if ($("#proBoardSearch")) $("#proBoardSearch").oninput = () => renderProBoard();
     if ($("#proBoardPrioFilter")) $("#proBoardPrioFilter").onchange = () => renderProBoard();
+    if ($("#btnProBoardClearFilters")) $("#btnProBoardClearFilters").onclick = resetProBoardFilters;
     if ($("#btnProBoardAdd")) $("#btnProBoardAdd").onclick = () => openProCardModal();
     if ($("#btnProBoardAddCol")) $("#btnProBoardAddCol").onclick = () => openProColumnModal();
 
@@ -2693,6 +2766,7 @@
     // Tabela controls
     if ($("#proSearch")) $("#proSearch").oninput = () => renderProTable();
     if ($("#proFilterPrio")) $("#proFilterPrio").onchange = () => renderProTable();
+    if ($("#btnProTableClearFilters")) $("#btnProTableClearFilters").onclick = resetProTableFilters;
     if ($("#btnProTableAdd")) $("#btnProTableAdd").onclick = () => openProCardModal();
     if ($("#btnProTablePdf")) {
       $("#btnProTablePdf").onclick = () => {

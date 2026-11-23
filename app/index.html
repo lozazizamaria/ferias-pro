@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=31">
+<link rel="manifest" href="/manifest.webmanifest?v=32">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=31">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=32">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=31">
+<link rel="stylesheet" href="styles.css?v=32">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=31" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=32" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=31" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=32" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -687,19 +687,46 @@
     <!-- MODO PROFISSIONAL: QUADRO KANBAN (ESTILO TRELLO) -->
     <section class="view" id="view-pro-board">
       <div class="card pro-board-toolbar-card">
-        <div class="pro-board-toolbar">
-          <div class="pro-board-filters">
-            <input type="search" id="proBoardSearch" placeholder="🔎 Buscar cartão, cliente ou nota...">
-            <div id="proBoardTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no quadro"></div>
-            <div id="proBoardLabelFilter" class="msel-host msel-compact" aria-label="Filtrar etiquetas no quadro"></div>
-            <select id="proBoardPrioFilter" aria-label="Filtrar prioridade no quadro">
-              <option value="">Todas prioridades</option>
-              <option value="Crítica">Crítica</option>
-              <option value="Alta">Alta</option>
-              <option value="Média">Média</option>
-              <option value="Baixa">Baixa</option>
-            </select>
-            <span class="pill" id="proBoardRoleBadge" hidden>Compartilhado</span>
+        <div class="gantt-controls gantt-toolbar-row pro-compact-toolbar">
+          <div class="gantt-pop-host">
+            <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProBoardFilterPop" aria-expanded="false" aria-controls="proBoardFilterPopPanel" title="Filtros do quadro">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              <span>Filtros</span>
+              <span class="gantt-pop-count" id="proBoardFilterCount" hidden></span>
+            </button>
+            <div class="gantt-pop-panel" id="proBoardFilterPopPanel" hidden>
+              <div class="gantt-pop-head">
+                <strong>Filtros do Quadro</strong>
+                <button type="button" class="btn ghost small" id="btnProBoardClearFilters" hidden>✕ Limpar</button>
+              </div>
+              <div class="gantt-pop-grid">
+                <div class="gantt-pop-field span2">
+                  <span class="gantt-pop-lbl">Buscar</span>
+                  <input type="search" id="proBoardSearch" placeholder="🔎 Buscar cartão, cliente ou nota...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Tipo</span>
+                  <div id="proBoardTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no quadro"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Etiqueta</span>
+                  <div id="proBoardLabelFilter" class="msel-host msel-compact" aria-label="Filtrar etiquetas no quadro"></div>
+                </div>
+                <div class="gantt-pop-field span2">
+                  <span class="gantt-pop-lbl">Prioridade</span>
+                  <select id="proBoardPrioFilter" aria-label="Filtrar prioridade no quadro">
+                    <option value="">Todas prioridades</option>
+                    <option value="Crítica">Crítica</option>
+                    <option value="Alta">Alta</option>
+                    <option value="Média">Média</option>
+                    <option value="Baixa">Baixa</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="gantt-toolbar-right">
+            <span class="pill gantt-shared-pill" id="proBoardRoleBadge" hidden>Compartilhado</span>
             <button type="button" class="btn ghost small" id="btnProBoardAddCol">➕ Nova Lista</button>
             <button type="button" class="btn primary small" id="btnProBoardAdd">➕ Novo Cartão</button>
           </div>
@@ -812,19 +839,38 @@
 
     <!-- MODO PROFISSIONAL: DASHBOARD EXECUTIVO -->
     <section class="view" id="view-pro-dashboard">
-      <div class="view-filter-bar" aria-label="Filtros do dashboard profissional">
-        <span class="vf-title" title="Filtros"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
-        <div id="proDashTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no dashboard profissional"></div>
-        <div id="proDashTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no dashboard profissional"></div>
-        <label class="date-filter-chip" title="Filtrar a partir da data">
-          <span>De</span>
-          <input type="date" id="proDashDateFrom" aria-label="Data inicial no dashboard profissional">
-        </label>
-        <label class="date-filter-chip" title="Filtrar até a data">
-          <span>Até</span>
-          <input type="date" id="proDashDateTo" aria-label="Data final no dashboard profissional">
-        </label>
-        <button type="button" class="btn ghost small" id="btnProDashClearFilters" hidden>✕ Limpar filtros</button>
+      <div class="view-filter-bar pro-compact-filter-bar" aria-label="Filtros do dashboard profissional">
+        <div class="gantt-pop-host">
+          <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProDashFilterPop" aria-expanded="false" aria-controls="proDashFilterPopPanel" title="Filtros do dashboard">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Filtros</span>
+            <span class="gantt-pop-count" id="proDashFilterCount" hidden></span>
+          </button>
+          <div class="gantt-pop-panel" id="proDashFilterPopPanel" hidden>
+            <div class="gantt-pop-head">
+              <strong>Filtros do Dashboard</strong>
+              <button type="button" class="btn ghost small" id="btnProDashClearFilters" hidden>✕ Limpar</button>
+            </div>
+            <div class="gantt-pop-grid">
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Tipo</span>
+                <div id="proDashTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no dashboard profissional"></div>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Tags</span>
+                <div id="proDashTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no dashboard profissional"></div>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">De</span>
+                <input type="date" id="proDashDateFrom" aria-label="Data inicial no dashboard profissional">
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Até</span>
+                <input type="date" id="proDashDateTo" aria-label="Data final no dashboard profissional">
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="kpis" id="proDashKpis"></div>
       <div class="grid2">
@@ -867,19 +913,38 @@
 
     <!-- MODO PROFISSIONAL: FINANCEIRO EXECUTIVO (FLUXO DE CAIXA) -->
     <section class="view" id="view-pro-finance">
-      <div class="view-filter-bar" aria-label="Filtros do financeiro profissional">
-        <span class="vf-title" title="Filtros"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
-        <div id="proFinTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no financeiro profissional"></div>
-        <div id="proFinTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no financeiro profissional"></div>
-        <label class="date-filter-chip" title="Filtrar a partir da data">
-          <span>De</span>
-          <input type="date" id="proFinDateFrom" aria-label="Data inicial no financeiro profissional">
-        </label>
-        <label class="date-filter-chip" title="Filtrar até a data">
-          <span>Até</span>
-          <input type="date" id="proFinDateTo" aria-label="Data final no financeiro profissional">
-        </label>
-        <button type="button" class="btn ghost small" id="btnProFinClearFilters" hidden>✕ Limpar filtros</button>
+      <div class="view-filter-bar pro-compact-filter-bar" aria-label="Filtros do financeiro profissional">
+        <div class="gantt-pop-host">
+          <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProFinFilterPop" aria-expanded="false" aria-controls="proFinFilterPopPanel" title="Filtros do financeiro">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Filtros</span>
+            <span class="gantt-pop-count" id="proFinFilterCount" hidden></span>
+          </button>
+          <div class="gantt-pop-panel" id="proFinFilterPopPanel" hidden>
+            <div class="gantt-pop-head">
+              <strong>Filtros do Financeiro</strong>
+              <button type="button" class="btn ghost small" id="btnProFinClearFilters" hidden>✕ Limpar</button>
+            </div>
+            <div class="gantt-pop-grid">
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Tipo</span>
+                <div id="proFinTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no financeiro profissional"></div>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Tags</span>
+                <div id="proFinTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no financeiro profissional"></div>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">De</span>
+                <input type="date" id="proFinDateFrom" aria-label="Data inicial no financeiro profissional">
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Até</span>
+                <input type="date" id="proFinDateTo" aria-label="Data final no financeiro profissional">
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="kpis fin-kpis" id="proFinKpis"></div>
       <div class="card fin-controls-card">
@@ -928,21 +993,53 @@
     <!-- MODO PROFISSIONAL: TABELA EXECUTIVA -->
     <section class="view" id="view-pro-table">
       <div class="card">
-        <div class="card-head">
-          <div class="filters">
-            <input type="search" id="proSearch" placeholder="🔎 Buscar cartão, cliente, nota...">
-            <div id="proFilterCol" class="msel-host msel-compact" aria-label="Filtrar listas na tabela"></div>
-            <div id="proFilterType" class="msel-host msel-compact" aria-label="Filtrar tipos na tabela"></div>
-            <div id="proFilterTag" class="msel-host msel-compact" aria-label="Filtrar tags na tabela"></div>
-            <select id="proFilterPrio" aria-label="Filtrar prioridade na tabela">
-              <option value="">Prioridade: Todas</option>
-              <option value="Crítica">Crítica</option>
-              <option value="Alta">Alta</option>
-              <option value="Média">Média</option>
-              <option value="Baixa">Baixa</option>
-            </select>
-            <button type="button" class="btn ghost small" id="btnProTableAdd">➕ Novo Cartão</button>
-            <button type="button" class="btn primary small" id="btnProTablePdf">📄 PDF</button>
+        <div class="card-head pro-table-head">
+          <div class="gantt-controls gantt-toolbar-row pro-compact-toolbar">
+            <div class="gantt-pop-host">
+              <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProTableFilterPop" aria-expanded="false" aria-controls="proTableFilterPopPanel" title="Filtros da tabela">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                <span>Filtros</span>
+                <span class="gantt-pop-count" id="proTableFilterCount" hidden></span>
+              </button>
+              <div class="gantt-pop-panel" id="proTableFilterPopPanel" hidden>
+                <div class="gantt-pop-head">
+                  <strong>Filtros da Tabela</strong>
+                  <button type="button" class="btn ghost small" id="btnProTableClearFilters" hidden>✕ Limpar</button>
+                </div>
+                <div class="gantt-pop-grid">
+                  <div class="gantt-pop-field span2">
+                    <span class="gantt-pop-lbl">Buscar</span>
+                    <input type="search" id="proSearch" placeholder="🔎 Buscar cartão, cliente, nota...">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Lista</span>
+                    <div id="proFilterCol" class="msel-host msel-compact" aria-label="Filtrar listas na tabela"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tipo</span>
+                    <div id="proFilterType" class="msel-host msel-compact" aria-label="Filtrar tipos na tabela"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tags</span>
+                    <div id="proFilterTag" class="msel-host msel-compact" aria-label="Filtrar tags na tabela"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Prioridade</span>
+                    <select id="proFilterPrio" aria-label="Filtrar prioridade na tabela">
+                      <option value="">Todas</option>
+                      <option value="Crítica">Crítica</option>
+                      <option value="Alta">Alta</option>
+                      <option value="Média">Média</option>
+                      <option value="Baixa">Baixa</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="gantt-toolbar-right">
+              <button type="button" class="btn ghost small" id="btnProTableAdd">➕ Novo Cartão</button>
+              <button type="button" class="btn primary small" id="btnProTablePdf">📄 PDF</button>
+            </div>
           </div>
         </div>
         <div class="table-wrap desktop-table-wrap"><table id="proMainTable"></table></div>
@@ -2076,15 +2173,15 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=31"></script>
-<script src="vehicles.js?v=31"></script>
-<script src="countries.js?v=31"></script>
-<script src="data.js?v=31"></script>
-<script src="maps.js?v=31"></script>
-<script src="calendar.js?v=31"></script>
-<script src="report.js?v=31"></script>
-<script src="api.js?v=31"></script>
-<script src="pro.js?v=31"></script>
-<script src="app.js?v=31"></script>
+<script src="config.example.js?v=32"></script>
+<script src="vehicles.js?v=32"></script>
+<script src="countries.js?v=32"></script>
+<script src="data.js?v=32"></script>
+<script src="maps.js?v=32"></script>
+<script src="calendar.js?v=32"></script>
+<script src="report.js?v=32"></script>
+<script src="api.js?v=32"></script>
+<script src="pro.js?v=32"></script>
+<script src="app.js?v=32"></script>
 </body>
 </html>

@@ -6944,8 +6944,12 @@ function setupGanttPopovers() {
   [
     ["#btnGanttFilterPop", "#ganttFilterPopPanel"],
     ["#btnGanttViewPop", "#ganttViewPopPanel"],
+    ["#btnProBoardFilterPop", "#proBoardFilterPopPanel"],
     ["#btnProGanttFilterPop", "#proGanttFilterPopPanel"],
-    ["#btnProGanttViewPop", "#proGanttViewPopPanel"]
+    ["#btnProGanttViewPop", "#proGanttViewPopPanel"],
+    ["#btnProDashFilterPop", "#proDashFilterPopPanel"],
+    ["#btnProFinFilterPop", "#proFinFilterPopPanel"],
+    ["#btnProTableFilterPop", "#proTableFilterPopPanel"]
   ].forEach(([trigSel, panelSel]) => {
     const trig = $(trigSel);
     const panel = $(panelSel);
