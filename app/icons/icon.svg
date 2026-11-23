@@ -1,11 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="My Plan">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#6366f1"/>
+    <linearGradient id="mpBg" x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0b1736"/>
+      <stop offset="55%" stop-color="#1d4ed8"/>
       <stop offset="100%" stop-color="#06b6d4"/>
     </linearGradient>
+    <linearGradient id="mpAccent" x1="20" y1="36" x2="50" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#67e8f9"/>
+      <stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="16" fill="url(#g)"/>
-  <path d="M32 13c-7.5 0-13.5 6-13.5 13.4 0 10.2 13.5 22.6 13.5 22.6s13.5-12.4 13.5-22.6C45.5 19 39.5 13 32 13zm0 19a5.6 5.6 0 1 1 0-11.2 5.6 5.6 0 0 1 0 11.2z" fill="#ffffff"/>
-  <path d="M20 51.5c3.7-2 7.8-3 12-3s8.3 1 12 3" stroke="#ffffff" stroke-opacity="0.78" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+  <rect width="64" height="64" rx="16" fill="url(#mpBg)"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14.5" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1.5"/>
+  <!-- 3 barras escalonadas estilo Cronograma / Gantt de Produtividade -->
+  <rect x="14" y="16" width="24" height="6.5" rx="3.25" fill="#ffffff"/>
+  <rect x="20" y="27.5" width="29" height="6.5" rx="3.25" fill="#bae6fd"/>
+  <rect x="14" y="39" width="16" height="6.5" rx="3.25" fill="#ffffff" fill-opacity="0.72"/>
+  <!-- Selo geométrico de conclusão / foco produtivo -->
+  <circle cx="44" cy="43.5" r="10.5" fill="#07122a" fill-opacity="0.58"/>
+  <path d="M38.8 43.7l3.5 3.6 7.3-7.6" fill="none" stroke="url(#mpAccent)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

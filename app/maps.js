@@ -1,4 +1,4 @@
-/* ===== Integração Google Maps Platform — Férias Pro ===== */
+/* ===== Integração Google Maps Platform — My Plan ===== */
 (function () {
   const KEY_STORAGE = "ferias-pro-gmaps-key";
   const ATTR_ID = "gmp_git_agentskills_v1";

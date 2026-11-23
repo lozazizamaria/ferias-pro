@@ -1,8 +1,8 @@
-/* ===== Relatórios PDF Horizontais, Gantt PNG/PDF, Mapa da Rota & Passe Wallet — Férias Pro ===== */
+/* ===== Relatórios PDF Horizontais, Gantt PNG/PDF, Mapa da Rota & Passe Wallet — My Plan ===== */
 (function () {
   const TYPE_COLORS = {
     Viagem: ["#0284c7", "#4f46e5"],
-    Voo: ["#0ea5e9", "#0369a1"],
+    Voo: ["#0ea5e9", "#0284c7"],
     Trem: ["#14b8a6", "#0284c7"],
     "Ônibus": ["#f59e0b", "#d97706"],
     Navio: ["#0891b2", "#1d4ed8"],
@@ -14,6 +14,23 @@
     "Período": ["#7c3aed", "#4338ca"],
     Outro: ["#64748b", "#475569"]
   };
+
+  const PRO_TYPE_COLORS = {
+    Desenvolvimento: ["#2563eb", "#1d4ed8"],
+    "Reunião": ["#0284c7", "#0369a1"],
+    "Viagem Corp.": ["#d97706", "#b45309"],
+    Recebimento: ["#10b981", "#059669"],
+    Despesa: ["#ef4444", "#dc2626"],
+    Entrega: ["#6366f1", "#4338ca"],
+    Marco: ["#0ea5e9", "#0284c7"],
+    "Follow-up": ["#8b5cf6", "#6d28d9"],
+    Outro: ["#64748b", "#475569"]
+  };
+
+  function getTypeColorPair(type, isPro) {
+    if (isPro) return PRO_TYPE_COLORS[type] || TYPE_COLORS[type] || PRO_TYPE_COLORS.Outro;
+    return TYPE_COLORS[type] || TYPE_COLORS.Outro;
+  }
 
   function esc(s) {
     return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -71,8 +88,7 @@
   }
 
   /* ---------- GANTT HORIZONTAL RENDERER (HTML p/ PDF & CANVAS p/ PNG) ---------- */
-  function filterActivitiesByRange(activities, fromISO, toISO, helpers) {
-    const { parseD, DAY } = helpers;
+  function filterActivitiesByRange(activities, fromISO, toISO) {
     return activities.filter(a => {
       const s = a.start;
       const e = a.end || a.start;
@@ -80,54 +96,253 @@
     });
   }
 
-  function buildGanttHtmlBlock(activities, fromISO, toISO, helpers, compactTitle) {
-    const { parseD, fmtISO, fmtShortBR, days, money, num, hmHuman, calc, getTypeInfo, WD, DAY } = helpers;
-    const rows = filterActivitiesByRange(activities, fromISO, toISO, helpers);
+  function formatProFinBadge(a, money) {
+    const amt = Number(a.actualAmount) > 0 ? Number(a.actualAmount) : (Number(a.amount) || 0);
+    if (amt <= 0) return "";
+    if (a.finDirection === "income") return `+${money(amt)}`;
+    if (a.finDirection === "expense") return `-${money(amt)}`;
+    return "";
+  }
+
+  function getIsoWeekInfoLocal(dateInput, helpers) {
+    if (helpers?.getIsoWeekInfo) return helpers.getIsoWeekInfo(dateInput);
+    const d = dateInput instanceof Date ? new Date(dateInput.getTime()) : new Date(dateInput);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    const week1 = new Date(d.getFullYear(), 0, 4);
+    const week = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+    return { week, isoYear: d.getFullYear(), key: `${d.getFullYear()}-W${String(week).padStart(2, "0")}` };
+  }
+
+  function getIsoWeekMondayLocal(dateInput, helpers) {
+    if (helpers?.getIsoWeekMonday) return helpers.getIsoWeekMonday(dateInput);
+    const d = dateInput instanceof Date ? new Date(dateInput.getTime()) : new Date(dateInput);
+    d.setHours(0, 0, 0, 0);
+    const diff = (d.getDay() + 6) % 7;
+    d.setDate(d.getDate() - diff);
+    return d;
+  }
+
+  const GANTT_PRINT_EXTRA_CSS = `
+    .pg-grid { display: grid; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; font-size: 7pt; width: 100%; }
+    .pg-corner { grid-row: 1 / span 3; grid-column: 1; background: #f1f5f9; font-weight: 700; display: flex; align-items: center; padding: 4px 8px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
+    .pg-grid.is-week-only .pg-corner { grid-row: 1 / span 2; }
+    .pg-month { background: #e2e8f0; font-weight: 700; font-size: 6.7pt; text-transform: uppercase; padding: 2px 5px; border-right: 1px solid #94a3b8; border-bottom: 1px solid #cbd5e1; color: #0f172a; }
+    .pg-month.m-odd { background: #dbeafe; color: #1e3a8a; }
+    .pg-week { background: #f8fafc; font-weight: 700; font-size: 6pt; text-align: center; padding: 2px 2px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; color: #334155; }
+    .pg-week.w-odd { background: #eef2ff; color: #1e3a8a; }
+    .pg-day { text-align: center; padding: 2px 0; border-right: 1px solid rgba(203,213,225,0.55); border-bottom: 1px solid #cbd5e1; font-size: 5.9pt; color: #475569; }
+    .pg-day.compact { padding: 1px 0; }
+    .pg-day b { display: block; font-size: 7.1pt; color: #0f172a; }
+    .pg-day.compact b { font-size: 6.2pt; }
+    .pg-day.w-odd, .pg-cell.w-odd { background: rgba(59, 130, 246, 0.045); }
+    .pg-day.we, .pg-cell.we { background: rgba(15, 23, 42, 0.04); }
+    .pg-day.we.w-odd, .pg-cell.we.w-odd { background: rgba(59, 130, 246, 0.075); }
+    .pg-day.w-start, .pg-cell.w-start { border-left: 1px solid rgba(100,116,139,0.45); }
+    .pg-day.m-start, .pg-cell.m-start { border-left: 1.5px solid rgba(59,130,246,0.55); }
+    .pg-cell { border-right: 1px solid rgba(203,213,225,0.45); border-bottom: 1px solid #e2e8f0; min-height: 21px; }
+    .pg-city-corner { background: #f8fafc; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; padding: 2px 6px; font-size: 6.5pt; font-weight: 700; color: #475569; display: flex; align-items: center; }
+    .pg-city-cell { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #cbd5e1; display: flex; align-items: center; padding: 1px 2px; min-width: 0; overflow: hidden; }
+    .pg-city-pill { width: 100%; border-radius: 4px; padding: 1px 4px; font-size: 6pt; font-weight: 700; border: 1px solid transparent; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+    .pg-name { display: flex; align-items: center; gap: 5px; padding: 3.5px 6px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #e2e8f0; background: #fff; min-width: 0; }
+    .pg-dot { width: 15px; height: 15px; border-radius: 4px; color: #fff; font-size: 6.5pt; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .pg-ntxt { min-width: 0; overflow: hidden; }
+    .pg-ntxt b { display: block; font-size: 7pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pg-ntxt small { display: block; font-size: 6pt; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pg-bar-wrap { display: flex; align-items: center; padding: 2px; z-index: 2; pointer-events: none; overflow: hidden; }
+    .pg-bar { position: relative; width: 100%; border-radius: 5px; color: #fff; font-weight: 700; font-size: 6.5pt; padding: 2px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .pg-bar.has-conflict { outline: 1.5px dashed #dc2626; }
+    .pg-bar-prog { position: absolute; left: 0; bottom: 0; height: 2px; background: rgba(255,255,255,0.65); }
+    .pg-bar-lbl { position: relative; z-index: 1; }
+    .pg-u-pill { display: inline-block; font-size: 5.5pt; font-weight: 800; padding: 0 3px; border-radius: 3px; margin-right: 3px; }
+    .pg-u-pill.pro { background: #1e3a8a; color: #dbeafe; }
+    .pg-u-pill.per { background: #0f766e; color: #d1fae5; }
+  `;
+
+  function buildGanttHtmlBlock(activities, fromISO, toISO, helpers, compactTitle, opts = {}) {
+    const { parseD, fmtShortBR, days, money, num, calc, getTypeInfo, WD, DAY } = helpers;
+    const isPro = Boolean(opts.isPro);
+    const isUnified = Boolean(opts.isUnified && opts.unifiedLookup);
+    const isWeekOnly = Boolean(opts.isWeekOnly || (Number(opts.zoomPx) > 0 && Number(opts.zoomPx) < 22));
+    const colMap = opts.colMap || new Map();
+    const rows = filterActivitiesByRange(activities, fromISO, toISO);
     if (!rows.length) return `<p style="color:#64748b">Nenhuma atividade nas datas selecionadas.</p>`;
+
+    const mNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const leftW = opts.slimRail ? 150 : 210;
+
+    if (isWeekOnly) {
+      const minMon = getIsoWeekMondayLocal(parseD(fromISO), helpers);
+      const maxMon = getIsoWeekMondayLocal(parseD(toISO), helpers);
+      const weeksCount = Math.max(1, Math.min(160, Math.round((maxMon.getTime() - minMon.getTime()) / (7 * DAY)) + 1));
+      const colsCss = `${leftW}px repeat(${weeksCount}, minmax(0, 1fr))`;
+      const weeks = [];
+      const monthSpans = [];
+      for (let i = 0; i < weeksCount; i++) {
+        const mon = new Date(minMon.getTime() + i * 7 * DAY + 3600e3);
+        const thu = new Date(mon.getTime() + 3 * DAY + 3600e3);
+        const wi = getIsoWeekInfoLocal(mon, helpers);
+        const mKey = `${thu.getFullYear()}-${thu.getMonth()}`;
+        const prevM = monthSpans[monthSpans.length - 1];
+        let mStart = false;
+        if (prevM && prevM.key === mKey) prevM.span++;
+        else {
+          mStart = i > 0;
+          monthSpans.push({ key: mKey, label: `${mNames[thu.getMonth()]}/${String(thu.getFullYear()).slice(2)}`, col: i + 2, span: 1, mOdd: monthSpans.length % 2 === 1 });
+        }
+        weeks.push({ idx: i, week: wi.week, wOdd: i % 2 === 1, mStart });
+      }
+
+      let cells = `<div class="pg-corner">${esc(compactTitle || (isUnified ? "Agenda Completa" : (isPro ? "Cartão / Entrega" : "Atividade")))}</div>`;
+      monthSpans.forEach(ms => {
+        cells += `<div class="pg-month ${ms.mOdd ? "m-odd" : "m-even"}" style="grid-column:${ms.col} / span ${ms.span};grid-row:1">${ms.label}</div>`;
+      });
+      weeks.forEach(w => {
+        cells += `<div class="pg-week ${w.wOdd ? "w-odd" : "w-even"}" style="grid-column:${w.idx + 2};grid-row:2">${weeksCount > 24 ? `S${w.week}` : `Sem ${w.week}`}</div>`;
+      });
+
+      rows.forEach((a, rIdx) => {
+        const row = rIdx + 3;
+        const um = isUnified ? opts.unifiedLookup.get(a.id) : null;
+        const effPro = um ? (um.mode === "professional") : isPro;
+        const info = getTypeInfo(a.type);
+        const colors = getTypeColorPair(a.type, effPro);
+        const finBadge = effPro ? formatProFinBadge(a, money) : "";
+        const c = (!effPro && calc) ? calc(a) : { total: 0, extra: 0 };
+        const costVal = c.total + c.extra;
+        const baseMeta = effPro
+          ? ([a.columnTitle || colMap.get(a.columnId), a.client, a.progress > 0 ? `${a.progress}%` : "", finBadge].filter(Boolean).join(" · ") || fmtShortBR(a.start))
+          : (a.type === "Viagem" ? `${a.from || "?"}➔${a.to || "?"}` : `${fmtShortBR(a.start)}${costVal > 0 ? ` · ${money(costVal)}` : ""}`);
+        const uPrefix = um
+          ? `<span class="pg-u-pill ${effPro ? "pro" : "per"}">${effPro ? "PRO" : "PES"}</span>${um.conflict ? "⚠️ " : ""}`
+          : "";
+
+        cells += `<div class="pg-name" style="grid-column:1;grid-row:${row}${um?.calColor ? `;border-left:3px solid ${esc(um.calColor)}` : ""}">
+          <span class="pg-dot" style="background:${colors[0]}">${info.icon}</span>
+          <div class="pg-ntxt"><b>${esc(a.name)}</b><small>${uPrefix}${esc(baseMeta)}</small></div>
+        </div>`;
+
+        const sMon = getIsoWeekMondayLocal(parseD(a.start), helpers);
+        const eMon = getIsoWeekMondayLocal(parseD(a.end || a.start), helpers);
+        const startIdx = Math.max(0, Math.min(weeksCount - 1, Math.round((sMon.getTime() - minMon.getTime()) / (7 * DAY))));
+        const endIdx = Math.max(startIdx, Math.min(weeksCount - 1, Math.round((eMon.getTime() - minMon.getTime()) / (7 * DAY))));
+        const span = Math.max(1, endIdx - startIdx + 1);
+
+        weeks.forEach(w => {
+          cells += `<div class="pg-cell ${w.wOdd ? "w-odd" : "w-even"} ${w.mStart ? "m-start" : ""}" style="grid-column:${w.idx + 2};grid-row:${row}"></div>`;
+        });
+
+        const barLabel = `${esc(a.name)}${effPro && a.progress > 0 && span >= 2 ? ` (${Number(a.progress)}%)` : ""}`;
+        const progW = effPro && Number(a.progress) > 0 ? Math.min(100, Math.max(0, Number(a.progress))) : 0;
+        const progHtml = progW > 0 ? `<span class="pg-bar-prog" style="width:${progW}%"></span>` : "";
+        cells += `<div class="pg-bar-wrap" style="grid-column:${startIdx + 2} / span ${span};grid-row:${row}">
+          <div class="pg-bar${um?.conflict ? " has-conflict" : ""}" style="background:linear-gradient(135deg,${colors[0]},${colors[1]})${um?.calColor ? `;border-left:3px solid ${esc(um.calColor)}` : ""}">${progHtml}<span class="pg-bar-lbl">${info.icon} ${barLabel}</span></div>
+        </div>`;
+      });
+
+      return `<div class="pg-grid is-week-only" style="grid-template-columns:${colsCss}">${cells}</div>`;
+    }
 
     const minTs = parseD(fromISO).getTime();
     const maxTs = parseD(toISO).getTime();
-    const nDays = Math.max(1, Math.min(62, Math.round((maxTs - minTs) / DAY) + 1));
+    const nDays = Math.max(1, Math.min(366, Math.round((maxTs - minTs) / DAY) + 1));
     const dates = [];
     for (let i = 0; i < nDays; i++) {
       const d = new Date(minTs + i * DAY + 3600e3);
       dates.push(d);
     }
 
-    const leftW = 195;
     const colsCss = `${leftW}px repeat(${nDays}, minmax(0, 1fr))`;
-
     const monthSpans = [];
+    const weekSpans = [];
+    const dayMeta = [];
     dates.forEach((d, idx) => {
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      const mNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-      const last = monthSpans[monthSpans.length - 1];
-      if (last && last.key === key) last.span++;
-      else monthSpans.push({ key, label: `${mNames[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`, col: idx + 2, span: 1 });
+      const mKey = `${d.getFullYear()}-${d.getMonth()}`;
+      const lastM = monthSpans[monthSpans.length - 1];
+      let mStart = false;
+      if (lastM && lastM.key === mKey) lastM.span++;
+      else {
+        mStart = idx > 0;
+        monthSpans.push({ key: mKey, label: `${mNames[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`, col: idx + 2, span: 1, mOdd: monthSpans.length % 2 === 1 });
+      }
+      const wi = getIsoWeekInfoLocal(d, helpers);
+      const lastW = weekSpans[weekSpans.length - 1];
+      let wStart = false;
+      if (lastW && lastW.key === wi.key) lastW.span++;
+      else {
+        wStart = idx > 0;
+        weekSpans.push({ key: wi.key, week: wi.week, col: idx + 2, span: 1, wOdd: weekSpans.length % 2 === 1 });
+      }
+      dayMeta.push({
+        we: d.getDay() === 0 || d.getDay() === 6,
+        wOdd: (weekSpans.length - 1) % 2 === 1,
+        mStart,
+        wStart
+      });
     });
 
-    let cells = `<div class="pg-corner">${esc(compactTitle || "Atividade")}</div>`;
+    let cells = `<div class="pg-corner">${esc(compactTitle || (isUnified ? "Agenda Completa" : (isPro ? "Cartão / Entrega" : "Atividade")))}</div>`;
     monthSpans.forEach(ms => {
-      cells += `<div class="pg-month" style="grid-column:${ms.col} / span ${ms.span};grid-row:1">${ms.label}</div>`;
+      cells += `<div class="pg-month ${ms.mOdd ? "m-odd" : "m-even"}" style="grid-column:${ms.col} / span ${ms.span};grid-row:1">${ms.label}</div>`;
     });
+    weekSpans.forEach(ws => {
+      const wLbl = ws.span >= 4 ? `Sem ${ws.week}` : (ws.span >= 2 ? `S${ws.week}` : String(ws.week));
+      cells += `<div class="pg-week ${ws.wOdd ? "w-odd" : "w-even"}" style="grid-column:${ws.col} / span ${ws.span};grid-row:2">${wLbl}</div>`;
+    });
+    const compactDays = nDays > 45;
+    const numStep = nDays > 160 ? 5 : (nDays > 95 ? 2 : 1);
     dates.forEach((d, i) => {
-      const we = d.getDay() === 0 || d.getDay() === 6;
-      cells += `<div class="pg-day ${we ? "we" : ""}" style="grid-column:${i + 2};grid-row:2"><span>${WD[d.getDay()][0]}</span><b>${d.getDate()}</b></div>`;
+      const dm = dayMeta[i];
+      const showNum = numStep === 1 || d.getDate() === 1 || i % numStep === 0;
+      const dayLbl = compactDays ? "" : `<span>${WD[d.getDay()][0]}</span>`;
+      const numLbl = showNum ? `<b>${d.getDate()}</b>` : `<b></b>`;
+      cells += `<div class="pg-day ${dm.we ? "we" : ""} ${dm.wOdd ? "w-odd" : "w-even"} ${dm.wStart ? "w-start" : ""} ${dm.mStart ? "m-start" : ""}${compactDays ? " compact" : ""}" style="grid-column:${i + 2};grid-row:3">${dayLbl}${numLbl}</div>`;
     });
+
+    let rowOffset = 4;
+    const citySpans = !isPro && !isUnified && opts.showCityRow && Array.isArray(opts.cityTrack?.spans) ? opts.cityTrack.spans : [];
+    if (citySpans.length) {
+      cells += `<div class="pg-city-corner" style="grid-column:1;grid-row:4">📍 Cidade</div>`;
+      citySpans.forEach(sp => {
+        const bg = sp.color?.lightBg || "rgba(2,132,199,0.12)";
+        const bd = sp.color?.lightBd || "rgba(2,132,199,0.4)";
+        const txt = sp.color?.lightTxt || "#0f172a";
+        cells += `<div class="pg-city-cell" style="grid-column:${sp.startIdx + 2} / span ${sp.span};grid-row:4"><span class="pg-city-pill" style="background:${bg};border-color:${bd};color:${txt}">${esc(sp.city)}</span></div>`;
+      });
+      rowOffset = 5;
+    }
 
     rows.forEach((a, rIdx) => {
-      const row = rIdx + 3;
+      const row = rIdx + rowOffset;
+      const um = isUnified ? opts.unifiedLookup.get(a.id) : null;
+      const effPro = um ? (um.mode === "professional") : isPro;
       const info = getTypeInfo(a.type);
-      const colors = TYPE_COLORS[a.type] || TYPE_COLORS.Outro;
-      const c = calc(a);
-      const costVal = c.total + c.extra;
-      const meta = a.type === "Viagem"
-        ? `${a.from || "?"}➔${a.to || "?"} · ${num(a.km)}km · ${money(costVal)}`
-        : `${fmtShortBR(a.start)}${costVal > 0 ? ` · ${money(costVal)}` : ""}`;
+      const colors = getTypeColorPair(a.type, effPro);
+      let meta = "";
+      let finBadge = "";
+      if (effPro) {
+        const colName = a.columnTitle || colMap.get(a.columnId) || "";
+        finBadge = formatProFinBadge(a, money);
+        const parts = [];
+        if (colName) parts.push(colName);
+        if (a.client) parts.push(a.client);
+        if (a.progress > 0) parts.push(`${Number(a.progress)}%`);
+        if (finBadge) parts.push(finBadge);
+        meta = parts.join(" · ") || fmtShortBR(a.start);
+      } else {
+        const c = calc ? calc(a) : { total: 0, extra: 0 };
+        const costVal = c.total + c.extra;
+        meta = a.type === "Viagem"
+          ? `${a.from || "?"}➔${a.to || "?"} · ${num(a.km)}km · ${money(costVal)}`
+          : `${fmtShortBR(a.start)}${costVal > 0 ? ` · ${money(costVal)}` : ""}`;
+      }
+      const uPrefix = um
+        ? `<span class="pg-u-pill ${effPro ? "pro" : "per"}">${effPro ? "PRO" : "PES"}</span>${um.conflict ? "⚠️ " : ""}`
+        : "";
 
-      cells += `<div class="pg-name" style="grid-column:1;grid-row:${row}">
+      cells += `<div class="pg-name" style="grid-column:1;grid-row:${row}${um?.calColor ? `;border-left:3px solid ${esc(um.calColor)}` : ""}">
         <span class="pg-dot" style="background:${colors[0]}">${info.icon}</span>
-        <div class="pg-ntxt"><b>${esc(a.name)}</b><small>${esc(meta)}</small></div>
+        <div class="pg-ntxt"><b>${esc(a.name)}</b><small>${uPrefix}${esc(meta)}</small></div>
       </div>`;
 
       const startTs = Math.max(minTs, parseD(a.start).getTime());
@@ -136,37 +351,101 @@
       const span = Math.max(1, Math.round((endTs - startTs) / DAY) + 1);
 
       for (let i = 0; i < nDays; i++) {
-        const d = dates[i];
-        const we = d.getDay() === 0 || d.getDay() === 6;
-        cells += `<div class="pg-cell ${we ? "we" : ""}" style="grid-column:${i + 2};grid-row:${row}"></div>`;
+        const dm = dayMeta[i];
+        cells += `<div class="pg-cell ${dm.we ? "we" : ""} ${dm.wOdd ? "w-odd" : "w-even"} ${dm.wStart ? "w-start" : ""} ${dm.mStart ? "m-start" : ""}" style="grid-column:${i + 2};grid-row:${row}"></div>`;
       }
 
-      const barLabel = span >= 3 ? `${esc(a.name)} (${days(a)}d)` : esc(a.name);
+      const barLabel = effPro
+        ? `${esc(a.name)}${a.progress > 0 && span >= 3 ? ` (${Number(a.progress)}%)` : ""}${finBadge && span >= 3 ? ` · ${esc(finBadge)}` : ""}`
+        : (span >= 3 ? `${esc(a.name)} (${days(a)}d)` : esc(a.name));
+      const progW = effPro && Number(a.progress) > 0 ? Math.min(100, Math.max(0, Number(a.progress))) : 0;
+      const progHtml = progW > 0 ? `<span class="pg-bar-prog" style="width:${progW}%"></span>` : "";
       cells += `<div class="pg-bar-wrap" style="grid-column:${startIdx + 2} / span ${span};grid-row:${row}">
-        <div class="pg-bar" style="background:linear-gradient(135deg,${colors[0]},${colors[1]})">${info.icon} ${barLabel}</div>
+        <div class="pg-bar${effPro && a.type === "Marco" ? " is-milestone" : ""}${um?.conflict ? " has-conflict" : ""}" style="background:linear-gradient(135deg,${colors[0]},${colors[1]})${um?.calColor ? `;border-left:3px solid ${esc(um.calColor)}` : ""}">${progHtml}<span class="pg-bar-lbl">${info.icon} ${barLabel}</span></div>
       </div>`;
     });
 
     return `<div class="pg-grid" style="grid-template-columns:${colsCss}">${cells}</div>`;
   }
 
-  function exportGanttImage(state, activities, fromISO, toISO, helpers) {
-    const { parseD, fmtBR, money, num, calc, getTypeInfo, WD, DAY } = helpers;
-    const rows = filterActivitiesByRange(activities, fromISO, toISO, helpers);
+  function exportGanttImage(state, activities, fromISO, toISO, helpers, opts = {}) {
+    const { parseD, fmtBR, money, num, calc, getTypeInfo, WD, MON_FULL, DAY } = helpers;
+    const isPro = Boolean(opts.isPro);
+    const isUnified = Boolean(opts.isUnified && opts.unifiedLookup);
+    const isWeekOnly = Boolean(opts.isWeekOnly || (Number(opts.zoomPx) > 0 && Number(opts.zoomPx) < 22));
+    const colMap = opts.colMap || new Map();
+    const rows = filterActivitiesByRange(activities, fromISO, toISO);
     if (!rows.length) return false;
 
+    const mNames = MON_FULL || ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+    const padX = 36;
+    const leftW = opts.slimRail ? 230 : 370;
+
+    let nCols = 1;
+    let dates = [];
+    let weeks = [];
+    let monthSpans = [];
+    let weekSpans = [];
+    let dayMeta = [];
+    const minMon = getIsoWeekMondayLocal(parseD(fromISO), helpers);
+    const maxMon = getIsoWeekMondayLocal(parseD(toISO), helpers);
     const minTs = parseD(fromISO).getTime();
     const maxTs = parseD(toISO).getTime();
-    const nDays = Math.max(1, Math.min(62, Math.round((maxTs - minTs) / DAY) + 1));
 
-    const W = 1920;
-    const padX = 36;
+    if (isWeekOnly) {
+      nCols = Math.max(1, Math.min(160, Math.round((maxMon.getTime() - minMon.getTime()) / (7 * DAY)) + 1));
+      for (let i = 0; i < nCols; i++) {
+        const mon = new Date(minMon.getTime() + i * 7 * DAY + 3600e3);
+        const thu = new Date(mon.getTime() + 3 * DAY + 3600e3);
+        const wi = getIsoWeekInfoLocal(mon, helpers);
+        const mKey = `${thu.getFullYear()}-${thu.getMonth()}`;
+        const prevM = monthSpans[monthSpans.length - 1];
+        let mStart = false;
+        if (prevM && prevM.key === mKey) prevM.span++;
+        else {
+          mStart = i > 0;
+          monthSpans.push({ key: mKey, label: `${mNames[thu.getMonth()].slice(0, 3).toUpperCase()} ${thu.getFullYear()}`, idx: i, span: 1, mOdd: monthSpans.length % 2 === 1 });
+        }
+        weeks.push({ idx: i, week: wi.week, wOdd: i % 2 === 1, mStart });
+      }
+    } else {
+      nCols = Math.max(1, Math.min(366, Math.round((maxTs - minTs) / DAY) + 1));
+      for (let i = 0; i < nCols; i++) {
+        const d = new Date(minTs + i * DAY + 3600e3);
+        dates.push(d);
+        const mKey = `${d.getFullYear()}-${d.getMonth()}`;
+        const lastM = monthSpans[monthSpans.length - 1];
+        let mStart = false;
+        if (lastM && lastM.key === mKey) lastM.span++;
+        else {
+          mStart = i > 0;
+          monthSpans.push({ key: mKey, label: `${mNames[d.getMonth()].slice(0, 3).toUpperCase()} ${d.getFullYear()}`, idx: i, span: 1, mOdd: monthSpans.length % 2 === 1 });
+        }
+        const wi = getIsoWeekInfoLocal(d, helpers);
+        const lastW = weekSpans[weekSpans.length - 1];
+        let wStart = false;
+        if (lastW && lastW.key === wi.key) lastW.span++;
+        else {
+          wStart = i > 0;
+          weekSpans.push({ key: wi.key, week: wi.week, idx: i, span: 1, wOdd: weekSpans.length % 2 === 1 });
+        }
+        dayMeta.push({
+          we: d.getDay() === 0 || d.getDay() === 6,
+          wOdd: (weekSpans.length - 1) % 2 === 1,
+          mStart,
+          wStart
+        });
+      }
+    }
+
+    const targetColW = isWeekOnly ? Math.max(64, Math.min(140, Math.round((Number(opts.zoomPx) || 18) * 5))) : Math.max(14, Math.min(64, Number(opts.zoomPx) || 44));
+    const W = Math.max(1920, Math.min(3400, padX * 2 + leftW + Math.round(nCols * targetColW)));
     const headerH = 92;
-    const gridHeadH = 54;
-    const rowH = Math.max(38, Math.min(54, Math.floor(820 / Math.max(1, rows.length))));
-    const H = Math.max(820, headerH + gridHeadH + rows.length * rowH + 44);
-    const leftW = 360;
-    const dayW = (W - padX * 2 - leftW) / nDays;
+    const cityH = !isPro && !isUnified && !isWeekOnly && opts.showCityRow && opts.cityTrack?.spans?.length ? 28 : 0;
+    const gridHeadH = isWeekOnly ? 52 : 76;
+    const rowH = Math.max(34, Math.min(54, Math.floor(820 / Math.max(1, rows.length))));
+    const H = Math.max(820, headerH + gridHeadH + cityH + rows.length * rowH + 44);
+    const colW = (W - padX * 2 - leftW) / nCols;
 
     const canvas = document.createElement("canvas");
     canvas.width = W;
@@ -176,63 +455,162 @@
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, W, H);
 
-    // Header
-    ctx.fillStyle = "#0f172a";
+    ctx.fillStyle = isPro ? "#0a1628" : "#0f172a";
     ctx.font = "700 28px Outfit, system-ui, sans-serif";
-    ctx.fillText(`Férias Pro — ${state.title || "Cronograma Gantt"}`, padX, 46);
+    ctx.fillText(`My Plan${isUnified ? " · Agenda Completa" : (isPro ? " Pro" : "")} — ${state.title || "Cronograma Gantt"}`, padX, 46);
     ctx.fillStyle = "#475569";
     ctx.font = "500 18px Outfit, system-ui, sans-serif";
-    ctx.fillText(`Período selecionado: ${fmtBR(fromISO)} a ${fmtBR(toISO)} · ${rows.length} atividade(s)`, padX, 76);
+    const modeSub = isUnified ? "Pessoal + Profissional · " : (isPro ? "Modo Profissional · " : "");
+    const scaleSub = isWeekOnly ? " · Escala Semanal ISO" : "";
+    ctx.fillText(`${modeSub}Período: ${fmtBR(fromISO)} a ${fmtBR(toISO)} · ${rows.length} itens${scaleSub}`, padX, 76);
 
     const topY = headerH;
-    // Grid header background
-    ctx.fillStyle = "#e2e8f0";
-    ctx.fillRect(padX, topY, W - padX * 2, gridHeadH);
+    ctx.fillStyle = isPro ? "#eff6ff" : "#f1f5f9";
+    ctx.fillRect(padX, topY, leftW, gridHeadH);
     ctx.fillStyle = "#0f172a";
     ctx.font = "700 16px Outfit, system-ui, sans-serif";
-    ctx.fillText("Atividade / Tipo", padX + 14, topY + 34);
+    ctx.fillText(isUnified ? "Agenda Completa" : (isPro ? "Cartão / Lista" : "Atividade / Tipo"), padX + 14, topY + gridHeadH / 2 + 6);
 
-    for (let i = 0; i < nDays; i++) {
-      const d = new Date(minTs + i * DAY + 3600e3);
-      const x = padX + leftW + i * dayW;
-      const we = d.getDay() === 0 || d.getDay() === 6;
-      if (we) {
-        ctx.fillStyle = "rgba(15, 23, 42, 0.05)";
-        ctx.fillRect(x, topY, dayW, gridHeadH + rows.length * rowH);
-      }
-      ctx.strokeStyle = "#cbd5e1";
+    const monthH = 24;
+    const weekH = isWeekOnly ? gridHeadH - monthH : 22;
+    const dayY = topY + monthH + weekH;
+    const dayH = gridHeadH - monthH - weekH;
+
+    // Month header bands
+    monthSpans.forEach(ms => {
+      const x = padX + leftW + ms.idx * colW;
+      const w = ms.span * colW;
+      ctx.fillStyle = ms.mOdd ? (isPro ? "#dbeafe" : "#e2e8f0") : (isPro ? "#eff6ff" : "#f1f5f9");
+      ctx.fillRect(x, topY, w, monthH);
+      ctx.strokeStyle = "rgba(100,116,139,0.45)";
       ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x, topY);
-      ctx.lineTo(x, topY + gridHeadH + rows.length * rowH);
-      ctx.stroke();
+      ctx.strokeRect(x, topY, w, monthH);
+      ctx.fillStyle = isPro && ms.mOdd ? "#1e3a8a" : "#0f172a";
+      ctx.font = "700 12px Outfit, system-ui, sans-serif";
+      ctx.fillText(ms.label, x + 8, topY + 16);
+    });
 
+    if (isWeekOnly) {
+      weeks.forEach(w => {
+        const x = padX + leftW + w.idx * colW;
+        ctx.fillStyle = w.wOdd ? "rgba(59,130,246,0.08)" : "#ffffff";
+        ctx.fillRect(x, topY + monthH, colW, weekH);
+        if (w.wOdd) {
+          ctx.fillStyle = "rgba(59,130,246,0.045)";
+          ctx.fillRect(x, topY + gridHeadH, colW, rows.length * rowH);
+        }
+        ctx.strokeStyle = w.mStart ? "rgba(59,130,246,0.5)" : "rgba(148,163,184,0.45)";
+        ctx.lineWidth = w.mStart ? 1.5 : 1;
+        ctx.beginPath();
+        ctx.moveTo(x, topY + monthH);
+        ctx.lineTo(x, topY + gridHeadH + rows.length * rowH);
+        ctx.stroke();
+
+        ctx.fillStyle = w.wOdd ? "#1e3a8a" : "#334155";
+        ctx.font = "700 13px Outfit, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(nCols > 24 ? `S${w.week}` : `Sem ${w.week}`, x + colW / 2, topY + monthH + 19);
+        ctx.textAlign = "left";
+      });
+    } else {
+      weekSpans.forEach(ws => {
+        const x = padX + leftW + ws.idx * colW;
+        const w = ws.span * colW;
+        ctx.fillStyle = ws.wOdd ? "#eef2ff" : "#f8fafc";
+        ctx.fillRect(x, topY + monthH, w, weekH);
+        ctx.strokeStyle = "rgba(148,163,184,0.5)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, topY + monthH, w, weekH);
+        ctx.fillStyle = ws.wOdd ? "#1e3a8a" : "#475569";
+        ctx.font = "700 11px Outfit, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        const lbl = w > 56 ? `Sem ${ws.week}` : (w > 24 ? `S${ws.week}` : String(ws.week));
+        ctx.fillText(lbl, x + w / 2, topY + monthH + 15);
+        ctx.textAlign = "left";
+      });
+
+      const hideWd = colW < 22;
+      const numStep = colW < 12 ? 3 : (colW < 17 ? 2 : 1);
+      for (let i = 0; i < nCols; i++) {
+        const d = dates[i];
+        const dm = dayMeta[i];
+        const x = padX + leftW + i * colW;
+        if (dm.wOdd) {
+          ctx.fillStyle = "rgba(59, 130, 246, 0.045)";
+          ctx.fillRect(x, dayY, colW, dayH + cityH + rows.length * rowH);
+        }
+        if (dm.we) {
+          ctx.fillStyle = "rgba(15, 23, 42, 0.04)";
+          ctx.fillRect(x, dayY, colW, dayH + cityH + rows.length * rowH);
+        }
+        ctx.strokeStyle = dm.mStart ? "rgba(59,130,246,0.5)" : (dm.wStart ? "rgba(100,116,139,0.45)" : "rgba(203,213,225,0.55)");
+        ctx.lineWidth = dm.mStart ? 1.5 : (dm.wStart ? 1.1 : 0.7);
+        ctx.beginPath();
+        ctx.moveTo(x, dayY);
+        ctx.lineTo(x, topY + gridHeadH + cityH + rows.length * rowH);
+        ctx.stroke();
+
+        if (!hideWd) {
+          ctx.fillStyle = "#64748b";
+          ctx.font = "600 11px Outfit, system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(WD[d.getDay()][0], x + colW / 2, dayY + 11);
+        }
+        if (numStep === 1 || d.getDate() === 1 || i % numStep === 0) {
+          ctx.fillStyle = "#0f172a";
+          ctx.font = `700 ${hideWd ? 11 : 13}px Outfit, system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.fillText(String(d.getDate()), x + colW / 2, hideWd ? dayY + 20 : dayY + 25);
+        }
+        ctx.textAlign = "left";
+      }
+    }
+
+    if (cityH > 0) {
+      const cy = topY + gridHeadH;
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(padX, cy, W - padX * 2, cityH);
       ctx.fillStyle = "#475569";
-      ctx.font = "600 12px Outfit, system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(WD[d.getDay()][0], x + dayW / 2, topY + 20);
-      ctx.fillStyle = "#0f172a";
-      ctx.font = "700 16px Outfit, system-ui, sans-serif";
-      ctx.fillText(String(d.getDate()), x + dayW / 2, topY + 42);
-      ctx.textAlign = "left";
+      ctx.font = "700 12px Outfit, sans-serif";
+      ctx.fillText("📍 CIDADE", padX + 12, cy + 18);
+      opts.cityTrack.spans.forEach(sp => {
+        const sx = padX + leftW + sp.startIdx * colW + 2;
+        const sw = Math.max(18, sp.span * colW - 4);
+        ctx.fillStyle = sp.color?.lightBg || "rgba(2,132,199,0.14)";
+        ctx.beginPath();
+        ctx.roundRect(sx, cy + 4, sw, cityH - 8, 5);
+        ctx.fill();
+        ctx.fillStyle = sp.color?.lightTxt || "#0f172a";
+        ctx.font = "700 11px Outfit, sans-serif";
+        ctx.fillText(String(sp.city).slice(0, Math.max(3, Math.floor(sw / 7))), sx + 6, cy + 18);
+      });
     }
 
     rows.forEach((a, idx) => {
-      const y = topY + gridHeadH + idx * rowH;
+      const y = topY + gridHeadH + cityH + idx * rowH;
       if (idx % 2 === 1) {
-        ctx.fillStyle = "rgba(241, 245, 249, 0.7)";
+        ctx.fillStyle = "rgba(241, 245, 249, 0.55)";
         ctx.fillRect(padX, y, W - padX * 2, rowH);
       }
       ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(padX, y + rowH);
       ctx.lineTo(W - padX, y + rowH);
       ctx.stroke();
 
+      const um = isUnified ? opts.unifiedLookup.get(a.id) : null;
+      const effPro = um ? (um.mode === "professional") : isPro;
       const info = getTypeInfo(a.type);
-      const colors = TYPE_COLORS[a.type] || TYPE_COLORS.Outro;
-      const c = calc(a);
+      const colors = getTypeColorPair(a.type, effPro);
+      const finBadge = effPro ? formatProFinBadge(a, money) : "";
+      const c = (!effPro && calc) ? calc(a) : { total: 0, extra: 0 };
       const costVal = c.total + c.extra;
+
+      if (um?.calColor) {
+        ctx.fillStyle = um.calColor;
+        ctx.fillRect(padX, y + 2, 4, rowH - 4);
+      }
 
       ctx.fillStyle = colors[0];
       ctx.beginPath();
@@ -246,22 +624,39 @@
 
       ctx.fillStyle = "#0f172a";
       ctx.font = "700 15px Outfit, sans-serif";
-      ctx.fillText(String(a.name).slice(0, 32), padX + 44, y + rowH / 2 - 2);
+      const nmTxt = `${a.name}${um?.conflict ? " ⚠️" : ""}`;
+      ctx.fillText(nmTxt.slice(0, opts.slimRail ? 18 : 32), padX + 44, y + rowH / 2 - 2);
       ctx.fillStyle = "#64748b";
       ctx.font = "500 12px Outfit, sans-serif";
-      const sub = a.type === "Viagem"
-        ? `${a.from || "?"} -> ${a.to || "?"} (${num(a.km)} km)`
-        : `${a.type}${costVal > 0 ? " · " + money(costVal) : ""}`;
-      ctx.fillText(sub.slice(0, 40), padX + 44, y + rowH / 2 + 15);
+      let sub = "";
+      if (effPro) {
+        const colName = a.columnTitle || colMap.get(a.columnId) || a.type;
+        sub = [um ? "PRO" : "", colName, a.client, a.progress > 0 ? `${a.progress}%` : "", finBadge].filter(Boolean).join(" · ");
+      } else {
+        sub = a.type === "Viagem"
+          ? `${um ? "PES · " : ""}${a.from || "?"} -> ${a.to || "?"} (${num(a.km)} km)`
+          : `${um ? "PES · " : ""}${a.type}${costVal > 0 ? " · " + money(costVal) : ""}`;
+      }
+      ctx.fillText(sub.slice(0, opts.slimRail ? 24 : 42), padX + 44, y + rowH / 2 + 15);
 
-      const startTs = Math.max(minTs, parseD(a.start).getTime());
-      const endTs = Math.min(maxTs, parseD(a.end || a.start).getTime());
-      const sIdx = Math.max(0, Math.round((startTs - minTs) / DAY));
-      const span = Math.max(1, Math.round((endTs - startTs) / DAY) + 1);
-      const bx = padX + leftW + sIdx * dayW + 3;
-      const bw = Math.max(24, span * dayW - 6);
-      const by = y + 8;
-      const bh = rowH - 16;
+      let sIdx = 0;
+      let span = 1;
+      if (isWeekOnly) {
+        const sMon = getIsoWeekMondayLocal(parseD(a.start), helpers);
+        const eMon = getIsoWeekMondayLocal(parseD(a.end || a.start), helpers);
+        sIdx = Math.max(0, Math.min(nCols - 1, Math.round((sMon.getTime() - minMon.getTime()) / (7 * DAY))));
+        const eIdx = Math.max(sIdx, Math.min(nCols - 1, Math.round((eMon.getTime() - minMon.getTime()) / (7 * DAY))));
+        span = Math.max(1, eIdx - sIdx + 1);
+      } else {
+        const startTs = Math.max(minTs, parseD(a.start).getTime());
+        const endTs = Math.min(maxTs, parseD(a.end || a.start).getTime());
+        sIdx = Math.max(0, Math.round((startTs - minTs) / DAY));
+        span = Math.max(1, Math.round((endTs - startTs) / DAY) + 1);
+      }
+      const bx = padX + leftW + sIdx * colW + 3;
+      const bw = Math.max(isWeekOnly ? 24 : 18, span * colW - 6);
+      const by = y + 7;
+      const bh = rowH - 14;
 
       const grad = ctx.createLinearGradient(bx, by, bx + bw, by);
       grad.addColorStop(0, colors[0]);
@@ -271,7 +666,23 @@
       ctx.roundRect(bx, by, bw, bh, 8);
       ctx.fill();
 
-      const lbl = `${a.name}${costVal > 0 ? " · " + money(costVal) : ""}`;
+      if (um?.conflict) {
+        ctx.strokeStyle = "#dc2626";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx - 1, by - 1, bw + 2, bh + 2);
+      }
+
+      if (effPro && Number(a.progress) > 0) {
+        const pw = Math.round(bw * Math.min(100, Number(a.progress)) / 100);
+        ctx.fillStyle = "rgba(255,255,255,0.22)";
+        ctx.beginPath();
+        ctx.roundRect(bx, by + bh - 5, pw, 5, 3);
+        ctx.fill();
+      }
+
+      const lbl = effPro
+        ? `${a.name}${a.progress > 0 ? ` · ${a.progress}%` : ""}${finBadge ? ` · ${finBadge}` : ""}`
+        : `${a.name}${costVal > 0 ? " · " + money(costVal) : ""}`;
       const labelFitsInside = bw > 140;
       ctx.font = "700 13px Outfit, sans-serif";
       if (labelFitsInside) {
@@ -280,7 +691,7 @@
       } else {
         const tx = bx + bw + 8;
         ctx.fillStyle = "#0f172a";
-        if (tx + 120 < W - padX) {
+        if (tx + 100 < W - padX) {
           ctx.fillText(lbl.slice(0, 34), tx, y + rowH / 2 + 5);
         }
       }
@@ -291,44 +702,101 @@
       const u = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = u;
-      a.download = `${(state.title || "ferias_pro").replace(/[^\w\-]+/g, "_")}_gantt_${fromISO}_${toISO}.png`;
+      a.download = `${(state.title || "my_plan").replace(/[^\w\-]+/g, "_")}_gantt_${fromISO}_${toISO}.png`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(u), 1500);
     }, "image/png");
     return true;
   }
 
-  function exportGanttPdf(state, activities, fromISO, toISO, helpers) {
+  function exportGanttPdf(state, activities, fromISO, toISO, helpers, opts = {}) {
     const { fmtBR } = helpers;
-    const gridHtml = buildGanttHtmlBlock(activities, fromISO, toISO, helpers, "Atividade");
+    const isPro = Boolean(opts.isPro);
+    const gridHtml = buildGanttHtmlBlock(activities, fromISO, toISO, helpers, isPro ? "Cartão / Entrega" : "Atividade", opts);
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Gantt — ${esc(state.title)}</title>
       <style>
         @page { size: A4 landscape; margin: 12mm 15mm; }
         * { box-sizing: border-box; }
         body { margin: 0; padding: 14px 20px; font-family: Outfit, Arial, sans-serif; color: #0f172a; background: #fff; }
-        h1 { margin: 0 0 2px; font-size: 15pt; }
-        .sub { font-size: 9pt; color: #475569; margin-bottom: 10px; }
+        .sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; ${isPro ? "background:linear-gradient(135deg,#0a1628,#1d4ed8);color:#fff;padding:11px 16px;border-radius:10px;" : ""} }
+        h1 { margin: 0 0 2px; font-size: 14.5pt; ${isPro ? "color:#fff;" : ""} }
+        .sub { font-size: 8.5pt; color: ${isPro ? "#dbeafe" : "#475569"}; }
         .sheet { width: 100%; overflow: hidden; page-break-inside: avoid; }
-        .pg-grid { display: grid; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; font-size: 7.5pt; width: 100%; }
-        .pg-corner { grid-row: 1 / span 2; grid-column: 1; background: #f1f5f9; font-weight: 700; display: flex; align-items: center; padding: 4px 8px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
-        .pg-month { background: #e2e8f0; font-weight: 700; font-size: 7pt; text-transform: uppercase; padding: 3px 6px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
-        .pg-day { text-align: center; padding: 3px 0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #cbd5e1; font-size: 6.5pt; color: #475569; }
-        .pg-day b { display: block; font-size: 8pt; color: #0f172a; }
-        .pg-day.we, .pg-cell.we { background: #f8fafc; }
-        .pg-name { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #e2e8f0; background: #fff; min-width: 0; }
-        .pg-dot { width: 16px; height: 16px; border-radius: 4px; color: #fff; font-size: 7pt; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .pg-ntxt { min-width: 0; overflow: hidden; }
-        .pg-ntxt b { display: block; font-size: 7.4pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .pg-ntxt small { display: block; font-size: 6.4pt; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .pg-cell { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; min-height: 22px; }
-        .pg-bar-wrap { display: flex; align-items: center; padding: 2px; z-index: 2; pointer-events: none; overflow: hidden; }
-        .pg-bar { width: 100%; border-radius: 5px; color: #fff; font-weight: 700; font-size: 7pt; padding: 2px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        ${GANTT_PRINT_EXTRA_CSS}
+        ${isPro ? ".pg-month { background: #dbeafe; color: #1e3a8a; } .pg-month.m-odd { background: #bfdbfe; }" : ""}
       </style></head><body>
       <div class="sheet">
-        <h1>📅 Cronograma Gantt — ${esc(state.title || "Férias Pro")}</h1>
-        <div class="sub">Período: ${fmtBR(fromISO)} a ${fmtBR(toISO)} · Impressão ajustada em 1 página A4 horizontal</div>
+        <div class="sheet-head">
+          <div>
+            <h1>📅 Cronograma Gantt — ${esc(state.title || "My Plan")}</h1>
+            <div class="sub">${opts.isUnified ? "Agenda Completa (Pessoal + Profissional) · " : (isPro ? "My Plan Profissional · " : "My Plan · ")}Período: ${fmtBR(fromISO)} a ${fmtBR(toISO)} · Visão capturada em 1 página A4 horizontal</div>
+          </div>
+          <div class="sub">${opts.filterLabel ? esc(opts.filterLabel) : ""}</div>
+        </div>
         ${gridHtml}
       </div></body></html>`;
+    return printHtmlInFrame(html, false);
+  }
+
+  function printTimelinePdf(state, rows, helpers, opts = {}) {
+    const { parseD, fmtBR, days, money, num, hmHuman, calc, getTypeInfo, WD } = helpers;
+    const isPro = Boolean(opts.isPro);
+    const colMap = opts.colMap || new Map();
+    const listHtml = rows.map(a => {
+      const info = getTypeInfo(a.type);
+      const colors = getTypeColorPair(a.type, isPro);
+      const d = parseD(a.start);
+      let meta = "";
+      if (isPro) {
+        const colName = a.columnTitle || colMap.get(a.columnId) || "";
+        const finBadge = formatProFinBadge(a, money);
+        meta = [
+          `${days(a)} dia(s)`,
+          a.startTime ? a.startTime : "",
+          colName ? `Lista: ${colName}` : "",
+          a.client ? `Cliente: ${a.client}` : "",
+          a.progress > 0 ? `${a.progress}%` : "",
+          finBadge,
+          a.notes || ""
+        ].filter(Boolean).join(" · ");
+      } else {
+        const c = calc ? calc(a) : { total: 0, extra: 0 };
+        const val = c.total + c.extra;
+        meta = a.type === "Viagem"
+          ? `${a.from || "?"} ➔ ${a.to || "?"} · ${num(a.km)} km · ${hmHuman(a.drive)} · Ped. ${money(a.toll)} · ${money(val)}`
+          : `${days(a)} dia(s)${a.from || a.to ? ` · ${a.from || "?"} ➔ ${a.to || "?"}` : ""}${val > 0 ? ` · ${money(val)}` : ""}${a.notes ? ` · ${a.notes}` : ""}`;
+      }
+      return `<div class="rtl-item" style="border-left-color:${colors[0]}">
+        <div class="rtl-date">${fmtBR(a.start)}<small>${WD[d.getDay()]}</small></div>
+        <div class="rtl-body"><b>${info.icon} <span class="rbadge" style="background:${colors[0]}18;color:${colors[0]}">${esc(a.type)}</span> ${esc(a.name)}</b><span>${esc(meta)}</span></div>
+      </div>`;
+    }).join("") || "<p>Nenhum registro encontrado.</p>";
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Linha do Tempo — ${esc(state.title)}</title>
+      <style>
+        @page { size: A4 landscape; margin: 12mm 15mm; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { margin: 0; padding: 14px 20px; font-family: Outfit, Arial, sans-serif; color: #0f172a; background: #fff; }
+        .rhead { display: flex; justify-content: space-between; align-items: center; background: ${isPro ? "linear-gradient(135deg,#0a1628,#1d4ed8)" : "linear-gradient(135deg,#1e1b4b,#4338ca)"}; color: #fff; padding: 12px 16px; border-radius: 10px; margin-bottom: 14px; }
+        .rhead h1 { margin: 0; font-size: 14pt; color: #fff; }
+        .rhead-sub { font-size: 8.5pt; color: #dbeafe; margin-top: 2px; }
+        .rtl-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .rtl-item { display: flex; gap: 10px; border: 1px solid #cbd5e1; border-left: 4px solid #2563eb; border-radius: 8px; padding: 7px 10px; background: #fcfcfd; break-inside: avoid; }
+        .rtl-date { font-weight: 700; font-size: 7.8pt; color: #1e3a8a; min-width: 64px; }
+        .rtl-date small { display: block; font-weight: 500; color: #64748b; }
+        .rtl-body b { display: block; font-size: 8.2pt; }
+        .rtl-body span { font-size: 7.4pt; color: #475569; }
+        .rbadge { font-size: 6.8pt; padding: 1px 6px; border-radius: 99px; font-weight: 700; vertical-align: middle; }
+      </style></head><body>
+      <div class="rhead">
+        <div>
+          <h1>📌 Linha do Tempo — ${esc(state.title || "My Plan")}</h1>
+          <div class="rhead-sub">My Plan${isPro ? " Profissional" : ""} · ${rows.length} item(ns) visíveis</div>
+        </div>
+        <div class="rhead-sub">${new Date().toLocaleDateString("pt-BR")}</div>
+      </div>
+      <div class="rtl-list">${listHtml}</div>
+      </body></html>`;
     return printHtmlInFrame(html, false);
   }
 
@@ -418,7 +886,7 @@
         .a4-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
         .a4-table tfoot td { background: #eef2ff; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       </style></head><body>
-      <h1>🧾 Planilha Completa — ${esc(state.title || "Férias Pro")}</h1>
+      <h1>🧾 Planilha Completa — ${esc(state.title || "My Plan")}</h1>
       <div class="sub">Largura ajustada à página A4 horizontal (${rows.length} registros)</div>
       ${tblHtml}
       </body></html>`;
@@ -488,7 +956,7 @@
     ctx.stroke();
     ctx.fillStyle = "#0f172a";
     ctx.font = "700 18px Outfit, sans-serif";
-    ctx.fillText(`🗺️ Trajeto Rodoviário — ${String(stateTitle || "Férias Pro").slice(0, 28)} (${num(totalKm)} km)`, 40, 46);
+    ctx.fillText(`🗺️ Trajeto Rodoviário — ${String(stateTitle || "My Plan").slice(0, 28)} (${num(totalKm)} km)`, 40, 46);
 
     if (stops.length < 2) {
       ctx.fillStyle = "#475569";
@@ -773,20 +1241,7 @@
         .rlegs-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
         .rleg-pill { font-size: 7.3pt; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 999px; padding: 3px 9px; color: #334155; }
         /* Gantt */
-        .pg-grid { display: grid; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; font-size: 7pt; width: 100%; }
-        .pg-corner { grid-row: 1 / span 2; grid-column: 1; background: #f1f5f9; font-weight: 700; display: flex; align-items: center; padding: 4px 8px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
-        .pg-month { background: #e2e8f0; font-weight: 700; font-size: 6.8pt; text-transform: uppercase; padding: 3px 5px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
-        .pg-day { text-align: center; padding: 2px 0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #cbd5e1; font-size: 6pt; color: #475569; }
-        .pg-day b { display: block; font-size: 7.5pt; color: #0f172a; }
-        .pg-day.we, .pg-cell.we { background: #f8fafc; }
-        .pg-name { display: flex; align-items: center; gap: 5px; padding: 3.5px 6px; border-right: 1px solid #cbd5e1; border-bottom: 1px solid #e2e8f0; background: #fff; min-width: 0; }
-        .pg-dot { width: 15px; height: 15px; border-radius: 4px; color: #fff; font-size: 6.5pt; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .pg-ntxt { min-width: 0; overflow: hidden; }
-        .pg-ntxt b { display: block; font-size: 7pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .pg-ntxt small { display: block; font-size: 6pt; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .pg-cell { border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; min-height: 21px; }
-        .pg-bar-wrap { display: flex; align-items: center; padding: 2px; z-index: 2; overflow: hidden; }
-        .pg-bar { width: 100%; border-radius: 5px; color: #fff; font-weight: 700; font-size: 6.5pt; padding: 2px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        ${GANTT_PRINT_EXTRA_CSS}
         /* Timeline */
         .rtl-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         .rtl-item { display: flex; gap: 10px; border: 1px solid #cbd5e1; border-left: 4px solid #4f46e5; border-radius: 8px; padding: 7px 10px; background: #fcfcfd; break-inside: avoid; }
@@ -816,10 +1271,10 @@
       <div class="rwrap">
         <header class="rhead">
           <div>
-            <h1>✈️ Relatório da Viagem — ${esc(state.title || "Férias Pro")}</h1>
+            <h1>✈️ Relatório da Viagem — ${esc(state.title || "My Plan")}</h1>
             <div class="rhead-sub">Período: ${minISO} a ${maxISO} · ${t.totalDays || sorted.length} dias planejados · ${state.params?.travelers || 1} viajante(s)</div>
           </div>
-          <div class="rhead-meta">Gerado em ${new Date().toLocaleDateString("pt-BR")}<br>${sorted.length} atividades · Férias Pro</div>
+          <div class="rhead-meta">Gerado em ${new Date().toLocaleDateString("pt-BR")}<br>${sorted.length} atividades · My Plan</div>
         </header>
 
         <section class="rsec">
@@ -921,7 +1376,7 @@
 
     ctx.fillStyle = "#ffffff";
     ctx.font = "700 19px Outfit, sans-serif";
-    ctx.fillText(`Férias Pro · ${tripName || "Carteira do Google"}`, 32, 48);
+    ctx.fillText(`My Plan · ${tripName || "Carteira do Google"}`, 32, 48);
 
     ctx.font = "700 30px Outfit, sans-serif";
     ctx.fillText(String(activity.name || "Atividade").slice(0, 30), 32, 130);
@@ -972,11 +1427,265 @@
     }
   }
 
+  /* ---------- RELATÓRIO E TABELA EXECUTIVA DO MODO PROFISSIONAL ---------- */
+  function buildProFittedTableHtml(rows, state, totalsObj, helpers) {
+    const { fmtShortBR, days, money } = helpers;
+    const colMap = new Map((state.columns || []).map(c => [c.id, c.title]));
+    let totalIn = 0, totalOut = 0;
+    const bodyRows = rows.map((a, i) => {
+      const val = Number(a.actualAmount) > 0 ? Number(a.actualAmount) : (Number(a.amount) || 0);
+      const inc = a.finDirection === "income" ? val : 0;
+      const exp = a.finDirection === "expense" ? val : 0;
+      totalIn += inc;
+      totalOut += exp;
+      const who = [a.client, a.assignee].filter(Boolean).join(" / ");
+      return `<tr>
+        <td>${i + 1}</td>
+        <td>${esc(colMap.get(a.columnId) || "-")}</td>
+        <td>${esc(a.type)}</td>
+        <td class="wrap"><b>${esc(a.name)}</b></td>
+        <td class="wrap">${esc(who)}</td>
+        <td>${fmtShortBR(a.start)}${a.end && a.end !== a.start ? "–" + fmtShortBR(a.end) : ""}</td>
+        <td class="num">${days(a)}</td>
+        <td class="num">${Number(a.progress) || 0}%</td>
+        <td>${esc(a.priority || "Média")}</td>
+        <td class="num" style="color:#059669">${inc > 0 ? money(inc) : ""}</td>
+        <td class="num" style="color:#dc2626">${exp > 0 ? money(exp) : ""}</td>
+        <td>${val > 0 ? esc(a.finStatus || "Previsto") : ""}</td>
+        <td class="wrap">${esc(a.notes || "")}</td>
+      </tr>`;
+    }).join("");
+
+    const net = totalIn - totalOut;
+    return `<table class="a4-table">
+      <thead><tr>
+        <th style="width:2.5%">#</th>
+        <th style="width:9%">Lista</th>
+        <th style="width:8%">Tipo</th>
+        <th style="width:16%">Cartão / Título</th>
+        <th style="width:11%">Cliente / Resp.</th>
+        <th style="width:8%">Datas</th>
+        <th style="width:3%">D.</th>
+        <th style="width:4%">Prog.</th>
+        <th style="width:5.5%">Prior.</th>
+        <th style="width:7.5%">Recebim.</th>
+        <th style="width:7.5%">Despesa</th>
+        <th style="width:6%">Status Fin.</th>
+        <th style="width:12%">Notas</th>
+      </tr></thead>
+      <tbody>${bodyRows}</tbody>
+      <tfoot><tr>
+        <td colspan="9"><b>TOTAIS DO PROJETO (${rows.length} cartões)</b></td>
+        <td class="num" style="color:#059669"><b>${money(totalIn)}</b></td>
+        <td class="num" style="color:#dc2626"><b>${money(totalOut)}</b></td>
+        <td colspan="2"><b>Saldo Líquido: ${money(net)}</b></td>
+      </tr></tfoot>
+    </table>`;
+  }
+
+  function printProTableLandscape(rows, state, totalsObj, helpers) {
+    const tblHtml = buildProFittedTableHtml(rows, state, totalsObj, helpers);
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Tabela Executiva — ${esc(state.title)}</title>
+      <style>
+        @page { size: A4 landscape; margin: 12mm 15mm; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { margin: 0; padding: 14px 20px; font-family: Outfit, Arial, sans-serif; color: #0f172a; background: #fff; }
+        .rhead { background: linear-gradient(135deg, #0a1628, #1d4ed8); color: #fff; padding: 11px 16px; border-radius: 10px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .rhead h1 { margin: 0; font-size: 14pt; color: #fff; }
+        .sub { font-size: 8.5pt; color: #dbeafe; margin-top: 2px; }
+        .a4-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7pt; }
+        .a4-table thead { display: table-header-group; }
+        .a4-table tr { break-inside: avoid; }
+        .a4-table tbody tr:nth-child(even) { background: #f8fafc; }
+        .a4-table th, .a4-table td { border: 1px solid #cbd5e1; padding: 4px 5px; text-align: left; vertical-align: top; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .a4-table td.wrap { white-space: normal; word-break: break-word; }
+        .a4-table th { background: #dbeafe; font-weight: 700; color: #0f172a; }
+        .a4-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .a4-table tfoot td { background: #eff6ff; font-weight: 700; }
+      </style></head><body>
+      <div class="rhead">
+        <div>
+          <h1>🧾 Planilha Executiva — ${esc(state.title || "My Plan")}</h1>
+          <div class="sub">My Plan Profissional · Largura ajustada à página A4 horizontal (${rows.length} cartões)</div>
+        </div>
+        <div class="sub">${new Date().toLocaleDateString("pt-BR")}</div>
+      </div>
+      ${tblHtml}
+      </body></html>`;
+    return printHtmlInFrame(html, false);
+  }
+
+  async function printFullProReport(state, sorted, totalsObj, helpers) {
+    const { parseD, fmtBR, days, money, getTypeInfo, WD } = helpers;
+    const t = totalsObj || {};
+    const colMap = new Map((state.columns || []).map(c => [c.id, c.title]));
+    const doneChk = (state.checklist || []).filter(c => c.status === "Concluído").length;
+    const minISO = sorted.length ? fmtBR(sorted[0].start) : fmtBR(new Date().toISOString().slice(0, 10));
+    const maxRaw = sorted.length ? sorted.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, sorted[0].start) : "";
+    const maxISO = maxRaw ? fmtBR(maxRaw) : minISO;
+
+    const kpisHtml = [
+      ["Recebimentos Totais", money(t.totalIncome || 0), `Liquidado: ${money(t.receivedIncome || 0)}`, "#10b981"],
+      ["Despesas Totais", money(t.totalExpense || 0), `Liquidado: ${money(t.paidExpense || 0)}`, "#ef4444"],
+      ["Resultado Líquido", money(t.netPlanned || 0), `Realizado: ${money(t.netRealized || 0)}`, "#1d4ed8"],
+      ["Execução dos Cartões", `${t.doneCards || 0}/${t.totalCards || sorted.length}`, `Progresso médio ${Math.round(t.avgProgress || 0)}%`, "#0284c7"],
+      ["Checklist Executivo", `${doneChk}/${(state.checklist || []).length}`, `${t.overdueCount || 0} atrasado(s)`, "#d97706"]
+    ].map(([l, v, s, col]) => `<div class="rkpi" style="--rc:${col}"><small>${l}</small><b>${v}</b><span>${s}</span></div>`).join("");
+
+    const kanbanHtml = `<div class="rk-board">${(state.columns || []).map(col => {
+      const cards = sorted.filter(a => a.columnId === col.id);
+      return `<div class="rk-col">
+        <div class="rk-col-head" style="border-top-color:${col.color || "#2563eb"}"><span>${esc(col.title)}</span><b>${cards.length}</b></div>
+        <div class="rk-col-body">${cards.map(c => {
+          const fin = formatProFinBadge(c, money);
+          return `<div class="rk-card">
+            <b>${esc(c.name)}</b>
+            <small>${esc(c.type)} · ${fmtBR(c.start)}${c.client ? " · " + esc(c.client) : ""}${fin ? " · " + esc(fin) : ""}</small>
+          </div>`;
+        }).join("") || `<div class="rk-empty">Sem cartões</div>`}</div>
+      </div>`;
+    }).join("")}</div>`;
+
+    const ganttHtml = sorted.length
+      ? buildGanttHtmlBlock(sorted, sorted[0].start, maxRaw || sorted[0].start, helpers, "Cartão / Entrega", { isPro: true, colMap })
+      : "<p>Sem cartões no cronograma.</p>";
+
+    const timelineHtml = sorted.map(a => {
+      const info = getTypeInfo(a.type);
+      const colors = getTypeColorPair(a.type, true);
+      const d = parseD(a.start);
+      const fin = formatProFinBadge(a, money);
+      const meta = [`${days(a)}d`, colMap.get(a.columnId) || "", a.client || "", a.progress > 0 ? `${a.progress}%` : "", fin, a.notes || ""].filter(Boolean).join(" · ");
+      return `<div class="rtl-item" style="border-left-color:${colors[0]}">
+        <div class="rtl-date">${fmtBR(a.start)}<small>${WD[d.getDay()]}</small></div>
+        <div class="rtl-body"><b>${info.icon} <span class="rbadge" style="background:${colors[0]}18;color:${colors[0]}">${esc(a.type)}</span> ${esc(a.name)}</b><span>${esc(meta)}</span></div>
+      </div>`;
+    }).join("") || "<p>Sem registros.</p>";
+
+    const checklistHtml = `<table class="a4-table">
+      <thead><tr><th style="width:5%">#</th><th style="width:16%">Categoria</th><th style="width:36%">Item</th><th style="width:11%">Prioridade</th><th style="width:12%">Status</th><th style="width:20%">Notas</th></tr></thead>
+      <tbody>${(state.checklist || []).map((c, i) => {
+        const stCls = c.status === "Concluído" ? "ok" : (c.status === "Em andamento" ? "mid" : "pend");
+        return `<tr><td>${i + 1}</td><td>${esc(c.cat)}</td><td class="wrap"><b>${esc(c.item)}</b></td><td>${esc(c.prio)}</td><td><span class="rpill ${stCls}">${esc(c.status)}</span></td><td class="wrap">${esc(c.notes || "")}</td></tr>`;
+      }).join("")}</tbody></table>`;
+
+    const tableHtml = buildProFittedTableHtml(sorted, state, t, helpers);
+    const p = state.params || {};
+    const paramsHtml = `<div class="rparams-grid">
+      <div class="rbox"><h3>💼 Metas &amp; Parâmetros do Projeto</h3>
+        <div><b>Cliente / Carteira Padrão:</b> ${esc(p.clientDefault || "—")}</div>
+        <div><b>Meta de Faturamento:</b> ${money(p.revenueTarget || 0)} · <b>Orçamento de Custos:</b> ${money(p.costBudget || 0)}</div>
+        <div><b>Alíquota Impostos:</b> ${p.taxRatePct || 0}% · <b>Valor Hora:</b> ${money(p.hourlyRate || 0)}/h</div>
+        <div><b>Lembrete Agenda:</b> ${esc(p.calendarReminderTime || "09:00")}</div>
+      </div>
+      <div class="rbox"><h3>📊 Resumo de Fluxo de Caixa</h3>
+        <div><b>Recebimentos Previstos:</b> ${money(t.totalIncome || 0)} (Liquidado: ${money(t.receivedIncome || 0)})</div>
+        <div><b>Despesas Previstas:</b> ${money(t.totalExpense || 0)} (Pago: ${money(t.paidExpense || 0)})</div>
+        <div><b>Impostos Estimados:</b> ${money(t.taxAmount || 0)}</div>
+        <div><b>Resultado Líquido Projetado:</b> ${money((t.netPlanned || 0) - (t.taxAmount || 0))}</div>
+      </div>
+    </div>`;
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório Executivo — ${esc(state.title)}</title>
+      <style>
+        @page { size: A4 landscape; margin: 13mm 15mm; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        body { margin: 0; padding: 14px 22px; font-family: Outfit, Arial, sans-serif; color: #0f172a; background: #fff; font-size: 9pt; line-height: 1.4; }
+        .rhead { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: linear-gradient(135deg, #0a1628, #1d4ed8); color: #fff; padding: 14px 18px; border-radius: 12px; margin-bottom: 16px; }
+        .rhead h1 { margin: 0; font-size: 16pt; color: #fff; }
+        .rhead-sub { font-size: 8.5pt; color: #dbeafe; margin-top: 2px; }
+        .rhead-meta { text-align: right; font-size: 8.2pt; color: #bfdbfe; white-space: nowrap; }
+        .rsec { margin-bottom: 18px; }
+        .rsec-break { break-before: page; page-break-before: always; padding-top: 4px; }
+        .rsec h2 { margin: 0 0 10px; font-size: 11.5pt; color: #0f172a; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid #cbd5e1; padding-bottom: 6px; }
+        .rsec-num { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 7px; font-size: 9pt; font-weight: 700; background: #1d4ed8; color: #fff; }
+        .rkpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 14px; }
+        .rkpi { border: 1px solid #cbd5e1; border-top: 3px solid var(--rc, #1d4ed8); border-radius: 10px; padding: 10px 11px; background: #f8fafc; }
+        .rkpi small { display: block; font-size: 6.8pt; text-transform: uppercase; color: #64748b; font-weight: 700; }
+        .rkpi b { display: block; font-size: 12.5pt; margin: 3px 0; color: #0f172a; }
+        .rkpi span { font-size: 7.4pt; color: #475569; }
+        .rk-board { display: grid; grid-template-columns: repeat(${Math.max(1, (state.columns || []).length)}, minmax(0, 1fr)); gap: 8px; }
+        .rk-col { border: 1px solid #cbd5e1; border-radius: 8px; background: #f8fafc; overflow: hidden; }
+        .rk-col-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: #eff6ff; border-top: 3px solid #2563eb; border-bottom: 1px solid #cbd5e1; font-size: 7.8pt; font-weight: 700; }
+        .rk-col-body { padding: 6px; display: grid; gap: 5px; }
+        .rk-card { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 6px; font-size: 7.2pt; }
+        .rk-card b { display: block; color: #0f172a; }
+        .rk-card small { color: #64748b; font-size: 6.5pt; }
+        .rk-empty { color: #94a3b8; font-size: 7pt; text-align: center; padding: 8px 0; }
+        ${GANTT_PRINT_EXTRA_CSS}
+        .pg-month { background: #dbeafe; color: #1e3a8a; }
+        .pg-month.m-odd { background: #bfdbfe; }
+        .rtl-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .rtl-item { display: flex; gap: 10px; border: 1px solid #cbd5e1; border-left: 4px solid #1d4ed8; border-radius: 8px; padding: 7px 10px; background: #fcfcfd; break-inside: avoid; }
+        .rtl-date { font-weight: 700; font-size: 7.8pt; color: #1e3a8a; min-width: 64px; }
+        .rtl-date small { display: block; font-weight: 500; color: #64748b; }
+        .rtl-body b { display: block; font-size: 8.2pt; }
+        .rtl-body span { font-size: 7.4pt; color: #475569; }
+        .rbadge { font-size: 6.8pt; padding: 1px 6px; border-radius: 99px; font-weight: 700; vertical-align: middle; }
+        .a4-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 6.9pt; }
+        .a4-table thead { display: table-header-group; }
+        .a4-table tr { break-inside: avoid; }
+        .a4-table tbody tr:nth-child(even) { background: #f8fafc; }
+        .a4-table th, .a4-table td { border: 1px solid #cbd5e1; padding: 4px 4px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .a4-table td.wrap { white-space: normal; word-break: break-word; }
+        .a4-table th { background: #dbeafe; font-weight: 700; color: #0f172a; }
+        .a4-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .a4-table tfoot td { background: #eff6ff; font-weight: 700; }
+        .rpill { padding: 2px 7px; border-radius: 99px; font-size: 6.8pt; font-weight: 700; }
+        .rpill.ok { background: #dcfce7; color: #166534; }
+        .rpill.mid { background: #fef3c7; color: #92400e; }
+        .rpill.pend { background: #f1f5f9; color: #475569; }
+        .rparams-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .rbox { border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px 14px; background: #f8fafc; display: grid; gap: 5px; font-size: 8.4pt; }
+        .rbox h3 { margin: 0 0 4px; font-size: 9.8pt; color: #1e293b; }
+      </style></head><body>
+      <header class="rhead">
+        <div>
+          <h1>💼 Relatório Executivo — ${esc(state.title || "My Plan")}</h1>
+          <div class="rhead-sub">Período: ${minISO} a ${maxISO} · ${sorted.length} cartões · My Plan Profissional</div>
+        </div>
+        <div class="rhead-meta">Gerado em ${new Date().toLocaleDateString("pt-BR")}<br>My Plan Executivo</div>
+      </header>
+      <section class="rsec">
+        <h2><span class="rsec-num">1</span> Dashboard Executivo &amp; Fluxo de Caixa</h2>
+        <div class="rkpis">${kpisHtml}</div>
+      </section>
+      <section class="rsec">
+        <h2><span class="rsec-num">2</span> Quadro Kanban por Listas</h2>
+        ${kanbanHtml}
+      </section>
+      <section class="rsec rsec-break">
+        <h2><span class="rsec-num">3</span> Cronograma Gráfico de Gantt (Horizontal)</h2>
+        ${ganttHtml}
+      </section>
+      <section class="rsec rsec-break">
+        <h2><span class="rsec-num">4</span> Linha do Tempo Executiva</h2>
+        <div class="rtl-list">${timelineHtml}</div>
+      </section>
+      <section class="rsec rsec-break">
+        <h2><span class="rsec-num">5</span> Checklist Executivo (${doneChk}/${(state.checklist || []).length})</h2>
+        ${checklistHtml}
+      </section>
+      <section class="rsec rsec-break">
+        <h2><span class="rsec-num">6</span> Planilha Completa (A4 Horizontal)</h2>
+        ${tableHtml}
+      </section>
+      <section class="rsec rsec-break">
+        <h2><span class="rsec-num">7</span> Parâmetros &amp; Metas do Projeto</h2>
+        ${paramsHtml}
+      </section>
+      </body></html>`;
+    return printHtmlInFrame(html, false);
+  }
+
   window.FeriasReport = {
     exportGanttImage,
     exportGanttPdf,
+    printTimelinePdf,
     printTableLandscape,
+    printProTableLandscape,
     printFullTripReport,
+    printFullProReport,
     renderWalletPassCanvas
   };
 })();

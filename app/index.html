@@ -1,21 +1,21 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="dark">
+<html lang="pt-BR" data-theme="dark" data-mode="personal">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>Férias Pro</title>
-<meta name="description" content="Férias Pro: planejamento inteligente de férias com IA Gemini, Gantt horizontal, Google Maps, Google Agenda, Carteira do Google e WhatsApp.">
+<title>My Plan</title>
+<meta name="description" content="My Plan: planejamento pessoal e profissional com Quadro Trello, Gantt avançado em tela cheia, Fluxo de Caixa, Google Maps, Google Agenda, Carteira do Google e IA Gemini.">
 <meta name="theme-color" content="#0b0f1a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Férias Pro">
-<link rel="manifest" href="/manifest.webmanifest?v=27">
+<meta name="apple-mobile-web-app-title" content="My Plan">
+<link rel="manifest" href="/manifest.webmanifest?v=29">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=29">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=27">
+<link rel="stylesheet" href="styles.css?v=29">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,16 +27,12 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="22" height="22" fill="none">
-            <path d="M16 4.5C11.3056 4.5 7.5 8.25 7.5 12.88C7.5 19.12 16 27.5 16 27.5C16 27.5 24.5 19.12 24.5 12.88C24.5 8.25 20.6944 4.5 16 4.5Z" stroke="white" stroke-width="2.2" stroke-linejoin="round"/>
-            <circle cx="16" cy="12.75" r="3.25" fill="white"/>
-            <path d="M9 26.5C11.2 25.5 13.5 25 16 25C18.5 25 20.8 25.5 23 26.5" stroke="white" stroke-opacity="0.7" stroke-width="1.8" stroke-linecap="round"/>
-          </svg>
+          <img src="icons/icon.svg?v=29" alt="" width="30" height="30" class="brand-logo-img">
         </span>
-        <h1>Férias Pro</h1>
+        <h1>My Plan</h1>
       </div>
       <div class="auth-top-actions">
-        <a href="/como-usar.html" class="btn ghost small btn-learn-more" title="Conheça todos os recursos do Férias Pro">📖 Saiba mais</a>
+        <a href="/como-usar.html" class="btn ghost small btn-learn-more" title="Conheça todos os recursos do My Plan">📖 Saiba mais</a>
         <button type="button" class="btn ghost icon-only" id="authThemeBtn" title="Alternar Dia/Noite">☀️</button>
       </div>
     </div>
@@ -136,27 +132,28 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <svg viewBox="0 0 32 32" width="20" height="20" fill="none">
-              <path d="M16 4.5C11.3056 4.5 7.5 8.25 7.5 12.88C7.5 19.12 16 27.5 16 27.5C16 27.5 24.5 19.12 24.5 12.88C24.5 8.25 20.6944 4.5 16 4.5Z" stroke="white" stroke-width="2.2" stroke-linejoin="round"/>
-              <circle cx="16" cy="12.75" r="3.25" fill="white"/>
-              <path d="M9 26.5C11.2 25.5 13.5 25 16 25C18.5 25 20.8 25.5 23 26.5" stroke="white" stroke-opacity="0.7" stroke-width="1.8" stroke-linecap="round"/>
-            </svg>
+            <img src="icons/icon.svg?v=29" alt="" width="30" height="30" class="brand-logo-img">
           </span>
-          <h1 id="appBrand">Férias Pro</h1>
+          <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
 
         <div class="trip-switcher">
-          <div id="tripSelectWrap" class="msel-host msel-trip" aria-label="Selecionar planejamentos de férias"></div>
-          <button type="button" class="btn ghost small icon-compact" id="btnNewTrip" title="Criar nova viagem">
+          <div id="tripSelectWrap" class="msel-host msel-trip" aria-label="Selecionar planejamentos"></div>
+          <button type="button" class="btn ghost small icon-compact" id="btnNewTrip" title="Criar novo planejamento">
             <svg class="plus-ico" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
           </button>
         </div>
       </div>
 
       <div class="actions">
+        <button type="button" class="btn small mode-switch-btn" id="btnModeSwitch" title="Alternar entre Modo Pessoal e Modo Profissional">
+          <span class="mode-switch-ico" aria-hidden="true">💼</span>
+          <span class="mode-switch-full">Mudar para Profissional</span>
+          <span class="mode-switch-short">Pro</span>
+        </button>
         <button class="btn ghost small invite-pill" id="btnPendingInvites" type="button" hidden>📩 <span id="inviteCount">0</span></button>
-        <a class="btn ghost small btn-learn-more" id="btnTopLearnMore" href="/como-usar.html" title="Conheça todas as funções e saiba como usar o Férias Pro">📖 <span class="hide-sm">Saiba mais</span></a>
-        <button class="btn ai-pill small" id="btnAiPlan" type="button" title="Planejar viagem com IA (Áudio, Imagens e Texto)">✨ <span class="hide-sm">IA</span></button>
+        <a class="btn ghost small btn-learn-more" id="btnTopLearnMore" href="/como-usar.html" title="Conheça todas as funções e saiba como usar o My Plan">📖 <span class="hide-sm">Saiba mais</span></a>
+        <button class="btn ai-pill small" id="btnAiPlan" type="button" title="Planejar com IA (Áudio, Imagens e Texto)">✨ <span class="hide-sm">IA</span></button>
         <button class="btn ghost sync-pill sync-dot-only" id="syncBadge" type="button" title="Sincronizado com a nuvem" aria-label="Status da sincronização">
           <span class="sync-dot" aria-hidden="true"></span>
           <span class="sync-text" id="syncText" hidden>Sincronizado</span>
@@ -164,9 +161,9 @@
         <button class="btn ghost icon-only theme-toggle-mini" id="btnTheme" type="button" title="Alternar modo Dia / Noite" aria-label="Alternar tema Dia/Noite">
           <span id="themeIcon" aria-hidden="true">☀️</span>
         </button>
-        <button class="btn primary small btn-add-top" id="btnAdd" type="button" title="Adicionar evento ou viagem">
+        <button class="btn primary small btn-add-top" id="btnAdd" type="button" title="Adicionar evento ou atividade">
           <svg class="plus-ico" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
-          <span class="btn-text">Evento</span>
+          <span class="btn-text" id="btnAddLabel">Evento</span>
         </button>
         <div class="dropdown">
           <button class="btn ghost small" id="btnMenu" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções">⋯</button>
@@ -174,38 +171,39 @@
             <div class="menu-user" id="menuUserInfo"></div>
             <div class="menu-sync-row" id="menuSyncStatus">🟢 Sincronizado na nuvem</div>
             <hr>
-            <button type="button" id="btnPrintReport">🖨️ Imprimir relatório da viagem</button>
+            <button type="button" id="btnPrintReport">🖨️ Imprimir relatório completo</button>
             <button type="button" id="btnMenuProfile" class="menu-icon-row">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.8 3.6-6 8-6s8 2.2 8 6"/></svg>
               <span>Meu Perfil &amp; Credenciais</span>
             </button>
             <button type="button" id="btnShareTrip" class="menu-icon-row">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="3.5"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.25a3.5 3.5 0 0 1 0 6.5"/></svg>
-              <span>Compartilhar viagem</span>
+              <span id="btnShareTripLabel">Compartilhar viagem</span>
             </button>
             <button type="button" id="btnMenuCrossings" hidden>🔀 Cruzamentos de Viagens</button>
             <button type="button" id="btnMenuAdmin" hidden>🛡️ Admin (Super Painel)</button>
             <button type="button" id="btnMenuWhatsApp">💬 Enviar p/ meu WhatsApp</button>
-            <button type="button" id="btnMenuCalendarAll">📅 Enviar férias p/ Google Agenda</button>
-            <a href="/como-usar.html" class="menu-link">📖 Como utilizar o Férias Pro</a>
+            <button type="button" id="btnMenuCalendarAll">📅 Enviar p/ Google Agenda</button>
+            <a href="/como-usar.html" class="menu-link">📖 Como utilizar o My Plan</a>
             <hr>
-            <button type="button" id="btnMenuInstall" hidden>📲 Instalar aplicativo Férias Pro</button>
+            <button type="button" id="btnMenuInstall" hidden>📲 Instalar aplicativo My Plan</button>
             <button type="button" id="btnMenuAiPlan">✨ Planejar com IA (Áudio/Imagens)</button>
+            <button type="button" id="btnMenuImportCalImg">🖼️ Importar calendário por imagem (IA)</button>
             <button type="button" id="btnExportIcs">📆 Baixar Agenda (.ics)</button>
             <button type="button" id="btnExportXlsx">⬇️ Exportar Excel (.xlsx)</button>
             <button type="button" id="btnExportJson">💾 Backup (.json)</button>
             <button type="button" id="btnImportJson">📂 Restaurar backup</button>
             <button type="button" id="btnImportXlsx">📥 Importar planilha original</button>
             <hr>
-            <button type="button" id="btnRenameTrip">✏️ Renomear viagem atual</button>
-            <button type="button" id="btnDeleteTrip" class="danger">🗑️ Excluir viagem atual</button>
+            <button type="button" id="btnRenameTrip">✏️ Renomear planejamento atual</button>
+            <button type="button" id="btnDeleteTrip" class="danger">🗑️ Excluir planejamento atual</button>
             <button type="button" id="btnLogout" class="danger">🚪 Sair da conta</button>
           </div>
         </div>
       </div>
     </div>
 
-    <nav class="tabs" id="tabs" aria-label="Navegação principal">
+    <nav class="tabs" id="tabs" aria-label="Navegação pessoal">
       <button class="tab active" data-view="gantt" id="tab-gantt" type="button">📅 Cronograma</button>
       <button class="tab" data-view="dashboard" id="tab-dashboard" type="button">📊 Dashboard</button>
       <button class="tab" data-view="finance" id="tab-finance" type="button">💰 Financeiro</button>
@@ -213,6 +211,17 @@
       <button class="tab" data-view="params" id="tab-params" type="button">⚙️ Parâmetros</button>
       <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
       <button class="tab tab-admin" data-view="admin" id="tab-admin" type="button" hidden>🛡️ Admin</button>
+    </nav>
+
+    <nav class="tabs tabs-pro" id="tabsPro" aria-label="Navegação profissional" hidden>
+      <button class="tab active" data-pro-view="pro-board" id="tab-pro-board" type="button">🗂️ Quadro</button>
+      <button class="tab" data-pro-view="pro-gantt" id="tab-pro-gantt" type="button">📅 Gantt &amp; Timeline</button>
+      <button class="tab" data-pro-view="pro-dashboard" id="tab-pro-dashboard" type="button">📊 Dashboard</button>
+      <button class="tab" data-pro-view="pro-finance" id="tab-pro-finance" type="button">💼 Financeiro</button>
+      <button class="tab" data-pro-view="pro-table" id="tab-pro-table" type="button">🧾 Tabela</button>
+      <button class="tab" data-pro-view="pro-params" id="tab-pro-params" type="button">⚙️ Parâmetros</button>
+      <button class="tab" data-pro-view="pro-checklist" id="tab-pro-checklist" type="button">✅ Checklist</button>
+      <button class="tab tab-admin" data-pro-view="admin" id="tab-pro-admin" type="button" hidden>🛡️ Admin</button>
     </nav>
   </header>
 
@@ -233,25 +242,38 @@
             <span class="pill" id="tripRoleBadge" hidden>Compartilhada</span>
           </div>
           <div class="gantt-controls">
-            <div class="gantt-filter-pair" role="group" aria-label="Filtros por tipo e tag">
+            <div class="gantt-filter-pair" role="group" aria-label="Filtros por tipo, tag e período">
               <div id="ganttTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no cronograma"></div>
               <div id="ganttTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no cronograma"></div>
+              <label class="date-filter-chip" title="Filtrar a partir da data">
+                <span>De</span>
+                <input type="date" id="ganttDateFrom" aria-label="Data inicial do filtro">
+              </label>
+              <label class="date-filter-chip" title="Filtrar até a data">
+                <span>Até</span>
+                <input type="date" id="ganttDateTo" aria-label="Data final do filtro">
+              </label>
+              <button type="button" class="btn ghost small icon-compact" id="btnGanttClearFilters" title="Limpar filtros de tipo, tag e data" hidden>✕</button>
             </div>
+            <button type="button" class="btn ghost small unified-toggle-btn" id="btnGanttUnified" aria-pressed="false" title="Ver calendário Pessoal + Profissional juntos para identificar conflitos">🔀 <span class="hide-xs">Agenda Completa</span></button>
             <div class="seg" id="ganttModeSeg" role="group" aria-label="Modo de visualização">
               <button type="button" class="active" data-gmode="gantt">Gantt</button>
               <button type="button" data-gmode="timeline">Linha do Tempo</button>
             </div>
-            <div class="seg" id="ganttZoomSeg" role="group" aria-label="Zoom do calendário">
-              <button type="button" data-zoom="38" title="Compacto">P</button>
-              <button type="button" class="active" data-zoom="50" title="Médio">M</button>
-              <button type="button" data-zoom="66" title="Grande">G</button>
+            <div class="gantt-zoom-group" id="ganttZoomGroup" role="group" aria-label="Zoom do Gantt">
+              <button type="button" class="btn ghost small icon-compact" id="btnGanttZoomOut" title="Zoom Out (afastar)">−</button>
+              <button type="button" class="btn ghost small gantt-zoom-readout" id="btnGanttZoomReset" title="Resetar zoom (100%)">100%</button>
+              <button type="button" class="btn ghost small icon-compact" id="btnGanttZoomIn" title="Zoom In (aproximar)">+</button>
+              <button type="button" class="btn ghost small" id="btnGanttFit" title="Ajustar período inteiro na tela">⬌</button>
             </div>
-            <button type="button" class="btn ghost small" id="btnPrintGantt" title="Imprimir ou salvar Gantt em PDF / Imagem horizontal">🖨️ Gantt</button>
+            <button type="button" class="btn ghost small gantt-fs-btn" id="btnGanttFullscreen" title="Ampliar Gantt em tela inteira" aria-pressed="false">⛶ <span class="hide-xs">Tela cheia</span></button>
+            <button type="button" class="btn ghost small gantt-print-btn" id="btnPrintGantt" title="Imprimir ou salvar exatamente o que está visível no Gantt">🖨️ <span class="gantt-print-lbl">Gantt</span><span class="gantt-pdf-lbl">PDF</span></button>
             <button type="button" class="btn ghost small" id="btnGanttToday" title="Ir para o início ou hoje">🎯 Hoje</button>
           </div>
         </div>
 
-        <p class="muted small gantt-hint">Toque em uma barra para editar, anexar, abrir na Agenda ou Carteira do Google.</p>
+        <div id="ganttUnifiedBar" class="unified-status-bar" hidden></div>
+        <p class="muted small gantt-hint">Toque em uma barra para editar, anexar, abrir na Agenda ou Carteira do Google. Zoom abaixo de 44% agrupa por semana.</p>
 
         <div class="gantt-wrap" id="ganttWrap">
           <div id="gantt" class="gantt"></div>
@@ -262,6 +284,20 @@
 
     <!-- DASHBOARD -->
     <section class="view" id="view-dashboard">
+      <div class="view-filter-bar" aria-label="Filtros do dashboard">
+        <span class="vf-title">🔍 Filtros</span>
+        <div id="dashTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no dashboard"></div>
+        <div id="dashTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no dashboard"></div>
+        <label class="date-filter-chip" title="Filtrar a partir da data">
+          <span>De</span>
+          <input type="date" id="dashDateFrom" aria-label="Data inicial no dashboard">
+        </label>
+        <label class="date-filter-chip" title="Filtrar até a data">
+          <span>Até</span>
+          <input type="date" id="dashDateTo" aria-label="Data final no dashboard">
+        </label>
+        <button type="button" class="btn ghost small" id="btnDashClearFilters" hidden>✕ Limpar filtros</button>
+      </div>
       <div class="kpis" id="kpis"></div>
 
       <div class="grid2">
@@ -312,6 +348,20 @@
 
     <!-- FINANCEIRO (LINHA DO TEMPO DIÁRIA, GRÁFICOS E CONTROLE REAL) -->
     <section class="view" id="view-finance">
+      <div class="view-filter-bar" aria-label="Filtros do financeiro">
+        <span class="vf-title">🔍 Filtros</span>
+        <div id="finTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no financeiro"></div>
+        <div id="finTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no financeiro"></div>
+        <label class="date-filter-chip" title="Filtrar a partir da data">
+          <span>De</span>
+          <input type="date" id="finDateFrom" aria-label="Data inicial no financeiro">
+        </label>
+        <label class="date-filter-chip" title="Filtrar até a data">
+          <span>Até</span>
+          <input type="date" id="finDateTo" aria-label="Data final no financeiro">
+        </label>
+        <button type="button" class="btn ghost small" id="btnFinClearFilters" hidden>✕ Limpar filtros</button>
+      </div>
       <div class="kpis fin-kpis" id="finKpis"></div>
 
       <div class="fin-expand-bar">
@@ -608,6 +658,351 @@
       </div>
     </section>
 
+    <!-- MODO PROFISSIONAL: QUADRO KANBAN (ESTILO TRELLO) -->
+    <section class="view" id="view-pro-board">
+      <div class="card pro-board-toolbar-card">
+        <div class="pro-board-toolbar">
+          <div class="pro-board-title-group">
+            <h2 id="proBoardTitle">Quadro de Projetos</h2>
+            <span class="pill" id="proBoardRoleBadge" hidden>Compartilhado</span>
+          </div>
+          <div class="pro-board-filters">
+            <input type="search" id="proBoardSearch" placeholder="🔎 Buscar cartão, cliente ou nota...">
+            <div id="proBoardTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no quadro"></div>
+            <div id="proBoardLabelFilter" class="msel-host msel-compact" aria-label="Filtrar etiquetas no quadro"></div>
+            <select id="proBoardPrioFilter" aria-label="Filtrar prioridade no quadro">
+              <option value="">Todas prioridades</option>
+              <option value="Crítica">Crítica</option>
+              <option value="Alta">Alta</option>
+              <option value="Média">Média</option>
+              <option value="Baixa">Baixa</option>
+            </select>
+            <button type="button" class="btn ghost small" id="btnProBoardAddCol">➕ Nova Lista</button>
+            <button type="button" class="btn primary small" id="btnProBoardAdd">➕ Novo Cartão</button>
+          </div>
+        </div>
+      </div>
+      <div class="pro-board-scroll" id="proBoardScroll">
+        <div id="proBoard" class="pro-board"></div>
+      </div>
+    </section>
+
+    <!-- MODO PROFISSIONAL: GANTT AVANÇADO & LINHA DO TEMPO -->
+    <section class="view" id="view-pro-gantt">
+      <div class="card gantt-card" id="proGanttCard">
+        <div class="gantt-header">
+          <div class="gantt-title-group">
+            <h2 id="proGanttPlanTitle">Gantt Profissional</h2>
+            <button type="button" class="btn primary small btn-add-event-gantt" id="btnProAddCardGantt" title="Adicionar novo cartão profissional">
+              <svg class="plus-ico" viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
+              <span>Novo Cartão</span>
+            </button>
+            <span class="pill" id="proTripRoleBadge" hidden>Compartilhado</span>
+          </div>
+          <div class="gantt-controls">
+            <div class="gantt-filter-pair" role="group" aria-label="Filtros profissionais">
+              <div id="proGanttTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no Gantt profissional"></div>
+              <div id="proGanttColFilter" class="msel-host msel-compact" aria-label="Filtrar listas no Gantt profissional"></div>
+              <div id="proGanttTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no Gantt profissional"></div>
+              <label class="date-filter-chip" title="Filtrar a partir da data">
+                <span>De</span>
+                <input type="date" id="proGanttDateFrom" aria-label="Data inicial no Gantt profissional">
+              </label>
+              <label class="date-filter-chip" title="Filtrar até a data">
+                <span>Até</span>
+                <input type="date" id="proGanttDateTo" aria-label="Data final no Gantt profissional">
+              </label>
+              <button type="button" class="btn ghost small icon-compact" id="btnProGanttClearFilters" title="Limpar filtros de tipo, tag e data" hidden>✕</button>
+            </div>
+            <button type="button" class="btn ghost small unified-toggle-btn" id="btnProGanttUnified" aria-pressed="false" title="Ver calendário Profissional + Pessoal juntos para identificar conflitos">🔀 <span class="hide-xs">Agenda Completa</span></button>
+            <div class="seg" id="proGanttModeSeg" role="group" aria-label="Modo de visualização">
+              <button type="button" class="active" data-pgmode="gantt">Gantt</button>
+              <button type="button" data-pgmode="timeline">Linha do Tempo</button>
+            </div>
+            <div class="seg" id="proGanttGroupSeg" role="group" aria-label="Agrupamento no Gantt">
+              <button type="button" class="active" data-pgroup="none" title="Ordem cronológica">Crono</button>
+              <button type="button" data-pgroup="column" title="Agrupar por Lista Trello">Por Lista</button>
+              <button type="button" data-pgroup="type" title="Agrupar por Tipo">Por Tipo</button>
+            </div>
+            <div class="gantt-zoom-group" id="proGanttZoomGroup" role="group" aria-label="Zoom do Gantt profissional">
+              <button type="button" class="btn ghost small icon-compact" id="btnProGanttZoomOut" title="Zoom Out (afastar)">−</button>
+              <button type="button" class="btn ghost small gantt-zoom-readout" id="btnProGanttZoomReset" title="Resetar zoom (100%)">100%</button>
+              <button type="button" class="btn ghost small icon-compact" id="btnProGanttZoomIn" title="Zoom In (aproximar)">+</button>
+              <button type="button" class="btn ghost small" id="btnProGanttFit" title="Ajustar período inteiro na tela">⬌</button>
+            </div>
+            <button type="button" class="btn ghost small gantt-fs-btn" id="btnProGanttFullscreen" title="Ampliar Gantt em tela inteira" aria-pressed="false">⛶ <span class="hide-xs">Tela cheia</span></button>
+            <button type="button" class="btn ghost small gantt-print-btn" id="btnProPrintGantt" title="Imprimir ou salvar exatamente o que está visível no Gantt">🖨️ <span class="gantt-print-lbl">Gantt</span><span class="gantt-pdf-lbl">PDF</span></button>
+            <button type="button" class="btn ghost small" id="btnProGanttToday" title="Ir para hoje">🎯 Hoje</button>
+          </div>
+        </div>
+        <div id="proGanttUnifiedBar" class="unified-status-bar" hidden></div>
+        <p class="muted small gantt-hint">Arraste barras para reprogramar datas, puxe a borda direita para ajustar duração ou clique para abrir o cartão. Zoom abaixo de 44% agrupa por semana.</p>
+        <div class="gantt-wrap" id="proGanttWrap">
+          <div id="proGantt" class="gantt"></div>
+        </div>
+        <div id="proTimelineWrap" class="timeline-wrap" hidden></div>
+      </div>
+    </section>
+
+    <!-- MODO PROFISSIONAL: DASHBOARD EXECUTIVO -->
+    <section class="view" id="view-pro-dashboard">
+      <div class="view-filter-bar" aria-label="Filtros do dashboard profissional">
+        <span class="vf-title">🔍 Filtros</span>
+        <div id="proDashTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no dashboard profissional"></div>
+        <div id="proDashTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no dashboard profissional"></div>
+        <label class="date-filter-chip" title="Filtrar a partir da data">
+          <span>De</span>
+          <input type="date" id="proDashDateFrom" aria-label="Data inicial no dashboard profissional">
+        </label>
+        <label class="date-filter-chip" title="Filtrar até a data">
+          <span>Até</span>
+          <input type="date" id="proDashDateTo" aria-label="Data final no dashboard profissional">
+        </label>
+        <button type="button" class="btn ghost small" id="btnProDashClearFilters" hidden>✕ Limpar filtros</button>
+      </div>
+      <div class="kpis" id="proDashKpis"></div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-head">
+            <h2>📅 Próximos Compromissos &amp; Prazos</h2>
+            <button type="button" class="btn ghost small" id="btnProDashAddCard">➕ Novo Cartão</button>
+          </div>
+          <ul class="upcoming" id="proUpcoming"></ul>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>💼 Resumo Financeiro &amp; Agenda</h2>
+            <span class="muted small" id="proDashMarginBadge"></span>
+          </div>
+          <div id="proDashFinance"></div>
+          <div class="maps-actions-row split-actions">
+            <button type="button" class="btn primary" id="btnProDashCal">📅 Sincronizar Google Agenda</button>
+            <button type="button" class="btn wa-pill" id="btnProDashWhatsApp">💬 Enviar Resumo p/ WhatsApp</button>
+          </div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="card">
+          <div class="card-head">
+            <h2>🗂️ Distribuição por Lista (Funil Trello)</h2>
+            <span class="muted small">Clique para filtrar</span>
+          </div>
+          <div id="proStageBars" class="tripbars"></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>📊 Carga por Tipo &amp; Categoria</h2>
+            <span class="muted small">Volume e financeiro</span>
+          </div>
+          <div id="proTypeBars" class="tripbars"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODO PROFISSIONAL: FINANCEIRO EXECUTIVO (FLUXO DE CAIXA) -->
+    <section class="view" id="view-pro-finance">
+      <div class="view-filter-bar" aria-label="Filtros do financeiro profissional">
+        <span class="vf-title">🔍 Filtros</span>
+        <div id="proFinTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no financeiro profissional"></div>
+        <div id="proFinTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no financeiro profissional"></div>
+        <label class="date-filter-chip" title="Filtrar a partir da data">
+          <span>De</span>
+          <input type="date" id="proFinDateFrom" aria-label="Data inicial no financeiro profissional">
+        </label>
+        <label class="date-filter-chip" title="Filtrar até a data">
+          <span>Até</span>
+          <input type="date" id="proFinDateTo" aria-label="Data final no financeiro profissional">
+        </label>
+        <button type="button" class="btn ghost small" id="btnProFinClearFilters" hidden>✕ Limpar filtros</button>
+      </div>
+      <div class="kpis fin-kpis" id="proFinKpis"></div>
+      <div class="card fin-controls-card">
+        <div class="card-head">
+          <div>
+            <h2>💼 Fluxo de Caixa Profissional (Recebimentos × Despesas)</h2>
+            <p class="muted small">Recebimentos, viagens corporativas e despesas cadastradas nos cartões entram automaticamente aqui. Liquide com 1 clique.</p>
+          </div>
+          <div class="inline-actions">
+            <button type="button" class="btn primary small" id="btnProFinAddIncome">💵 + Recebimento</button>
+            <button type="button" class="btn ghost small" id="btnProFinAddExpense">💳 + Despesa</button>
+          </div>
+        </div>
+        <div class="pro-fin-bar-row">
+          <div class="seg" id="proFinFilterSeg" role="group" aria-label="Filtrar lançamentos financeiros">
+            <button type="button" class="active" data-pffilter="all">Todos</button>
+            <button type="button" data-pffilter="income">Recebimentos (+)</button>
+            <button type="button" data-pffilter="expense">Despesas (−)</button>
+            <button type="button" data-pffilter="pending">Previstos</button>
+            <button type="button" data-pffilter="settled">Liquidados</button>
+          </div>
+          <div id="proFinMetaBanner" class="muted small"></div>
+        </div>
+      </div>
+
+      <div class="card fin-chart-card">
+        <div class="card-head">
+          <div>
+            <h2>📊 Fluxo Diário: Entradas vs Saídas</h2>
+            <p class="muted small">Visualize o saldo diário previsto e realizado ao longo do projeto.</p>
+          </div>
+        </div>
+        <div class="fin-legend">
+          <span><i style="background:#10b981"></i> Recebimentos (+)</span>
+          <span><i style="background:#ef4444"></i> Despesas (−)</span>
+          <span><i style="background:#38bdf8"></i> Saldo Acumulado</span>
+        </div>
+        <div class="fin-chart-scroll" id="proFinChartScroll">
+          <div class="fin-chart" id="proFinChart"></div>
+        </div>
+      </div>
+
+      <div class="card fin-timeline-card">
+        <div class="card-head">
+          <h2>📅 Linha do Tempo de Recebimentos &amp; Despesas</h2>
+          <span class="muted small" id="proFinTimelineSpan"></span>
+        </div>
+        <div id="proFinTimeline" class="fin-timeline-list"></div>
+      </div>
+    </section>
+
+    <!-- MODO PROFISSIONAL: TABELA EXECUTIVA -->
+    <section class="view" id="view-pro-table">
+      <div class="card">
+        <div class="card-head">
+          <h2>Tabela Executiva</h2>
+          <div class="filters">
+            <input type="search" id="proSearch" placeholder="🔎 Buscar cartão, cliente, nota...">
+            <div id="proFilterCol" class="msel-host msel-compact" aria-label="Filtrar listas na tabela"></div>
+            <div id="proFilterType" class="msel-host msel-compact" aria-label="Filtrar tipos na tabela"></div>
+            <div id="proFilterTag" class="msel-host msel-compact" aria-label="Filtrar tags na tabela"></div>
+            <select id="proFilterPrio" aria-label="Filtrar prioridade na tabela">
+              <option value="">Prioridade: Todas</option>
+              <option value="Crítica">Crítica</option>
+              <option value="Alta">Alta</option>
+              <option value="Média">Média</option>
+              <option value="Baixa">Baixa</option>
+            </select>
+            <button type="button" class="btn ghost small" id="btnProTableAdd">➕ Novo Cartão</button>
+            <button type="button" class="btn primary small" id="btnProTablePdf">📄 Baixar Tabela (A4 Horizontal)</button>
+          </div>
+        </div>
+        <p class="muted small">Edite lista, datas, progresso %, prioridade, valor e status diretamente na planilha. Tudo sincroniza com o Quadro Trello, Gantt e Fluxo de Caixa.</p>
+        <div class="table-wrap desktop-table-wrap"><table id="proMainTable"></table></div>
+        <div id="proMobileTableCards" class="mobile-cards"></div>
+      </div>
+    </section>
+
+    <!-- MODO PROFISSIONAL: PARÂMETROS & ESTRUTURA TRELLO -->
+    <section class="view" id="view-pro-params">
+      <div id="proParamsMultiNote" class="fin-redist-banner warn" hidden style="margin-bottom:14px"></div>
+      <div class="grid2">
+        <div class="card">
+          <h2>💼 Projeto, Metas &amp; Parâmetros Financeiros</h2>
+          <div class="params-form">
+            <label class="param-row">
+              <span>Nome do projeto / agenda</span>
+              <input id="pp-title" type="text" placeholder="Ex: Roadmap Q1 2027">
+              <span class="u">nome</span>
+            </label>
+            <label class="param-row">
+              <span>Cliente / Carteira padrão</span>
+              <input id="pp-client" type="text" placeholder="Ex: Conta Corporativa">
+              <span class="u">cliente</span>
+            </label>
+            <label class="param-row">
+              <span>Meta de faturamento</span>
+              <input id="pp-revenueTarget" type="number" step="100" min="0">
+              <span class="u">R$</span>
+            </label>
+            <label class="param-row">
+              <span>Teto / orçamento de custos</span>
+              <input id="pp-costBudget" type="number" step="50" min="0">
+              <span class="u">R$</span>
+            </label>
+            <label class="param-row">
+              <span>Alíquota estimada impostos</span>
+              <input id="pp-taxRatePct" type="number" step="0.5" min="0" max="100">
+              <span class="u">%</span>
+            </label>
+            <label class="param-row">
+              <span>Valor hora técnico (ref.)</span>
+              <input id="pp-hourlyRate" type="number" step="10" min="0">
+              <span class="u">R$/h</span>
+            </label>
+            <label class="param-row">
+              <span>Horário lembrete Agenda</span>
+              <input id="pp-remTime" type="time">
+              <span class="u">h:m</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>🗂️ Listas do Quadro Trello &amp; Etiquetas</h2>
+            <button type="button" class="btn primary small" id="btnProAddColumn">➕ Nova Lista</button>
+          </div>
+          <p class="muted small">Personalize as etapas do seu quadro Kanban e as etiquetas coloridas dos cartões.</p>
+          <div id="proColumnsManager" class="pro-cols-manager"></div>
+          <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
+          <strong style="font-size:0.86rem;display:block;margin-bottom:8px">🏷️ Etiquetas do Quadro</strong>
+          <div id="proLabelsManager" class="pro-labels-manager"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <h2>🤖 IA Gemini, Google Agenda &amp; WhatsApp (Central Profissional)</h2>
+        <div class="grid2" style="margin-top:10px">
+          <div class="gmaps-key-panel" style="margin-top:0">
+            <div class="gmaps-key-head">
+              <strong>✨ Google Gemini AI (Extração de Pautas, Contratos &amp; Áudios)</strong>
+              <span class="pill warn" id="proGeminiStatusBadge">Não configurada</span>
+            </div>
+            <p class="muted small">Use a mesma chave Gemini da sua conta para criar projetos ou preencher cartões por voz/texto/imagem.</p>
+            <div class="key-input-row">
+              <input type="password" id="proGeminiKeyInput" placeholder="Cole sua Gemini API Key (AIza...)" autocomplete="off">
+              <button type="button" class="btn primary small" id="btnProSaveGeminiKey">Salvar IA</button>
+            </div>
+          </div>
+
+          <div class="gmaps-key-panel" style="margin-top:0">
+            <div class="gmaps-key-head">
+              <strong>📅 Google Agenda &amp; 💬 WhatsApp</strong>
+              <span class="pill" id="proCalBadge">Lembrete 09:00</span>
+            </div>
+            <p class="muted small">Sincronize entregas, reuniões e viagens corporativas na sua Agenda Google ou envie o resumo executivo no WhatsApp.</p>
+            <div class="key-actions-row">
+              <button type="button" class="btn primary small" id="btnProSyncAllCalendar">📅 Sincronizar / Assinar Agenda</button>
+              <button type="button" class="btn ghost small" id="btnProDownloadAllIcs">📆 Baixar .ics</button>
+              <button type="button" class="btn ghost small" id="btnProParamProfile">💬 WhatsApp &amp; Perfil</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODO PROFISSIONAL: CHECKLIST EXECUTIVO -->
+    <section class="view" id="view-pro-checklist">
+      <div class="card">
+        <div class="card-head">
+          <h2>Checklist Executivo <span id="proCheckProgress" class="pill"></span></h2>
+          <div class="inline-actions">
+            <select id="proFilterChecklist" aria-label="Filtrar checklist profissional">
+              <option value="">Todos</option>
+              <option value="Pendente">Pendentes</option>
+              <option value="Em andamento">Em andamento</option>
+              <option value="Concluído">Concluídos</option>
+            </select>
+            <button class="btn primary small" id="btnProAddCheck" type="button">➕ Item</button>
+          </div>
+        </div>
+        <p class="muted small">Arraste pelo ícone <b>⋮⋮</b> (ou use ▲ ▼ no celular) para priorizar entregas e tarefas operacionais.</p>
+        <div class="progress"><div id="proCheckBar"></div></div>
+        <div class="table-wrap desktop-table-wrap"><table id="proCheckTable"></table></div>
+        <div id="proMobileCheckCards" class="mobile-cards"></div>
+      </div>
+    </section>
+
     <!-- PAINEL SUPER ADMIN / ADMIN DELEGADO -->
     <section class="view" id="view-admin">
       <div class="card">
@@ -671,11 +1066,11 @@
 </div>
 
 <!-- POP-UP / BOTÃO INSTALAR APP (PWA) -->
-<div id="pwaInstallBanner" class="pwa-banner" hidden role="dialog" aria-label="Instalar aplicativo Férias Pro">
+<div id="pwaInstallBanner" class="pwa-banner" hidden role="dialog" aria-label="Instalar aplicativo My Plan">
   <div class="pwa-banner-inner">
-    <img src="icons/icon-192.png" alt="Férias Pro" class="pwa-icon">
+    <img src="icons/icon-192.png" alt="My Plan" class="pwa-icon">
     <div class="pwa-text">
-      <strong>📲 Baixar Férias Pro</strong>
+      <strong>📲 Baixar My Plan</strong>
       <span id="pwaPromptDesc" class="muted small">Instale no seu celular para abrir direto como aplicativo com ícone na tela inicial.</span>
     </div>
     <div class="pwa-btns">
@@ -692,6 +1087,14 @@
       <div class="modal-head-left">
         <h2 id="modalTitle">Atividade</h2>
         <button type="button" class="btn ghost small btn-modal-dup" id="btnDuplicate" title="Duplicar esta atividade" hidden>⧉ Duplicar</button>
+        <button type="button" class="btn ghost small btn-modal-google" id="btnHeadCal" title="Adicionar ao Google Agenda (calendário dedicado deste evento)" hidden>
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="3" fill="#ffffff" stroke="#4285F4" stroke-width="2"/><path d="M3 9h18" stroke="#4285F4" stroke-width="2"/><rect x="7" y="2" width="2.2" height="4" rx="1" fill="#EA4335"/><rect x="14.8" y="2" width="2.2" height="4" rx="1" fill="#34A853"/><text x="12" y="18.2" text-anchor="middle" font-size="7.5" font-weight="800" fill="#1d4ed8" font-family="sans-serif">31</text></svg>
+          <span>Agenda</span>
+        </button>
+        <button type="button" class="btn ghost small btn-modal-google" id="btnHeadWallet" title="Abrir diretamente na Carteira do Google" hidden>
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3" fill="#34A853"/><rect x="4.5" y="7" width="15" height="4" rx="1.5" fill="#4285F4"/><rect x="4.5" y="9" width="15" height="4" rx="1.5" fill="#FBBC05"/><rect x="4.5" y="11" width="15" height="6" rx="1.5" fill="#EA4335"/></svg>
+          <span>Carteira</span>
+        </button>
       </div>
       <button type="button" class="icon-btn modal-close" id="btnCloseX" aria-label="Fechar">✕</button>
     </div>
@@ -715,15 +1118,16 @@
     </div>
 
     <div class="form-grid">
-      <label class="span2" id="f-targetTripWrap" hidden>Viagem / Férias de destino
-        <select id="f-targetTrip"></select>
-      </label>
-      <label>Tipo de atividade / meio de locomoção
+      <label class="span2">Tipo de atividade / meio de locomoção
         <select name="type" id="f-type"></select>
       </label>
       <div class="field-box modal-tags-field">
         <label for="f-tagsTrigger">Tags</label>
         <div id="modalTagsHost" class="msel-host" aria-label="Tags da atividade"></div>
+      </div>
+      <div class="field-box" id="f-targetTripWrap">
+        <label for="f-targetTrip">Evento</label>
+        <select id="f-targetTrip" aria-label="Associar ao evento"></select>
       </div>
 
       <label class="span2">Nome / Descrição
@@ -879,19 +1283,6 @@
         <div id="modalAttachList" class="attach-list"></div>
       </div>
 
-      <!-- GOOGLE AGENDA + CARTEIRA DO GOOGLE (POR ATIVIDADE) -->
-      <div class="span2 cal-box">
-        <div class="route-head-row">
-          <span class="route-title">📅 Google Agenda &amp; 💳 Carteira do Google <small class="muted">(lembrete <span id="calRemLabel">09:00</span>)</small></span>
-          <div class="inline-actions">
-            <button type="button" class="btn ghost small" id="btnCalDirect">📅 Enviar p/ Agenda</button>
-            <a class="btn ghost small" id="btnCalLink" target="_blank" rel="noopener">Agenda ↗</a>
-            <button type="button" class="btn ghost small" id="btnCalIcs">⬇️ .ics</button>
-            <button type="button" class="btn primary small" id="btnWalletDirect">💳 Adicionar à Carteira do Google</button>
-          </div>
-        </div>
-      </div>
-
       <label class="span2">Observações<textarea name="notes" id="f-notes" rows="2"></textarea></label>
     </div>
 
@@ -925,13 +1316,18 @@
     <div class="ai-media-bar">
       <button type="button" class="btn primary small" id="btnAiRecordAudio">🎙️ Gravar Áudio</button>
       <span id="aiRecordTimer" class="pill warn" hidden>● Gravando 0:00</span>
+      <div id="aiMicMeterWrap" class="mic-meter-wrap" hidden title="Nível do microfone">
+        <div id="aiMicMeter" class="mic-meter-fill"></div>
+      </div>
       <button type="button" class="btn ghost small" id="btnAiUploadMedia">📎 Anexar Imagens / Áudios / PDFs</button>
       <input type="file" id="aiMediaInput" multiple accept="image/*,audio/*,.pdf" hidden>
     </div>
 
+    <div id="aiAudioPreviewBox" class="ai-audio-preview" hidden></div>
+    <div id="aiTranscriptBox" class="ai-transcript-box" hidden></div>
     <div id="aiMediaList" class="attach-list"></div>
 
-    <label style="display:grid;gap:6px;font-size:0.84rem;color:var(--muted)">Ou descreva sua viagem (rota, dias, carro, voo, parques, hotel):
+    <label style="display:grid;gap:6px;font-size:0.84rem;color:var(--muted)">Ou descreva / edite a transcrição abaixo antes de criar:
       <textarea id="aiPromptText" rows="4" placeholder="Ex: Vou viajar de 10 a 20 de julho de 2027 com 4 pessoas de Brasília para Gramado usando um Haval H6 PHEV, depois pego voo para Porto Alegre e vou ao Beto Carrero..."></textarea>
     </label>
 
@@ -944,19 +1340,98 @@
   </div>
 </dialog>
 
+<!-- MODAL IMPORTAR CALENDÁRIO POR IMAGEM (IA MY PLAN) -->
+<dialog id="aiImportCalModal" class="import-cal-dialog">
+  <div class="modal-head">
+    <h2>🖼️ Importar Calendário por Imagem (IA)</h2>
+    <button type="button" class="icon-btn modal-close" id="btnCloseImportCal" aria-label="Fechar">✕</button>
+  </div>
+  <div class="ai-plan-body">
+    <p class="muted small">Envie 1 ou mais imagens/PDFs de qualquer calendário ou planilha (Excel, agenda mensal, cronograma customizado, print). A IA lê datas e eventos, exibe a prévia e pergunta onde salvar.</p>
+
+    <div class="imp-cal-dropzone" id="impCalDropzone">
+      <input type="file" id="impCalFileInput" multiple accept="image/*,.pdf" hidden>
+      <div class="inline-actions" style="justify-content:center">
+        <button type="button" class="btn primary small" id="btnImpCalPick">📷 Escolher Imagens / PDFs</button>
+        <span class="muted small">ou arraste / cole com Ctrl+V</span>
+      </div>
+      <div id="impCalThumbs" class="imp-cal-thumbs"></div>
+    </div>
+
+    <label class="pro-field-stack">
+      <span>Contexto opcional para ajudar na leitura (ex: ano correto, colunas ou formato)</span>
+      <input type="text" id="impCalHint" placeholder="Ex: Planilha de plantões/projetos de Março de 2027, coluna B é a entrega...">
+    </label>
+
+    <div class="inline-actions" style="justify-content:flex-end">
+      <button type="button" class="btn ai-pill" id="btnImpCalAnalyze">✨ Ler Imagens e Gerar Prévia</button>
+    </div>
+
+    <div id="impCalStatus" class="maps-status"></div>
+
+    <div id="impCalPreviewWrap" class="imp-cal-preview-wrap" hidden>
+      <div id="impCalSummaryBanner" class="fin-redist-banner ok"></div>
+      <div id="impCalWarnings" class="auth-error" hidden></div>
+
+      <div class="imp-cal-dest-box">
+        <span class="pro-side-title">📌 Onde deseja inserir estes eventos?</span>
+        <div class="imp-cal-dest-grid">
+          <label>Destino
+            <select id="impCalDestMode">
+              <option value="new">✨ Criar um novo calendário</option>
+              <option value="existing">📂 Inserir em calendário existente</option>
+            </select>
+          </label>
+          <label id="impCalNewNameWrap">Nome do novo calendário
+            <input type="text" id="impCalNewName" placeholder="Ex: Agenda Q1 2027">
+          </label>
+          <label id="impCalNewModeWrap">Modo do novo calendário
+            <select id="impCalNewMode">
+              <option value="personal">🌴 Modo Pessoal</option>
+              <option value="professional">💼 Modo Profissional</option>
+            </select>
+          </label>
+          <label id="impCalExistingWrap" hidden>Calendário existente (Meus e Compartilhados)
+            <select id="impCalExistingSelect"></select>
+          </label>
+        </div>
+      </div>
+
+      <div class="route-head-row" style="margin-top:4px">
+        <span class="route-title">📋 Prévia dos Eventos Identificados (<b id="impCalSelCount">0</b> selecionados)</span>
+        <div class="inline-actions">
+          <button type="button" class="btn ghost small" id="btnImpCalAll">Marcar todos</button>
+          <button type="button" class="btn ghost small" id="btnImpCalNone">Desmarcar</button>
+        </div>
+      </div>
+      <div id="impCalPreviewList" class="imp-cal-preview-list"></div>
+    </div>
+  </div>
+  <div class="modal-actions">
+    <span class="spacer"></span>
+    <button type="button" class="btn ghost" id="btnCancelImportCal">Cancelar</button>
+    <button type="button" class="btn primary" id="btnImpCalConfirm" hidden>✅ Confirmar Importação</button>
+  </div>
+</dialog>
+
 <!-- MODAL IMPRIMIR / EXPORTAR GANTT HORIZONTAL -->
 <dialog id="ganttPrintModal">
   <form id="ganttPrintForm" method="dialog">
     <div class="modal-head">
-      <h2>🖨️ Imprimir / Exportar Gantt (Horizontal)</h2>
+      <h2>🖨️ Imprimir / Exportar Gantt Atual</h2>
       <button type="button" class="icon-btn modal-close" id="btnCloseGanttPrint" aria-label="Fechar">✕</button>
     </div>
-    <p class="muted small">Selecione exatamente o intervalo de datas desejado. Tudo caberá em <b>1 página na horizontal</b> (PDF A4 paisagem ou Imagem PNG).</p>
+    <p class="muted small">O intervalo abaixo reflete exatamente o que está visível na tela do seu Gantt agora (datas, filtros ativos e nível de detalhe). Tudo cabe em <b>1 página horizontal</b>.</p>
+    <div id="gpViewportBadge" class="gp-viewport-badge" hidden></div>
     <div id="gpQuickChips" class="gp-chips"></div>
     <div class="form-grid" style="margin-top:10px">
       <label>Data inicial<input type="date" id="gp-from" required></label>
       <label>Data final<input type="date" id="gp-to" required></label>
     </div>
+    <label id="gpOnlyVisibleRowsWrap" class="route-cost-toggle" style="margin-top:10px" hidden>
+      <input type="checkbox" id="gpOnlyVisibleRows" checked>
+      <span>Imprimir apenas as linhas atualmente visíveis na janela do Gantt</span>
+    </label>
     <div class="modal-actions">
       <span class="spacer"></span>
       <button type="button" class="btn ghost" id="btnGpImage">🖼️ Baixar Imagem (PNG Horizontal)</button>
@@ -1106,18 +1581,18 @@
   </div>
 </dialog>
 
-<!-- MODAL CRIAR NOVA VIAGEM -->
+<!-- MODAL CRIAR NOVO PLANEJAMENTO -->
 <dialog id="newTripModal">
   <form id="newTripForm" method="dialog">
     <div class="modal-head">
-      <h2>✈️ Criar Nova Viagem / Férias</h2>
+      <h2 id="nt-modalTitle">✈️ Criar Nova Viagem / Férias</h2>
       <button type="button" class="icon-btn modal-close" id="btnCloseNewTrip" aria-label="Fechar">✕</button>
     </div>
     <div class="form-grid">
-      <label class="span2">Nome das férias / viagem
+      <label class="span2"><span id="nt-nameLabel">Nome das férias / viagem</span>
         <input id="nt-name" required placeholder="Ex: Férias Julho 2027, Feriado Carnaval...">
       </label>
-      <label class="span2" style="flex-direction:row;align-items:center;gap:10px;color:var(--text)">
+      <label class="span2" id="nt-copyVehicleWrap" style="flex-direction:row;align-items:center;gap:10px;color:var(--text)">
         <input type="checkbox" id="nt-copyVehicle" checked style="width:18px;height:18px">
         <span>Manter parâmetros do meu carro atual neste novo planejamento</span>
       </label>
@@ -1125,7 +1600,7 @@
     <div class="modal-actions">
       <span class="spacer"></span>
       <button type="button" class="btn ghost" id="btnCancelNewTrip">Cancelar</button>
-      <button type="submit" class="btn primary">Criar do zero</button>
+      <button type="submit" class="btn primary" id="nt-submitBtn">Criar do zero</button>
     </div>
   </form>
 </dialog>
@@ -1284,18 +1759,223 @@
   </form>
 </dialog>
 
+<!-- MODAL CARTÃO PROFISSIONAL ESTILO TRELLO -->
+<dialog id="proCardModal" class="pro-card-dialog">
+  <form id="proCardForm" method="dialog">
+    <div id="proCardCoverBar" class="pro-modal-cover" hidden></div>
+    <div class="modal-head">
+      <div class="modal-head-left">
+        <h2 id="proCardModalTitle">Cartão Profissional</h2>
+        <button type="button" class="btn ghost small btn-modal-dup" id="btnProCardDuplicate" title="Duplicar este cartão" hidden>⧉ Duplicar</button>
+        <button type="button" class="btn ghost small btn-modal-google" id="btnProHeadCal" title="Adicionar ao Google Agenda (calendário dedicado deste projeto)" hidden>
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="3" fill="#ffffff" stroke="#4285F4" stroke-width="2"/><path d="M3 9h18" stroke="#4285F4" stroke-width="2"/><rect x="7" y="2" width="2.2" height="4" rx="1" fill="#EA4335"/><rect x="14.8" y="2" width="2.2" height="4" rx="1" fill="#34A853"/><text x="12" y="18.2" text-anchor="middle" font-size="7.5" font-weight="800" fill="#1d4ed8" font-family="sans-serif">31</text></svg>
+          <span>Agenda</span>
+        </button>
+        <button type="button" class="btn ghost small btn-modal-google" id="btnProHeadWallet" title="Abrir diretamente na Carteira do Google" hidden>
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3" fill="#34A853"/><rect x="4.5" y="7" width="15" height="4" rx="1.5" fill="#4285F4"/><rect x="4.5" y="9" width="15" height="4" rx="1.5" fill="#FBBC05"/><rect x="4.5" y="11" width="15" height="6" rx="1.5" fill="#EA4335"/></svg>
+          <span>Carteira</span>
+        </button>
+      </div>
+      <button type="button" class="icon-btn modal-close" id="btnProCardCloseX" aria-label="Fechar">✕</button>
+    </div>
+
+    <!-- IA GEMINI NO CARTÃO PROFISSIONAL -->
+    <div class="modal-ai-strip" id="proCardAiStrip">
+      <div class="modal-ai-top">
+        <span>✨ Preencher cartão com Gemini IA (áudio, print de e-mail/nota ou descrição)</span>
+        <div class="inline-actions">
+          <button type="button" class="btn ai-pill small" id="btnProCardAiUpload">📷 Imagem / PDF</button>
+          <button type="button" class="btn ghost small" id="btnProCardAiAudio">🎙️ Áudio</button>
+          <button type="button" class="btn ghost small" id="btnProCardAiText">✍️ Descrever</button>
+          <input type="file" id="proCardAiFile" accept="image/*,audio/*,.pdf" hidden>
+        </div>
+      </div>
+      <div class="modal-ai-text-row" id="proCardAiTextRow" hidden>
+        <input type="text" id="proCardAiTextInput" placeholder="Ex: Reunião com Cliente Alpha dia 10/12 às 14h e recebimento R$ 8.500 dia 15/12">
+        <button type="button" class="btn primary small" id="btnProCardAiTextRun">✨ Preencher</button>
+      </div>
+      <div class="modal-ai-status" id="proCardAiStatus" role="status" aria-live="polite" hidden></div>
+    </div>
+
+    <div class="pro-card-modal-grid">
+      <!-- COLUNA ESQUERDA: TÍTULO, DESCRIÇÃO, SUBTAREFAS E ANEXOS -->
+      <div class="pro-card-main-col">
+        <label class="pro-field-stack">
+          <span>Título do cartão *</span>
+          <input id="pc-name" required placeholder="Ex: Desenvolver módulo de relatórios, Reunião diretoria, Viagem SP, Recebimento NF...">
+        </label>
+
+        <label class="pro-field-stack">
+          <span>Descrição / Escopo / Pauta</span>
+          <textarea id="pc-notes" rows="4" placeholder="Escopo detalhado, links de referência, entregáveis ou pauta da reunião..."></textarea>
+        </label>
+
+        <!-- SUBTAREFAS ESTILO TRELLO -->
+        <div class="pro-subtasks-box">
+          <div class="route-head-row">
+            <span class="route-title">☑️ Checklist do Cartão <small class="muted" id="pc-subtasksProgress"></small></span>
+          </div>
+          <div class="progress" style="margin:6px 0 8px"><div id="pc-subtasksBar"></div></div>
+          <div id="pc-subtasksList" class="pro-subtasks-list"></div>
+          <div class="key-input-row" style="margin-top:8px">
+            <input type="text" id="pc-newSubtask" placeholder="Adicionar subtarefa... (Enter)">
+            <button type="button" class="btn ghost small" id="btnProAddSubtask">➕ Adicionar</button>
+          </div>
+        </div>
+
+        <!-- ANEXOS / DOCUMENTOS -->
+        <div class="attach-box">
+          <div class="route-head-row">
+            <span class="route-title">📎 Anexos, Contratos &amp; Links</span>
+            <div class="inline-actions">
+              <button type="button" class="btn ghost small" id="btnProAttachFile">📄 Anexar arquivo</button>
+              <button type="button" class="btn ghost small" id="btnProAttachLink">🔗 Link</button>
+            </div>
+          </div>
+          <input type="file" id="pc-attachInput" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.txt" hidden>
+          <div id="pc-attachList" class="attach-list"></div>
+        </div>
+      </div>
+
+      <!-- COLUNA DIREITA: PROPRIEDADES, DATAS, ETIQUETAS, FINANCEIRO E AGENDA -->
+      <div class="pro-card-side-col">
+        <div class="pro-side-card">
+          <div class="form-grid">
+            <label>Lista (Coluna Trello)
+              <select id="pc-column"></select>
+            </label>
+            <label>Tipo de cartão
+              <select id="pc-type"></select>
+            </label>
+            <label>Data inicial *
+              <input type="date" id="pc-start" required>
+            </label>
+            <label>Data final / Prazo
+              <input type="date" id="pc-end">
+            </label>
+            <label>Hora início
+              <input type="time" id="pc-startTime">
+            </label>
+            <label>Hora fim
+              <input type="time" id="pc-endTime">
+            </label>
+            <label>Prioridade
+              <select id="pc-priority">
+                <option value="Crítica">🔴 Crítica</option>
+                <option value="Alta">🟠 Alta</option>
+                <option value="Média" selected>🔵 Média</option>
+                <option value="Baixa">⚪ Baixa</option>
+              </select>
+            </label>
+            <label><span>Progresso (<b id="pc-progressVal">0%</b>)</span>
+              <input type="range" id="pc-progress" min="0" max="100" step="5" value="0">
+            </label>
+            <label>Cliente / Conta
+              <input type="text" id="pc-client" placeholder="Ex: Cliente Alpha">
+            </label>
+            <label>Responsável
+              <input type="text" id="pc-assignee" placeholder="Ex: Você / Equipe">
+            </label>
+            <label class="span2">Local / Link da Reunião
+              <input type="text" id="pc-location" placeholder="Ex: Meet, Escritório, São Paulo - SP">
+            </label>
+          </div>
+        </div>
+
+        <div class="pro-side-card">
+          <span class="pro-side-title">🎨 Capa &amp; Etiquetas Trello</span>
+          <div id="pc-coverColors" class="pro-cover-swatches"></div>
+          <div id="pc-labelsBox" class="pro-labels-picker" style="margin-top:8px"></div>
+          <div class="form-grid" style="margin-top:8px">
+            <div class="field-box modal-tags-field">
+              <label for="pc-tagsTrigger">Tags</label>
+              <div id="pc-tagsHost" class="msel-host" aria-label="Tags do cartão"></div>
+            </div>
+            <div class="field-box" id="pc-targetTripWrap">
+              <label for="pc-targetTrip">Evento</label>
+              <select id="pc-targetTrip" aria-label="Associar ao evento"></select>
+            </div>
+          </div>
+        </div>
+
+        <div class="pro-side-card">
+          <span class="pro-side-title">💼 Financeiro do Cartão (Fluxo de Caixa)</span>
+          <div class="form-grid" style="margin-top:6px">
+            <label class="span2">Movimento financeiro
+              <select id="pc-finDirection">
+                <option value="none">Sem lançamento financeiro</option>
+                <option value="income">💵 Recebimento / Entrada (+R$)</option>
+                <option value="expense">💳 Despesa / Custo (−R$)</option>
+              </select>
+            </label>
+            <div id="pc-finFieldsRow" class="span2 form-grid inner" hidden>
+              <label>Valor Previsto (R$)
+                <input type="number" step="0.01" min="0" id="pc-amount" placeholder="0,00">
+              </label>
+              <label>Valor Realizado (R$)
+                <input type="number" step="0.01" min="0" id="pc-actualAmount" placeholder="Igual ao previsto">
+              </label>
+              <label>Status
+                <select id="pc-finStatus">
+                  <option value="Previsto">⏳ Previsto</option>
+                  <option value="Liquidado">✅ Liquidado (Recebido/Pago)</option>
+                </select>
+              </label>
+              <label>Data vencimento / caixa
+                <input type="date" id="pc-finDueDate">
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn danger-ghost" id="btnProCardDelete">🗑️ Excluir</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnProCardCancel">Cancelar</button>
+      <button type="submit" class="btn primary" id="btnProCardSave">Salvar Cartão</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- MODAL CRIAR / EDITAR LISTA DO QUADRO TRELLO -->
+<dialog id="proColumnModal">
+  <form id="proColumnForm" method="dialog">
+    <div class="modal-head">
+      <h2 id="proColModalTitle">Nova Lista do Quadro</h2>
+      <button type="button" class="icon-btn modal-close" id="btnProColClose" aria-label="Fechar">✕</button>
+    </div>
+    <div class="form-grid">
+      <label class="span2">Nome da lista / etapa *
+        <input id="pcol-name" required placeholder="Ex: Em Validação, Aguardando Cliente...">
+      </label>
+      <label class="span2">Cor da coluna
+        <input type="color" id="pcol-color" value="#2563eb" style="height:40px;padding:3px">
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn danger-ghost" id="btnProColDelete" hidden>🗑️ Excluir Lista</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnProColCancel">Cancelar</button>
+      <button type="submit" class="btn primary">Salvar Lista</button>
+    </div>
+  </form>
+</dialog>
+
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=27"></script>
-<script src="vehicles.js?v=27"></script>
-<script src="countries.js?v=27"></script>
-<script src="data.js?v=27"></script>
-<script src="maps.js?v=27"></script>
-<script src="calendar.js?v=27"></script>
-<script src="report.js?v=27"></script>
-<script src="api.js?v=27"></script>
-<script src="app.js?v=27"></script>
+<script src="config.example.js?v=29"></script>
+<script src="vehicles.js?v=29"></script>
+<script src="countries.js?v=29"></script>
+<script src="data.js?v=29"></script>
+<script src="maps.js?v=29"></script>
+<script src="calendar.js?v=29"></script>
+<script src="report.js?v=29"></script>
+<script src="api.js?v=29"></script>
+<script src="pro.js?v=29"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>

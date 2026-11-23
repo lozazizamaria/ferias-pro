@@ -1,8 +1,31 @@
-/* ===== Férias Pro — Aplicação Principal ===== */
+/* ===== My Plan — Aplicação Principal (Modo Pessoal + Modo Profissional) ===== */
 const LEGACY_KEY_1 = "ferias-pro-state-v1";
 const LEGACY_KEY_2 = "ferias-planner-v1";
 const THEME_KEY = "ferias-pro-theme";
 const PWA_DISMISS_KEY = "ferias-pro-pwa-dismissed";
+const APP_MODE_KEY = "myplan-app-mode";
+const SELECTED_TRIPS_PRO_KEY = "myplan-selected-trips-pro";
+const GANTT_ZOOM_STEPS = [10, 13, 16, 19, 21, 22, 26, 32, 38, 44, 50, 58, 68, 82, 98, 116];
+
+let appMode = localStorage.getItem(APP_MODE_KEY) === "professional" ? "professional" : "personal";
+let lastPersonalView = "gantt";
+let lastProView = "pro-board";
+let activeGanttPrintCtx = null;
+let ganttUnifiedMode = false;
+let ganttConflictsOnly = false;
+let personalDateFrom = "";
+let personalDateTo = "";
+const unifiedMetaMap = new WeakMap();
+const unifiedConflictMap = new WeakMap();
+const UNIFIED_CAL_PALETTE = ["#2563eb", "#10b981", "#f59e0b", "#ec4899", "#06b6d4", "#8b5cf6", "#ef4444", "#14b8a6", "#f97316", "#6366f1"];
+
+function getTripMode(t) {
+  return (t?.mode || t?.data?.mode) === "professional" ? "professional" : "personal";
+}
+
+function getSelectedTripsStorageKey() {
+  return appMode === "professional" ? SELECTED_TRIPS_PRO_KEY : SELECTED_TRIPS_KEY;
+}
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -25,6 +48,10 @@ const actOriginMap = new WeakMap();
 const MULTI_TRIP_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#06b6d4", "#a78bfa"];
 let ganttTypeMsel = null;
 let ganttTagMsel = null;
+let dashTypeMsel = null;
+let dashTagMsel = null;
+let finTypeMsel = null;
+let finTagMsel = null;
 let tableTypeMsel = null;
 let tableTagMsel = null;
 let modalTagsMsel = null;
@@ -141,22 +168,103 @@ function findActivityContext(id) {
     const act = acts.find(x => x.id === id);
     if (act) return { trip: tr, data: tr.data, activity: act };
   }
+  for (const tr of loadedTripsMap.values()) {
+    const acts = tr?.data?.activities || [];
+    const act = acts.find(x => x.id === id);
+    if (act) return { trip: tr, data: tr.data, activity: act };
+  }
   const fallback = (state.activities || []).find(x => x.id === id);
   return fallback ? { trip: activeTrip, data: state, activity: fallback } : null;
+}
+
+async function resolveTripRefById(tripId) {
+  if (!tripId) return activeTrip;
+  if (loadedTripsMap.has(tripId)) return loadedTripsMap.get(tripId);
+  if (activeTrip && activeTrip.id === tripId) {
+    loadedTripsMap.set(tripId, activeTrip);
+    return activeTrip;
+  }
+  const res = await window.FeriasApi.getTrip(tripId);
+  if (!res || !res.trip) return null;
+  const m = getTripMode(res.trip);
+  const data = m === "professional" && window.MyPlanPro
+    ? window.MyPlanPro.migrateProState(res.trip.data)
+    : migrateState(res.trip.data);
+  const tr = { ...res.trip, mode: m, data };
+  tr.data.title = tr.name || tr.data.title;
+  loadedTripsMap.set(tr.id, tr);
+  return tr;
+}
+
+function populateEventSelect(selEl, mode = "personal", currentTripId = "") {
+  if (!selEl) return;
+  const targetMode = mode === "professional" ? "professional" : "personal";
+  const ownAll = (tripsCache.ownTrips || []).filter(t => getTripMode(t) === targetMode);
+  const sharedAll = (tripsCache.sharedTrips || []).filter(t => getTripMode(t) === targetMode);
+
+  // Fallback offline ou cache vazio
+  const own = [...ownAll];
+  const shared = [...sharedAll];
+  const seen = new Set([...own, ...shared].map(t => t.id));
+  loadedTripsMap.forEach(tr => {
+    if (!seen.has(tr.id) && getTripMode(tr) === targetMode) {
+      seen.add(tr.id);
+      if (tr.role && tr.role !== "owner") shared.push(tr);
+      else own.push(tr);
+    }
+  });
+  if (activeTrip && !seen.has(activeTrip.id) && getTripMode(activeTrip) === targetMode) {
+    seen.add(activeTrip.id);
+    if (activeTrip.role && activeTrip.role !== "owner") shared.push(activeTrip);
+    else own.push(activeTrip);
+  }
+
+  let html = "";
+  if (own.length) {
+    html += `<optgroup label="${targetMode === "professional" ? "Meus Projetos / Eventos" : "Meus Eventos & Viagens"}">`;
+    own.forEach(t => {
+      const title = loadedTripsMap.get(t.id)?.data?.title || t.name || t.data?.title || "Sem nome";
+      html += `<option value="${esc(t.id)}">${esc(title)}</option>`;
+    });
+    html += `</optgroup>`;
+  }
+  if (shared.length) {
+    html += `<optgroup label="Compartilhados comigo">`;
+    shared.forEach(t => {
+      const title = loadedTripsMap.get(t.id)?.data?.title || t.name || t.data?.title || "Compartilhado";
+      const isViewer = t.role === "viewer" && t.id !== currentTripId;
+      const ownerLbl = t.ownerName ? ` · ${t.ownerName}` : "";
+      const roLbl = t.role === "viewer" ? " (somente leitura)" : "";
+      html += `<option value="${esc(t.id)}"${isViewer ? " disabled" : ""}>👥 ${esc(title)}${esc(ownerLbl)}${roLbl}</option>`;
+    });
+    html += `</optgroup>`;
+  }
+  if (!html && activeTrip) {
+    html = `<option value="${esc(activeTrip.id)}">${esc(state.title || activeTrip.name || "Atual")}</option>`;
+  }
+  selEl.innerHTML = html;
+  const pickId = currentTripId && [...selEl.options].some(o => o.value === currentTripId)
+    ? currentTripId
+    : (activeTrip && [...selEl.options].some(o => o.value === activeTrip.id) ? activeTrip.id : (selEl.options[0]?.value || ""));
+  if (pickId) selEl.value = pickId;
 }
 
 function saveTripRecord(targetTrip, msg, skipRender = false) {
   const tr = targetTrip || activeTrip;
   if (tr && tr.role === "viewer") {
-    toast("👁️ Viagem compartilhada somente para visualização.");
+    toast("👁️ Planejamento compartilhado somente para visualização.");
     if (!skipRender) render();
     return false;
   }
   if (tr) {
     tr.data = tr === activeTrip ? state : tr.data;
     tr.name = tr.data.title || tr.name;
+    const mode = getTripMode(tr);
+    tr.mode = mode;
+    if (tr.data && typeof tr.data === "object") tr.data.mode = mode;
     const payloadFn = () => ({
       name: tr.data.title || tr.name,
+      mode,
       data: tr.data,
       gmapsKey: tr === activeTrip && window.FeriasMaps ? window.FeriasMaps.getKey() : (tr.gmapsKey || ""),
       updatedAt: Date.now()
@@ -182,7 +290,10 @@ function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", t);
   localStorage.setItem(THEME_KEY, t);
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", t === "dark" ? "#0b0f1a" : "#f1f5f9");
+  if (meta) {
+    const isPro = appMode === "professional";
+    meta.setAttribute("content", t === "dark" ? (isPro ? "#050c19" : "#0b0f1a") : (isPro ? "#edf2f8" : "#f1f5f9"));
+  }
   const icon = $("#themeIcon"), authBtn = $("#authThemeBtn");
   if (icon) icon.textContent = t === "dark" ? "☀️" : "🌙";
   if (authBtn) authBtn.textContent = t === "dark" ? "☀️" : "🌙";
@@ -324,8 +435,9 @@ const COST_CATEGORY_STYLES = {
   Outro: { label: "Outros Gastos de Atividades", color: "#94a3b8", gradient: "linear-gradient(90deg,#64748b,#475569)" }
 };
 
-function computeSingleTripTotals(tripData, kmLOverride) {
-  const acts = [...(tripData.activities || [])].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+function computeSingleTripTotals(tripData, kmLOverride, actsOverride = null) {
+  const sourceActs = Array.isArray(actsOverride) ? actsOverride : (tripData.activities || []);
+  const acts = [...sourceActs].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
   const t = {
     km: 0, drive: 0, stopTime: 0, stops: 0, ev: 0, hev: 0, liters: 0,
     fuel: 0, charge: 0, toll: 0, total: 0, tanks: 0, trips: 0,
@@ -402,10 +514,19 @@ function computeSingleTripTotals(tripData, kmLOverride) {
   return t;
 }
 
-function totals(kmLOverride) {
+function totals(kmLOverride, filteredListOpt = null) {
   const trips = getSelectedTrips();
+  const hasActFilter = Array.isArray(filteredListOpt);
   if (trips.length <= 1) {
-    return computeSingleTripTotals(trips[0]?.data || state, kmLOverride);
+    return computeSingleTripTotals(trips[0]?.data || state, kmLOverride, hasActFilter ? filteredListOpt : null);
+  }
+  const byTrip = new Map();
+  if (hasActFilter) {
+    trips.forEach(tr => byTrip.set(tr.id, []));
+    filteredListOpt.forEach(a => {
+      const tid = actOriginMap.get(a)?.tripId;
+      if (tid && byTrip.has(tid)) byTrip.get(tid).push(a);
+    });
   }
   const merged = {
     km: 0, drive: 0, stopTime: 0, stops: 0, ev: 0, hev: 0, liters: 0,
@@ -416,7 +537,9 @@ function totals(kmLOverride) {
   };
   const bucketMap = new Map();
   trips.forEach(tr => {
-    const one = computeSingleTripTotals(tr.data, kmLOverride);
+    const actsForTrip = hasActFilter ? (byTrip.get(tr.id) || []) : null;
+    if (hasActFilter && actsForTrip.length === 0) return;
+    const one = computeSingleTripTotals(tr.data, kmLOverride, actsForTrip);
     for (const k of [
       "km", "drive", "stopTime", "stops", "ev", "hev", "liters",
       "fuel", "charge", "toll", "total", "tanks", "trips",
@@ -701,9 +824,9 @@ function saveStoredCustomTags(tags) {
 }
 
 function getAllAvailableTags(extraActs = []) {
-  const defaults = Array.isArray(window.DEFAULT_TAGS) && window.DEFAULT_TAGS.length
-    ? window.DEFAULT_TAGS
-    : ["Pessoal", "Profissional", "Férias", "Viagem"];
+  const defaults = appMode === "professional"
+    ? (Array.isArray(window.PRO_DEFAULT_TAGS) && window.PRO_DEFAULT_TAGS.length ? window.PRO_DEFAULT_TAGS : ["Desenvolvimento", "Cliente", "Financeiro", "Reunião", "Viagem Corp.", "Entrega"])
+    : (Array.isArray(window.DEFAULT_TAGS) && window.DEFAULT_TAGS.length ? window.DEFAULT_TAGS : ["Pessoal", "Profissional", "Férias", "Viagem"]);
   const rawList = [...defaults, ...getStoredCustomTags()];
   if (Array.isArray(state.customTags)) rawList.push(...state.customTags);
   (state.activities || []).forEach(a => { if (Array.isArray(a?.tags)) rawList.push(...a.tags); });
@@ -783,11 +906,79 @@ function filterByTagSet(list, tagSet) {
   return list.filter(a => Array.isArray(a.tags) && a.tags.some(t => targets.has(normalizeTagName(t).toLowerCase())));
 }
 
+function filterByDateRange(list, fromISO, toISO) {
+  if (!fromISO && !toISO) return list;
+  return list.filter(a => {
+    const s = a.start || "";
+    const e = a.end || a.start || "";
+    if (fromISO && e < fromISO) return false;
+    if (toISO && s > toISO) return false;
+    return true;
+  });
+}
+
+function isPersonalFilterActive() {
+  const totalTypes = Object.keys(window.ACTIVITY_TYPES || {}).length;
+  return (
+    ganttFilterTypes.size < totalTypes ||
+    ganttFilterTags.size > 0 ||
+    Boolean(personalDateFrom || personalDateTo)
+  );
+}
+
+function applyPersonalFilters(allSorted) {
+  return filterByDateRange(filterByTagSet(filterByTypeSet(allSorted, ganttFilterTypes), ganttFilterTags), personalDateFrom, personalDateTo);
+}
+
+function syncPersonalFilterUIs(allActsOpt) {
+  const allTypes = Object.keys(window.ACTIVITY_TYPES || {});
+  const typeItems = Object.values(window.ACTIVITY_TYPES || {}).map(t => ({ id: t.id, label: t.short, short: t.short, icon: t.icon }));
+  const tags = getAllAvailableTags(allActsOpt || []);
+  const tagItems = tags.map(tag => ({ id: tag, label: tag, short: tag, icon: "🏷️" }));
+
+  const selTypes = [...ganttFilterTypes];
+  const selTags = [...ganttFilterTags];
+  if (ganttTypeMsel) ganttTypeMsel.setSelected(selTypes);
+  if (dashTypeMsel) { dashTypeMsel.setOptions(typeItems, selTypes); }
+  if (finTypeMsel) { finTypeMsel.setOptions(typeItems, selTypes); }
+
+  if (ganttTagMsel) ganttTagMsel.setOptions(tagItems, selTags);
+  if (dashTagMsel) dashTagMsel.setOptions(tagItems, selTags);
+  if (finTagMsel) finTagMsel.setOptions(tagItems, selTags);
+
+  [["#ganttDateFrom", "#dashDateFrom", "#finDateFrom"], personalDateFrom].forEach(() => {});
+  ["#ganttDateFrom", "#dashDateFrom", "#finDateFrom"].forEach(s => { const el = $(s); if (el && el.value !== personalDateFrom) el.value = personalDateFrom; });
+  ["#ganttDateTo", "#dashDateTo", "#finDateTo"].forEach(s => { const el = $(s); if (el && el.value !== personalDateTo) el.value = personalDateTo; });
+  const active = isPersonalFilterActive();
+  ["#btnGanttClearFilters", "#btnDashClearFilters", "#btnFinClearFilters"].forEach(s => {
+    const el = $(s);
+    if (el) el.hidden = !active;
+  });
+}
+
+function applyAndRenderPersonalViews() {
+  const all = sorted();
+  syncPersonalFilterUIs(all);
+  const filtered = applyPersonalFilters(all);
+  const filtTotals = isPersonalFilterActive() ? totals(undefined, filtered) : totals();
+  renderGantt(all);
+  renderTimeline(all);
+  renderDashboard(filtered, filtTotals);
+  renderFinance(filtered, filtTotals);
+}
+
 function resetGanttTypeFilter() {
   ganttFilterTypes = new Set(Object.keys(window.ACTIVITY_TYPES || {}));
   ganttFilterTags = new Set();
+  personalDateFrom = "";
+  personalDateTo = "";
   ganttTypeMsel?.selectAll();
   ganttTagMsel?.clearAll();
+  dashTypeMsel?.selectAll();
+  dashTagMsel?.clearAll();
+  finTypeMsel?.selectAll();
+  finTagMsel?.clearAll();
+  applyAndRenderPersonalViews();
 }
 
 function resetTableTypeFilter() {
@@ -801,8 +992,10 @@ function refreshTagSelectors(extraActs = [], modalSelectedOverride = null) {
   const tags = getAllAvailableTags(extraActs);
   const tagItems = tags.map(tag => ({ id: tag, label: tag, short: tag, icon: "🏷️" }));
 
-  if (!ganttTagMsel && $("#ganttTagFilter")) {
-    ganttTagMsel = createMultiSelect($("#ganttTagFilter"), {
+  const bindTagFilter = (idSel, curRef, setFn) => {
+    const el = $(idSel);
+    if (!el || curRef) return curRef;
+    return createMultiSelect(el, {
       minSelected: 0,
       hideAllBtn: true,
       noneLabel: "✕ Limpar (todas)",
@@ -810,13 +1003,16 @@ function refreshTagSelectors(extraActs = [], modalSelectedOverride = null) {
       isHighlighted: sel => sel.length > 0,
       onChange(ids) {
         ganttFilterTags = new Set(ids);
-        const s = sorted();
-        renderGantt(s);
-        renderTimeline(s);
+        applyAndRenderPersonalViews();
       }
     });
-  }
+  };
+  ganttTagMsel = bindTagFilter("#ganttTagFilter", ganttTagMsel);
+  dashTagMsel = bindTagFilter("#dashTagFilter", dashTagMsel);
+  finTagMsel = bindTagFilter("#finTagFilter", finTagMsel);
   if (ganttTagMsel) ganttTagMsel.setOptions(tagItems, [...ganttFilterTags]);
+  if (dashTagMsel) dashTagMsel.setOptions(tagItems, [...ganttFilterTags]);
+  if (finTagMsel) finTagMsel.setOptions(tagItems, [...ganttFilterTags]);
 
   if (!tableTagMsel && $("#filterTag")) {
     tableTagMsel = createMultiSelect($("#filterTag"), {
@@ -878,19 +1074,44 @@ function populateTypeSelectors() {
     tableFilterTypes = new Set(types.map(t => t.id));
   }
 
-  if (!ganttTypeMsel && $("#ganttTypeFilter")) {
-    ganttTypeMsel = createMultiSelect($("#ganttTypeFilter"), {
+  const bindSharedTypeFilter = (sel, mselRef) => {
+    const el = $(sel);
+    if (!el || mselRef) return mselRef;
+    return createMultiSelect(el, {
       minSelected: 0,
       getLabel: formatTypesLabel,
       onChange(ids) {
         ganttFilterTypes = new Set(ids);
-        const s = sorted();
-        renderGantt(s);
-        renderTimeline(s);
+        applyAndRenderPersonalViews();
       }
     });
-  }
+  };
+  ganttTypeMsel = bindSharedTypeFilter("#ganttTypeFilter", ganttTypeMsel);
+  dashTypeMsel = bindSharedTypeFilter("#dashTypeFilter", dashTypeMsel);
+  finTypeMsel = bindSharedTypeFilter("#finTypeFilter", finTypeMsel);
   ganttTypeMsel?.setOptions(typeItems, [...ganttFilterTypes]);
+  dashTypeMsel?.setOptions(typeItems, [...ganttFilterTypes]);
+  finTypeMsel?.setOptions(typeItems, [...ganttFilterTypes]);
+
+  [["#ganttDateFrom", "from"], ["#dashDateFrom", "from"], ["#finDateFrom", "from"],
+   ["#ganttDateTo", "to"], ["#dashDateTo", "to"], ["#finDateTo", "to"]].forEach(([sel, kind]) => {
+    const el = $(sel);
+    if (el && !el.dataset.boundFilter) {
+      el.dataset.boundFilter = "1";
+      el.onchange = () => {
+        if (kind === "from") personalDateFrom = el.value || "";
+        else personalDateTo = el.value || "";
+        applyAndRenderPersonalViews();
+      };
+    }
+  });
+  ["#btnGanttClearFilters", "#btnDashClearFilters", "#btnFinClearFilters"].forEach(sel => {
+    const el = $(sel);
+    if (el && !el.dataset.boundFilter) {
+      el.dataset.boundFilter = "1";
+      el.onclick = resetGanttTypeFilter;
+    }
+  });
 
   if (!tableTypeMsel && $("#filterType")) {
     tableTypeMsel = createMultiSelect($("#filterType"), {
@@ -909,14 +1130,20 @@ function populateTypeSelectors() {
 
 /* ---------- RENDER ---------- */
 function render(allSortedOpt) {
+  if (appMode === "professional" && window.MyPlanPro) {
+    window.MyPlanPro.renderAll();
+    return;
+  }
   const s = allSortedOpt || sorted();
   refreshTagSelectors(s);
-  const t = totals();
+  syncPersonalFilterUIs(s);
+  const filtered = applyPersonalFilters(s);
+  const t = isPersonalFilterActive() ? totals(undefined, filtered) : totals();
   renderGantt(s);
   renderTimeline(s);
-  renderDashboard(s, t);
-  renderFinance(s, t);
-  renderTable(s, t);
+  renderDashboard(filtered, t);
+  renderFinance(filtered, t);
+  renderTable(s, totals());
   renderParams();
   renderChecklist();
 }
@@ -1053,8 +1280,9 @@ function computeDailyCityTimeline(activitiesList, dateISOs) {
   return { dayCities, spans, colorMap };
 }
 
-function buildRightSummaryHTML(a) {
-  const info = getTypeInfo(a.type);
+function buildRightSummaryHTML(a, extraBadgeOpt = null) {
+  const info = getTypeInfoAny(a);
+  const meta = unifiedMetaMap.get(a);
   const attCount = Array.isArray(a.attachments) ? a.attachments.length : 0;
   const attBadge = attCount ? `<span class="g-summary-meta">📎 ${attCount}</span>` : "";
   const tktNote = formatTicketsNote(a);
@@ -1062,6 +1290,8 @@ function buildRightSummaryHTML(a) {
   const tagsHtml = actTags.length
     ? `<span class="g-summary-tags">${actTags.slice(0, 3).map(tg => `<span class="tag-mini">${esc(tg)}</span>`).join("")}${actTags.length > 3 ? `<span class="tag-mini">+${actTags.length - 3}</span>` : ""}</span>`
     : "";
+  const badgeStr = extraBadgeOpt !== null ? extraBadgeOpt : getTripBadgeHTML(a);
+  const uAttr = meta ? ` data-umode="${meta.mode}"` : "";
 
   if (a.type === "Viagem") {
     const c = calc(a);
@@ -1072,11 +1302,12 @@ function buildRightSummaryHTML(a) {
     if (c.isCarpool) parts.push("Carona");
     else if (a.toll) parts.push(`Ped. ${money(a.toll)}`);
     return `
-      <div class="g-summary ${info.cls}" data-id="${a.id}">
+      <div class="g-summary ${info.cls}" data-id="${a.id}"${uAttr}>
         <span class="g-summary-title">${esc(a.name)}</span>
         ${routeTxt ? `<span class="g-summary-meta">${routeTxt}</span>` : ""}
         ${parts.length ? `<span class="g-summary-badge">${parts.join(" · ")}</span>` : ""}
         <span class="g-summary-meta">${c.isCarpool && !c.extra ? "Custo R$ 0" : money(c.total + c.extra)}</span>
+        ${badgeStr}
         ${tagsHtml}
         ${attBadge}
       </div>`;
@@ -1092,14 +1323,393 @@ function buildRightSummaryHTML(a) {
   const badgeTxt = d > 1 ? `${d} dias` : fmtShortBR(a.start);
 
   return `
-    <div class="g-summary ${info.cls}" data-id="${a.id}">
+    <div class="g-summary ${info.cls}" data-id="${a.id}"${uAttr}>
       <span class="g-summary-title">${esc(a.name)}</span>
       <span class="g-summary-badge">${badgeTxt}</span>
-      ${getTripBadgeHTML(a)}
+      ${badgeStr}
       ${tagsHtml}
       ${metaParts.length ? `<span class="g-summary-meta">${esc(metaParts.join(" · "))}</span>` : ""}
       ${attBadge}
     </div>`;
+}
+
+function getIsoWeekInfo(dt) {
+  const d = new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const isoYear = d.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return { isoYear, week, key: `${isoYear}-W${String(week).padStart(2, "0")}` };
+}
+
+function getIsoWeekMonday(dt) {
+  const d = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() - (day - 1));
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function colorForUnifiedTrip(tripId) {
+  const s = String(tripId || "");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) + s.charCodeAt(i)) >>> 0;
+  return UNIFIED_CAL_PALETTE[h % UNIFIED_CAL_PALETTE.length];
+}
+
+async function ensureUnifiedTripsLoaded() {
+  if (!tripsCache.ownTrips?.length && !tripsCache.sharedTrips?.length) {
+    try { tripsCache = await window.FeriasApi.listTrips(); } catch {}
+  }
+  const allRefs = [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])];
+  const missingIds = [...new Set(allRefs.map(t => t.id).filter(id => id && !loadedTripsMap.has(id)))];
+  if (missingIds.length) {
+    await Promise.all(missingIds.map(id => resolveTripRefById(id).catch(() => null)));
+  }
+  if (activeTrip && !loadedTripsMap.has(activeTrip.id)) {
+    activeTrip.data = state;
+    loadedTripsMap.set(activeTrip.id, activeTrip);
+  }
+}
+
+function parseTimeMinutes(hhmm) {
+  if (!hhmm || !/^\d{2}:\d{2}/.test(String(hhmm))) return null;
+  const [h, m] = String(hhmm).slice(0, 5).split(":").map(Number);
+  return (isFinite(h) ? h : 0) * 60 + (isFinite(m) ? m : 0);
+}
+
+function detectUnifiedConflicts(items) {
+  const buckets = new Map();
+  items.forEach((it, idx) => buckets.set(idx, []));
+  for (let i = 0; i < items.length; i++) {
+    const a = items[i];
+    const ma = unifiedMetaMap.get(a);
+    if (!a.start || !ma) continue;
+    const aEnd = a.end || a.start;
+    for (let j = i + 1; j < items.length; j++) {
+      const b = items[j];
+      const mb = unifiedMetaMap.get(b);
+      if (!b.start || !mb || ma.tripId === mb.tripId) continue;
+      const bEnd = b.end || b.start;
+      if (a.start > bEnd || b.start > aEnd) continue;
+
+      // Se ambos são no mesmo dia e possuem horário explícito, verifica interseção de horário
+      if (a.start === aEnd && b.start === bEnd && a.start === b.start) {
+        const as = parseTimeMinutes(a.startTime);
+        const bs = parseTimeMinutes(b.startTime);
+        if (as !== null && bs !== null) {
+          const ae = parseTimeMinutes(a.endTime) ?? (as + 60);
+          const be = parseTimeMinutes(b.endTime) ?? (bs + 60);
+          if (as >= be || bs >= ae) continue;
+        }
+      }
+      const crossMode = ma.mode !== mb.mode;
+      buckets.get(i).push({ peer: b, peerMeta: mb, crossMode });
+      buckets.get(j).push({ peer: a, peerMeta: ma, crossMode });
+    }
+  }
+  items.forEach((it, idx) => {
+    const list = buckets.get(idx) || [];
+    if (list.length) {
+      const isCrossMode = list.some(x => x.crossMode);
+      const preview = list.slice(0, 3).map(x => `${x.peer.name} (${x.peerMeta.tripName})`).join("; ");
+      unifiedConflictMap.set(it, {
+        count: list.length,
+        isCrossMode,
+        summary: `Conflito com ${list.length} item(ns): ${preview}${list.length > 3 ? "..." : ""}`
+      });
+    } else {
+      unifiedConflictMap.delete(it);
+    }
+  });
+}
+
+function buildUnifiedItems() {
+  const items = [];
+  const seenTripIds = new Set();
+  const orderedTrips = [];
+  const metaIndex = new Map();
+  [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])].forEach(t => metaIndex.set(t.id, t));
+
+  loadedTripsMap.forEach(tr => {
+    if (!tr || seenTripIds.has(tr.id)) return;
+    seenTripIds.add(tr.id);
+    orderedTrips.push(tr);
+  });
+  orderedTrips.forEach(tr => {
+    const mode = getTripMode(tr);
+    const cacheInfo = metaIndex.get(tr.id);
+    const calColor = colorForUnifiedTrip(tr.id);
+    const tripName = tr.data?.title || tr.name || cacheInfo?.name || "Agenda";
+    const ownerName = tr.ownerName || cacheInfo?.ownerName || "";
+    const acts = tr.data?.activities || [];
+    acts.forEach(a => {
+      if (!a || !a.start) return;
+      const item = { ...a };
+      unifiedMetaMap.set(item, {
+        mode,
+        tripId: tr.id,
+        tripName,
+        role: tr.role || cacheInfo?.role || "owner",
+        ownerName,
+        calColor,
+        origRef: a,
+        tripRef: tr
+      });
+      items.push(item);
+    });
+  });
+  items.sort((a, b) => a.start.localeCompare(b.start) || (a.startTime || "").localeCompare(b.startTime || ""));
+  detectUnifiedConflicts(items);
+  return items;
+}
+
+function renderUnifiedStatusBar(barEl, allUnified, visibleUnified, onRefresh) {
+  if (!barEl) return;
+  if (!ganttUnifiedMode) {
+    barEl.hidden = true;
+    barEl.innerHTML = "";
+    return;
+  }
+  const proCnt = allUnified.filter(x => unifiedMetaMap.get(x)?.mode === "professional").length;
+  const perCnt = allUnified.filter(x => unifiedMetaMap.get(x)?.mode === "personal").length;
+  const conflictCnt = allUnified.filter(x => unifiedConflictMap.has(x)).length;
+  const crossCnt = allUnified.filter(x => unifiedConflictMap.get(x)?.isCrossMode).length;
+  barEl.hidden = false;
+  barEl.innerHTML = `
+    <div class="unified-legend">
+      <span class="unified-pill-pro">💼 Profissional (${proCnt})</span>
+      <span class="unified-pill-per">🌴 Pessoal (${perCnt})</span>
+      <span class="unified-conflict-pill">${conflictCnt ? `⚠️ ${conflictCnt} em conflito${crossCnt ? ` (${crossCnt} Pessoal×Pro)` : ""}` : "✅ Sem conflitos de data/hora"}</span>
+    </div>
+    <div class="inline-actions">
+      ${conflictCnt ? `<button type="button" class="btn ghost small" data-unif-conflicts>${ganttConflictsOnly ? "👁️ Mostrar todos" : "🔍 Ver só conflitos"}</button>` : ""}
+      <button type="button" class="btn ghost small" data-unif-exit>✕ Sair da Agenda Completa</button>
+    </div>`;
+  const btnOnly = barEl.querySelector("[data-unif-conflicts]");
+  if (btnOnly) btnOnly.onclick = () => { ganttConflictsOnly = !ganttConflictsOnly; onRefresh(); };
+  const btnEx = barEl.querySelector("[data-unif-exit]");
+  if (btnEx) btnEx.onclick = () => toggleUnifiedGanttMode(false);
+}
+
+function buildGanttScale(rows, zoomPx, isMobile) {
+  const isWeekOnly = Number(zoomPx) < 22; // Abaixo de 44% (50px = 100%)
+  const todayDt = new Date();
+  todayDt.setHours(0, 0, 0, 0);
+  const todayISO = fmtISO(todayDt);
+  const currentWeekKey = getIsoWeekInfo(todayDt).key;
+
+  if (isWeekOnly) {
+    const minMon = getIsoWeekMonday(parseD(rows[0].start));
+    const maxS = rows.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, rows[0].start);
+    const maxMon = getIsoWeekMonday(parseD(maxS));
+    const weeksCount = Math.max(4, Math.min(160, Math.round((maxMon.getTime() - minMon.getTime()) / (7 * DAY)) + 2));
+    const colW = Math.max(46, Math.round(Number(zoomPx) * 4.4));
+    const weeks = [];
+    const monthSpans = [];
+    const colMeta = [];
+
+    for (let i = 0; i < weeksCount; i++) {
+      const mon = new Date(minMon.getTime() + i * 7 * DAY + 3600e3);
+      mon.setHours(0, 0, 0, 0);
+      const sun = new Date(mon.getTime() + 6 * DAY + 3600e3);
+      sun.setHours(0, 0, 0, 0);
+      const thu = new Date(mon.getTime() + 3 * DAY + 3600e3);
+      const wi = getIsoWeekInfo(mon);
+      const mKey = `${thu.getFullYear()}-${thu.getMonth()}`;
+      const prevM = monthSpans[monthSpans.length - 1];
+      let mStart = false;
+      if (prevM && prevM.key === mKey) {
+        prevM.span++;
+      } else {
+        mStart = i > 0;
+        monthSpans.push({
+          key: mKey,
+          label: `${MON_FULL[thu.getMonth()]} ${thu.getFullYear()}`,
+          startCol: i + 2,
+          span: 1,
+          mOdd: monthSpans.length % 2 === 1
+        });
+      }
+      const wOdd = i % 2 === 1;
+      const mOdd = (monthSpans.length - 1) % 2 === 1;
+      const mondayISO = fmtISO(mon);
+      const sundayISO = fmtISO(sun);
+      weeks.push({
+        idx: i,
+        col: i + 2,
+        monday: mon,
+        sunday: sun,
+        mondayISO,
+        sundayISO,
+        week: wi.week,
+        isoYear: wi.isoYear,
+        key: wi.key,
+        wOdd,
+        mOdd,
+        wStart: true,
+        mStart,
+        isCurrentWeek: wi.key === currentWeekKey
+      });
+      colMeta.push({ wOdd, mOdd, wStart: true, mStart, we: false, isToday: wi.key === currentWeekKey });
+    }
+
+    return {
+      isWeekOnly: true,
+      colW,
+      nCols: weeksCount,
+      todayISO,
+      headerRows: 2,
+      monthSpans,
+      weekSpans: weeks,
+      dates: weeks,
+      dateISOs: weeks.map(w => w.mondayISO),
+      colMeta,
+      baseTs: minMon.getTime(),
+      locateBar(a) {
+        const sMon = getIsoWeekMonday(parseD(a.start));
+        const eMon = getIsoWeekMonday(parseD(a.end || a.start));
+        const off = Math.max(0, Math.round((sMon.getTime() - minMon.getTime()) / (7 * DAY)));
+        const endOff = Math.max(off, Math.round((eMon.getTime() - minMon.getTime()) / (7 * DAY)));
+        const span = Math.max(1, endOff - off + 1);
+        return { off, span, barW: Math.max(24, span * colW - 6), unitDays: 7 };
+      }
+    };
+  }
+
+  const DW = Number(zoomPx);
+  const minTs = parseD(rows[0].start).getTime() - 2 * DAY;
+  const maxS = rows.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, rows[0].start);
+  const trailingDays = isMobile ? 10 : 14;
+  const nCols = Math.max(5, Math.round((parseD(maxS) - minTs) / DAY) + trailingDays);
+  const dates = [];
+  for (let i = 0; i < nCols; i++) {
+    const d = new Date(minTs + i * DAY + 3600e3);
+    d.setHours(0, 0, 0, 0);
+    dates.push(d);
+  }
+
+  const monthSpans = [];
+  const weekSpans = [];
+  const colMeta = [];
+  dates.forEach((d, idx) => {
+    const mKey = `${d.getFullYear()}-${d.getMonth()}`;
+    const lastM = monthSpans[monthSpans.length - 1];
+    let mStart = false;
+    if (lastM && lastM.key === mKey) {
+      lastM.span++;
+    } else {
+      mStart = idx > 0;
+      monthSpans.push({
+        key: mKey,
+        label: `${MON_FULL[d.getMonth()]} ${d.getFullYear()}`,
+        startCol: idx + 2,
+        span: 1,
+        mOdd: monthSpans.length % 2 === 1
+      });
+    }
+    const wi = getIsoWeekInfo(d);
+    const lastW = weekSpans[weekSpans.length - 1];
+    let wStart = false;
+    if (lastW && lastW.key === wi.key) {
+      lastW.span++;
+    } else {
+      wStart = idx > 0;
+      weekSpans.push({
+        key: wi.key,
+        week: wi.week,
+        isoYear: wi.isoYear,
+        startCol: idx + 2,
+        span: 1,
+        wOdd: weekSpans.length % 2 === 1,
+        isCurrentWeek: wi.key === currentWeekKey
+      });
+    }
+    const iso = fmtISO(d);
+    const we = d.getDay() === 0 || d.getDay() === 6;
+    const isToday = iso === todayISO;
+    colMeta.push({
+      iso,
+      we,
+      isToday,
+      wOdd: (weekSpans.length - 1) % 2 === 1,
+      mOdd: (monthSpans.length - 1) % 2 === 1,
+      wStart,
+      mStart
+    });
+  });
+
+  return {
+    isWeekOnly: false,
+    colW: DW,
+    nCols,
+    todayISO,
+    headerRows: 3,
+    monthSpans,
+    weekSpans,
+    dates,
+    dateISOs: dates.map(d => fmtISO(d)),
+    colMeta,
+    baseTs: minTs,
+    locateBar(a) {
+      const off = Math.round((parseD(a.start) - minTs) / DAY);
+      const len = days(a);
+      return { off, span: len, barW: Math.max(12, len * DW - 6), unitDays: 1 };
+    }
+  };
+}
+
+function getUnifiedFilteredItems(filterByColFn = null) {
+  const all = buildUnifiedItems();
+  const personalTotal = Object.keys(window.ACTIVITY_TYPES || {}).length;
+  const proTotal = Object.keys(window.PRO_ACTIVITY_TYPES || {}).length;
+  const personalPartial = ganttFilterTypes.size < personalTotal;
+  const filtered = all.filter(it => {
+    const meta = unifiedMetaMap.get(it);
+    if (!meta) return false;
+    if (ganttConflictsOnly && !unifiedConflictMap.has(it)) return false;
+    if (appMode === "personal") {
+      if (meta.mode === "personal") {
+        if (!ganttFilterTypes.has(it.type)) return false;
+      } else if (personalPartial && !ganttFilterTypes.has(it.type)) {
+        return false;
+      }
+      if (ganttFilterTags.size > 0 && !(Array.isArray(it.tags) && it.tags.some(tg => ganttFilterTags.has(tg)))) return false;
+      if (personalDateFrom && (it.end || it.start) < personalDateFrom) return false;
+      if (personalDateTo && it.start > personalDateTo) return false;
+    } else if (typeof filterByColFn === "function") {
+      if (!filterByColFn(it, meta, proTotal)) return false;
+    }
+    return true;
+  });
+  return { allUnified: all, filtered };
+}
+
+function getUnifiedBarExtraClasses(a) {
+  const meta = unifiedMetaMap.get(a);
+  if (!meta) return "";
+  const cls = [meta.mode === "professional" ? "unified-pro" : "unified-personal"];
+  if (unifiedConflictMap.has(a)) cls.push("has-conflict");
+  return " " + cls.join(" ");
+}
+
+function getTypeInfoAny(a) {
+  const meta = unifiedMetaMap.get(a);
+  if (meta?.mode === "professional" && window.MyPlanPro) return window.MyPlanPro.getProTypeInfo(a.type);
+  return getTypeInfo(a.type);
+}
+
+function renderUnifiedCardSubBadges(a) {
+  const meta = unifiedMetaMap.get(a);
+  if (!meta) return getTripBadgeHTML(a);
+  const modePill = meta.mode === "professional"
+    ? `<span class="unified-pill-pro">💼 PRO</span>`
+    : `<span class="unified-pill-per">🌴 PESSOAL</span>`;
+  const calBadge = `<span class="cal-color-chip" style="--cal-color:${meta.calColor}" title="${esc(meta.tripName)}">● ${esc(meta.tripName)}</span>`;
+  const conf = unifiedConflictMap.get(a);
+  const confBadge = conf ? `<span class="unified-conflict-pill" title="${esc(conf.summary)}">⚠️ Conflito</span>` : "";
+  return `${modePill} ${calBadge}${confBadge ? " " + confBadge : ""}`;
 }
 
 function renderGantt(allSorted) {
@@ -1110,12 +1720,20 @@ function renderGantt(allSorted) {
   const multiTrip = trips.length > 1;
   const planTitle = $("#ganttPlanTitle");
   if (planTitle) {
-    planTitle.textContent = multiTrip ? `${trips.length} viagens combinadas` : (state.title || "Cronograma");
+    planTitle.textContent = ganttUnifiedMode
+      ? "Agenda Completa (Pessoal + Profissional)"
+      : (multiTrip ? `${trips.length} viagens combinadas` : (state.title || "Cronograma"));
   }
+
+  const unifBtn = $("#btnGanttUnified");
+  if (unifBtn) unifBtn.setAttribute("aria-pressed", String(ganttUnifiedMode));
 
   const roleBadge = $("#tripRoleBadge");
   if (roleBadge) {
-    if (multiTrip) {
+    if (ganttUnifiedMode) {
+      roleBadge.textContent = "Unificada";
+      roleBadge.hidden = false;
+    } else if (multiTrip) {
       roleBadge.textContent = trips.map(t => t.data?.title || t.name).join(" + ");
       roleBadge.hidden = false;
     } else if (activeTrip && activeTrip.role !== "owner") {
@@ -1126,22 +1744,39 @@ function renderGantt(allSorted) {
     }
   }
 
+  let s;
+  if (ganttUnifiedMode) {
+    const u = getUnifiedFilteredItems();
+    s = u.filtered;
+    renderUnifiedStatusBar($("#ganttUnifiedBar"), u.allUnified, u.filtered, () => {
+      renderGantt(sorted());
+      renderTimeline(sorted());
+    });
+  } else {
+    renderUnifiedStatusBar($("#ganttUnifiedBar"), [], [], null);
+    s = applyPersonalFilters(allSorted);
+  }
+
   wrap.hidden = ganttMode !== "gantt";
   tlWrap.hidden = ganttMode !== "timeline";
+  updateGanttZoomReadout();
   if (ganttMode !== "gantt") return;
 
-  const s = filterByTagSet(filterByTypeSet(allSorted, ganttFilterTypes), ganttFilterTags);
+  const isWeekOnly = ganttZoom < 22;
   g.classList.toggle("slim-rail", ganttSlimRail);
+  g.classList.toggle("zoom-week-only", isWeekOnly);
+  g.classList.toggle("zoom-compact", !isWeekOnly && ganttZoom <= 24);
+  g.classList.toggle("zoom-micro", !isWeekOnly && ganttZoom <= 18);
 
   if (!s.length) {
     g.style.gridTemplateColumns = "1fr";
-    if (allSorted.length > 0) {
+    if (allSorted.length > 0 || ganttUnifiedMode) {
       g.innerHTML = `<div style="padding:28px;text-align:center">
         <p class="muted">Nenhuma atividade corresponde aos filtros selecionados.</p>
         <button type="button" class="btn primary" id="btnGanttResetFilter">☑️ Limpar filtros</button>
       </div>`;
       const rst = $("#btnGanttResetFilter");
-      if (rst) rst.onclick = resetGanttTypeFilter;
+      if (rst) rst.onclick = () => { ganttConflictsOnly = false; resetGanttTypeFilter(); };
     } else {
       g.innerHTML = `<div style="padding:28px;text-align:center">
         <p class="muted">Nenhuma atividade cadastrada ainda nesta viagem.</p>
@@ -1151,56 +1786,52 @@ function renderGantt(allSorted) {
     return;
   }
 
-  const DW = ganttZoom;
-  const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 260);
-  const minTs = parseD(s[0].start).getTime() - 2 * DAY;
-  const maxS = s.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, s[0].start);
-  const trailingDays = window.innerWidth < 720 ? 10 : 14;
-  const n = Math.round((parseD(maxS) - minTs) / DAY) + trailingDays;
-  const todayISO = fmtISO(new Date());
+  const scale = buildGanttScale(s, ganttZoom, window.innerWidth < 720);
+  const DW = scale.colW;
+  const n = scale.nCols;
+  const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 265);
+  const todayISO = scale.todayISO;
 
   g.style.gridTemplateColumns = `${nameW}px repeat(${n}, ${DW}px)`;
   g.style.setProperty("--gantt-name-w", `${nameW}px`);
-
-  const dates = [];
-  for (let i = 0; i < n; i++) {
-    const d = new Date(minTs + i * DAY);
-    d.setHours(0, 0, 0, 0);
-    dates.push(d);
-  }
-
-  const monthSpans = [];
-  dates.forEach((d, idx) => {
-    const key = `${d.getFullYear()}-${d.getMonth()}`;
-    const last = monthSpans[monthSpans.length - 1];
-    if (last && last.key === key) last.span++;
-    else monthSpans.push({ key, label: `${MON_FULL[d.getMonth()]} ${d.getFullYear()}`, startCol: idx + 2, span: 1 });
-  });
+  g.dataset.unitDays = scale.isWeekOnly ? "7" : "1";
+  g.dataset.colW = String(DW);
 
   let h = `<div class="g-corner">
-    ${ganttSlimRail ? "" : `<span>Atividades</span>`}
+    ${ganttSlimRail ? "" : `<span>${ganttUnifiedMode ? "Agenda Completa" : "Atividades"}</span>`}
     <button type="button" class="g-focus-btn${ganttSlimRail ? " g-focus-only" : ""}" id="btnGanttSlim" title="${ganttSlimRail ? "Expandir nomes das atividades" : "Retrair colunas de nome"}" aria-label="${ganttSlimRail ? "Expandir nomes das atividades" : "Retrair colunas de nome"}">${ganttSlimRail ? "⤢" : "⤡"}</button>
   </div>`;
 
-  monthSpans.forEach(ms => {
-    h += `<div class="g-month-head" style="grid-column:${ms.startCol} / span ${ms.span};grid-row:1"><span class="g-month-label">${ms.label}</span></div>`;
+  scale.monthSpans.forEach(ms => {
+    h += `<div class="g-month-head ${ms.mOdd ? "m-odd" : "m-even"}" style="grid-column:${ms.startCol} / span ${ms.span};grid-row:1"><span class="g-month-label">${ms.label}</span></div>`;
   });
 
-  dates.forEach((d, i) => {
-    const iso = fmtISO(d);
-    const we = d.getDay() === 0 || d.getDay() === 6;
-    const isToday = iso === todayISO;
-    h += `<div class="g-head ${we ? "weekend" : ""} ${isToday ? "today" : ""}" style="grid-column:${i + 2};grid-row:2" data-date="${iso}">
-      <span>${WD[d.getDay()][0]}</span><b>${d.getDate()}</b>
-    </div>`;
-  });
+  if (scale.isWeekOnly) {
+    scale.weekSpans.forEach(ws => {
+      h += `<div class="g-week-head ${ws.wOdd ? "w-odd" : "w-even"} ${ws.isCurrentWeek ? "today" : ""}" style="grid-column:${ws.col};grid-row:2" data-date="${ws.mondayISO}" data-end-date="${ws.sundayISO}" title="Semana ${ws.week} (${fmtShortBR(ws.mondayISO)}–${fmtShortBR(ws.sundayISO)})">Sem ${ws.week}</div>`;
+    });
+  } else {
+    scale.weekSpans.forEach(ws => {
+      const lbl = ws.span >= 3 ? `Sem ${ws.week}` : (ws.span >= 2 ? `S${ws.week}` : String(ws.week));
+      h += `<div class="g-week-head ${ws.wOdd ? "w-odd" : "w-even"} ${ws.isCurrentWeek ? "today" : ""}" style="grid-column:${ws.startCol} / span ${ws.span};grid-row:2" title="Semana ${ws.week} de ${ws.isoYear}">${lbl}</div>`;
+    });
+    const numStep = DW <= 24 ? 2 : 1;
+    scale.dates.forEach((d, i) => {
+      const cm = scale.colMeta[i];
+      const hideNum = numStep > 1 && d.getDate() !== 1 && (i % numStep !== 0);
+      h += `<div class="g-head ${cm.we ? "weekend" : ""} ${cm.wOdd ? "w-odd" : "w-even"} ${cm.mOdd ? "m-odd" : "m-even"} ${cm.wStart ? "w-start" : ""} ${cm.mStart ? "m-start" : ""} ${cm.isToday ? "today" : ""}${hideNum ? " day-hide-num" : ""}" style="grid-column:${i + 2};grid-row:3" data-date="${cm.iso}">
+        <span>${WD[d.getDay()][0]}</span><b>${d.getDate()}</b>
+      </div>`;
+    });
+  }
 
-  const dateISOs = dates.map(d => fmtISO(d));
-  const cityTrack = multiTrip ? { spans: [] } : computeDailyCityTimeline(state.activities || [], dateISOs);
-  const hasCityRow = !multiTrip && cityTrack.spans.length > 0;
+  const cityTrack = (!scale.isWeekOnly && !ganttUnifiedMode && !multiTrip)
+    ? computeDailyCityTimeline(state.activities || [], scale.dateISOs)
+    : { spans: [] };
+  const hasCityRow = !scale.isWeekOnly && !ganttUnifiedMode && !multiTrip && cityTrack.spans.length > 0;
   if (hasCityRow) {
     const dark = isDarkTheme();
-    h += `<div class="g-city-corner" style="grid-column:1;grid-row:3" title="Cidade em cada dia">${ganttSlimRail ? "📍" : "📍 Cidade"}</div>`;
+    h += `<div class="g-city-corner" style="grid-column:1;grid-row:4" title="Cidade em cada dia">${ganttSlimRail ? "📍" : "📍 Cidade"}</div>`;
     cityTrack.spans.forEach(sp => {
       const col = sp.color;
       const bg = dark ? col.darkBg : col.lightBg;
@@ -1208,50 +1839,61 @@ function renderGantt(allSorted) {
       const txtCol = dark ? col.darkTxt : col.lightTxt;
       const shortTxt = formatCityLabel(sp.city, sp.span, DW);
       const tip = `${sp.city}: ${fmtBR(sp.startIso)}${sp.endIso !== sp.startIso ? ` a ${fmtBR(sp.endIso)}` : ""}`;
-      h += `<div class="g-city-span" style="grid-column:${sp.startIdx + 2} / span ${sp.span};grid-row:3" title="${esc(tip)}">
+      h += `<div class="g-city-span" style="grid-column:${sp.startIdx + 2} / span ${sp.span};grid-row:4" title="${esc(tip)}">
         <span class="g-city-pill" style="background:${bg};border-color:${bd};color:${txtCol}">${esc(shortTxt)}</span>
       </div>`;
     });
   }
 
+  const baseRow = (scale.isWeekOnly ? 3 : 4) + (hasCityRow ? 1 : 0);
   s.forEach((a, rowIdx) => {
-    const info = getTypeInfo(a.type);
-    const row = rowIdx + (hasCityRow ? 4 : 3);
+    const meta = unifiedMetaMap.get(a);
+    const info = getTypeInfoAny(a);
+    const row = rowIdx + baseRow;
     const altCls = rowIdx % 2 ? "alt" : "";
-    const subLeft = isTravelType(a.type) && (a.from || a.to)
-      ? `${a.from || "?"} ➔ ${a.to || "?"}`
-      : `${fmtShortBR(a.start)}${days(a) > 1 ? ` · ${days(a)}d` : ""}`;
+    const conf = unifiedConflictMap.get(a);
+    const rowStyleExtra = meta ? `--cal-color:${meta.calColor}` : "";
+    const subLeft = meta?.mode === "professional"
+      ? `${fmtShortBR(a.start)}${a.startTime ? ` ${a.startTime}` : ""}${days(a) > 1 ? ` · ${days(a)}d` : ""}`
+      : (isTravelType(a.type) && (a.from || a.to)
+        ? `${a.from || "?"} ➔ ${a.to || "?"}`
+        : `${fmtShortBR(a.start)}${days(a) > 1 ? ` · ${days(a)}d` : ""}`);
 
-    h += `<div class="g-name ${altCls}" style="grid-column:1;grid-row:${row}" data-id="${a.id}" title="${esc(label(a))}">
+    h += `<div class="g-name ${altCls}${meta ? " is-unified-row" : ""}" style="grid-column:1;grid-row:${row};${rowStyleExtra}" data-id="${esc(a.id)}" data-umode="${meta ? meta.mode : "personal"}" title="${esc(conf ? `${label(a)} — ${conf.summary}` : label(a))}">
       <span class="g-type-dot ${info.cls}">${info.icon}</span>
       <div class="g-name-txt">
-        <div class="g-name-title">${esc(a.name)}</div>
-        <div class="g-name-sub">${esc(subLeft)} ${getTripBadgeHTML(a)}</div>
+        <div class="g-name-title">${esc(a.name)}${conf ? " ⚠️" : ""}</div>
+        <div class="g-name-sub">${esc(subLeft)} ${meta ? renderUnifiedCardSubBadges(a) : getTripBadgeHTML(a)}</div>
       </div>
     </div>`;
 
-    const off = Math.round((parseD(a.start) - minTs) / DAY);
-    const len = days(a);
-
+    const pos = scale.locateBar(a);
     for (let i = 0; i < n; i++) {
-      const d = dates[i];
-      const we = d.getDay() === 0 || d.getDay() === 6;
-      const isToday = fmtISO(d) === todayISO;
+      const cm = scale.colMeta[i];
       let inner = "";
-      if (i === off) {
-        const barW = Math.max(28, len * DW - 6);
-        const insideTxt = len > 1 ? `${info.icon} ${len}d` : info.icon;
-        const resizeHandle = len > 1 || a.type === "Período" || a.type === "Hospedagem"
-          ? `<span class="g-resize" data-resize="${a.id}" title="Arraste para alterar duração"></span>` : "";
+      if (i === pos.off) {
+        const lenDays = days(a);
+        const insideTxt = (scale.isWeekOnly || (DW <= 20 && lenDays === 1))
+          ? `${info.icon}${scale.isWeekOnly && DW >= 52 ? ` ${esc(a.name.slice(0, 12))}` : ""}`
+          : (lenDays > 1 ? `${info.icon} ${lenDays}d` : info.icon);
+        const resizeHandle = (!scale.isWeekOnly && (lenDays > 1 || a.type === "Período" || a.type === "Hospedagem" || meta?.mode === "professional")) || scale.isWeekOnly
+          ? `<span class="g-resize" data-resize="${esc(a.id)}" title="Arraste para alterar duração"></span>` : "";
+        const unifCls = getUnifiedBarExtraClasses(a);
+        const progBar = (meta?.mode === "professional" && Number(a.progress) > 0)
+          ? `<span class="g-bar-prog" style="width:${Number(a.progress)}%"></span>` : "";
+        const summaryHtml = meta?.mode === "professional" && window.MyPlanPro?.buildProSummaryHTML
+          ? window.MyPlanPro.buildProSummaryHTML(a, renderUnifiedCardSubBadges(a))
+          : buildRightSummaryHTML(a, meta ? renderUnifiedCardSubBadges(a) : null);
+
         inner = `
           <div class="g-event-wrap" style="left:3px">
-            <div class="g-bar ${info.cls} ${len === 1 ? "single-day" : ""}" data-id="${a.id}" style="width:${barW}px">
-              <span>${insideTxt}</span>${resizeHandle}
+            <div class="g-bar ${info.cls} ${lenDays === 1 && !scale.isWeekOnly ? "single-day" : ""}${unifCls}" data-id="${esc(a.id)}" data-umode="${meta ? meta.mode : "personal"}" style="width:${pos.barW}px" title="${esc(conf ? conf.summary : a.name)}">
+              ${progBar}<span>${insideTxt}</span>${resizeHandle}
             </div>
-            ${buildRightSummaryHTML(a)}
+            ${summaryHtml}
           </div>`;
       }
-      h += `<div class="g-cell ${altCls} ${we ? "weekend" : ""} ${isToday ? "today" : ""}" style="grid-column:${i + 2};grid-row:${row}">${inner}</div>`;
+      h += `<div class="g-cell ${altCls} ${cm.we ? "weekend" : ""} ${cm.wOdd ? "w-odd" : "w-even"} ${cm.mOdd ? "m-odd" : "m-even"} ${cm.wStart ? "w-start" : ""} ${cm.mStart ? "m-start" : ""} ${cm.isToday ? "today" : ""}" style="grid-column:${i + 2};grid-row:${row}">${inner}</div>`;
     }
   });
 
@@ -1263,8 +1905,14 @@ function renderGantt(allSorted) {
       renderGantt(sorted());
     };
   }
+  const openTargetItem = el => {
+    const id = el.dataset.id;
+    const uMode = el.dataset.umode;
+    if (uMode === "professional" && window.MyPlanPro) window.MyPlanPro.openProCardModal(id);
+    else openModal(id);
+  };
   g.querySelectorAll(".g-name[data-id], .g-summary[data-id]").forEach(el => {
-    el.onclick = () => openModal(el.dataset.id);
+    el.onclick = () => openTargetItem(el);
   });
   g.querySelectorAll(".g-bar").forEach(bindDrag);
   g.querySelectorAll(".g-resize").forEach(bindResize);
@@ -1273,11 +1921,15 @@ function renderGantt(allSorted) {
 function bindDrag(bar) {
   bar.onpointerdown = e => {
     if (e.target.closest("[data-resize]")) return;
+    const openTarget = () => {
+      if (bar.dataset.umode === "professional" && window.MyPlanPro) window.MyPlanPro.openProCardModal(bar.dataset.id);
+      else openModal(bar.dataset.id);
+    };
     if (e.pointerType === "touch") {
       const x0 = e.clientX, y0 = e.clientY;
       bar.onpointerup = ev => {
         bar.onpointerup = null;
-        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 10) openModal(bar.dataset.id);
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 10) openTarget();
       };
       return;
     }
@@ -1285,9 +1937,11 @@ function bindDrag(bar) {
     e.preventDefault();
     bar.setPointerCapture(e.pointerId);
     const wrap = bar.closest(".g-event-wrap");
-    const DW = ganttZoom;
+    const gridEl = bar.closest(".gantt");
+    const colW = Number(gridEl?.dataset.colW) || ganttZoom;
+    const unitDays = Number(gridEl?.dataset.unitDays) || 1;
     const x0 = e.clientX;
-    let dd = 0;
+    let dCols = 0;
     const tip = document.createElement("div");
     tip.className = "drag-tip";
     const ctx = findActivityContext(bar.dataset.id);
@@ -1296,10 +1950,11 @@ function bindDrag(bar) {
 
     bar.onpointermove = ev => {
       const dx = ev.clientX - x0;
-      dd = Math.round(dx / DW);
+      dCols = Math.round(dx / colW);
+      const dd = dCols * unitDays;
       if (Math.abs(dx) > 4) {
         bar.classList.add("dragging");
-        wrap.style.transform = `translateX(${dd * DW}px)`;
+        wrap.style.transform = `translateX(${dCols * colW}px)`;
         const ns = fmtISO(new Date(parseD(a.start).getTime() + dd * DAY + 3600e3));
         tip.textContent = `${fmtShortBR(ns)} (${dd > 0 ? "+" : ""}${dd}d)`;
         tip.style.left = `${ev.clientX + 12}px`;
@@ -1313,8 +1968,9 @@ function bindDrag(bar) {
       bar.classList.remove("dragging");
       wrap.style.transform = "";
       tip.remove();
-      if (!dd) return openModal(a.id);
-      if (ctx.trip?.role === "viewer") return toast("👁️ Viagem compartilhada somente para visualização.");
+      const dd = dCols * unitDays;
+      if (!dd) return openTarget();
+      if (ctx.trip?.role === "viewer") return toast("👁️ Planejamento compartilhado somente para visualização.");
       a.start = fmtISO(new Date(parseD(a.start).getTime() + dd * DAY + 3600e3));
       a.end = fmtISO(new Date(parseD(a.end || a.start).getTime() + dd * DAY + 3600e3));
       saveTripRecord(ctx.trip, `📅 ${a.name} movido ${dd > 0 ? "+" : ""}${dd} dia(s)`);
@@ -1329,26 +1985,28 @@ function bindResize(handle) {
     e.preventDefault();
     handle.setPointerCapture(e.pointerId);
     const bar = handle.closest(".g-bar");
+    const gridEl = bar.closest(".gantt");
+    const colW = Number(gridEl?.dataset.colW) || ganttZoom;
+    const unitDays = Number(gridEl?.dataset.unitDays) || 1;
     const ctx = findActivityContext(handle.dataset.resize);
     const a = ctx?.activity;
     if (!a) return;
-    const DW = ganttZoom;
     const x0 = e.clientX;
     const origLen = days(a);
     let dd = 0;
 
     handle.onpointermove = ev => {
-      dd = Math.round((ev.clientX - x0) / DW);
+      dd = Math.round((ev.clientX - x0) / colW) * unitDays;
       const newLen = Math.max(1, origLen + dd);
-      bar.style.width = `${Math.max(28, newLen * DW - 6)}px`;
+      const pxW = unitDays === 7 ? Math.max(24, Math.ceil(newLen / 7) * colW - 6) : Math.max(28, newLen * colW - 6);
+      bar.style.width = `${pxW}px`;
     };
     handle.onpointerup = () => {
       handle.onpointermove = handle.onpointerup = null;
       const newLen = Math.max(1, origLen + dd);
       if (newLen === origLen) return;
       if (ctx.trip?.role === "viewer") {
-        bar.style.width = `${Math.max(28, origLen * DW - 6)}px`;
-        return toast("👁️ Viagem compartilhada somente para visualização.");
+        return render();
       }
       a.end = fmtISO(new Date(parseD(a.start).getTime() + (newLen - 1) * DAY + 3600e3));
       saveTripRecord(ctx.trip, `↔️ ${a.name}: duração ajustada para ${newLen} dia(s)`);
@@ -1359,38 +2017,61 @@ function bindResize(handle) {
 function renderTimeline(allSorted) {
   const tl = $("#timelineWrap");
   if (ganttMode !== "timeline") return;
-  const s = filterByTagSet(filterByTypeSet(allSorted, ganttFilterTypes), ganttFilterTags);
+  let s;
+  if (ganttUnifiedMode) {
+    const u = getUnifiedFilteredItems();
+    s = u.filtered;
+    renderUnifiedStatusBar($("#ganttUnifiedBar"), u.allUnified, u.filtered, () => {
+      renderGantt(sorted());
+      renderTimeline(sorted());
+    });
+  } else {
+    renderUnifiedStatusBar($("#ganttUnifiedBar"), [], [], null);
+    s = applyPersonalFilters(allSorted);
+  }
   if (!s.length) {
-    tl.innerHTML = allSorted.length > 0
+    tl.innerHTML = allSorted.length > 0 || ganttUnifiedMode
       ? `<p class="muted">Nenhuma atividade corresponde aos filtros selecionados. <button type="button" class="link-btn" id="btnTlResetFilter">Limpar filtros</button></p>`
       : `<p class="muted">Nenhuma atividade encontrada.</p>`;
     const rst = $("#btnTlResetFilter");
-    if (rst) rst.onclick = resetGanttTypeFilter;
+    if (rst) rst.onclick = () => { ganttConflictsOnly = false; resetGanttTypeFilter(); };
     return;
   }
   tl.innerHTML = s.map(a => {
-    const info = getTypeInfo(a.type);
+    const metaInfo = unifiedMetaMap.get(a);
+    const info = getTypeInfoAny(a);
     const d = parseD(a.start);
-    const c = calc(a);
     const attCount = Array.isArray(a.attachments) ? a.attachments.length : 0;
-    const tktNote = formatTicketsNote(a);
-    const meta = a.type === "Viagem"
-      ? `${a.from || "?"} ➔ ${a.to || "?"} · ${num(a.km)} km · ${hmHuman(a.drive)}${a.stopTime ? ` (+${hmHuman(a.stopTime)} par.)` : ""} · ${c.isCarpool ? "Carona (s/ custo carro)" : `Ped. ${money(a.toll)}`} · Total ${money(c.total + c.extra)}`
-      : `${days(a)} dia(s)${a.from || a.to ? ` · ${a.from || "?"} ➔ ${a.to || "?"}` : ""}${a.extraCost ? ` · ${money(a.extraCost)}${tktNote ? ` (${tktNote})` : ""}` : ""}${a.notes ? ` · ${a.notes}` : ""}`;
+    const conf = unifiedConflictMap.get(a);
+    let meta = "";
+    if (metaInfo?.mode === "professional") {
+      meta = `${days(a)} dia(s)${a.startTime ? ` · 🕒 ${a.startTime}` : ""}${a.client ? ` · Cliente: ${a.client}` : ""}${a.location ? ` · 📍 ${a.location}` : ""}${a.notes ? ` · ${a.notes}` : ""}`;
+    } else {
+      const c = calc(a);
+      const tktNote = formatTicketsNote(a);
+      meta = a.type === "Viagem"
+        ? `${a.from || "?"} ➔ ${a.to || "?"} · ${num(a.km)} km · ${hmHuman(a.drive)}${a.stopTime ? ` (+${hmHuman(a.stopTime)} par.)` : ""} · ${c.isCarpool ? "Carona (s/ custo carro)" : `Ped. ${money(a.toll)}`} · Total ${money(c.total + c.extra)}`
+        : `${days(a)} dia(s)${a.from || a.to ? ` · ${a.from || "?"} ➔ ${a.to || "?"}` : ""}${a.extraCost ? ` · ${money(a.extraCost)}${tktNote ? ` (${tktNote})` : ""}` : ""}${a.notes ? ` · ${a.notes}` : ""}`;
+    }
     return `
-      <div class="tl-item ${info.cls}" data-id="${a.id}">
+      <div class="tl-item ${info.cls}${conf ? " has-conflict" : ""}" style="${metaInfo ? `border-left-color:${metaInfo.calColor}` : ""}" data-id="${esc(a.id)}" data-umode="${metaInfo ? metaInfo.mode : "personal"}">
         <div class="date-badge"><b>${d.getDate()}</b>${MON[d.getMonth()]}</div>
         <div class="tl-body">
           <div class="tl-top">
-            <span class="tl-title">${info.icon} ${esc(a.name)} ${getTripBadgeHTML(a)} ${attCount ? `<small class="muted">📎 ${attCount}</small>` : ""}</span>
+            <span class="tl-title">${info.icon} ${esc(a.name)} ${metaInfo ? renderUnifiedCardSubBadges(a) : getTripBadgeHTML(a)} ${attCount ? `<small class="muted">📎 ${attCount}</small>` : ""}</span>
             <span class="chip ${info.cls}">${esc(info.short)}</span>
           </div>
-          <div class="tl-meta">${WD[d.getDay()]} · ${fmtBR(a.start)}${days(a) > 1 ? ` até ${fmtBR(a.end)}` : ""}</div>
+          <div class="tl-meta">${WD[d.getDay()]} · ${fmtBR(a.start)}${days(a) > 1 ? ` até ${fmtBR(a.end)}` : ""}${conf ? ` · ${conf.summary}` : ""}</div>
           <div class="tl-meta">${esc(meta)}</div>
         </div>
       </div>`;
   }).join("");
-  tl.querySelectorAll(".tl-item[data-id]").forEach(el => { el.onclick = () => openModal(el.dataset.id); });
+  tl.querySelectorAll(".tl-item[data-id]").forEach(el => {
+    el.onclick = () => {
+      if (el.dataset.umode === "professional" && window.MyPlanPro) window.MyPlanPro.openProCardModal(el.dataset.id);
+      else openModal(el.dataset.id);
+    };
+  });
 }
 
 /* ---------- DASHBOARD ---------- */
@@ -2831,9 +3512,16 @@ let editingCheckId = null;
 function openCheckModal(id) {
   const item = id ? state.checklist.find(x => x.id === id) : null;
   editingCheckId = item ? item.id : null;
+  const dl = $("#checkCats");
+  if (dl) {
+    const cats = appMode === "professional"
+      ? ["Escopo", "Financeiro", "Operacional", "Entrega", "Viagem Corp.", "Reunião", "Geral"]
+      : ["Geral", "Recarga EV", "Veículo", "Pedágio", "Documentos", "Hospedagem", "Eventos", "Roteiro", "Bagagem"];
+    dl.innerHTML = cats.map(c => `<option value="${esc(c)}">`).join("");
+  }
   $("#checkModalTitle").textContent = item ? "Editar item do checklist" : "Novo item do checklist";
   $("#c-item").value = item ? item.item : "";
-  $("#c-cat").value = item ? item.cat : "Geral";
+  $("#c-cat").value = item ? item.cat : (appMode === "professional" ? "Operacional" : "Geral");
   $("#c-prio").value = item ? item.prio : "Média";
   $("#c-status").value = item ? item.status : "Pendente";
   $("#c-notes").value = item ? (item.notes || "") : "";
@@ -2971,8 +3659,8 @@ function updateModalPreview() {
   const totQty = modalTickets.reduce((s, r) => s + ((Number(r.unitPrice) > 0 && Number(r.qty) > 0) ? Number(r.qty) : 0), 0);
   const badge = $("#ticketsTotalBadge");
   if (badge) badge.textContent = `Total: ${money(a.extraCost)}${totQty > 0 ? ` (${totQty} un.)` : ""}`;
-  $("#calRemLabel").textContent = state.params.calendarReminderTime || "09:00";
-  $("#btnCalLink").href = window.FeriasCalendar.buildGoogleCalendarTemplateUrl(a, state.title);
+  if ($("#calRemLabel")) $("#calRemLabel").textContent = state.params.calendarReminderTime || "09:00";
+  if ($("#btnCalLink")) $("#btnCalLink").href = window.FeriasCalendar.buildGoogleCalendarTemplateUrl(a, state.title, "personal");
 
   if (a.type === "Trem" || a.type === "Ônibus") {
     const ext = $("#transitMapsStatus");
@@ -3162,14 +3850,8 @@ window.openModal = function (idOrOpts) {
   const tgtWrap = $("#f-targetTripWrap");
   const tgtSel = $("#f-targetTrip");
   if (tgtWrap && tgtSel) {
-    if (!id && trips.length > 1) {
-      const choices = editableTrips.length ? editableTrips : trips;
-      tgtSel.innerHTML = choices.map(t => `<option value="${esc(t.id)}">${esc(t.data?.title || t.name)}</option>`).join("");
-      tgtSel.value = editingTripRef?.id || choices[0]?.id || "";
-      tgtWrap.hidden = false;
-    } else {
-      tgtWrap.hidden = true;
-    }
+    populateEventSelect(tgtSel, "personal", editingTripRef?.id || activeTrip?.id || "");
+    tgtWrap.hidden = false;
   }
 
   editing = id || null;
@@ -3227,6 +3909,8 @@ window.openModal = function (idOrOpts) {
   $("#transitMapWrap").innerHTML = "";
   $("#btnDelete").style.visibility = id ? "visible" : "hidden";
   if ($("#btnDuplicate")) $("#btnDuplicate").hidden = !id;
+  if ($("#btnHeadCal")) $("#btnHeadCal").hidden = !id;
+  if ($("#btnHeadWallet")) $("#btnHeadWallet").hidden = !id;
   stopActAiRecording(true);
   setActAiBusy(false, "");
   if ($("#actAiTextRow")) $("#actAiTextRow").hidden = true;
@@ -3433,26 +4117,28 @@ async function recalcAllTripsWithMaps() {
   save(`🗺️ ${ok}/${trips.length} viagens atualizadas pelo Google Maps!`);
 }
 
-/* ---------- MULTI-VIAGENS, COMPARTILHAMENTO & CONVITES ---------- */
+/* ---------- MULTI-PLANEJAMENTOS, MODOS, COMPARTILHAMENTO & CONVITES ---------- */
 function renderTripDropdown() {
   const wrap = $("#tripSelectWrap");
   if (!wrap) return;
-  const own = tripsCache.ownTrips || [];
-  const shared = tripsCache.sharedTrips || [];
+  const isPro = appMode === "professional";
+  const own = (tripsCache.ownTrips || []).filter(t => getTripMode(t) === appMode);
+  const shared = (tripsCache.sharedTrips || []).filter(t => getTripMode(t) === appMode);
   const items = [
-    ...own.map(t => ({ id: t.id, label: t.name, group: "Minhas Férias" })),
-    ...shared.map(t => ({ id: t.id, label: `👥 ${t.name} (${t.ownerName})`, group: "Compartilhadas comigo" }))
+    ...own.map(t => ({ id: t.id, label: t.name, group: isPro ? "Meus Projetos" : "Minhas Férias" })),
+    ...shared.map(t => ({ id: t.id, label: `👥 ${t.name} (${t.ownerName})`, group: isPro ? "Compartilhados comigo" : "Compartilhadas comigo" }))
   ];
   if (!tripMultiMsel) {
     tripMultiMsel = createMultiSelect(wrap, {
       minSelected: 1,
-      minError: "Mantenha ao menos 1 viagem selecionada.",
+      minError: "Mantenha ao menos 1 planejamento selecionado.",
       closeOnOnly: true,
       getLabel(sel, all) {
-        if (!sel.length) return "Selecionar férias";
+        if (!sel.length) return appMode === "professional" ? "Selecionar projeto" : "Selecionar férias";
         if (sel.length === 1) return sel[0].label;
-        if (all.length > 1 && sel.length >= all.length) return `Todas (${sel.length} viagens)`;
-        return `${sel.length} viagens`;
+        const unit = appMode === "professional" ? "projetos" : "viagens";
+        if (all.length > 1 && sel.length >= all.length) return `Todos (${sel.length} ${unit})`;
+        return `${sel.length} ${unit}`;
       },
       isHighlighted: sel => sel.length > 1,
       onChange(ids) {
@@ -3468,11 +4154,15 @@ function renderTripDropdown() {
 function updateCrossingsMenuVisibility() {
   const btn = $("#btnMenuCrossings");
   if (!btn) return;
+  if (appMode === "professional") {
+    btn.hidden = true;
+    return;
+  }
   const hasShared = Boolean(
     window.FeriasApi?.isServer() && (
       tripsCache?.hasSharedTrips ||
       (tripsCache?.sharedTrips && tripsCache.sharedTrips.length > 0) ||
-      (tripsCache?.ownTrips || []).some(t => (t.sharedCount || 0) > 0)
+      (tripsCache?.ownTrips || []).some(t => getTripMode(t) === "personal" && (t.sharedCount || 0) > 0)
     )
   );
   btn.hidden = !hasShared;
@@ -3713,22 +4403,29 @@ function renderPendingInvites() {
     return;
   }
   banner.hidden = false;
-  banner.innerHTML = pend.map(p => `
+  banner.innerHTML = pend.map(p => {
+    const modeTag = p.mode === "professional" ? "💼 Projeto Pro" : "🌴 Pessoal";
+    return `
     <div class="invite-card">
       <div>
-        <strong>📩 Convite de viagem compartilhada</strong>
+        <strong>📩 Convite de planejamento compartilhado <span class="pill">${modeTag}</span></strong>
         <div class="small muted">${esc(p.ownerName)} (${esc(p.ownerEmail)}) compartilhou <b>"${esc(p.tripName)}"</b> com você.</div>
       </div>
       <div class="inline-actions">
-        <button type="button" class="btn primary small" data-inv-accept="${p.id}" data-trip="${p.tripId}">✅ Aceitar</button>
+        <button type="button" class="btn primary small" data-inv-accept="${p.id}" data-trip="${p.tripId}" data-mode="${p.mode === "professional" ? "professional" : "personal"}">✅ Aceitar</button>
         <button type="button" class="btn ghost small" data-inv-decline="${p.id}">✕ Recusar</button>
       </div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 
   banner.querySelectorAll("[data-inv-accept]").forEach(b => {
     b.onclick = async () => {
       await window.FeriasApi.respondShare(b.dataset.invAccept, "accept");
-      toast("✅ Viagem aceita e adicionada à sua lista!");
+      toast("✅ Planejamento aceito e adicionado à sua lista!");
+      const invMode = b.dataset.mode === "professional" ? "professional" : "personal";
+      if (invMode !== appMode) {
+        await setAppMode(invMode, { skipLoad: true });
+      }
       await refreshTripsAndLoad(b.dataset.trip);
     };
   });
@@ -3748,7 +4445,11 @@ async function openTripsByIds(tripIds, preferredPrimaryId) {
   const loaded = [];
   results.forEach(res => {
     if (res && res.trip) {
-      const tr = { ...res.trip, data: migrateState(res.trip.data) };
+      const m = getTripMode(res.trip);
+      const data = m === "professional" && window.MyPlanPro
+        ? window.MyPlanPro.migrateProState(res.trip.data)
+        : migrateState(res.trip.data);
+      const tr = { ...res.trip, mode: m, data };
       tr.data.title = tr.name || tr.data.title;
       loadedTripsMap.set(tr.id, tr);
       loaded.push(tr);
@@ -3760,8 +4461,8 @@ async function openTripsByIds(tripIds, preferredPrimaryId) {
   const primary = loaded.find(t => t.id === preferredPrimaryId) || loaded[0];
   activeTrip = primary;
   state = primary.data;
-  window.FeriasApi.setActiveTripId(primary.id);
-  try { localStorage.setItem(SELECTED_TRIPS_KEY, JSON.stringify(selectedTripIds)); } catch {}
+  window.FeriasApi.setActiveTripId(primary.id, appMode);
+  try { localStorage.setItem(getSelectedTripsStorageKey(), JSON.stringify(selectedTripIds)); } catch {}
   if (primary.gmapsKey && window.FeriasMaps && primary.gmapsKey !== window.FeriasMaps.getKey()) {
     window.FeriasMaps.setKey(primary.gmapsKey);
   }
@@ -3778,21 +4479,31 @@ async function refreshTripsAndLoad(preferredTripId) {
   renderPendingInvites();
   updateCrossingsMenuVisibility();
 
-  const own = tripsCache.ownTrips || [];
-  let all = [...own, ...(tripsCache.sharedTrips || [])];
+  const isPro = appMode === "professional";
+  const own = (tripsCache.ownTrips || []).filter(t => getTripMode(t) === appMode);
+  const shared = (tripsCache.sharedTrips || []).filter(t => getTripMode(t) === appMode);
+  let all = [...own, ...shared];
   const curUser = window.FeriasApi.getUser();
-  const bootKey = curUser ? `ferias-pro-own-boot-${curUser.id}` : "";
+  const bootPrefix = isPro ? "myplan-pro-boot-" : "ferias-pro-own-boot-";
+  const bootKey = curUser ? `${bootPrefix}${curUser.id}` : "";
   if (!all.length || (!own.length && bootKey && !localStorage.getItem(bootKey))) {
-    // Garante que o usuário tenha sua própria viagem padrão na 1ª entrada (mesmo se já houver viagem compartilhada pré-carregada)
-    let initialData = clone(window.DEFAULT_DATA);
-    try {
-      const leg = localStorage.getItem(LEGACY_KEY_1) || localStorage.getItem(LEGACY_KEY_2);
-      if (leg) initialData = migrateState(JSON.parse(leg));
-    } catch {}
-    const created = await window.FeriasApi.createTrip(initialData.title || "Férias Final de Ano 2026", initialData, window.FeriasMaps.getKey());
+    let created = null;
+    if (isPro) {
+      const initialPro = clone(window.createDefaultProData ? window.createDefaultProData() : window.PRO_DEFAULT_DATA);
+      created = await window.FeriasApi.createTrip(initialPro.title || "Roadmap & Entregas Profissionais", initialPro, "", "professional");
+    } else {
+      let initialData = clone(window.DEFAULT_DATA);
+      try {
+        const leg = localStorage.getItem(LEGACY_KEY_1) || localStorage.getItem(LEGACY_KEY_2);
+        if (leg) initialData = migrateState(JSON.parse(leg));
+      } catch {}
+      created = await window.FeriasApi.createTrip(initialData.title || "Férias Final de Ano 2026", initialData, window.FeriasMaps.getKey(), "personal");
+    }
     if (bootKey) { try { localStorage.setItem(bootKey, "1"); } catch {} }
     tripsCache = await window.FeriasApi.listTrips();
-    all = [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])];
+    const nextOwn = (tripsCache.ownTrips || []).filter(t => getTripMode(t) === appMode);
+    const nextShared = (tripsCache.sharedTrips || []).filter(t => getTripMode(t) === appMode);
+    all = [...nextOwn, ...nextShared];
     preferredTripId = created?.trip?.id || created?.id || all.find(t => t.role === "owner")?.id;
   } else if (own.length && bootKey) {
     try { localStorage.setItem(bootKey, "1"); } catch {}
@@ -3805,16 +4516,18 @@ async function refreshTripsAndLoad(preferredTripId) {
   }
 
   let savedMulti = [];
-  try { savedMulti = JSON.parse(localStorage.getItem(SELECTED_TRIPS_KEY) || "[]"); } catch {}
+  try { savedMulti = JSON.parse(localStorage.getItem(getSelectedTripsStorageKey()) || "[]"); } catch {}
   const validSaved = Array.isArray(savedMulti) ? savedMulti.filter(id => allIds.has(id)) : [];
   if (validSaved.length) {
-    const prim = allIds.has(window.FeriasApi.getActiveTripId()) ? window.FeriasApi.getActiveTripId() : validSaved[0];
+    const activeStored = window.FeriasApi.getActiveTripId(appMode);
+    const prim = allIds.has(activeStored) ? activeStored : validSaved[0];
     await openTripsByIds(validSaved, prim);
     return;
   }
 
   const ownFirst = all.find(t => t.role === "owner") || all[0];
-  const targetId = allIds.has(window.FeriasApi.getActiveTripId()) ? window.FeriasApi.getActiveTripId() : ownFirst.id;
+  const activeStored = window.FeriasApi.getActiveTripId(appMode);
+  const targetId = allIds.has(activeStored) ? activeStored : ownFirst.id;
   await openTripsByIds([targetId], targetId);
 }
 
@@ -3911,7 +4624,7 @@ function exportXlsx() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sanitizeSheetRows(state.checklist.map((c, i) => ({
     "#": i + 1, Categoria: c.cat, Item: c.item, Prioridade: c.prio, Status: c.status, Notas: c.notes
   })))), "Checklist");
-  XLSX.writeFile(wb, `${(state.title || "Ferias_Pro").replace(/[^\w\-]+/g, "_")}.xlsx`);
+  XLSX.writeFile(wb, `${(state.title || "My_Plan").replace(/[^\w\-]+/g, "_")}.xlsx`);
   toast("⬇️ Excel exportado");
 }
 
@@ -3988,7 +4701,7 @@ function setupPwaInstall() {
       const res = await promptEv.userChoice.catch(() => ({ outcome: "dismissed" }));
       if (res && res.outcome === "accepted") $("#pwaInstallBanner").hidden = true;
     } else if (isIOS) {
-      alert("No iPhone/iPad: toque no botão Compartilhar (quadrado com seta ⬆️) no Safari e escolha 'Adicionar à Tela de Início' para instalar o Férias Pro em tela cheia.");
+      alert("No iPhone/iPad: toque no botão Compartilhar (quadrado com seta ⬆️) no Safari e escolha 'Adicionar à Tela de Início' para instalar o My Plan em tela cheia.");
       $("#pwaInstallBanner").hidden = true;
     } else {
       alert("Para instalar em tela cheia (sem barra de endereço): abra o menu (⋮) do Chrome e toque em 'Instalar aplicativo' (evite 'Criar atalho'). Se já tiver uma versão antiga instalada, desinstale o ícone anterior e instale novamente.");
@@ -4007,10 +4720,10 @@ function showPwaBanner(isIOS) {
   const banner = $("#pwaInstallBanner");
   if (!banner || $("#appShell").hidden) return;
   if (isIOS) {
-    $("#pwaPromptDesc").textContent = "Toque em Compartilhar (⬆️) e 'Adicionar à Tela de Início' para instalar o app Férias Pro.";
+    $("#pwaPromptDesc").textContent = "Toque em Compartilhar (⬆️) e 'Adicionar à Tela de Início' para instalar o app My Plan.";
     $("#btnPwaInstall").textContent = "Baixar App";
   } else {
-    $("#pwaPromptDesc").textContent = "Baixe o aplicativo Férias Pro no seu celular com ícone direto na tela inicial.";
+    $("#pwaPromptDesc").textContent = "Baixe o aplicativo My Plan no seu celular com ícone direto na tela inicial.";
     $("#btnPwaInstall").textContent = "Baixar App";
   }
   banner.hidden = false;
@@ -4160,11 +4873,14 @@ function updateAdminMenuVisibility() {
   const u = window.FeriasApi?.getUser();
   const isAdm = Boolean(window.FeriasApi?.isServer() && u?.isAdmin);
   const tabAdm = $("#tab-admin");
+  const tabProAdm = $("#tab-pro-admin");
   const menuAdm = $("#btnMenuAdmin");
   if (tabAdm) tabAdm.hidden = !isAdm;
+  if (tabProAdm) tabProAdm.hidden = !isAdm;
   if (menuAdm) menuAdm.hidden = !isAdm;
   if (!isAdm && $("#view-admin")?.classList.contains("active")) {
-    switchAppView("gantt");
+    if (appMode === "professional") switchProView("pro-board");
+    else switchAppView("gantt");
   }
 }
 
@@ -4190,16 +4906,21 @@ async function enterApp() {
     window.FeriasMaps.setKey(usr.integrations.gmapsKey);
   }
   updateUserMenu();
+  await setAppMode(appMode, { skipLoad: true });
   await refreshTripsAndLoad();
   setupPwaInstall();
 
   window.FeriasApi.startPolling(
     () => activeTrip?.id,
     full => {
-      const tr = { ...full.trip, data: migrateState(full.trip.data) };
+      const m = getTripMode(full.trip);
+      const data = m === "professional" && window.MyPlanPro
+        ? window.MyPlanPro.migrateProState(full.trip.data)
+        : migrateState(full.trip.data);
+      const tr = { ...full.trip, mode: m, data };
       tr.data.title = tr.name || tr.data.title;
       loadedTripsMap.set(tr.id, tr);
-      if (!activeTrip || tr.id === activeTrip.id) {
+      if ((!activeTrip || tr.id === activeTrip.id) && m === appMode) {
         activeTrip = tr;
         state = tr.data;
         if (tr.gmapsKey && window.FeriasMaps && tr.gmapsKey !== window.FeriasMaps.getKey()) {
@@ -4232,9 +4953,71 @@ function updateSyncBadge(info) {
 }
 
 async function boot() {
+  document.documentElement.setAttribute("data-mode", appMode);
   initTheme();
   initPasswordToggles();
   populateTypeSelectors();
+  if (window.MyPlanPro) {
+    window.MyPlanPro.init({
+      buildGanttScale,
+      buildUnifiedItems,
+      clone,
+      createMultiSelect,
+      DAY,
+      days,
+      detectUnifiedConflicts,
+      ensureUnifiedTripsLoaded,
+      esc,
+      fileToBase64Obj,
+      findActivityContext,
+      fmtBR,
+      fmtISO,
+      fmtShortBR,
+      GANTT_ZOOM_STEPS,
+      getActiveTrip: () => activeTrip,
+      getAllAvailableTags,
+      getSelectedTrips,
+      getState: () => state,
+      getTypeInfoAny,
+      getUnifiedBarExtraClasses,
+      getUnifiedState: () => ({ unified: ganttUnifiedMode, conflictsOnly: ganttConflictsOnly }),
+      isMultiTripMode,
+      MON,
+      MON_FULL,
+      money,
+      MULTI_TRIP_COLORS,
+      num,
+      openCheckModal,
+      openModal: idOrOpts => window.openModal(idOrOpts),
+      openPrintGanttModal,
+      openProfileModal,
+      openSmartCalendarModal,
+      openWalletPassDirect,
+      parseD,
+      pickSupportedAudioMime,
+      populateEventSelect,
+      prefetchWalletPassForActivity,
+      registerCustomTag,
+      renderTripDropdown,
+      renderUnifiedCardSubBadges,
+      renderUnifiedStatusBar,
+      reportHelpers,
+      resolveTripRefById,
+      sanitizeSheetRows,
+      save,
+      saveTripRecord,
+      sendPlanToMyWhatsApp,
+      setUnifiedState: next => toggleUnifiedGanttMode(next),
+      switchProView,
+      syncSingleActivityToCalendar,
+      toast,
+      toggleGanttFullscreen,
+      uid,
+      unifiedConflictMap,
+      unifiedMetaMap,
+      WD
+    });
+  }
   window.FeriasApi.onStatus(updateSyncBadge);
 
   const cfg = await window.FeriasApi.initServer();
@@ -4429,44 +5212,67 @@ $("#authForm").onsubmit = async e => {
 $("#btnLogout").onclick = async () => {
   selectedTripIds = [];
   loadedTripsMap.clear();
-  try { localStorage.removeItem(SELECTED_TRIPS_KEY); } catch {}
+  try {
+    localStorage.removeItem(SELECTED_TRIPS_KEY);
+    localStorage.removeItem(SELECTED_TRIPS_PRO_KEY);
+  } catch {}
   await window.FeriasApi.logout();
   location.reload();
 };
 
-$("#btnNewTrip").onclick = () => { $("#nt-name").value = ""; $("#newTripModal").showModal(); };
+$("#btnNewTrip").onclick = () => {
+  const isPro = appMode === "professional";
+  if ($("#nt-modalTitle")) $("#nt-modalTitle").textContent = isPro ? "💼 Criar Novo Projeto Profissional" : "✈️ Criar Nova Viagem / Férias";
+  if ($("#nt-nameLabel")) $("#nt-nameLabel").textContent = isPro ? "Nome do projeto / agenda profissional" : "Nome das férias / viagem";
+  if ($("#nt-name")) $("#nt-name").placeholder = isPro ? "Ex: Lançamento App Q2, Consultoria Cliente X..." : "Ex: Férias Julho 2027, Feriado Carnaval...";
+  if ($("#nt-copyVehicleWrap")) $("#nt-copyVehicleWrap").hidden = isPro;
+  if ($("#nt-submitBtn")) $("#nt-submitBtn").textContent = isPro ? "Criar projeto" : "Criar do zero";
+  $("#nt-name").value = "";
+  $("#newTripModal").showModal();
+};
 $("#btnCloseNewTrip").onclick = $("#btnCancelNewTrip").onclick = () => $("#newTripModal").close();
 $("#newTripForm").onsubmit = async e => {
   e.preventDefault();
   const name = $("#nt-name").value.trim();
   if (!name) return;
-  const copyVeh = $("#nt-copyVehicle").checked;
-  const data = window.createBlankTripData(name, copyVeh ? state.vehicle : null);
-  const created = await window.FeriasApi.createTrip(name, data, window.FeriasMaps.getKey());
-  $("#newTripModal").close();
-  await refreshTripsAndLoad(created.id);
-  toast(`✈️ Viagem "${name}" criada!`);
+  const isPro = appMode === "professional";
+  if (isPro) {
+    const data = window.createBlankProData ? window.createBlankProData(name) : { mode: "professional", title: name, activities: [], checklist: [] };
+    const created = await window.FeriasApi.createTrip(name, data, "", "professional");
+    $("#newTripModal").close();
+    await refreshTripsAndLoad(created.id);
+    toast(`💼 Projeto "${name}" criado!`);
+  } else {
+    const copyVeh = $("#nt-copyVehicle").checked;
+    const data = window.createBlankTripData(name, copyVeh ? state.vehicle : null);
+    const created = await window.FeriasApi.createTrip(name, data, window.FeriasMaps.getKey(), "personal");
+    $("#newTripModal").close();
+    await refreshTripsAndLoad(created.id);
+    toast(`✈️ Viagem "${name}" criada!`);
+  }
 };
 
 $("#btnRenameTrip").onclick = async () => {
   if (!activeTrip) return;
-  const n = prompt("Novo nome para estas férias:", state.title || activeTrip.name);
+  const isPro = appMode === "professional";
+  const n = prompt(isPro ? "Novo nome para este projeto:" : "Novo nome para estas férias:", state.title || activeTrip.name);
   if (!n || !n.trim()) return;
   state.title = n.trim();
   activeTrip.name = state.title;
-  save("✏️ Viagem renomeada");
+  save(isPro ? "✏️ Projeto renomeado" : "✏️ Viagem renomeada");
   await refreshTripsAndLoad(activeTrip.id);
 };
 
 $("#btnDeleteTrip").onclick = async () => {
-  if (!activeTrip || activeTrip.role !== "owner") return toast("Apenas o criador pode excluir esta viagem.");
+  const isPro = appMode === "professional";
+  if (!activeTrip || activeTrip.role !== "owner") return toast(`Apenas o criador pode excluir este ${isPro ? "projeto" : "planejamento"}.`);
   if (!confirm(`Excluir permanentemente "${state.title}" e todos os anexos?`)) return;
   const delId = activeTrip.id;
   await window.FeriasApi.deleteTrip(delId);
   loadedTripsMap.delete(delId);
   selectedTripIds = selectedTripIds.filter(x => x !== delId);
-  try { localStorage.setItem(SELECTED_TRIPS_KEY, JSON.stringify(selectedTripIds)); } catch {}
-  toast("🗑️ Viagem excluída");
+  try { localStorage.setItem(getSelectedTripsStorageKey(), JSON.stringify(selectedTripIds)); } catch {}
+  toast(isPro ? "🗑️ Projeto excluído" : "🗑️ Viagem excluída");
   await refreshTripsAndLoad();
 };
 
@@ -4495,14 +5301,75 @@ if ($("#btnCrossingsDone")) $("#btnCrossingsDone").onclick = () => $("#crossings
 $("#btnPendingInvites").onclick = () => $("#invitesBanner").scrollIntoView({ behavior: "smooth" });
 
 function switchAppView(viewId) {
-  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.view === viewId));
+  if (viewId !== "admin") lastPersonalView = viewId;
+  $("#tabs")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.view === viewId));
+  $("#tabsPro")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.proView === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
   if (viewId === "admin") loadAndRenderAdmin();
 }
 
-document.querySelectorAll(".tab").forEach(b => {
+function switchProView(viewId) {
+  if (viewId !== "admin") lastProView = viewId;
+  $("#tabsPro")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.proView === viewId));
+  $("#tabs")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.view === viewId));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
+  if (viewId === "admin") loadAndRenderAdmin();
+}
+
+async function setAppMode(nextMode, opts = {}) {
+  const mode = nextMode === "professional" ? "professional" : "personal";
+  appMode = mode;
+  try { localStorage.setItem(APP_MODE_KEY, mode); } catch {}
+  document.documentElement.setAttribute("data-mode", mode);
+  applyTheme(isDarkTheme() ? "dark" : "light");
+  exitAnyGanttFullscreen();
+
+  const isPro = mode === "professional";
+  if ($("#brandModeTag")) $("#brandModeTag").textContent = isPro ? "PRO" : "Pessoal";
+  const swBtn = $("#btnModeSwitch");
+  if (swBtn) {
+    const ico = swBtn.querySelector(".mode-switch-ico");
+    const full = swBtn.querySelector(".mode-switch-full");
+    const short = swBtn.querySelector(".mode-switch-short");
+    if (ico) ico.textContent = isPro ? "🌴" : "💼";
+    if (full) full.textContent = isPro ? "Mudar para Pessoal" : "Mudar para Profissional";
+    if (short) short.textContent = isPro ? "Pessoal" : "Pro";
+    swBtn.title = isPro ? "Mudar para o Modo Pessoal (Férias & Viagens)" : "Mudar para o Modo Profissional (Trello, Gantt & Projetos)";
+  }
+
+  if ($("#tabs")) $("#tabs").hidden = isPro;
+  if ($("#tabsPro")) $("#tabsPro").hidden = !isPro;
+
+  if ($("#btnAddLabel")) $("#btnAddLabel").textContent = isPro ? "Cartão" : "Evento";
+  if ($("#btnAdd")) $("#btnAdd").title = isPro ? "Adicionar cartão profissional" : "Adicionar evento ou viagem";
+  if ($("#btnNewTrip")) $("#btnNewTrip").title = isPro ? "Criar novo projeto profissional" : "Criar nova viagem";
+  if ($("#btnPrintReport")) $("#btnPrintReport").textContent = isPro ? "🖨️ Imprimir relatório executivo" : "🖨️ Imprimir relatório da viagem";
+  if ($("#btnShareTripLabel")) $("#btnShareTripLabel").textContent = isPro ? "Compartilhar projeto" : "Compartilhar viagem";
+  if ($("#btnMenuCalendarAll")) $("#btnMenuCalendarAll").textContent = isPro ? "📅 Enviar agenda p/ Google Agenda" : "📅 Enviar férias p/ Google Agenda";
+  if ($("#btnImportXlsx")) $("#btnImportXlsx").hidden = isPro;
+  if ($("#btnRenameTrip")) $("#btnRenameTrip").textContent = isPro ? "✏️ Renomear projeto atual" : "✏️ Renomear viagem atual";
+  if ($("#btnDeleteTrip")) $("#btnDeleteTrip").textContent = isPro ? "🗑️ Excluir projeto atual" : "🗑️ Excluir viagem atual";
+
+  updateCrossingsMenuVisibility();
+  updateAdminMenuVisibility();
+  if (isPro) switchProView(lastProView || "pro-board");
+  else switchAppView(lastPersonalView || "gantt");
+
+  if (!opts.skipLoad) {
+    selectedTripIds = [];
+    await refreshTripsAndLoad();
+  }
+}
+
+$("#tabs")?.querySelectorAll(".tab").forEach(b => {
   b.onclick = () => switchAppView(b.dataset.view);
 });
+$("#tabsPro")?.querySelectorAll(".tab").forEach(b => {
+  b.onclick = () => switchProView(b.dataset.proView);
+});
+if ($("#btnModeSwitch")) {
+  $("#btnModeSwitch").onclick = () => setAppMode(appMode === "professional" ? "personal" : "professional");
+}
 
 /* ---------- PAINEL SUPER ADMIN & ADMIN DELEGADO ---------- */
 let adminCache = null;
@@ -4538,12 +5405,14 @@ async function loadAndRenderAdmin() {
 
 function getAdminGlobalOverlaps() {
   if (!adminCache?.trips?.length) return { crossings: [], analyzed: [], allDates: [] };
-  const allTrips = adminCache.trips.map(tr => ({
-    ...tr,
-    role: "owner",
-    isAdminGlobal: true,
-    data: migrateState(tr.data)
-  }));
+  const allTrips = adminCache.trips
+    .filter(tr => getTripMode(tr) === "personal")
+    .map(tr => ({
+      ...tr,
+      role: "owner",
+      isAdminGlobal: true,
+      data: migrateState(tr.data)
+    }));
   return analyzeTripsCrossings(allTrips, { requireDifferentOwners: true });
 }
 
@@ -4693,17 +5562,27 @@ function renderAdminSubView(precomputedOv) {
       <thead><tr><th>Viagem</th><th>Proprietário</th><th>Período</th><th>Atividades</th><th>Km</th><th>Total Estimado</th><th>Compart.</th><th>Atualizado</th><th>Ações</th></tr></thead>
       <tbody>
         ${filtered.map(t => {
-          const td = migrateState(t.data);
+          const isProTrip = getTripMode(t) === "professional";
+          const td = (isProTrip && window.MyPlanPro) ? window.MyPlanPro.migrateProState(t.data) : migrateState(t.data);
           const acts = [...(td.activities || [])].sort((a, b) => a.start.localeCompare(b.start));
-          const tot = computeSingleTripTotals(td);
           const spanTxt = acts.length ? `${fmtShortBR(acts[0].start)} – ${fmtShortBR(acts.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, acts[0].start))}` : "—";
+          let kmTxt = "—", totTxt = "—";
+          if (isProTrip && window.MyPlanPro) {
+            const pt = window.MyPlanPro.computeProTotals(acts);
+            totTxt = `+${money(pt.totalIncome)} / −${money(pt.totalExpense)}`;
+          } else {
+            const tot = computeSingleTripTotals(td);
+            kmTxt = `${num(tot.km)} km`;
+            totTxt = money(tot.grandTotal);
+          }
+          const mBadge = isProTrip ? `<span class="admin-badge admin">💼 Pro</span>` : `<span class="admin-badge">🌴 Pessoal</span>`;
           return `<tr>
-            <td><b>${esc(t.name)}</b> ${t.isDemoTrip ? `<span class="admin-badge demo">Demo</span>` : ""}</td>
+            <td><b>${esc(t.name)}</b> ${mBadge} ${t.isDemoTrip ? `<span class="admin-badge demo">Demo</span>` : ""}</td>
             <td>${esc(t.ownerName)}<br><small class="muted">${esc(t.ownerEmail)}</small></td>
             <td>${spanTxt}</td>
             <td>${t.activitiesCount}</td>
-            <td>${num(tot.km)} km</td>
-            <td><b>${money(tot.grandTotal)}</b></td>
+            <td>${kmTxt}</td>
+            <td><b>${totTxt}</b></td>
             <td>${t.sharesCount}</td>
             <td>${fmtDateTimeBR(t.updatedAt)}</td>
             <td>
@@ -4920,7 +5799,7 @@ async function loadAndRenderAdminVault() {
                 <input type="password" id="vlt-smtpPass" value="${s.vaultHasSmtpPass ? "••••••••" : ""}" placeholder="${s.hasSmtpPass ? "Ativo — digite apenas para trocar" : "Senha/App Password SMTP"}">
               </label>
               <label>SMTP_FROM
-                <input type="text" id="vlt-smtpFrom" value="${esc(s.smtpFrom || "")}" placeholder="Férias Pro &lt;no-reply@...&gt;">
+                <input type="text" id="vlt-smtpFrom" value="${esc(s.smtpFrom || "")}" placeholder="My Plan &lt;no-reply@...&gt;">
               </label>
               <label>RESEND_API_KEY (alternativa ao SMTP)
                 <input type="password" id="vlt-resendApiKey" value="${s.vaultHasResend ? "••••••••" : ""}" placeholder="${s.hasResendApiKey ? "Ativo" : "re_..."}">
@@ -5023,7 +5902,16 @@ async function loadAndRenderAdminVault() {
 async function printAdminTripReport(tripId) {
   if (!adminCache) return;
   const tr = adminCache.trips.find(x => x.id === tripId);
-  if (!tr) return toast("Viagem não encontrada.");
+  if (!tr) return toast("Planejamento não encontrado.");
+  toast(`🖨️ Gerando relatório de "${tr.name}"...`);
+  if (getTripMode(tr) === "professional" && window.MyPlanPro) {
+    const td = window.MyPlanPro.migrateProState(tr.data);
+    const acts = [...(td.activities || [])].sort((a, b) => a.start.localeCompare(b.start));
+    const pt = window.MyPlanPro.computeProTotals(acts);
+    const helpers = { ...reportHelpers(), getTypeInfo: t => window.MyPlanPro.getProTypeInfo(t) };
+    await window.FeriasReport.printFullProReport(td, acts, pt, helpers);
+    return;
+  }
   const td = migrateState(tr.data);
   const acts = [...(td.activities || [])].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
   const tot = computeSingleTripTotals(td);
@@ -5031,7 +5919,6 @@ async function printAdminTripReport(tripId) {
     ...reportHelpers(),
     calc: (a, kmL) => calc(a, kmL, td)
   };
-  toast(`🖨️ Gerando relatório de "${tr.name}"...`);
   await window.FeriasReport.printFullTripReport(td, acts, tot, helpers, window.FeriasMaps ? window.FeriasMaps.getKey() : "");
 }
 
@@ -5268,7 +6155,10 @@ if ($("#adminUserTypeFilter")) $("#adminUserTypeFilter").onchange = () => render
 if ($("#btnCloseAdminUser")) $("#btnCloseAdminUser").onclick = () => $("#adminUserModal").close();
 if ($("#btnAdminUserDone")) $("#btnAdminUserDone").onclick = () => $("#adminUserModal").close();
 
-$("#btnAdd").onclick = () => openModal();
+$("#btnAdd").onclick = () => {
+  if (appMode === "professional" && window.MyPlanPro) window.MyPlanPro.openProCardModal();
+  else openModal();
+};
 if ($("#btnAddEventGantt")) $("#btnAddEventGantt").onclick = () => openModal();
 $("#btnCloseX").onclick = $("#btnCancel").onclick = () => $("#modal").close();
 $("#f-type").onchange = toggleTrip;
@@ -5405,9 +6295,14 @@ async function executeSmartCalendarSync() {
   const cid = getEffectiveCalendarClientId();
   const body = $("#calSyncBody");
   const btnNow = $("#btnCalSyncNow");
-  const acts = sorted();
-  const rem = state.params.calendarReminderTime || "09:00";
+  const acts = (appMode === "professional" && window.MyPlanPro) ? window.MyPlanPro.getProSortedActivities() : sorted();
+  const rem = state.params?.calendarReminderTime || "09:00";
   const tid = activeTrip?.id || "default";
+  const calMode = appMode === "professional" ? "professional" : "personal";
+  const calTitle = state.title || activeTrip?.name || "Planejamento";
+  const dedicatedCalName = window.FeriasCalendar.getCalendarSummaryName
+    ? window.FeriasCalendar.getCalendarSummaryName(calTitle, calMode)
+    : `My Plan — ${calTitle}`;
 
   if (!cid) {
     btnNow.hidden = true;
@@ -5424,29 +6319,29 @@ async function executeSmartCalendarSync() {
     body.innerHTML = `
       ${feedUrl ? `
         <div class="gmaps-key-panel" style="margin-top:0">
-          <strong>1️⃣ Assinar Calendário Automático (1 clique · sem bloqueio OAuth)</strong>
-          <p class="muted small">Assine uma única vez: <b>${acts.length}</b> atividade(s) e lembretes (dia anterior às <b>${esc(rem)}</b>) são publicados pela sua VPS e atualizam na sua agenda.</p>
+          <strong>1️⃣ Assinar Calendário Exclusivo (${esc(dedicatedCalName)})</strong>
+          <p class="muted small">Cada evento/projeto gera seu próprio calendário separado no Google Agenda (Pessoal ou Pro, incluindo itens compartilhados). <b>${acts.length}</b> atividade(s) com lembrete às <b>${esc(rem)}</b> na véspera.</p>
           <div class="key-actions-row">
             <a class="btn primary small" href="${esc(gcalSubscribeUrl)}" target="_blank" rel="noopener">📅 Assinar no Google Agenda</a>
             <a class="btn ghost small" href="${esc(webcalUrl)}">🍎 Assinar no iPhone / Mac</a>
             <button type="button" class="btn ghost small" id="btnCopyCalFeed">📋 Copiar link</button>
           </div>
-          ${isLocalHost ? `<p class="muted small">💡 A assinatura automática por link webcal funciona no domínio público (<code>https://feriaspro.digitalinpulse.com.br</code>). Localmente, use o botão <b>Baixar .ics agora</b> abaixo.</p>` : `<p class="muted small">ℹ️ O Google Agenda atualiza assinaturas externas periodicamente. Para importar imediatamente agora mesmo, use o botão <code>.ics</code> abaixo.</p>`}
+          ${isLocalHost ? `<p class="muted small">💡 A assinatura automática por link webcal funciona no domínio público (<code>https://feriaspro.digitalinpulse.com.br</code>). Localmente, use o botão <b>Baixar .ics agora</b> abaixo.</p>` : `<p class="muted small">ℹ️ Ao assinar, este evento aparece como um calendário separado no seu Google Agenda sem misturar com outros planejamentos.</p>`}
         </div>
       ` : ""}
 
       <div class="gmaps-key-panel" style="margin-top:0">
-        <strong>2️⃣ Importar / Atualizar todas agora (.ics inteligente)</strong>
-        <p class="muted small">Baixe o arquivo <code>.ics</code> com todas as <b>${acts.length}</b> atividade(s) e importe no Google Agenda — cada evento tem ID único para atualizar sem duplicar. Ao clicar em <b>📅 Enviar p/ Agenda</b> dentro de qualquer atividade, ela também abre preenchida direto no Google Agenda.</p>
+        <strong>2️⃣ Importar / Atualizar em calendário separado (.ics inteligente)</strong>
+        <p class="muted small">Baixe o arquivo <code>.ics</code> deste evento com todas as <b>${acts.length}</b> atividade(s). Dica: no Google Agenda, crie um calendário secundário para cada viagem/projeto caso prefira importar manualmente via arquivo.</p>
         <div class="key-actions-row">
           <a class="btn ghost small" href="https://calendar.google.com/calendar/u/0/r/settings/export" target="_blank" rel="noopener">📂 Abrir Importador do Google Agenda ↗</a>
         </div>
       </div>
 
       <details class="help-details">
-        <summary>⚙️ Modo avançado opcional: API OAuth (Client ID próprio verificado)</summary>
+        <summary>⚙️ Modo automático OAuth (cria calendário dedicado direto na conta)</summary>
         <div style="display:grid;gap:8px;margin-top:8px">
-          <p class="muted small">Requer um <b>OAuth Client ID</b> separado e verificado no Google Cloud para o escopo <code>calendar.events</code> (não use o Client ID padrão de Login para evitar a tela "Acesso bloqueado"):</p>
+          <p class="muted small">Informe um <b>OAuth Client ID</b> com escopo <code>calendar</code> para criar/atualizar automaticamente o calendário exclusivo <b>${esc(dedicatedCalName)}</b> na sua conta Google e na de colaboradores:</p>
           <div class="key-input-row">
             <input type="text" id="calModalClientId" placeholder="Client ID verificado para Agenda..." style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:9px 11px;color:var(--text-strong);width:100%">
             <button type="button" class="btn primary small" id="btnModalConnectGcal">Ativar e Sincronizar</button>
@@ -5478,20 +6373,20 @@ async function executeSmartCalendarSync() {
   btnNow.hidden = false;
   btnNow.disabled = true;
   btnNow.textContent = "Sincronizando...";
-  body.innerHTML = `<p>⏳ Abrindo autorização da sua conta Google e comparando <b>${acts.length}</b> atividade(s)...</p>`;
+  body.innerHTML = `<p>⏳ Abrindo autorização da sua conta Google e sincronizando <b>${acts.length}</b> item(ns) no calendário <b>${esc(dedicatedCalName)}</b>...</p>`;
   try {
-    const res = await window.FeriasCalendar.smartSyncTrip(acts, state.title, cid, rem, tid, true);
+    const res = await window.FeriasCalendar.smartSyncTrip(acts, calTitle, cid, rem, tid, true, calMode);
     body.innerHTML = `
-      <p>✅ <b>Sincronização concluída</b> para <b>${esc(state.title)}</b> (lembrete no dia anterior às <b>${esc(rem)}</b>):</p>
+      <p>✅ <b>Sincronização concluída</b> no calendário <b>${esc(res.calendarName || dedicatedCalName)}</b> (lembrete às <b>${esc(rem)}</b>):</p>
       <div class="cal-sync-stats">
         <div class="cal-stat"><b>${res.created}</b><span class="muted small">Criados</span></div>
         <div class="cal-stat"><b>${res.updated}</b><span class="muted small">Atualizados</span></div>
         <div class="cal-stat"><b>${res.deleted}</b><span class="muted small">Removidos</span></div>
         <div class="cal-stat"><b>${res.unchanged}</b><span class="muted small">Sem alteração</span></div>
       </div>
-      <p class="muted small">Se você alterar datas, nomes ou excluir eventos no Férias Pro e clicar em Agenda novamente, apenas as mudanças serão aplicadas.</p>`;
+      <p class="muted small">Este evento possui calendário próprio separado no Google Agenda (Pessoal/Pro e compartilhamentos permanecem organizados).</p>`;
     btnNow.textContent = "🔄 Sincronizar Novamente";
-    toast(`📅 Agenda: ${res.created} criados · ${res.updated} atualizados · ${res.deleted} removidos`);
+    toast(`📅 ${res.calendarName || dedicatedCalName}: ${res.created} criados · ${res.updated} atualizados`);
   } catch (err) {
     body.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>
       <p class="muted small">Se o Google exibiu <b>Acesso bloqueado</b>, volte para o modo direto sem OAuth ou baixe o arquivo <code>.ics</code> abaixo.</p>
@@ -5513,42 +6408,67 @@ async function executeSmartCalendarSync() {
   }
 }
 
+async function syncSingleActivityToCalendar(a, tripRefOpt = null) {
+  const tr = tripRefOpt || editingTripRef || activeTrip;
+  const tripMode = getTripMode(tr) === "professional" || appMode === "professional" ? "professional" : "personal";
+  const tripName = tr?.data?.title || tr?.name || state.title || "My Plan";
+  const tripId = tr?.id || activeTrip?.id || "default";
+  const cid = getEffectiveCalendarClientId();
+  const rem = tr?.data?.params?.calendarReminderTime || state.params?.calendarReminderTime || "09:00";
+  if (!cid) {
+    window.open(window.FeriasCalendar.buildGoogleCalendarTemplateUrl(a, tripName, tripMode), "_blank", "noopener");
+    return toast(`📅 Abrindo no Google Agenda (${tripName})!`);
+  }
+  try {
+    const res = await window.FeriasCalendar.syncSingleActivity(a, tripName, cid, rem, tripId, tripMode);
+    toast(`📅 ${res.calendarName || tripName}: ${res.created ? "evento criado" : res.updated ? "evento atualizado" : "já sincronizado"}!`);
+  } catch {
+    window.open(window.FeriasCalendar.buildGoogleCalendarTemplateUrl(a, tripName, tripMode), "_blank", "noopener");
+    toast("⚠️ Abrindo formulário direto no Google Agenda.");
+  }
+}
+
 function openSmartCalendarModal() {
   const modal = $("#calSyncModal");
   modal.showModal();
   executeSmartCalendarSync();
 }
 
-$("#btnCalDirect").onclick = async () => {
-  updateModalPreview();
-  const cid = getEffectiveCalendarClientId();
-  if (!cid) {
-    window.open($("#btnCalLink").href, "_blank", "noopener");
-    return toast("📅 Abrindo evento preenchido no Google Agenda!");
-  }
-  try {
+if ($("#btnCalDirect")) {
+  $("#btnCalDirect").onclick = async () => {
+    updateModalPreview();
     const a = readForm();
     if (editing) a.id = editing;
-    const res = await window.FeriasCalendar.syncSingleActivity(a, state.title, cid, state.params.calendarReminderTime, activeTrip?.id || "default");
-    toast(`📅 Google Agenda: ${res.created ? "evento criado" : res.updated ? "evento atualizado" : "já atualizado"}!`);
-  } catch (err) {
-    window.open($("#btnCalLink").href, "_blank", "noopener");
-    toast("⚠️ OAuth indisponível — abrindo evento direto no Google Agenda.");
-  }
-};
+    await syncSingleActivityToCalendar(a, editingTripRef || activeTrip);
+  };
+}
+if ($("#btnHeadCal")) {
+  $("#btnHeadCal").onclick = async () => {
+    updateModalPreview();
+    const a = readForm();
+    if (!a.name) return toast("Preencha o nome da atividade primeiro.");
+    if (editing) a.id = editing;
+    const chosenId = $("#f-targetTrip")?.value;
+    const tr = (chosenId && loadedTripsMap.get(chosenId)) || editingTripRef || activeTrip;
+    await syncSingleActivityToCalendar(a, tr);
+  };
+}
 
-$("#btnCalIcs").onclick = () => {
-  const a = readForm();
-  if (editing) a.id = editing;
-  window.FeriasCalendar.downloadIcs([a], a.name || state.title, state.params.calendarReminderTime, activeTrip?.id || "local");
-  toast("📆 Arquivo .ics baixado (com lembrete 09:00 do dia anterior)!");
-};
+if ($("#btnCalIcs")) {
+  $("#btnCalIcs").onclick = () => {
+    const a = readForm();
+    if (editing) a.id = editing;
+    window.FeriasCalendar.downloadIcs([a], a.name || state.title, state.params.calendarReminderTime, activeTrip?.id || "local", "personal");
+    toast("📆 Arquivo .ics baixado (com lembrete na véspera)!");
+  };
+}
 
 if ($("#btnSyncCalendarTop")) $("#btnSyncCalendarTop").onclick = openSmartCalendarModal;
 $("#btnSyncAllCalendar").onclick = $("#btnMenuCalendarAll").onclick = openSmartCalendarModal;
 $("#btnCloseCalSync").onclick = () => $("#calSyncModal").close();
 $("#btnCalSyncIcs").onclick = $("#btnDownloadAllIcs").onclick = $("#btnExportIcs").onclick = () => {
-  window.FeriasCalendar.downloadIcs(sorted(), state.title, state.params.calendarReminderTime, activeTrip?.id || "local");
+  const list = (appMode === "professional" && window.MyPlanPro) ? window.MyPlanPro.getProSortedActivities() : sorted();
+  window.FeriasCalendar.downloadIcs(list, state.title, state.params?.calendarReminderTime || "09:00", activeTrip?.id || "local", appMode);
   toast("📆 Agenda .ics inteligente baixada!");
 };
 $("#btnCalSyncNow").onclick = () => {
@@ -5583,16 +6503,22 @@ $("#btnModalSaveKey").onclick = () => {
   computeModalRoute(true);
 };
 
-$("#form").onsubmit = e => {
+$("#form").onsubmit = async e => {
   e.preventDefault();
   const a = readForm();
   if (!a.name || !a.start) return;
-  let targetTrip = editingTripRef || activeTrip;
-  if (!editing && $("#f-targetTripWrap") && !$("#f-targetTripWrap").hidden && $("#f-targetTrip")?.value) {
-    targetTrip = loadedTripsMap.get($("#f-targetTrip").value) || targetTrip;
+  const sourceTrip = editingTripRef || activeTrip;
+  const chosenId = $("#f-targetTrip")?.value;
+  let targetTrip = sourceTrip;
+  if (chosenId && chosenId !== sourceTrip?.id) {
+    try {
+      targetTrip = (await resolveTripRefById(chosenId)) || sourceTrip;
+    } catch {
+      targetTrip = sourceTrip;
+    }
   }
   if (targetTrip?.role === "viewer") {
-    return toast("👁️ Viagem compartilhada somente para visualização.");
+    return toast("👁️ Evento compartilhado somente para visualização.");
   }
   const tgtData = targetTrip?.data || state;
   if (Array.isArray(a.tags) && a.tags.length) {
@@ -5604,6 +6530,25 @@ $("#form").onsubmit = e => {
       }
     });
   }
+  const movedAcrossEvents = Boolean(editing && sourceTrip && targetTrip && sourceTrip.id !== targetTrip.id);
+  if (movedAcrossEvents) {
+    if (sourceTrip.role === "viewer") {
+      return toast("👁️ O evento de origem é somente leitura.");
+    }
+    const srcActs = sourceTrip.data?.activities || [];
+    const oldItem = srcActs.find(x => x.id === editing);
+    sourceTrip.data.activities = srcActs.filter(x => x.id !== editing);
+    const cloned = oldItem ? { ...oldItem, ...a, id: editing } : { id: editing, ...a };
+    for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges", "airline", "bookingRef", "includeRouteCost", "startTime", "qrPayload", "qrFormat", "tags"]) {
+      if (!(k in a)) delete cloned[k];
+    }
+    tgtData.activities.push(cloned);
+    $("#modal").close();
+    saveTripRecord(sourceTrip, "", true);
+    saveTripRecord(targetTrip, `📦 Atividade movida para "${tgtData.title || targetTrip.name}"`);
+    return;
+  }
+
   if (editing) {
     const o = tgtData.activities.find(x => x.id === editing);
     if (o) {
@@ -5629,7 +6574,125 @@ $("#btnDuplicate").onclick = () => {
   saveTripRecord(targetTrip, "⧉ Duplicado");
 };
 
-// Gantt controls
+// Gantt controls (Zoom -/+/Fit, Modo Semana <44%, Tela Cheia Real, Agenda Completa e Impressão WYSIWYG)
+async function toggleUnifiedGanttMode(forceState = null) {
+  const next = forceState === null ? !ganttUnifiedMode : Boolean(forceState);
+  ganttUnifiedMode = next;
+  if (!next) ganttConflictsOnly = false;
+  if (next) {
+    toast("🔀 Carregando todos os eventos Pessoais e Profissionais...");
+    await ensureUnifiedTripsLoaded();
+  }
+  if ($("#btnGanttUnified")) $("#btnGanttUnified").setAttribute("aria-pressed", String(ganttUnifiedMode));
+  if ($("#btnProGanttUnified")) $("#btnProGanttUnified").setAttribute("aria-pressed", String(ganttUnifiedMode));
+  if (appMode === "professional" && window.MyPlanPro) {
+    window.MyPlanPro.renderProGantt();
+    window.MyPlanPro.renderProTimeline?.();
+  } else {
+    const s = sorted();
+    renderGantt(s);
+    renderTimeline(s);
+  }
+}
+
+function updateGanttZoomReadout() {
+  const btn = $("#btnGanttZoomReset");
+  if (!btn) return;
+  const pct = Math.round((ganttZoom / 50) * 100);
+  btn.textContent = pct < 44 ? `${pct}% S` : `${pct}%`;
+  btn.title = pct < 44 ? `Zoom ${pct}% (Modo Semanas do Ano)` : "Resetar zoom (100%)";
+}
+
+function stepGanttZoom(delta) {
+  let idx = GANTT_ZOOM_STEPS.findIndex(v => v >= ganttZoom);
+  if (idx < 0) idx = GANTT_ZOOM_STEPS.length - 1;
+  const nextIdx = Math.max(0, Math.min(GANTT_ZOOM_STEPS.length - 1, idx + delta));
+  const nextZoom = GANTT_ZOOM_STEPS[nextIdx];
+  if (nextZoom === ganttZoom) return;
+  const wrap = $("#ganttWrap");
+  const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 265);
+  const oldUnitW = ganttZoom < 22 ? Math.max(46, Math.round(ganttZoom * 4.4)) / 7 : ganttZoom;
+  const centerRatio = wrap ? Math.max(0, (wrap.scrollLeft + (wrap.clientWidth - nameW) / 2) / Math.max(1, oldUnitW)) : 0;
+  ganttZoom = nextZoom;
+  updateGanttZoomReadout();
+  renderGantt(sorted());
+  const newUnitW = ganttZoom < 22 ? Math.max(46, Math.round(ganttZoom * 4.4)) / 7 : ganttZoom;
+  if (wrap && centerRatio > 0) {
+    wrap.scrollLeft = Math.max(0, centerRatio * newUnitW - (wrap.clientWidth - nameW) / 2);
+  }
+}
+
+function fitGanttZoom() {
+  const s = ganttUnifiedMode ? getUnifiedFilteredItems().filtered : applyPersonalFilters(sorted());
+  const wrap = $("#ganttWrap");
+  if (!s.length || !wrap) return;
+  const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 265);
+  const minTs = parseD(s[0].start).getTime() - 2 * DAY;
+  const maxS = s.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, s[0].start);
+  const n = Math.max(5, Math.round((parseD(maxS) - minTs) / DAY) + 6);
+  const avail = Math.max(240, wrap.clientWidth - nameW - 24);
+  ganttZoom = Math.max(10, Math.min(94, Math.floor(avail / n)));
+  updateGanttZoomReadout();
+  renderGantt(sorted());
+  wrap.scrollLeft = 0;
+}
+
+function setFullscreenBtnState(btnEl, active) {
+  if (!btnEl) return;
+  btnEl.setAttribute("aria-pressed", active ? "true" : "false");
+  btnEl.innerHTML = active ? `⤡ <span>Sair</span>` : `⛶ <span class="hide-xs">Tela cheia</span>`;
+  btnEl.title = active ? "Sair da tela cheia (Esc)" : "Ampliar Gantt em tela inteira";
+}
+
+let fsNativeActive = false;
+function exitAnyGanttFullscreen(skipNativeExit = false) {
+  const openCards = [...document.querySelectorAll(".gantt-card.is-fullscreen")];
+  if (openCards.length) {
+    openCards.forEach(c => c.classList.remove("is-fullscreen"));
+    document.body.classList.remove("gantt-fullscreen-active");
+    setFullscreenBtnState($("#btnGanttFullscreen"), false);
+    setFullscreenBtnState($("#btnProGanttFullscreen"), false);
+  }
+  if (!skipNativeExit && document.fullscreenElement) {
+    document.exitFullscreen?.().catch(() => {});
+  }
+  fsNativeActive = false;
+}
+
+function toggleGanttFullscreen(cardEl, btnEl, onChange) {
+  if (!cardEl) return;
+  const willEnter = !cardEl.classList.contains("is-fullscreen");
+  exitAnyGanttFullscreen();
+  if (willEnter) {
+    cardEl.classList.add("is-fullscreen");
+    document.body.classList.add("gantt-fullscreen-active");
+    setFullscreenBtnState(btnEl, true);
+    if (document.documentElement?.requestFullscreen && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => { fsNativeActive = true; }).catch(() => {});
+    }
+  }
+  if (typeof onChange === "function") onChange();
+}
+
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && fsNativeActive) {
+    fsNativeActive = false;
+    if (document.querySelector(".gantt-card.is-fullscreen")) {
+      exitAnyGanttFullscreen(true);
+      if (appMode === "professional" && window.MyPlanPro) window.MyPlanPro.renderProGantt();
+      else renderGantt(sorted());
+    }
+  }
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && document.querySelector(".gantt-card.is-fullscreen")) {
+    exitAnyGanttFullscreen();
+    if (appMode === "professional" && window.MyPlanPro) window.MyPlanPro.renderProGantt();
+    else renderGantt(sorted());
+  }
+});
+
 $("#ganttModeSeg").querySelectorAll("button").forEach(b => {
   b.onclick = () => {
     ganttMode = b.dataset.gmode;
@@ -5639,35 +6702,133 @@ $("#ganttModeSeg").querySelectorAll("button").forEach(b => {
     renderTimeline(s);
   };
 });
-$("#ganttZoomSeg").querySelectorAll("button").forEach(b => {
-  b.onclick = () => {
-    ganttZoom = parseInt(b.dataset.zoom, 10) || 50;
-    $("#ganttZoomSeg").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+if ($("#btnGanttUnified")) $("#btnGanttUnified").onclick = () => toggleUnifiedGanttMode();
+if ($("#btnGanttZoomOut")) $("#btnGanttZoomOut").onclick = () => stepGanttZoom(-1);
+if ($("#btnGanttZoomIn")) $("#btnGanttZoomIn").onclick = () => stepGanttZoom(1);
+if ($("#btnGanttZoomReset")) {
+  $("#btnGanttZoomReset").onclick = () => {
+    ganttZoom = 50;
+    updateGanttZoomReadout();
     renderGantt(sorted());
   };
-});
+}
+if ($("#btnGanttFit")) $("#btnGanttFit").onclick = fitGanttZoom;
+if ($("#btnGanttFullscreen")) {
+  $("#btnGanttFullscreen").onclick = () => toggleGanttFullscreen($("#view-gantt .gantt-card"), $("#btnGanttFullscreen"), () => renderGantt(sorted()));
+}
 $("#btnGanttToday").onclick = () => {
   const wrap = $("#ganttWrap");
-  const todayHead = wrap.querySelector(".g-head.today");
+  const todayHead = wrap.querySelector(".g-head.today, .g-week-head.today");
   wrap.scrollTo({ left: todayHead ? Math.max(0, todayHead.offsetLeft - 180) : 0, behavior: "smooth" });
 };
 
-/* ---------- IMPRIMIR / EXPORTAR GANTT HORIZONTAL, TABELA & RELATÓRIO ---------- */
+/* ---------- IMPRIMIR / EXPORTAR GANTT HORIZONTAL (CAPTURA WYSIWYG), TABELA & RELATÓRIO ---------- */
 function reportHelpers() {
-  return { parseD, fmtISO, fmtBR, fmtShortBR, days, hm, hmHuman, num, money, calc, getTypeInfo, WD, DAY };
+  return {
+    parseD,
+    fmtISO,
+    fmtBR,
+    fmtShortBR,
+    days,
+    hm,
+    hmHuman,
+    num,
+    money,
+    calc,
+    getTypeInfo: t => {
+      if (window.ACTIVITY_TYPES?.[t] && appMode !== "professional") return getTypeInfo(t);
+      if (window.MyPlanPro && window.PRO_ACTIVITY_TYPES?.[t]) return window.MyPlanPro.getProTypeInfo(t);
+      return getTypeInfo(t);
+    },
+    getIsoWeekInfo,
+    getIsoWeekMonday,
+    WD,
+    MON_FULL,
+    DAY
+  };
 }
 
-$("#btnPrintGantt").onclick = () => {
-  const s = sorted();
-  const minISO = s.length ? s[0].start : fmtISO(new Date());
-  const maxISO = s.length ? s.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, minISO) : minISO;
-  $("#gp-from").value = minISO;
-  $("#gp-to").value = maxISO;
+function captureVisibleGanttSnapshot(wrapEl, filteredRows, opts = {}) {
+  const rows = Array.isArray(filteredRows) ? filteredRows : [];
+  const fullMinISO = rows.length ? rows[0].start : fmtISO(new Date());
+  const fullMaxISO = rows.length ? rows.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, fullMinISO) : fullMinISO;
 
-  // Cria atalhos rápidos de intervalo / páginas semanais
+  if (!wrapEl) {
+    return { visFromISO: fullMinISO, visToISO: fullMaxISO, fullMinISO, fullMaxISO, visibleRows: rows, filteredRows: rows, ...opts };
+  }
+
+  const wrapRect = wrapEl.getBoundingClientRect();
+  const corner = wrapEl.querySelector(".g-corner");
+  const cornerRight = corner ? corner.getBoundingClientRect().right : wrapRect.left;
+  const leftBound = Math.max(wrapRect.left, cornerRight) - 2;
+  const rightBound = wrapRect.right + 2;
+
+  const isWeekMode = Boolean(opts.isWeekOnly || wrapEl.querySelector(".gantt.zoom-week-only"));
+  const heads = [...wrapEl.querySelectorAll(isWeekMode ? ".g-week-head[data-date]" : ".g-head[data-date]")];
+  const visibleHeads = wrapRect.width > 0
+    ? heads.filter(h => {
+        const r = h.getBoundingClientRect();
+        return r.right > leftBound && r.left < rightBound;
+      })
+    : [];
+
+  const visFromISO = visibleHeads.length ? visibleHeads[0].dataset.date : (heads[0]?.dataset.date || fullMinISO);
+  const lastVis = visibleHeads.length ? visibleHeads[visibleHeads.length - 1] : heads[heads.length - 1];
+  const visToISO = lastVis ? (lastVis.dataset.endDate || lastVis.dataset.date || fullMaxISO) : fullMaxISO;
+
+  const headBottom = heads[0] ? heads[0].getBoundingClientRect().bottom : wrapRect.top;
+  const topBound = Math.max(wrapRect.top, headBottom) - 4;
+  const botBound = wrapRect.bottom + 4;
+  const nameEls = [...wrapEl.querySelectorAll(".g-name[data-id]")];
+  const visIds = new Set();
+  if (wrapRect.height > 0) {
+    nameEls.forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.bottom > topBound && r.top < botBound) visIds.add(el.dataset.id);
+    });
+  }
+  const visibleRows = visIds.size ? rows.filter(a => visIds.has(a.id)) : rows;
+
+  return {
+    visFromISO,
+    visToISO,
+    fullMinISO,
+    fullMaxISO,
+    visibleRows,
+    filteredRows: rows,
+    isWeekOnly: isWeekMode,
+    ...opts
+  };
+}
+
+function openPrintGanttModal(wrapEl, filteredRows, opts = {}) {
+  const snap = captureVisibleGanttSnapshot(wrapEl, filteredRows, opts);
+  activeGanttPrintCtx = snap;
+
+  $("#gp-from").value = snap.visFromISO;
+  $("#gp-to").value = snap.visToISO;
+
+  const zoomPct = Math.round(((snap.zoomPx || 50) / 50) * 100);
+  const badge = $("#gpViewportBadge");
+  if (badge) {
+    badge.hidden = false;
+    badge.innerHTML = `📸 <b>Captura exata da tela atual:</b> ${fmtBR(snap.visFromISO)} a ${fmtBR(snap.visToISO)} · <b>${snap.visibleRows.length}</b> de <b>${snap.filteredRows.length}</b> ${snap.isPro ? "cartões" : "itens"} visíveis · Zoom <b>${zoomPct}%${snap.isWeekOnly ? " (Semanal)" : ""}</b>`;
+  }
+
+  const onlyWrap = $("#gpOnlyVisibleRowsWrap");
+  const onlyChk = $("#gpOnlyVisibleRows");
+  const hasVertCrop = snap.visibleRows.length > 0 && snap.visibleRows.length < snap.filteredRows.length;
+  if (onlyWrap && onlyChk) {
+    onlyWrap.hidden = !hasVertCrop;
+    onlyChk.checked = hasVertCrop;
+  }
+
   const chipsEl = $("#gpQuickChips");
-  const chips = [{ lbl: `Tudo (${fmtShortBR(minISO)}–${fmtShortBR(maxISO)})`, from: minISO, to: maxISO }];
-  const startMs = parseD(minISO).getTime(), endMs = parseD(maxISO).getTime();
+  const chips = [
+    { lbl: `📸 Tela atual (${fmtShortBR(snap.visFromISO)}–${fmtShortBR(snap.visToISO)})`, from: snap.visFromISO, to: snap.visToISO },
+    { lbl: `Tudo filtrado (${fmtShortBR(snap.fullMinISO)}–${fmtShortBR(snap.fullMaxISO)})`, from: snap.fullMinISO, to: snap.fullMaxISO }
+  ];
+  const startMs = parseD(snap.fullMinISO).getTime(), endMs = parseD(snap.fullMaxISO).getTime();
   const totalSpan = Math.round((endMs - startMs) / DAY) + 1;
   if (totalSpan > 10) {
     let idx = 1;
@@ -5685,12 +6846,72 @@ $("#btnPrintGantt").onclick = () => {
     };
   });
   $("#ganttPrintModal").showModal();
+}
+
+function buildPrintGanttParams(fromISO, toISO) {
+  const ctx = activeGanttPrintCtx;
+  if (!ctx) {
+    const isPro = appMode === "professional";
+    const rows = (isPro && window.MyPlanPro) ? window.MyPlanPro.getProSortedActivities() : sorted();
+    return { rows, opts: { isPro } };
+  }
+  const useOnlyVis = Boolean($("#gpOnlyVisibleRowsWrap") && !$("#gpOnlyVisibleRowsWrap").hidden && $("#gpOnlyVisibleRows")?.checked);
+  const rows = useOnlyVis ? ctx.visibleRows : ctx.filteredRows;
+  let cityTrack = null;
+  if (!ctx.isPro && !ctx.isUnified && !ctx.isWeekOnly && ctx.showCityRow && !isMultiTripMode()) {
+    const dates = [];
+    const minTs = parseD(fromISO).getTime();
+    const maxTs = parseD(toISO).getTime();
+    const nDays = Math.max(1, Math.min(366, Math.round((maxTs - minTs) / DAY) + 1));
+    for (let i = 0; i < nDays; i++) {
+      dates.push(fmtISO(new Date(minTs + i * DAY + 3600e3)));
+    }
+    cityTrack = computeDailyCityTimeline(state.activities || [], dates);
+  }
+  const unifiedLookup = ctx.isUnified
+    ? rows.map(r => {
+        const m = unifiedMetaMap.get(r);
+        const c = unifiedConflictMap.get(r);
+        return [r.id, { mode: m?.mode, tripName: m?.tripName, calColor: m?.calColor, conflict: Boolean(c) }];
+      })
+    : null;
+  return {
+    rows,
+    opts: {
+      isPro: Boolean(ctx.isPro),
+      zoomPx: ctx.zoomPx,
+      isWeekOnly: Boolean(ctx.isWeekOnly || (Number(ctx.zoomPx) > 0 && Number(ctx.zoomPx) < 22)),
+      isUnified: Boolean(ctx.isUnified),
+      unifiedLookup: unifiedLookup ? new Map(unifiedLookup) : null,
+      slimRail: ctx.slimRail,
+      colMap: ctx.colMap,
+      showCityRow: Boolean(ctx.showCityRow && cityTrack?.spans?.length),
+      cityTrack
+    }
+  };
+}
+
+$("#btnPrintGantt").onclick = () => {
+  const filtered = ganttUnifiedMode ? getUnifiedFilteredItems().filtered : applyPersonalFilters(sorted());
+  if (ganttMode === "timeline") {
+    window.FeriasReport.printTimelinePdf(state, filtered, reportHelpers(), { isPro: false });
+    return;
+  }
+  openPrintGanttModal($("#ganttWrap"), filtered, {
+    isPro: false,
+    isUnified: ganttUnifiedMode,
+    isWeekOnly: ganttZoom < 22,
+    zoomPx: ganttZoom,
+    slimRail: ganttSlimRail,
+    showCityRow: !isMultiTripMode() && !ganttUnifiedMode
+  });
 };
 $("#btnCloseGanttPrint").onclick = () => $("#ganttPrintModal").close();
 $("#btnGpImage").onclick = () => {
   const f = $("#gp-from").value, t = $("#gp-to").value;
   if (!f || !t) return toast("Selecione as datas.");
-  const ok = window.FeriasReport.exportGanttImage(state, sorted(), f, t, reportHelpers());
+  const { rows, opts } = buildPrintGanttParams(f, t);
+  const ok = window.FeriasReport.exportGanttImage(state, rows, f, t, reportHelpers(), opts);
   if (!ok) toast("Nenhuma atividade no intervalo selecionado.");
   else { $("#ganttPrintModal").close(); toast("🖼️ Imagem PNG horizontal baixada!"); }
 };
@@ -5698,8 +6919,9 @@ $("#ganttPrintForm").onsubmit = async e => {
   e.preventDefault();
   const f = $("#gp-from").value, t = $("#gp-to").value;
   if (!f || !t) return;
+  const { rows, opts } = buildPrintGanttParams(f, t);
   $("#ganttPrintModal").close();
-  await window.FeriasReport.exportGanttPdf(state, sorted(), f, t, reportHelpers());
+  await window.FeriasReport.exportGanttPdf(state, rows, f, t, reportHelpers(), opts);
 };
 
 $("#btnTablePdf").onclick = () => {
@@ -5710,7 +6932,12 @@ $("#btnTablePdf").onclick = () => {
 };
 
 $("#btnPrintReport").onclick = async () => {
-  toast("🖨️ Gerando relatório visual completo...");
+  toast("🖨️ Gerando relatório completo...");
+  if (appMode === "professional" && window.MyPlanPro) {
+    const cards = window.MyPlanPro.getProSortedActivities();
+    await window.FeriasReport.printFullProReport(state, cards, window.MyPlanPro.computeProTotals(cards), reportHelpers());
+    return;
+  }
   await window.FeriasReport.printFullTripReport(state, sorted(), totals(), reportHelpers(), window.FeriasMaps ? window.FeriasMaps.getKey() : "");
 };
 
@@ -5973,19 +7200,22 @@ function walletActSig(a) {
   ].join("|");
 }
 
-function prefetchModalWalletPass() {
+function prefetchWalletPassForActivity(a, tripTitle) {
   prefetchedPkpass = null;
-  if (!window.FeriasApi || !window.FeriasApi.isServer() || !window.FeriasApi.createPkpassUrl) return;
+  if (!a || !a.name || !window.FeriasApi || !window.FeriasApi.isServer() || !window.FeriasApi.createPkpassUrl) return;
   if (window.FeriasApi.getServerCaps && window.FeriasApi.getServerCaps().hasWallet) return;
-  const a = readForm();
-  a.id = editing || modalDraftId || uid();
-  if (!a.name) return;
   const sig = walletActSig(a);
-  window.FeriasApi.createPkpassUrl(a, state.title)
+  window.FeriasApi.createPkpassUrl(a, tripTitle || state.title)
     .then(pk => {
       if (pk && pk.pkpassUrl) prefetchedPkpass = { sig, pkpassUrl: pk.pkpassUrl, filename: pk.filename };
     })
     .catch(() => {});
+}
+
+function prefetchModalWalletPass() {
+  const a = readForm();
+  a.id = editing || modalDraftId || uid();
+  prefetchWalletPassForActivity(a, state.title);
 }
 
 function triggerPkpassOpen(url, filename) {
@@ -5993,7 +7223,7 @@ function triggerPkpassOpen(url, filename) {
   const isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent);
   const link = document.createElement("a");
   link.href = fullUrl;
-  if (!isIOS) link.download = filename || "passe_ferias_pro.pkpass";
+  if (!isIOS) link.download = filename || "passe_my_plan.pkpass";
   link.style.display = "none";
   document.body.appendChild(link);
   link.click();
@@ -6018,8 +7248,8 @@ async function setupSharePkpassButton(btn, pkpassUrl, filename, title) {
       const resp = await fetch(pkpassUrl, { credentials: "same-origin" });
       if (!resp.ok) throw new Error("Passe expirado. Gere novamente.");
       const blob = await resp.blob();
-      const file = new File([blob], filename || "passe_ferias_pro.pkpass", { type: "application/vnd.apple.pkpass" });
-      await navigator.share({ files: [file], title: title || "Carteira do Google — Férias Pro" });
+      const file = new File([blob], filename || "passe_my_plan.pkpass", { type: "application/vnd.apple.pkpass" });
+      await navigator.share({ files: [file], title: title || "Carteira do Google — My Plan" });
     } catch (err) {
       if (err?.name !== "AbortError") toast("❌ " + (err.message || "Falha ao compartilhar o passe."));
     } finally {
@@ -6028,11 +7258,14 @@ async function setupSharePkpassButton(btn, pkpassUrl, filename, title) {
   };
 }
 
-async function openWalletPassForCurrentActivity() {
-  const a = readForm();
-  if (editing) a.id = editing;
-  else a.id = modalDraftId || uid();
-  if (!a.name) return toast("Preencha o nome da atividade primeiro.");
+async function openWalletPassForCurrentActivity(actOpt = null, titleOpt = null) {
+  const a = actOpt || readForm();
+  if (!actOpt) {
+    if (editing) a.id = editing;
+    else a.id = modalDraftId || uid();
+  }
+  const tripTitle = titleOpt || state.title;
+  if (!a.name) return toast("Preencha o título antes de adicionar à Carteira.");
 
   const modal = $("#walletModal");
   const body = $("#walletBody");
@@ -6050,40 +7283,39 @@ async function openWalletPassForCurrentActivity() {
     triggerPkpassOpen(pk.pkpassUrl, pk.filename);
     if (pkBtn) {
       pkBtn.href = pk.pkpassUrl;
-      pkBtn.setAttribute("download", pk.filename || "passe_ferias_pro.pkpass");
+      pkBtn.setAttribute("download", pk.filename || "passe_my_plan.pkpass");
       pkBtn.hidden = false;
     }
     await setupSharePkpassButton(shareBtn, pk.pkpassUrl, pk.filename, a.name);
     const qrMsg = a.qrPayload ? " com o <b>QR Code do bilhete</b> replicado" : "";
     body.innerHTML = `
-      <p>✅ <b>Passe da Carteira do Google gerado${qrMsg}!</b> Toque na notificação <b>Abrir</b> (ou em <b>📤 Enviar p/ Carteira do Google</b> / <b>💳 Abrir na Carteira do Google</b> abaixo) para importar diretamente.</p>`;
-    window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
+      <p>✅ <b>Passe da Carteira do Google gerado${qrMsg}!</b> Toque em <b>Abrir</b> / <b>💳 Abrir na Carteira do Google</b> para adicionar.</p>`;
+    window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, tripTitle, reportHelpers());
     modal.showModal();
   };
 
-  // Caminho instantâneo síncrono dentro do clique (evita bloqueio do gesto pelo navegador)
   if (!hasServerWallet && prefetchedPkpass && prefetchedPkpass.sig === sig) {
     const pk = prefetchedPkpass;
     prefetchedPkpass = null;
     await showPkpassReady(pk);
-    prefetchModalWalletPass();
+    prefetchWalletPassForActivity(a, tripTitle);
     return;
   }
 
   try {
-    const res = await window.FeriasApi.signWalletPass(a, state.title);
+    const res = await window.FeriasApi.signWalletPass(a, tripTitle);
     if (res.configured && res.saveUrl) {
       window.open(res.saveUrl, "_blank", "noopener");
       openBtn.href = res.saveUrl;
       openBtn.hidden = false;
-      body.innerHTML = `<p>✅ <b>Carteira do Google aberta!</b> Confirme na janela que abriu (ou toque em <b>💳 Adicionar à Carteira do Google</b> abaixo).</p>`;
-      window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
+      body.innerHTML = `<p>✅ <b>Carteira do Google aberta!</b> Confirme na tela do Google Wallet.</p>`;
+      window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, tripTitle, reportHelpers());
       modal.showModal();
       return;
     }
 
     if (window.FeriasApi.isServer() && window.FeriasApi.createPkpassUrl) {
-      const pk = await window.FeriasApi.createPkpassUrl(a, state.title);
+      const pk = await window.FeriasApi.createPkpassUrl(a, tripTitle);
       if (pk && pk.pkpassUrl) {
         await showPkpassReady(pk);
         return;
@@ -6096,17 +7328,79 @@ async function openWalletPassForCurrentActivity() {
     body.innerHTML = `<div class="auth-error">❌ ${esc(err.message || err)}</div>
       <p class="muted small">Você ainda pode salvar o cartão QR e importar direto pelo app Carteira do Google.</p>`;
   }
-  window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, state.title, reportHelpers());
+  window.FeriasReport.renderWalletPassCanvas($("#walletPassCanvas"), a, tripTitle, reportHelpers());
   modal.showModal();
 }
 
-$("#btnWalletDirect").onclick = openWalletPassForCurrentActivity;
+async function openWalletPassDirect(act, tripTitle = "", triggerBtn = null) {
+  const a = act || readForm();
+  if (!a.id) a.id = editing || modalDraftId || uid();
+  const title = tripTitle || state.title || "My Plan";
+  if (!a.name) return toast("Preencha o título antes de adicionar à Carteira.");
+
+  const sig = walletActSig(a);
+  const hasServerWallet = Boolean(window.FeriasApi.getServerCaps && window.FeriasApi.getServerCaps().hasWallet);
+  if (triggerBtn) triggerBtn.disabled = true;
+
+  if (hasServerWallet) {
+    let win = null;
+    try { win = window.open("", "_blank"); } catch {}
+    try {
+      const res = await window.FeriasApi.signWalletPass(a, title);
+      if (res.configured && res.saveUrl) {
+        if (win && !win.closed) {
+          win.location.href = res.saveUrl;
+        } else {
+          window.location.href = res.saveUrl;
+        }
+        toast("💳 Abrindo Carteira do Google diretamente...");
+        if (triggerBtn) triggerBtn.disabled = false;
+        return;
+      }
+    } catch {}
+    if (win && !win.closed) { try { win.close(); } catch {} }
+  } else if (prefetchedPkpass && prefetchedPkpass.sig === sig) {
+    const pk = prefetchedPkpass;
+    prefetchedPkpass = null;
+    triggerPkpassOpen(pk.pkpassUrl, pk.filename);
+    toast("💳 Passe aberto! Confirme na Carteira do Google.");
+    prefetchWalletPassForActivity(a, title);
+    if (triggerBtn) triggerBtn.disabled = false;
+    return;
+  } else if (window.FeriasApi.isServer() && window.FeriasApi.createPkpassUrl) {
+    try {
+      toast("💳 Abrindo Carteira do Google...");
+      const pk = await window.FeriasApi.createPkpassUrl(a, title);
+      if (pk && pk.pkpassUrl) {
+        triggerPkpassOpen(pk.pkpassUrl, pk.filename);
+        toast("💳 Passe pronto! Abra o arquivo para inserir na Carteira do Google.");
+        if (triggerBtn) triggerBtn.disabled = false;
+        return;
+      }
+    } catch {}
+  }
+
+  if (triggerBtn) triggerBtn.disabled = false;
+  return openWalletPassForCurrentActivity(a, title);
+}
+
+if ($("#btnWalletDirect")) $("#btnWalletDirect").onclick = () => openWalletPassDirect();
+if ($("#btnHeadWallet")) {
+  $("#btnHeadWallet").onclick = () => {
+    const a = readForm();
+    if (editing) a.id = editing;
+    else a.id = modalDraftId || uid();
+    const chosenId = $("#f-targetTrip")?.value;
+    const tr = (chosenId && loadedTripsMap.get(chosenId)) || editingTripRef || activeTrip;
+    openWalletPassDirect(a, tr?.data?.title || tr?.name || state.title, $("#btnHeadWallet"));
+  };
+}
 $("#btnCloseWallet").onclick = () => $("#walletModal").close();
 $("#btnDownloadPassPng").onclick = () => {
   const c = $("#walletPassCanvas");
   const a = document.createElement("a");
   a.href = c.toDataURL("image/png");
-  a.download = `passe_carteira_google_ferias_pro.png`;
+  a.download = `passe_carteira_google_my_plan.png`;
   a.click();
   toast("🖼️ Passe QR salvo!");
 };
@@ -6416,6 +7710,19 @@ $("#actAiFile").onchange = async e => {
   }
 };
 
+function pickSupportedAudioMime() {
+  if (typeof MediaRecorder === "undefined" || typeof MediaRecorder.isTypeSupported !== "function") return "";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+    "audio/ogg"
+  ];
+  return candidates.find(m => MediaRecorder.isTypeSupported(m)) || "";
+}
+
 $("#btnActAiAudio").onclick = async () => {
   const btn = $("#btnActAiAudio");
   if (actAiRecorder && actAiRecorder.state === "recording") {
@@ -6427,26 +7734,30 @@ $("#btnActAiAudio").onclick = async () => {
     return;
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     actAiChunks = [];
-    actAiRecorder = new MediaRecorder(stream);
+    const prefMime = pickSupportedAudioMime();
+    actAiRecorder = prefMime ? new MediaRecorder(stream, { mimeType: prefMime }) : new MediaRecorder(stream);
     actAiRecorder.ondataavailable = ev => { if (ev.data.size > 0) actAiChunks.push(ev.data); };
     actAiRecorder.onstop = async () => {
       try { stream.getTracks().forEach(t => t.stop()); } catch {}
       clearInterval(actAiRecTimer);
       btn.textContent = "🎙️ Áudio";
-      const cleanMime = String(actAiRecorder.mimeType || "audio/webm").split(";")[0].trim() || "audio/webm";
+      const cleanMime = String(actAiRecorder.mimeType || prefMime || "audio/webm").split(";")[0].trim() || "audio/webm";
       const ext = cleanMime.includes("mp4") ? "m4a" : cleanMime.includes("ogg") ? "ogg" : "webm";
       const blob = new Blob(actAiChunks, { type: cleanMime });
-      if (!blob.size) return;
+      if (!blob.size || blob.size < 400) {
+        setActAiBusy(false, "⚠️ Áudio muito curto ou mudo. Verifique o microfone.", "error");
+        return;
+      }
       const fileObj = await fileToBase64Obj(new File([blob], `atividade_${Date.now()}.${ext}`, { type: cleanMime }));
       await runActAiAnalyze({
-        prompt: "Transcreva este áudio em português e extraia todos os campos da atividade/passagem/viagem/reserva automaticamente.",
+        prompt: "Transcreva fielmente este áudio em português e extraia apenas os campos mencionados da atividade/passagem/viagem.",
         media: [fileObj],
         loadingMsg: "Transcrevendo áudio e preenchendo cartão..."
       });
     };
-    actAiRecorder.start();
+    actAiRecorder.start(250);
     actAiRecSec = 0;
     btn.textContent = "⏹️ Parar 0:00";
     setActAiBusy(false, "🎙️ Gravando áudio... fale sua atividade/viagem e toque em Parar para preencher automaticamente.", "loading");
@@ -6490,12 +7801,36 @@ if ($("#modal")) {
   $("#modal").addEventListener("close", () => stopActAiRecording(true));
 }
 
-/* ---------- MODAL PLANEJAR COM IA (ÁUDIO + MÚLTIPLAS IMAGENS + DOCUMENTOS) ---------- */
+/* ---------- MODAL PLANEJAR COM IA (ÁUDIO TRANSCRITO + MÚLTIPLAS IMAGENS + DOCUMENTOS) ---------- */
 let aiAttachedMedia = [];
 let aiMediaRecorder = null;
 let aiAudioChunks = [];
 let aiRecordTimerInt = null;
 let aiRecordSec = 0;
+let aiAudioCtx = null;
+let aiMicRaf = null;
+let aiRecPeakRms = 0;
+let aiAudioPreviewUrl = "";
+let aiPendingAudioPromise = null;
+let aiAudioStopResolve = null;
+
+function stopAiMicMeter() {
+  if (aiMicRaf) { cancelAnimationFrame(aiMicRaf); aiMicRaf = null; }
+  if (aiAudioCtx) { try { aiAudioCtx.close(); } catch {} aiAudioCtx = null; }
+  const meter = $("#aiMicMeter"), wrap = $("#aiMicMeterWrap");
+  if (meter) meter.style.width = "0%";
+  if (wrap) wrap.hidden = true;
+}
+
+function resetAiAudioUi() {
+  stopAiMicMeter();
+  if (aiAudioPreviewUrl) { try { URL.revokeObjectURL(aiAudioPreviewUrl); } catch {} aiAudioPreviewUrl = ""; }
+  if ($("#aiAudioPreviewBox")) { $("#aiAudioPreviewBox").hidden = true; $("#aiAudioPreviewBox").innerHTML = ""; }
+  if ($("#aiTranscriptBox")) { $("#aiTranscriptBox").hidden = true; $("#aiTranscriptBox").className = "ai-transcript-box"; $("#aiTranscriptBox").innerHTML = ""; }
+  if ($("#aiRecordTimer")) $("#aiRecordTimer").hidden = true;
+  if ($("#btnAiRecordAudio")) $("#btnAiRecordAudio").textContent = "🎙️ Gravar Áudio";
+  clearInterval(aiRecordTimerInt);
+}
 
 function renderAiMediaList() {
   const box = $("#aiMediaList");
@@ -6516,12 +7851,29 @@ function renderAiMediaList() {
 
 function openAiPlanModal() {
   aiAttachedMedia = [];
+  aiPendingAudioPromise = null;
+  resetAiAudioUi();
   $("#aiPromptText").value = "";
   $("#aiPlanStatus").innerHTML = "";
+  const isPro = appMode === "professional";
+  const modal = $("#aiPlanModal");
+  const h2 = modal?.querySelector(".modal-head h2");
+  const desc = modal?.querySelector(".ai-plan-body > p");
+  const runBtn = $("#btnRunAiPlan");
+  if (h2) h2.textContent = isPro ? "✨ Estruturar Projeto Profissional com IA (Gemini)" : "✨ Planejar Viagem com IA (Gemini)";
+  if (desc) desc.textContent = isPro
+    ? "Fale por áudio (com transcrição automática na tela para conferência), envie prints de e-mails/propostas ou descreva seu projeto."
+    : "Fale por áudio (com transcrição automática na tela para você confirmar), envie fotos de voos/ingressos/carro ou descreva sua viagem.";
+  if ($("#aiPromptText")) {
+    $("#aiPromptText").placeholder = isPro
+      ? "Ex: Projeto Lançamento E-commerce em dezembro: kickoff dia 03, desenvolvimento até dia 18, viagem para SP dias 10 e 11, recebimento R$ 12.000 dia 20..."
+      : "Ex: Vou viajar de 10 a 20 de julho de 2027 com 4 pessoas de Brasília para Gramado usando um Haval H6 PHEV, depois pego voo para Porto Alegre e vou ao Beto Carrero...";
+  }
+  if (runBtn) runBtn.textContent = isPro ? "✨ Criar Projeto com IA" : "✨ Criar Viagem com IA";
   const caps = window.FeriasApi.getServerCaps ? window.FeriasApi.getServerCaps() : { hasGemini: false };
   $("#aiKeyInlineBox").hidden = caps.hasGemini;
   renderAiMediaList();
-  $("#aiPlanModal").showModal();
+  modal.showModal();
 }
 
 $("#btnAiPlan").onclick = $("#btnMenuAiPlan").onclick = openAiPlanModal;
@@ -6529,6 +7881,7 @@ $("#btnCloseAiPlan").onclick = $("#btnCancelAiPlan").onclick = () => {
   if (aiMediaRecorder && aiMediaRecorder.state === "recording") {
     try { aiMediaRecorder.stop(); } catch {}
   }
+  resetAiAudioUi();
   $("#aiPlanModal").close();
 };
 
@@ -6568,31 +7921,127 @@ $("#btnAiRecordAudio").onclick = async () => {
     btn.textContent = "🎙️ Gravar Áudio";
     clearInterval(aiRecordTimerInt);
     timerEl.hidden = true;
+    stopAiMicMeter();
     return;
   }
   if (!navigator.mediaDevices?.getUserMedia) {
-    return toast("Seu navegador não liberou gravação de microfone aqui. Use o botão Anexar Áudio ou descreva em texto.");
+    return toast("Seu navegador não liberou gravação de microfone aqui. Use Anexar Áudio ou descreva em texto.");
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     aiAudioChunks = [];
-    aiMediaRecorder = new MediaRecorder(stream);
+    aiRecPeakRms = 0;
+
+    // Medidor ao vivo de volume do microfone para garantir captação real
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) {
+        aiAudioCtx = new Ctx();
+        const src = aiAudioCtx.createMediaStreamSource(stream);
+        const analyser = aiAudioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        src.connect(analyser);
+        const dataArr = new Uint8Array(analyser.fftSize);
+        if ($("#aiMicMeterWrap")) $("#aiMicMeterWrap").hidden = false;
+        const tickMeter = () => {
+          analyser.getByteTimeDomainData(dataArr);
+          let sum = 0;
+          for (let i = 0; i < dataArr.length; i++) {
+            const v = (dataArr[i] - 128) / 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(sum / dataArr.length);
+          if (rms > aiRecPeakRms) aiRecPeakRms = rms;
+          const pct = Math.min(100, Math.round(rms * 450));
+          if ($("#aiMicMeter")) $("#aiMicMeter").style.width = `${pct}%`;
+          aiMicRaf = requestAnimationFrame(tickMeter);
+        };
+        tickMeter();
+      }
+    } catch {}
+
+    const prefMime = pickSupportedAudioMime();
+    aiMediaRecorder = prefMime ? new MediaRecorder(stream, { mimeType: prefMime }) : new MediaRecorder(stream);
     aiMediaRecorder.ondataavailable = ev => { if (ev.data.size > 0) aiAudioChunks.push(ev.data); };
+    aiPendingAudioPromise = new Promise(resolve => { aiAudioStopResolve = resolve; });
+
     aiMediaRecorder.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop());
-      const cleanMime = String(aiMediaRecorder.mimeType || "audio/webm").split(";")[0].trim() || "audio/webm";
+      try { stream.getTracks().forEach(t => t.stop()); } catch {}
+      clearInterval(aiRecordTimerInt);
+      stopAiMicMeter();
+      timerEl.hidden = true;
+      btn.textContent = "🎙️ Gravar Áudio";
+
+      const cleanMime = String(aiMediaRecorder.mimeType || prefMime || "audio/webm").split(";")[0].trim() || "audio/webm";
       const ext = cleanMime.includes("mp4") ? "m4a" : cleanMime.includes("ogg") ? "ogg" : "webm";
       const blob = new Blob(aiAudioChunks, { type: cleanMime });
+
+      if (aiAudioPreviewUrl) { try { URL.revokeObjectURL(aiAudioPreviewUrl); } catch {} }
+      aiAudioPreviewUrl = URL.createObjectURL(blob);
+      const prevBox = $("#aiAudioPreviewBox");
+      if (prevBox) {
+        prevBox.hidden = false;
+        prevBox.innerHTML = `<audio controls src="${aiAudioPreviewUrl}"></audio>`;
+      }
+
+      const trBox = $("#aiTranscriptBox");
+      if (blob.size < 800 || aiRecPeakRms < 0.002) {
+        if (trBox) {
+          trBox.hidden = false;
+          trBox.className = "ai-transcript-box is-warn";
+          trBox.innerHTML = `⚠️ <b>Nenhum som detectado no microfone!</b> Confira nas permissões/configurações se o microfone correto está ativo e tente gravar novamente.`;
+        }
+        toast("⚠️ Áudio silencioso — verifique seu microfone.");
+        aiAudioStopResolve?.({ ok: false });
+        return;
+      }
+
       const fileObj = await fileToBase64Obj(new File([blob], `planejamento_${Date.now()}.${ext}`, { type: cleanMime }));
-      aiAttachedMedia.push(fileObj);
-      renderAiMediaList();
-      toast("🎙️ Áudio gravado e anexado!");
+      if (trBox) {
+        trBox.hidden = false;
+        trBox.className = "ai-transcript-box";
+        trBox.innerHTML = `⏳ <b>Transcrevendo o que você falou...</b> aguarde 1–2s para confirmar o texto captado.`;
+      }
+
+      try {
+        const res = await window.FeriasApi.aiTranscribeAudio(fileObj, "pt-BR");
+        if (res && res.audible && res.transcript) {
+          aiAttachedMedia.push(fileObj);
+          renderAiMediaList();
+          const cur = $("#aiPromptText").value.trim();
+          $("#aiPromptText").value = cur ? `${cur}\n${res.transcript}` : res.transcript;
+          if (trBox) {
+            trBox.className = "ai-transcript-box";
+            trBox.innerHTML = `✅ <b>Transcrição confirmada do seu áudio</b> (inserida no campo abaixo — pode editar se quiser):<br><i>"${esc(res.transcript)}"</i>`;
+          }
+          toast("🎙️ Áudio transcrito com sucesso!");
+          aiAudioStopResolve?.({ ok: true, transcript: res.transcript });
+        } else {
+          if (trBox) {
+            trBox.className = "ai-transcript-box is-warn";
+            trBox.innerHTML = `⚠️ <b>Não foi possível entender fala no áudio:</b> ${esc(res?.warning || "áudio mudo ou baixo demais.")} Reproduza acima para conferir e grave novamente.`;
+          }
+          aiAudioStopResolve?.({ ok: false });
+        }
+      } catch (err) {
+        const isNoKey = String(err.message).includes("GEMINI_NOT_CONFIGURED");
+        aiAttachedMedia.push(fileObj);
+        renderAiMediaList();
+        if (trBox) {
+          trBox.className = "ai-transcript-box is-warn";
+          trBox.innerHTML = isNoKey
+            ? `🔑 <b>Áudio gravado!</b> Ative sua Gemini API Key acima para transcrever e gerar automaticamente.`
+            : `⚠️ Áudio gravado e anexado, mas a transcrição falhou (${esc(err.message)}).`;
+        }
+        aiAudioStopResolve?.({ ok: false });
+      }
     };
-    aiMediaRecorder.start();
+
+    aiMediaRecorder.start(250);
     aiRecordSec = 0;
     timerEl.textContent = "● Gravando 0:00";
     timerEl.hidden = false;
-    btn.textContent = "⏹️ Parar Gravação";
+    btn.textContent = "⏹️ Parar e Transcrever";
     clearInterval(aiRecordTimerInt);
     aiRecordTimerInt = setInterval(() => {
       aiRecordSec++;
@@ -6600,6 +8049,7 @@ $("#btnAiRecordAudio").onclick = async () => {
       timerEl.textContent = `● Gravando ${m}:${String(s).padStart(2, "0")}`;
     }, 1000);
   } catch (err) {
+    stopAiMicMeter();
     toast("Permissão de microfone negada ou indisponível: " + (err.message || err));
   }
 };
@@ -6646,9 +8096,17 @@ function buildFallbackOfflineTripPlan(promptText) {
 }
 
 $("#btnRunAiPlan").onclick = async () => {
+  if (aiMediaRecorder && aiMediaRecorder.state === "recording") {
+    try { aiMediaRecorder.stop(); } catch {}
+  }
+  if (aiPendingAudioPromise) {
+    $("#aiPlanStatus").innerHTML = `<span>⏳ Finalizando transcrição do áudio gravado...</span>`;
+    await aiPendingAudioPromise;
+    aiPendingAudioPromise = null;
+  }
   const promptText = $("#aiPromptText").value.trim();
   if (!promptText && !aiAttachedMedia.length) {
-    return toast("Grave um áudio, anexe imagens/documentos ou escreva seu planejamento.");
+    return toast("Grave um áudio audível, anexe imagens/documentos ou escreva seu planejamento.");
   }
   const st = $("#aiPlanStatus");
   const btn = $("#btnRunAiPlan");
@@ -6662,13 +8120,14 @@ $("#btnRunAiPlan").onclick = async () => {
       .join(" | ");
     const fullPrompt = bcNotes ? `${promptText}\n[QR/Códigos lidos dos anexos: ${bcNotes}]`.trim() : promptText;
     plan = await window.FeriasApi.aiPlanTrip({
+      mode: appMode,
       prompt: fullPrompt,
       baseDate: fmtISO(new Date()),
-      baseVehicle: state.vehicle,
+      baseVehicle: appMode === "professional" ? undefined : state.vehicle,
       media: aiAttachedMedia
     });
   } catch (err) {
-    if (String(err.message).includes("GEMINI_NOT_CONFIGURED") && promptText && !aiAttachedMedia.length) {
+    if (String(err.message).includes("GEMINI_NOT_CONFIGURED") && promptText && !aiAttachedMedia.length && appMode !== "professional") {
       plan = buildFallbackOfflineTripPlan(promptText);
     } else {
       st.innerHTML = `<span class="auth-error">❌ ${esc(err.message === "GEMINI_NOT_CONFIGURED" ? "Ative sua Gemini API Key acima para processar áudio e imagens." : err.message)}</span>`;
@@ -6678,6 +8137,21 @@ $("#btnRunAiPlan").onclick = async () => {
   }
 
   try {
+    if (appMode === "professional" && window.MyPlanPro) {
+      const projTitle = plan.tripName || "Novo Projeto (IA)";
+      const proData = window.MyPlanPro.migrateProState({
+        mode: "professional",
+        title: projTitle,
+        params: plan.params || {},
+        activities: Array.isArray(plan.activities) ? plan.activities : [],
+        checklist: Array.isArray(plan.checklist) ? plan.checklist : []
+      });
+      const created = await window.FeriasApi.createTrip(projTitle, proData, "", "professional");
+      $("#aiPlanModal").close();
+      await refreshTripsAndLoad(created.id);
+      toast(`✨ Projeto "${projTitle}" criado com ${proData.activities.length} cartão(ões)!`);
+      return;
+    }
     const tripTitle = plan.tripName || "Nova Viagem (IA)";
     const baseData = window.createBlankTripData(tripTitle, plan.vehicle || state.vehicle);
     if (plan.params) Object.assign(baseData.params, plan.params);
@@ -6731,6 +8205,335 @@ $("#btnRunAiPlan").onclick = async () => {
     btn.disabled = false;
   }
 };
+
+/* ---------- MODAL IMPORTAR CALENDÁRIO POR IMAGEM (IA MY PLAN — PRÉVIA + DESTINO) ---------- */
+let impCalFiles = [];
+let impCalEvents = [];
+
+function getImpCalTargetMode() {
+  const dm = $("#impCalDestMode")?.value || "new";
+  if (dm === "new") return $("#impCalNewMode")?.value === "professional" ? "professional" : "personal";
+  const chosenId = $("#impCalExistingSelect")?.value || "";
+  const allRefs = [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])];
+  const ref = allRefs.find(t => t.id === chosenId) || loadedTripsMap.get(chosenId) || activeTrip;
+  return getTripMode(ref);
+}
+
+function populateImpCalExistingCalendars() {
+  const sel = $("#impCalExistingSelect");
+  if (!sel) return;
+  const allOwn = (tripsCache.ownTrips || []);
+  const allShared = (tripsCache.sharedTrips || []).filter(t => t.role !== "viewer");
+  let html = "";
+  if (allOwn.length) {
+    html += `<optgroup label="Meus Calendários">`;
+    allOwn.forEach(t => {
+      const m = getTripMode(t) === "professional" ? "💼 Pro" : "🌴 Pessoal";
+      html += `<option value="${esc(t.id)}">[${m}] ${esc(t.name)}</option>`;
+    });
+    html += `</optgroup>`;
+  }
+  if (allShared.length) {
+    html += `<optgroup label="Compartilhados comigo (Editor)">`;
+    allShared.forEach(t => {
+      const m = getTripMode(t) === "professional" ? "💼 Pro" : "🌴 Pessoal";
+      html += `<option value="${esc(t.id)}">[${m}] 👥 ${esc(t.name)} (${esc(t.ownerName || "")})</option>`;
+    });
+    html += `</optgroup>`;
+  }
+  if (!html && activeTrip) {
+    html = `<option value="${esc(activeTrip.id)}">${esc(state.title || activeTrip.name)}</option>`;
+  }
+  sel.innerHTML = html;
+  if (activeTrip && [...sel.options].some(o => o.value === activeTrip.id)) sel.value = activeTrip.id;
+}
+
+function syncImpCalDestUI() {
+  const isNew = ($("#impCalDestMode")?.value || "new") === "new";
+  if ($("#impCalNewNameWrap")) $("#impCalNewNameWrap").hidden = !isNew;
+  if ($("#impCalNewModeWrap")) $("#impCalNewModeWrap").hidden = !isNew;
+  if ($("#impCalExistingWrap")) $("#impCalExistingWrap").hidden = isNew;
+  renderImpCalPreviewList();
+}
+
+function renderImpCalThumbs() {
+  const box = $("#impCalThumbs");
+  if (!box) return;
+  if (!impCalFiles.length) {
+    box.innerHTML = `<span class="muted small">Nenhuma imagem adicionada ainda. Aceita prints de Excel, PDFs, calendários mensais e agendas.</span>`;
+    return;
+  }
+  box.innerHTML = impCalFiles.map((f, idx) => `
+    <div class="imp-cal-thumb">
+      ${f.mimeType.startsWith("image/") ? `<img src="data:${esc(f.mimeType)};base64,${f.dataBase64}" alt="">` : "<span>📄</span>"}
+      <span>${esc(f.fileName)}</span>
+      <button type="button" class="icon-btn" data-icdel="${idx}" title="Remover">✕</button>
+    </div>`).join("");
+  box.querySelectorAll("[data-icdel]").forEach(b => {
+    b.onclick = () => { impCalFiles.splice(parseInt(b.dataset.icdel, 10), 1); renderImpCalThumbs(); };
+  });
+}
+
+function updateImpCalSelectedCount() {
+  const cnt = impCalEvents.filter(e => e._checked !== false).length;
+  if ($("#impCalSelCount")) $("#impCalSelCount").textContent = String(cnt);
+}
+
+function renderImpCalPreviewList() {
+  const list = $("#impCalPreviewList");
+  if (!list) return;
+  const targetMode = getImpCalTargetMode();
+  const typesDict = targetMode === "professional"
+    ? (window.PRO_ACTIVITY_TYPES || window.ACTIVITY_TYPES)
+    : (window.ACTIVITY_TYPES || {});
+  const typeOpts = Object.values(typesDict);
+  const fallbackType = targetMode === "professional" ? "Outro" : "Evento";
+
+  list.innerHTML = impCalEvents.map((ev, i) => {
+    const mappedType = typesDict[ev.type] ? ev.type : fallbackType;
+    ev.type = mappedType;
+    const typeSelect = typeOpts.map(t => `<option value="${esc(t.id)}"${t.id === mappedType ? " selected" : ""}>${t.icon} ${esc(t.short)}</option>`).join("");
+    return `<div class="imp-cal-ev-row" data-icrow="${i}">
+      <input type="checkbox" data-icchk="${i}" ${ev._checked !== false ? "checked" : ""} aria-label="Selecionar evento">
+      <div class="imp-cal-ev-dates">
+        <input type="date" data-icstart="${i}" value="${esc(ev.start)}" style="width:100%;font-size:0.74rem;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:3px 5px;color:var(--text-strong)">
+        ${ev.startTime ? `<div class="muted" style="font-size:0.68rem;margin-top:2px">🕒 ${esc(ev.startTime)}</div>` : ""}
+      </div>
+      <div style="min-width:0;display:grid;gap:3px">
+        <input type="text" data-icname="${i}" value="${esc(ev.name)}" style="width:100%;font-size:0.8rem;font-weight:600;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:4px 7px;color:var(--text-strong)">
+        <div class="muted" style="font-size:0.71rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ev.end && ev.end !== ev.start ? `Até ${fmtBR(ev.end)} · ` : ""}${ev.amount > 0 ? `${ev.finDirection === "income" ? "+" : ""}${money(ev.amount)} · ` : ""}${esc(ev.notes || ev.location || "")}</div>
+      </div>
+      <select data-ictype="${i}" style="font-size:0.75rem;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:4px 6px;color:var(--text-strong)">${typeSelect}</select>
+    </div>`;
+  }).join("") || `<p class="muted small">Nenhum evento identificado nas imagens.</p>`;
+
+  list.querySelectorAll("[data-icchk]").forEach(cb => {
+    cb.onchange = () => { impCalEvents[+cb.dataset.icchk]._checked = cb.checked; updateImpCalSelectedCount(); };
+  });
+  list.querySelectorAll("[data-icstart]").forEach(inp => {
+    inp.onchange = () => {
+      const ev = impCalEvents[+inp.dataset.icstart];
+      if (inp.value) { ev.start = inp.value; if (!ev.end || ev.end < ev.start) ev.end = ev.start; }
+    };
+  });
+  list.querySelectorAll("[data-icname]").forEach(inp => {
+    inp.oninput = () => { impCalEvents[+inp.dataset.icname].name = inp.value; };
+  });
+  list.querySelectorAll("[data-ictype]").forEach(sel => {
+    sel.onchange = () => { impCalEvents[+sel.dataset.ictype].type = sel.value; };
+  });
+  updateImpCalSelectedCount();
+}
+
+async function appendImpCalFiles(fileList) {
+  for (const f of [...(fileList || [])]) {
+    if (impCalFiles.length >= 10) { toast("⚠️ Máximo de 10 imagens por importação."); break; }
+    try {
+      const obj = await fileToBase64Obj(f);
+      impCalFiles.push(obj);
+    } catch {}
+  }
+  renderImpCalThumbs();
+}
+
+function openImportCalModal() {
+  impCalFiles = [];
+  impCalEvents = [];
+  if ($("#impCalHint")) $("#impCalHint").value = "";
+  if ($("#impCalStatus")) $("#impCalStatus").innerHTML = "";
+  if ($("#impCalPreviewWrap")) $("#impCalPreviewWrap").hidden = true;
+  if ($("#btnImpCalConfirm")) $("#btnImpCalConfirm").hidden = true;
+  if ($("#impCalDestMode")) $("#impCalDestMode").value = "new";
+  if ($("#impCalNewMode")) $("#impCalNewMode").value = appMode;
+  populateImpCalExistingCalendars();
+  syncImpCalDestUI();
+  renderImpCalThumbs();
+  $("#aiImportCalModal")?.showModal();
+}
+
+if ($("#btnMenuImportCalImg")) $("#btnMenuImportCalImg").onclick = openImportCalModal;
+if ($("#btnCloseImportCal")) $("#btnCloseImportCal").onclick = () => $("#aiImportCalModal").close();
+if ($("#btnCancelImportCal")) $("#btnCancelImportCal").onclick = () => $("#aiImportCalModal").close();
+if ($("#btnImpCalPick")) $("#btnImpCalPick").onclick = () => $("#impCalFileInput").click();
+if ($("#impCalFileInput")) {
+  $("#impCalFileInput").onchange = async e => {
+    await appendImpCalFiles(e.target.files);
+    e.target.value = "";
+  };
+}
+if ($("#impCalDropzone")) {
+  const dz = $("#impCalDropzone");
+  dz.ondragover = e => { e.preventDefault(); dz.classList.add("dragover"); };
+  dz.ondragleave = () => dz.classList.remove("dragover");
+  dz.ondrop = async e => {
+    e.preventDefault();
+    dz.classList.remove("dragover");
+    await appendImpCalFiles(e.dataTransfer?.files);
+  };
+}
+document.addEventListener("paste", async e => {
+  if (!$("#aiImportCalModal")?.open) return;
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.length) await appendImpCalFiles(files);
+});
+if ($("#impCalDestMode")) $("#impCalDestMode").onchange = syncImpCalDestUI;
+if ($("#impCalNewMode")) $("#impCalNewMode").onchange = renderImpCalPreviewList;
+if ($("#impCalExistingSelect")) $("#impCalExistingSelect").onchange = renderImpCalPreviewList;
+if ($("#btnImpCalAll")) {
+  $("#btnImpCalAll").onclick = () => { impCalEvents.forEach(e => { e._checked = true; }); renderImpCalPreviewList(); };
+}
+if ($("#btnImpCalNone")) {
+  $("#btnImpCalNone").onclick = () => { impCalEvents.forEach(e => { e._checked = false; }); renderImpCalPreviewList(); };
+}
+
+if ($("#btnImpCalAnalyze")) {
+  $("#btnImpCalAnalyze").onclick = async () => {
+    if (!impCalFiles.length) return toast("Envie ao menos 1 imagem ou PDF de calendário primeiro.");
+    const st = $("#impCalStatus");
+    const btn = $("#btnImpCalAnalyze");
+    btn.disabled = true;
+    st.innerHTML = `<span>⏳ My Plan IA analisando ${impCalFiles.length} imagem(ns) e extraindo datas e eventos...</span>`;
+    try {
+      const res = await window.FeriasApi.aiImportCalendar({
+        mode: appMode,
+        baseDate: fmtISO(new Date()),
+        hint: ($("#impCalHint")?.value || "").trim(),
+        media: impCalFiles
+      });
+      impCalEvents = (res?.events || []).map(ev => ({ ...ev, _checked: true }));
+      if ($("#impCalNewName") && res?.suggestedName) $("#impCalNewName").value = res.suggestedName;
+      if ($("#impCalSummaryBanner")) {
+        $("#impCalSummaryBanner").innerHTML = `📅 <b>${esc(res?.summary || `${impCalEvents.length} eventos identificados`)}</b>${res?.detectedPeriod ? ` · ${esc(res.detectedPeriod)}` : ""}`;
+      }
+      if ($("#impCalWarnings")) {
+        if (Array.isArray(res?.warnings) && res.warnings.length) {
+          $("#impCalWarnings").hidden = false;
+          $("#impCalWarnings").textContent = "⚠️ Observações da leitura: " + res.warnings.join(" · ");
+        } else {
+          $("#impCalWarnings").hidden = true;
+        }
+      }
+      $("#impCalPreviewWrap").hidden = false;
+      $("#btnImpCalConfirm").hidden = impCalEvents.length === 0;
+      st.innerHTML = "";
+      populateImpCalExistingCalendars();
+      renderImpCalPreviewList();
+    } catch (err) {
+      const msg = String(err.message).includes("GEMINI_NOT_CONFIGURED")
+        ? "Configure sua Gemini API Key em Parâmetros ou Planejar com IA para importar calendários por imagem."
+        : (err.message || "Falha ao analisar imagens.");
+      st.innerHTML = `<span class="auth-error">❌ ${esc(msg)}</span>`;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
+if ($("#btnImpCalConfirm")) {
+  $("#btnImpCalConfirm").onclick = async () => {
+    const picked = impCalEvents.filter(e => e._checked !== false && e.name?.trim());
+    if (!picked.length) return toast("Marque ao menos 1 evento para importar.");
+
+    const destModeChoice = $("#impCalDestMode")?.value || "new";
+    const targetMode = getImpCalTargetMode();
+    const isPro = targetMode === "professional";
+    const btn = $("#btnImpCalConfirm");
+    btn.disabled = true;
+
+    try {
+      const toActivity = (ev, defaultColId) => {
+        if (isPro) {
+          const validType = window.PRO_ACTIVITY_TYPES?.[ev.type] ? ev.type : "Outro";
+          const finDir = ["income", "expense", "none"].includes(ev.finDirection)
+            ? ev.finDirection
+            : (validType === "Recebimento" ? "income" : (validType === "Despesa" ? "expense" : "none"));
+          return {
+            id: uid(),
+            type: validType,
+            columnId: defaultColId || "todo",
+            name: String(ev.name).trim(),
+            start: ev.start,
+            end: ev.end && ev.end >= ev.start ? ev.end : ev.start,
+            ...(ev.startTime ? { startTime: ev.startTime } : {}),
+            ...(ev.endTime ? { endTime: ev.endTime } : {}),
+            priority: "Média",
+            progress: 0,
+            client: ev.client || "",
+            assignee: "",
+            location: ev.location || "",
+            coverColor: "",
+            labels: [],
+            tags: ["Importado IA"],
+            finDirection: finDir,
+            amount: Number(ev.amount) || 0,
+            actualAmount: 0,
+            finStatus: "Previsto",
+            finDueDate: ev.end || ev.start,
+            subtasks: [],
+            notes: ev.notes || "",
+            attachments: []
+          };
+        }
+        const validType = window.ACTIVITY_TYPES?.[ev.type] ? ev.type : "Evento";
+        return {
+          id: uid(),
+          type: validType,
+          name: String(ev.name).trim(),
+          start: ev.start,
+          end: ev.end && ev.end >= ev.start ? ev.end : ev.start,
+          ...(ev.startTime ? { startTime: ev.startTime } : {}),
+          extraCost: Number(ev.amount) || 0,
+          tickets: Number(ev.amount) > 0 ? [{ label: "Importado", qty: 1, unitPrice: Number(ev.amount) }] : [],
+          tags: ["Importado IA"],
+          notes: [ev.location ? `Local: ${ev.location}` : "", ev.notes || ""].filter(Boolean).join(" · "),
+          attachments: []
+        };
+      };
+
+      if (destModeChoice === "new") {
+        const newName = ($("#impCalNewName")?.value || "").trim() || "Calendário Importado";
+        let payloadData;
+        if (isPro && window.MyPlanPro) {
+          payloadData = window.createBlankProData ? window.createBlankProData(newName) : window.MyPlanPro.migrateProState({ title: newName, mode: "professional", activities: [] });
+          const colId = payloadData.columns?.[0]?.id || "todo";
+          payloadData.activities = picked.map(ev => toActivity(ev, colId));
+        } else {
+          payloadData = window.createBlankTripData(newName, state.vehicle);
+          payloadData.activities = picked.map(ev => toActivity(ev));
+        }
+        const created = await window.FeriasApi.createTrip(newName, payloadData, window.FeriasMaps?.getKey?.() || "", targetMode);
+        $("#aiImportCalModal").close();
+        if (appMode !== targetMode) await setAppMode(targetMode, { skipLoad: true });
+        await refreshTripsAndLoad(created.id);
+        toast(`🖼️ Calendário "${newName}" criado com ${picked.length} evento(s)!`);
+      } else {
+        const destId = $("#impCalExistingSelect")?.value;
+        const destTrip = await resolveTripRefById(destId);
+        if (!destTrip) throw new Error("Calendário de destino não encontrado.");
+        if (destTrip.role === "viewer") throw new Error("Este calendário está em modo somente leitura.");
+        const dMode = getTripMode(destTrip);
+        const colId = dMode === "professional" ? (destTrip.data?.columns?.[0]?.id || "todo") : "";
+        const added = picked.map(ev => toActivity(ev, colId));
+        if (!Array.isArray(destTrip.data.activities)) destTrip.data.activities = [];
+        destTrip.data.activities.push(...added);
+        await window.FeriasApi.updateTrip(destTrip.id, {
+          name: destTrip.data.title || destTrip.name,
+          mode: dMode,
+          data: destTrip.data,
+          updatedAt: Date.now()
+        });
+        $("#aiImportCalModal").close();
+        if (appMode !== dMode) await setAppMode(dMode, { skipLoad: true });
+        await refreshTripsAndLoad(destTrip.id);
+        toast(`✅ ${added.length} evento(s) adicionados em "${destTrip.data.title || destTrip.name}"!`);
+      }
+    } catch (err) {
+      toast("❌ " + (err.message || err));
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
 
 /* ---------- PERFIL, VALIDAÇÃO WHATSAPP BRASIL & ENVIO WHATSAPP ---------- */
 function populateCountriesSelect() {
@@ -7043,7 +8846,9 @@ function sendPlanToMyWhatsApp() {
     openProfileModal();
     return;
   }
-  const text = window.FeriasCountries.buildWhatsAppTripMessage(state, sorted(), totals(), calc, reportHelpers());
+  const text = (appMode === "professional" && window.MyPlanPro)
+    ? window.MyPlanPro.buildProWhatsAppText()
+    : window.FeriasCountries.buildWhatsAppTripMessage(state, sorted(), totals(), calc, reportHelpers());
   const url = `https://wa.me/${check.e164Digits}?text=${encodeURIComponent(text)}`;
   window.open(url, "_blank", "noopener");
   toast(`💬 Abrindo WhatsApp para ${check.fullDisplay}...`);
@@ -7105,9 +8910,12 @@ document.addEventListener("click", () => {
   $("#btnMenu").setAttribute("aria-expanded", "false");
 });
 
-$("#btnExportXlsx").onclick = exportXlsx;
+$("#btnExportXlsx").onclick = () => {
+  if (appMode === "professional" && window.MyPlanPro) window.MyPlanPro.exportProXlsx();
+  else exportXlsx();
+};
 $("#btnExportJson").onclick = () => {
-  download(`${(state.title || "ferias_pro").replace(/[^\w\-]+/g, "_")}.json`, new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
+  download(`${(state.title || "my_plan").replace(/[^\w\-]+/g, "_")}.json`, new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
   toast("💾 Backup salvo");
 };
 $("#btnImportJson").onclick = () => $("#fileJson").click();
@@ -7119,7 +8927,12 @@ $("#fileJson").onchange = async e => {
   try {
     const d = JSON.parse(await f.text());
     if (!Array.isArray(d.activities)) throw new Error("inválido");
-    state = migrateState(d);
+    if ((appMode === "professional" || d.mode === "professional") && window.MyPlanPro) {
+      if (appMode !== "professional") await setAppMode("professional", { skipLoad: true });
+      state = window.MyPlanPro.migrateProState(d);
+    } else {
+      state = migrateState(d);
+    }
     save("📂 Backup restaurado");
   } catch { toast("Arquivo JSON inválido"); }
   e.target.value = "";
@@ -7279,6 +9092,9 @@ if ($("#financeDayForm")) {
   };
 }
 
-window.addEventListener("resize", () => { if (ganttMode === "gantt") renderGantt(sorted()); });
+window.addEventListener("resize", () => {
+  if (appMode === "professional" && window.MyPlanPro) window.MyPlanPro.renderProGantt();
+  else if (ganttMode === "gantt") renderGantt(sorted());
+});
 
 boot();

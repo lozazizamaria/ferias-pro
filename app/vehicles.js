@@ -1,4 +1,4 @@
-/* ===== Banco de Dados Completo de Veículos (Clássicos, Combustão, Flex, Diesel, HEV, PHEV, BEV) — Férias Pro ===== */
+/* ===== Banco de Dados Completo de Veículos (Clássicos, Combustão, Flex, Diesel, HEV, PHEV, BEV) — My Plan ===== */
 (function () {
   // C = Combustão (Gasolina/Flex/Diesel), HEV = Híbrido Convencional, PHEV = Plug-in, BEV = 100% Elétrico
   // Formato compacto: [id, name, powertrain, hevKmL, tank, evRange, battery, kwhPerCharge, bevKwhPer100, category]

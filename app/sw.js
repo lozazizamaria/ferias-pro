@@ -1,24 +1,25 @@
-/* ===== Service Worker PWA — Férias Pro (Network-First Shell + Leituras Offline) ===== */
-const CACHE = "ferias-pro-v27";
-const DATA_CACHE = "ferias-pro-data-v27";
+/* ===== Service Worker PWA — My Plan (Network-First Shell + Leituras Offline) ===== */
+const CACHE = "my-plan-v29";
+const DATA_CACHE = "my-plan-data-v29";
 const SHELL = [
   "/",
   "/index.html",
   "/como-usar.html",
-  "/styles.css?v=27",
-  "/sobre.css?v=27",
-  "/vehicles.js?v=27",
-  "/countries.js?v=27",
-  "/data.js?v=27",
-  "/maps.js?v=27",
-  "/calendar.js?v=27",
-  "/report.js?v=27",
-  "/api.js?v=27",
-  "/app.js?v=27",
-  "/manifest.webmanifest?v=27",
+  "/styles.css?v=29",
+  "/sobre.css?v=29",
+  "/vehicles.js?v=29",
+  "/countries.js?v=29",
+  "/data.js?v=29",
+  "/maps.js?v=29",
+  "/calendar.js?v=29",
+  "/report.js?v=29",
+  "/api.js?v=29",
+  "/pro.js?v=29",
+  "/app.js?v=29",
+  "/manifest.webmanifest?v=29",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
-  "/icons/icon.svg"
+  "/icons/icon.svg?v=29"
 ];
 
 /* Apenas leituras essenciais GET ficam disponíveis em fallback offline read-only. */

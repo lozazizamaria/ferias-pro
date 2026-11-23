@@ -1,4 +1,4 @@
-/* ===== Lista de Países (DDI), Validação WhatsApp Brasil & Resumo — Férias Pro ===== */
+/* ===== Lista de Países (DDI), Validação WhatsApp Brasil & Resumo — My Plan ===== */
 (function () {
   const COUNTRIES = [
     { dial: "+55", iso: "BR", name: "Brasil" },
@@ -257,7 +257,7 @@
     const { fmtBR, money, num, hmHuman } = helpers;
     const t = totalsObj;
     const lines = [
-      `✈️ *${state.title || "Planejamento Férias Pro"}*`,
+      `✈️ *${state.title || "Planejamento My Plan"}*`,
       `🚗 Veículo: ${state.vehicle?.name || "-"} (${state.vehicle?.powertrain || "-"})`,
       `👥 Viajantes: ${state.params?.travelers || 1} · Duração: ${t.totalDays || 0} dia(s)`,
       ""

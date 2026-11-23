@@ -1,6 +1,7 @@
-/* ===== Cliente API (Auth, Multi-Viagens, Compartilhamento, Anexos e Sync) — Férias Pro ===== */
+/* ===== Cliente API (Auth, Multi-Planejamentos, Modos, Compartilhamento, Anexos e Sync) — My Plan ===== */
 (function () {
   const ACTIVE_TRIP_KEY = "ferias-pro-active-trip";
+  const ACTIVE_PRO_TRIP_KEY = "myplan-active-trip-pro";
   const LOCAL_TRIPS_KEY = "ferias-pro-local-trips-v2";
 
   let serverAvailable = false;
@@ -266,16 +267,18 @@
     return r.data;
   }
 
-  async function createTrip(name, data, gmapsKey = "") {
+  async function createTrip(name, data, gmapsKey = "", mode = "") {
+    const resolvedMode = (mode === "professional" || data?.mode === "professional") ? "professional" : "personal";
+    if (data && typeof data === "object") data.mode = resolvedMode;
     if (!serverAvailable) {
       const store = getLocalStore();
       const id = "local_" + Math.random().toString(36).slice(2, 10);
-      store[id] = { id, name, role: "owner", updatedAt: Date.now(), revision: 1, data, gmapsKey };
+      store[id] = { id, name, mode: resolvedMode, role: "owner", updatedAt: Date.now(), revision: 1, data, gmapsKey };
       saveLocalStore(store);
       return store[id];
     }
-    const r = await req("/api/trips", { method: "POST", body: JSON.stringify({ name, data, gmapsKey }) });
-    if (!r.ok) throw new Error(r.data?.error || "Erro ao criar viagem.");
+    const r = await req("/api/trips", { method: "POST", body: JSON.stringify({ name, mode: resolvedMode, data, gmapsKey }) });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao criar planejamento.");
     return r.data.trip;
   }
 
@@ -450,6 +453,20 @@
     return r.data.plan;
   }
 
+  async function aiTranscribeAudio(audio, language = "pt-BR") {
+    if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
+    const r = await req("/api/ai/transcribe", { method: "POST", body: JSON.stringify({ audio, language }) });
+    if (!r.ok) throw new Error(r.data?.error || r.data?.message || "Falha ao transcrever áudio com Gemini.");
+    return r.data;
+  }
+
+  async function aiImportCalendar(payload) {
+    if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
+    const r = await req("/api/ai/import-calendar", { method: "POST", body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error(r.data?.error || r.data?.message || "Falha ao importar calendário por imagem.");
+    return r.data.result;
+  }
+
   async function aiVehicleSpecs(modelName) {
     if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
     const r = await req("/api/ai/vehicle-specs", { method: "POST", body: JSON.stringify({ modelName }) });
@@ -503,7 +520,12 @@
   function loadLocalTripsIndex() {
     const store = getLocalStore();
     const ownTrips = Object.values(store).map(t => ({
-      id: t.id, name: t.name, role: "owner", updatedAt: t.updatedAt || 0, revision: t.revision || 1,
+      id: t.id,
+      name: t.name,
+      mode: (t.mode === "professional" || t.data?.mode === "professional") ? "professional" : "personal",
+      role: "owner",
+      updatedAt: t.updatedAt || 0,
+      revision: t.revision || 1,
       count: Array.isArray(t.data?.activities) ? t.data.activities.length : 0
     }));
     return { ownTrips, sharedTrips: [], pendingShares: [] };
@@ -539,8 +561,14 @@
     return check;
   }
 
-  function getActiveTripId() { return localStorage.getItem(ACTIVE_TRIP_KEY) || ""; }
-  function setActiveTripId(id) { if (id) localStorage.setItem(ACTIVE_TRIP_KEY, id); else localStorage.removeItem(ACTIVE_TRIP_KEY); }
+  function getActiveTripId(mode = "personal") {
+    return localStorage.getItem(mode === "professional" ? ACTIVE_PRO_TRIP_KEY : ACTIVE_TRIP_KEY) || "";
+  }
+  function setActiveTripId(id, mode = "personal") {
+    const key = mode === "professional" ? ACTIVE_PRO_TRIP_KEY : ACTIVE_TRIP_KEY;
+    if (id) localStorage.setItem(key, id);
+    else localStorage.removeItem(key);
+  }
 
   window.FeriasApi = {
     initServer,
@@ -584,6 +612,8 @@
     updateProfile,
     saveIntegrations,
     aiPlanTrip,
+    aiTranscribeAudio,
+    aiImportCalendar,
     aiVehicleSpecs,
     aiAnalyzeActivity,
     signWalletPass,

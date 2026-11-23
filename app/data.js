@@ -1,4 +1,4 @@
-// Dados iniciais, catálogo uniforme de atividades e fábrica de viagens — Férias Pro
+// Dados iniciais, catálogos uniformes (Pessoal & Profissional) e fábricas de planejamento — My Plan
 window.ACTIVITY_TYPES = {
   Viagem:      { id: "Viagem",      label: "🚗 Viagem de Carro",       short: "Carro",       icon: "▶",  cls: "Viagem",      isRoute: true,   costLabel: "Gastos extras da viagem (estacionamento, balsa...)" },
   Voo:         { id: "Voo",         label: "✈️ Avião / Voo",           short: "Voo",         icon: "✈",  cls: "Voo",         isFlight: true,  costLabel: "Passagens aéreas / bagagem" },
@@ -89,6 +89,7 @@ window.DEFAULT_DATA = {
 window.createBlankTripData = function (name, vehicleCopy) {
   const def = JSON.parse(JSON.stringify(window.DEFAULT_DATA));
   return {
+    mode: "personal",
     title: name || "Nova Viagem",
     customTags: [],
     vehicle: vehicleCopy ? JSON.parse(JSON.stringify(vehicleCopy)) : def.vehicle,
@@ -98,3 +99,359 @@ window.createBlankTripData = function (name, vehicleCopy) {
     checklist: []
   };
 };
+
+/* ===== CATÁLOGO & DADOS DO MODO PROFISSIONAL (TRELLO + GANTT + FLUXO DE CAIXA) ===== */
+window.PRO_ACTIVITY_TYPES = {
+  Desenvolvimento: { id: "Desenvolvimento", label: "💻 Desenvolvimento / Tarefa", short: "Dev",         icon: "💻", cls: "pro-dev",      defaultFin: "none" },
+  "Reunião":       { id: "Reunião",         label: "🤝 Reunião / Call",            short: "Reunião",     icon: "🤝", cls: "pro-meet",     defaultFin: "none" },
+  "Viagem Corp.":  { id: "Viagem Corp.",    label: "✈️ Viagem Corporativa",        short: "Viagem",      icon: "✈️", cls: "pro-travel",   defaultFin: "expense" },
+  Recebimento:     { id: "Recebimento",     label: "💵 Recebimento / Faturamento", short: "Recebimento", icon: "💵", cls: "pro-income",   defaultFin: "income" },
+  Despesa:         { id: "Despesa",         label: "💳 Despesa / Custo",           short: "Despesa",     icon: "💳", cls: "pro-expense",  defaultFin: "expense" },
+  Entrega:         { id: "Entrega",         label: "🚀 Entrega / Deploy",          short: "Entrega",     icon: "🚀", cls: "pro-deliver",  defaultFin: "none" },
+  Marco:           { id: "Marco",           label: "◆ Marco / Prazo Crítico",      short: "Marco",       icon: "◆",  cls: "pro-marco",    defaultFin: "none" },
+  "Follow-up":     { id: "Follow-up",       label: "📞 Follow-up / Proposta",      short: "Follow-up",   icon: "📞", cls: "pro-followup", defaultFin: "none" },
+  Outro:           { id: "Outro",           label: "📌 Outro Compromisso",         short: "Outro",       icon: "📌", cls: "pro-outro",    defaultFin: "none" }
+};
+
+window.PRO_DEFAULT_COLUMNS = [
+  { id: "backlog", title: "Backlog / Ideias",    color: "#64748b" },
+  { id: "todo",    title: "A Fazer",             color: "#0284c7" },
+  { id: "doing",   title: "Em Andamento",        color: "#2563eb" },
+  { id: "review",  title: "Revisão / Aprovação", color: "#d97706" },
+  { id: "done",    title: "Concluído",           color: "#10b981" }
+];
+
+window.PRO_DEFAULT_LABELS = [
+  { id: "lbl_urgente",    name: "Prioritário",  color: "#ef4444" },
+  { id: "lbl_cliente",    name: "Cliente",      color: "#38bdf8" },
+  { id: "lbl_entrega",    name: "Entregável",   color: "#2563eb" },
+  { id: "lbl_financeiro", name: "Financeiro",   color: "#10b981" },
+  { id: "lbl_estrategia", name: "Estratégia",   color: "#8b5cf6" },
+  { id: "lbl_viagem",     name: "Deslocamento", color: "#f59e0b" }
+];
+
+window.PRO_DEFAULT_TAGS = ["Desenvolvimento", "Cliente", "Financeiro", "Reunião", "Viagem Corp.", "Entrega"];
+
+(function () {
+  function relIso(offsetDays) {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() + offsetDays);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  window.createDefaultProData = function (name) {
+    return {
+      mode: "professional",
+      title: name || "Roadmap & Entregas Profissionais",
+      customTags: [],
+      columns: JSON.parse(JSON.stringify(window.PRO_DEFAULT_COLUMNS)),
+      labels: JSON.parse(JSON.stringify(window.PRO_DEFAULT_LABELS)),
+      params: {
+        clientDefault: "Carteira Executiva",
+        revenueTarget: 45000,
+        costBudget: 9500,
+        taxRatePct: 6,
+        hourlyRate: 220,
+        calendarReminderTime: "09:00"
+      },
+      activities: [
+        {
+          id: "pro_a1",
+          type: "Reunião",
+          columnId: "done",
+          order: 0,
+          name: "Kickoff & Alinhamento de Escopo",
+          start: relIso(-4),
+          end: relIso(-4),
+          startTime: "09:30",
+          endTime: "11:00",
+          priority: "Alta",
+          progress: 100,
+          client: "Cliente Estratégico",
+          assignee: "Você",
+          location: "Google Meet",
+          coverColor: "#0284c7",
+          labels: ["lbl_cliente", "lbl_estrategia"],
+          tags: ["Reunião", "Cliente"],
+          finDirection: "none",
+          amount: 0,
+          actualAmount: 0,
+          finStatus: "Previsto",
+          subtasks: [
+            { id: "st1", text: "Validar requisitos principais", done: true },
+            { id: "st2", text: "Enviar ata e cronograma", done: true }
+          ],
+          notes: "Definição de marcos semanais e entregáveis do trimestre.",
+          attachments: []
+        },
+        {
+          id: "pro_a2",
+          type: "Recebimento",
+          columnId: "done",
+          order: 1,
+          name: "Recebimento Sinal / Parcela 1",
+          start: relIso(-2),
+          end: relIso(-2),
+          priority: "Alta",
+          progress: 100,
+          client: "Cliente Estratégico",
+          assignee: "Financeiro",
+          location: "NF-e #1042",
+          coverColor: "#10b981",
+          labels: ["lbl_financeiro", "lbl_cliente"],
+          tags: ["Financeiro"],
+          finDirection: "income",
+          amount: 14500,
+          actualAmount: 14500,
+          finStatus: "Liquidado",
+          finDueDate: relIso(-2),
+          subtasks: [],
+          notes: "Entrada de 40% na assinatura da proposta.",
+          attachments: []
+        },
+        {
+          id: "pro_a3",
+          type: "Desenvolvimento",
+          columnId: "doing",
+          order: 0,
+          name: "Desenvolvimento Core & Integrações",
+          start: relIso(-1),
+          end: relIso(6),
+          priority: "Crítica",
+          progress: 65,
+          client: "Cliente Estratégico",
+          assignee: "Você",
+          location: "Repositório Principal",
+          coverColor: "#2563eb",
+          labels: ["lbl_entrega", "lbl_urgente"],
+          tags: ["Desenvolvimento"],
+          finDirection: "none",
+          amount: 0,
+          actualAmount: 0,
+          finStatus: "Previsto",
+          subtasks: [
+            { id: "st3", text: "API de autenticação e segurança", done: true },
+            { id: "st4", text: "Módulo de painéis e relatórios", done: true },
+            { id: "st5", text: "Testes automatizados ponta a ponta", done: false }
+          ],
+          notes: "Sprint principal de desenvolvimento da plataforma.",
+          attachments: []
+        },
+        {
+          id: "pro_a4",
+          type: "Reunião",
+          columnId: "todo",
+          order: 0,
+          name: "Checkpoint Executivo de Meio de Sprint",
+          start: relIso(3),
+          end: relIso(3),
+          startTime: "14:00",
+          endTime: "15:00",
+          priority: "Média",
+          progress: 0,
+          client: "Cliente Estratégico",
+          assignee: "Você",
+          location: "Sala Executiva / Zoom",
+          coverColor: "#0ea5e9",
+          labels: ["lbl_cliente"],
+          tags: ["Reunião"],
+          finDirection: "none",
+          amount: 0,
+          actualAmount: 0,
+          finStatus: "Previsto",
+          subtasks: [{ id: "st6", text: "Preparar demo funcional", done: false }],
+          notes: "Validação intermediária antes da fase de homologação.",
+          attachments: []
+        },
+        {
+          id: "pro_a5",
+          type: "Viagem Corp.",
+          columnId: "todo",
+          order: 1,
+          name: "Viagem Corporativa — São Paulo",
+          start: relIso(8),
+          end: relIso(10),
+          startTime: "07:30",
+          priority: "Alta",
+          progress: 25,
+          client: "Cliente Estratégico",
+          assignee: "Você",
+          location: "Av. Paulista, São Paulo - SP",
+          coverColor: "#f59e0b",
+          labels: ["lbl_viagem", "lbl_cliente"],
+          tags: ["Viagem Corp.", "Cliente"],
+          finDirection: "expense",
+          amount: 2650,
+          actualAmount: 0,
+          finStatus: "Previsto",
+          finDueDate: relIso(8),
+          subtasks: [
+            { id: "st7", text: "Confirmar check-in aéreo e hotel", done: true },
+            { id: "st8", text: "Separar apresentação presencial", done: false }
+          ],
+          notes: "Apresentação presencial de roadmap e reunião com diretoria.",
+          attachments: []
+        },
+        {
+          id: "pro_a6",
+          type: "Despesa",
+          columnId: "doing",
+          order: 1,
+          name: "Infraestrutura Cloud & Ferramentas",
+          start: relIso(5),
+          end: relIso(5),
+          priority: "Média",
+          progress: 50,
+          client: "Operacional",
+          assignee: "Você",
+          location: "AWS / Serviços SaaS",
+          coverColor: "#ef4444",
+          labels: ["lbl_financeiro"],
+          tags: ["Financeiro"],
+          finDirection: "expense",
+          amount: 1280,
+          actualAmount: 0,
+          finStatus: "Previsto",
+          finDueDate: relIso(5),
+          subtasks: [],
+          notes: "Servidores, certificados e assinaturas do projeto.",
+          attachments: []
+        },
+        {
+          id: "pro_a7",
+          type: "Entrega",
+          columnId: "review",
+          order: 0,
+          name: "Homologação & Deploy Produção",
+          start: relIso(11),
+          end: relIso(13),
+          priority: "Crítica",
+          progress: 20,
+          client: "Cliente Estratégico",
+          assignee: "Você",
+          location: "Ambiente Produção",
+          coverColor: "#6366f1",
+          labels: ["lbl_entrega", "lbl_urgente"],
+          tags: ["Entrega", "Desenvolvimento"],
+          finDirection: "none",
+          amount: 0,
+          actualAmount: 0,
+          finStatus: "Previsto",
+          subtasks: [
+            { id: "st9", text: "Checklist de segurança e performance", done: false },
+            { id: "st10", text: "Publicação final e monitoramento", done: false }
+          ],
+          notes: "Janela de publicação assistida com acompanhamento.",
+          attachments: []
+        },
+        {
+          id: "pro_a8",
+          type: "Marco",
+          columnId: "backlog",
+          order: 0,
+          name: "Go-Live Oficial & Termo de Aceite",
+          start: relIso(14),
+          end: relIso(14),
+          priority: "Crítica",
+          progress: 0,
+          client: "Cliente Estratégico",
+          assignee: "Você",
+          location: "Assinatura Digital",
+          coverColor: "#38bdf8",
+          labels: ["lbl_entrega", "lbl_cliente"],
+          tags: ["Entrega"],
+          finDirection: "none",
+          amount: 0,
+          actualAmount: 0,
+          finStatus: "Previsto",
+          subtasks: [],
+          notes: "Marco contratual que libera o faturamento final.",
+          attachments: []
+        },
+        {
+          id: "pro_a9",
+          type: "Recebimento",
+          columnId: "backlog",
+          order: 1,
+          name: "Recebimento Entrega Final (Saldo 60%)",
+          start: relIso(16),
+          end: relIso(16),
+          priority: "Alta",
+          progress: 0,
+          client: "Cliente Estratégico",
+          assignee: "Financeiro",
+          location: "Faturamento / PIX / TED",
+          coverColor: "#10b981",
+          labels: ["lbl_financeiro", "lbl_cliente"],
+          tags: ["Financeiro"],
+          finDirection: "income",
+          amount: 21750,
+          actualAmount: 0,
+          finStatus: "Previsto",
+          finDueDate: relIso(16),
+          subtasks: [],
+          notes: "Emissão de NF após termo de aceite assinado.",
+          attachments: []
+        },
+        {
+          id: "pro_a10",
+          type: "Follow-up",
+          columnId: "backlog",
+          order: 2,
+          name: "Follow-up Pós-Entrega & Nova Fase",
+          start: relIso(20),
+          end: relIso(21),
+          startTime: "10:00",
+          priority: "Média",
+          progress: 0,
+          client: "Cliente Estratégico",
+          assignee: "Você",
+          location: "Call Executiva",
+          coverColor: "#8b5cf6",
+          labels: ["lbl_estrategia", "lbl_cliente"],
+          tags: ["Reunião", "Cliente"],
+          finDirection: "none",
+          amount: 0,
+          actualAmount: 0,
+          finStatus: "Previsto",
+          subtasks: [],
+          notes: "Apresentar indicadores iniciais e proposta de evolução contínua.",
+          attachments: []
+        }
+      ],
+      checklist: [
+        { id: "pchk1", cat: "Escopo", item: "Confirmar aprovações de design e requisitos com o cliente", prio: "Alta", status: "Concluído", notes: "" },
+        { id: "pchk2", cat: "Financeiro", item: "Emitir nota fiscal e conferir liquidação no fluxo de caixa", prio: "Alta", status: "Em andamento", notes: "Parcela 1 liquidada; saldo após Go-Live" },
+        { id: "pchk3", cat: "Viagem Corp.", item: "Reservar voo e hotel próximo ao local da reunião em SP", prio: "Alta", status: "Pendente", notes: "" },
+        { id: "pchk4", cat: "Entrega", item: "Executar checklist de QA e backup antes do deploy final", prio: "Alta", status: "Pendente", notes: "" }
+      ],
+      finance: {
+        dailyRecords: {}
+      }
+    };
+  };
+
+  window.PRO_DEFAULT_DATA = window.createDefaultProData();
+
+  window.createBlankProData = function (name) {
+    return {
+      mode: "professional",
+      title: name || "Novo Projeto Profissional",
+      customTags: [],
+      columns: JSON.parse(JSON.stringify(window.PRO_DEFAULT_COLUMNS)),
+      labels: JSON.parse(JSON.stringify(window.PRO_DEFAULT_LABELS)),
+      params: {
+        clientDefault: "",
+        revenueTarget: 0,
+        costBudget: 0,
+        taxRatePct: 0,
+        hourlyRate: 0,
+        calendarReminderTime: "09:00"
+      },
+      activities: [],
+      checklist: [],
+      finance: { dailyRecords: {} }
+    };
+  };
+})();

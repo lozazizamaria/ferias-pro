@@ -1,4 +1,4 @@
-/* ===== Férias Pro — Servidor Completo (Auth, Multi-Viagens, Compartilhamento, Anexos) ===== */
+/* ===== My Plan — Servidor Completo (Auth, Modos Pessoal/Profissional, Compartilhamento, Anexos) ===== */
 const http = require("node:http");
 const fs = require("node:fs");
 const net = require("node:net");
@@ -63,7 +63,7 @@ const SMTP_HOST = (process.env.SMTP_HOST || "").trim();
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
 const SMTP_USER = (process.env.SMTP_USER || "").trim();
 const SMTP_PASS = String(process.env.SMTP_PASS || "");
-const SMTP_FROM = (process.env.SMTP_FROM || SMTP_USER || "no-reply@feriaspro.app").trim();
+const SMTP_FROM = (process.env.SMTP_FROM || SMTP_USER || "no-reply@myplan.app").trim();
 const SMTP_SECURE = (process.env.SMTP_SECURE || "").trim().toLowerCase();
 const RESEND_API_KEY = (process.env.RESEND_API_KEY || "").trim();
 const APP_BASE_URL = (process.env.APP_BASE_URL || "").trim().replace(/\/+$/, "");
@@ -462,7 +462,7 @@ function getGlobalConfig() {
   const smtpSecure = SMTP_HOST ? SMTP_SECURE : String(sys.smtpSecure || "").trim().toLowerCase();
   const smtpUser = SMTP_HOST ? SMTP_USER : String(sys.smtpUser || "").trim();
   const smtpPass = SMTP_HOST ? SMTP_PASS : decryptSecret(sys.smtpPassEnc);
-  const smtpFrom = (process.env.SMTP_FROM || "").trim() || String(sys.smtpFrom || "").trim() || smtpUser || "no-reply@feriaspro.app";
+  const smtpFrom = (process.env.SMTP_FROM || "").trim() || String(sys.smtpFrom || "").trim() || smtpUser || "no-reply@myplan.app";
   const resendApiKey = RESEND_API_KEY || decryptSecret(sys.resendApiKeyEnc);
   const appBaseUrl = (APP_BASE_URL || String(sys.appBaseUrl || "").trim()).replace(/\/+$/, "");
 
@@ -914,10 +914,16 @@ function escapeIcsText(txt) {
     .replace(/;/g, "\\;");
 }
 
+function getTripMode(trip) {
+  return (trip?.mode || trip?.data?.mode) === "professional" ? "professional" : "personal";
+}
+
 function buildTripIcs(trip) {
   const data = trip.data || {};
-  const tripName = trip.name || data.title || "Férias Pro";
+  const isPro = getTripMode(trip) === "professional";
+  const tripName = trip.name || data.title || "My Plan";
   const activities = Array.isArray(data.activities) ? data.activities : [];
+  const colMap = new Map((Array.isArray(data.columns) ? data.columns : []).map(c => [c.id, c.title]));
   const remTime = data.params?.calendarReminderTime || "09:00";
   const [hh, mm] = String(remTime).split(":").map(x => String(parseInt(x, 10) || 0).padStart(2, "0"));
   const minsBefore = Math.max(60, 24 * 60 - ((parseInt(hh, 10) || 9) * 60 + (parseInt(mm, 10) || 0)));
@@ -927,10 +933,10 @@ function buildTripIcs(trip) {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Ferias Pro//VPS Feed//PT-BR",
+    "PRODID:-//My Plan//VPS Feed//PT-BR",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    `X-WR-CALNAME:${escapeIcsText("Férias Pro — " + tripName)}`,
+    `X-WR-CALNAME:${escapeIcsText(`My Plan (${isPro ? "Pro" : "Pessoal"}) — ${tripName}`)}`,
     "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
     "X-PUBLISHED-TTL:PT1H"
   ];
@@ -939,16 +945,35 @@ function buildTripIcs(trip) {
     if (!a || !a.start) return;
     const isRouteOrTransit = ["Viagem", "Voo", "Trem", "Ônibus", "Navio"].includes(a.type);
     const modePrefix = a.type === "Voo" ? "✈️ " : a.type === "Navio" ? "🚢 " : a.type === "Trem" ? "🚂 " : a.type === "Ônibus" ? "🚌 " : "";
-    const summary = isRouteOrTransit && (a.from || a.to)
+    const colTitle = isPro ? (colMap.get(a.columnId) || "") : "";
+    let summary = isRouteOrTransit && (a.from || a.to)
       ? `${modePrefix}${a.name} (${a.from || "?"} ➔ ${a.to || "?"})`
       : a.name;
-    const descParts = [`Planejamento: ${tripName}`, `Tipo: ${a.type}`];
+    if (isPro && colTitle) summary = `[${colTitle}] ${summary}`;
+
+    const descParts = [`${isPro ? "Projeto" : "Planejamento"}: ${tripName}`, `Tipo: ${a.type}`];
+    if (colTitle) descParts.push(`Etapa / Lista: ${colTitle}`);
+    if (a.startTime) descParts.push(`Horário: ${String(a.startTime).slice(0, 5)}${a.endTime ? " – " + String(a.endTime).slice(0, 5) : ""}`);
+    if (a.priority) descParts.push(`Prioridade: ${a.priority}`);
+    if (a.progress != null && a.progress !== "") descParts.push(`Progresso: ${Number(a.progress) || 0}%`);
+    if (a.client) descParts.push(`Cliente / Conta: ${a.client}`);
+    if (a.assignee) descParts.push(`Responsável: ${a.assignee}`);
+    if (a.location) descParts.push(`Local / Link: ${a.location}`);
     if (a.from || a.to) descParts.push(`Trecho: ${a.from || "?"} ➔ ${a.to || "?"}`);
     if (a.airline) descParts.push(`Cia / Empresa / Navio: ${a.airline}`);
     if (a.bookingRef) descParts.push(`Localizador / Reserva: ${a.bookingRef}`);
     if (a.km) descParts.push(`Distância: ${a.km} km`);
     if (a.toll) descParts.push(`Pedágio: R$ ${Number(a.toll).toFixed(2)}`);
     if (a.extraCost) descParts.push(`Custo: R$ ${Number(a.extraCost).toFixed(2)}`);
+    if (a.finDirection === "income" && Number(a.amount) > 0) {
+      descParts.push(`Recebimento: +R$ ${Number(a.amount).toFixed(2)}${a.finStatus ? ` (${a.finStatus})` : ""}`);
+    } else if (a.finDirection === "expense" && Number(a.amount) > 0) {
+      descParts.push(`Despesa: -R$ ${Number(a.amount).toFixed(2)}${a.finStatus ? ` (${a.finStatus})` : ""}`);
+    }
+    if (Array.isArray(a.subtasks) && a.subtasks.length) {
+      const doneSub = a.subtasks.filter(s => s && s.done).length;
+      descParts.push(`Subtarefas (${doneSub}/${a.subtasks.length}): ${a.subtasks.map(s => `${s.done ? "[x]" : "[ ]"} ${s.text || ""}`).join(" | ")}`);
+    }
     if (Array.isArray(a.tags) && a.tags.length) descParts.push(`Tags: ${a.tags.map(t => String(t)).join(", ")}`);
     if (a.notes) descParts.push(`Notas: ${a.notes}`);
     const desc = descParts.join("\n");
@@ -958,29 +983,32 @@ function buildTripIcs(trip) {
     const dtEnd = addDaysISO(a.end || a.start, 1).replace(/-/g, "");
     const prevDay = addDaysISO(a.start, -1).replace(/-/g, "");
     const endRemMin = Math.min(59, (parseInt(mm, 10) || 0) + 15);
+    const locProp = a.location || a.to || a.from || "";
 
     lines.push(
       "BEGIN:VEVENT",
-      `UID:${uidBase}-main@feriaspro.app`,
+      `UID:${uidBase}-main@myplan.app`,
       `SEQUENCE:${seq}`,
       `DTSTAMP:${stamp}`,
       `DTSTART;VALUE=DATE:${dtStart}`,
       `DTEND;VALUE=DATE:${dtEnd}`,
       `SUMMARY:${escapeIcsText(summary)}`,
+      ...(locProp ? [`LOCATION:${escapeIcsText(locProp)}`] : []),
       `DESCRIPTION:${escapeIcsText(desc)}`,
       "BEGIN:VALARM",
       "ACTION:DISPLAY",
-      `DESCRIPTION:${escapeIcsText("Lembrete Férias Pro: " + summary)}`,
+      `DESCRIPTION:${escapeIcsText("Lembrete My Plan: " + summary)}`,
       `TRIGGER:-PT${minsBefore}M`,
       "END:VALARM",
       "END:VEVENT",
       "BEGIN:VEVENT",
-      `UID:${uidBase}-rem@feriaspro.app`,
+      `UID:${uidBase}-rem@myplan.app`,
       `SEQUENCE:${seq}`,
       `DTSTAMP:${stamp}`,
       `DTSTART:${prevDay}T${hh}${mm}00`,
       `DTEND:${prevDay}T${hh}${String(endRemMin).padStart(2, "0")}00`,
       `SUMMARY:${escapeIcsText("🔔 Lembrete amanhã: " + summary)}`,
+      ...(locProp ? [`LOCATION:${escapeIcsText(locProp)}`] : []),
       `DESCRIPTION:${escapeIcsText(desc)}`,
       "BEGIN:VALARM",
       "ACTION:DISPLAY",
@@ -1049,7 +1077,7 @@ function buildMimeEmail({ from, to, subject, text, html }) {
     `To: ${cleanTo}`,
     `Subject: ${encodeRfc2047(subject)}`,
     `Date: ${new Date().toUTCString()}`,
-    `Message-ID: <${uid("msg.")}@feriaspro.app>`,
+    `Message-ID: <${uid("msg.")}@myplan.app>`,
     "MIME-Version: 1.0",
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     "",
@@ -1357,11 +1385,11 @@ function resolveBackupFileSafe(rawName) {
 }
 
 function buildResetEmailContent(name, resetUrl) {
-  const safeName = String(name || "Viajante").replace(/[<>&"]/g, "");
+  const safeName = String(name || "Usuário").replace(/[<>&"]/g, "");
   const text = [
     `Olá, ${safeName}!`,
     "",
-    "Recebemos uma solicitação para redefinir sua senha no Férias Pro.",
+    "Recebemos uma solicitação para redefinir sua senha no My Plan.",
     "Acesse o link abaixo para criar uma nova senha forte (válido por 30 minutos):",
     "",
     resetUrl,
@@ -1371,19 +1399,19 @@ function buildResetEmailContent(name, resetUrl) {
   const html = `
   <div style="font-family:Inter,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#f8fafc;color:#0f172a">
     <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:28px">
-      <h2 style="margin:0 0 12px;color:#1e293b">🔐 Redefinição de Senha — Férias Pro</h2>
+      <h2 style="margin:0 0 12px;color:#1e293b">🔐 Redefinição de Senha — My Plan</h2>
       <p style="margin:0 0 14px;line-height:1.55">Olá, <b>${safeName}</b>!</p>
       <p style="margin:0 0 20px;line-height:1.55">Recebemos uma solicitação para redefinir sua senha. Clique no botão abaixo para cadastrar uma nova senha forte (link válido por <b>30 minutos</b>):</p>
       <p style="margin:0 0 22px;text-align:center">
-        <a href="${resetUrl}" style="display:inline-block;padding:12px 24px;border-radius:10px;background:#4f46e5;color:#ffffff;font-weight:700;text-decoration:none">Redefinir minha senha</a>
+        <a href="${resetUrl}" style="display:inline-block;padding:12px 24px;border-radius:10px;background:#1d4ed8;color:#ffffff;font-weight:700;text-decoration:none">Redefinir minha senha</a>
       </p>
       <p style="margin:0 0 8px;font-size:13px;color:#475569">Ou copie e cole este endereço no seu navegador:</p>
-      <p style="margin:0 0 18px;font-size:12px;word-break:break-all;color:#4f46e5">${resetUrl}</p>
+      <p style="margin:0 0 18px;font-size:12px;word-break:break-all;color:#1d4ed8">${resetUrl}</p>
       <hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">
       <p style="margin:0;font-size:12px;color:#64748b">Se você não pediu esta redefinição, ignore este e-mail — sua conta permanece protegida.</p>
     </div>
   </div>`;
-  return { subject: "Férias Pro — Link para redefinir sua senha", text, html };
+  return { subject: "My Plan — Link para redefinir sua senha", text, html };
 }
 
 function normalizeGeminiModelId(name) {
@@ -1536,7 +1564,15 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
     Evento: "#e11d48",
     Passeio: "#9333ea",
     Restaurante: "#ea580c",
-    Viagem: "#2563eb"
+    Viagem: "#2563eb",
+    Desenvolvimento: "#2563eb",
+    "Reunião": "#0284c7",
+    "Viagem Corp.": "#d97706",
+    Recebimento: "#059669",
+    Despesa: "#dc2626",
+    Entrega: "#4f46e5",
+    Marco: "#0ea5e9",
+    "Follow-up": "#7c3aed"
   };
   const dateLabel = act.end && act.end !== act.start ? `${act.start} até ${act.end}` : (act.start || "-");
   const subParts = [actType];
@@ -1548,7 +1584,7 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
   const qrMap = { aztec: "AZTEC", pdf417: "PDF_417", code_128: "CODE_128" };
   const barcodeType = qrMap[String(act.qrFormat || "").toLowerCase()] || "QR_CODE";
   const barcodeValue = String(act.qrPayload || "").trim()
-    || `FERIASPRO|${act.id || suffix}|${act.name || ""}|${act.start || ""}|${act.bookingRef || ""}`;
+    || `MYPLAN|${act.id || suffix}|${act.name || ""}|${act.start || ""}|${act.bookingRef || ""}`;
 
   const textModulesData = [
     { id: "tipo", header: "Tipo", body: actType },
@@ -1566,6 +1602,19 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
   }
   if (act.bookingRef) {
     textModulesData.push({ id: "reserva", header: "Localizador / Cabine / Código", body: String(act.bookingRef).slice(0, 120) });
+  }
+  if (act.client) {
+    textModulesData.push({ id: "cliente", header: "Cliente / Conta", body: String(act.client).slice(0, 120) });
+  }
+  if (act.assignee) {
+    textModulesData.push({ id: "responsavel", header: "Responsável", body: String(act.assignee).slice(0, 120) });
+  }
+  if (act.location) {
+    textModulesData.push({ id: "local", header: "Local / Link", body: String(act.location).slice(0, 200) });
+  }
+  if (act.finDirection && act.finDirection !== "none" && Number(act.amount) > 0) {
+    const sign = act.finDirection === "income" ? "+" : "-";
+    textModulesData.push({ id: "financeiro", header: act.finDirection === "income" ? "Recebimento" : "Despesa", body: `${sign}R$ ${Number(act.amount).toFixed(2).replace(".", ",")}${act.finStatus ? ` (${act.finStatus})` : ""}` });
   }
   if (act.km || act.drive || act.toll) {
     const parts = [];
@@ -1592,13 +1641,13 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
     state: "ACTIVE",
     genericType: "GENERIC_TYPE_UNSPECIFIED",
     hexBackgroundColor: typeBgColors[actType] || "#4f46e5",
-    cardTitle: { defaultValue: { language: "pt-BR", value: `Férias Pro · ${tripName || "Viagem"}` } },
+    cardTitle: { defaultValue: { language: "pt-BR", value: `My Plan · ${tripName || "Planejamento"}` } },
     header: { defaultValue: { language: "pt-BR", value: act.name || "Reserva" } },
     subheader: { defaultValue: { language: "pt-BR", value: subParts.join(" · ") } },
     barcode: {
       type: barcodeType,
       value: barcodeValue,
-      alternateText: String(act.bookingRef || act.airline || `FP-${suffix.toUpperCase()}`).slice(0, 36)
+      alternateText: String(act.bookingRef || act.airline || `MP-${suffix.toUpperCase()}`).slice(0, 36)
     },
     textModulesData
   };
@@ -1610,7 +1659,7 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
     iat: Math.floor(Date.now() / 1000),
     origins: originHost ? [originHost] : [],
     payload: {
-      genericClasses: [{ id: classId, issuerName: "Férias Pro", reviewStatus: "UNDER_REVIEW" }],
+      genericClasses: [{ id: classId, issuerName: "My Plan", reviewStatus: "UNDER_REVIEW" }],
       genericObjects: [genericObj]
     }
   };
@@ -1719,7 +1768,7 @@ function buildPkpassBuffer(activity, tripName) {
   const act = activity && typeof activity === "object" ? activity : {};
   const suffix = crypto.createHash("md5").update(`${act.id || act.name || "pass"}-${act.start || ""}`).digest("hex").slice(0, 12);
   const actType = String(act.type || "Atividade");
-  const cleanName = String(act.name || "Reserva Férias Pro").trim();
+  const cleanName = String(act.name || "Reserva My Plan").trim();
   const dateLabel = act.end && act.end !== act.start ? `${act.start} a ${act.end}` : (act.start || "-");
   const totalCost = Number(act.extraCost) || 0;
   const ticketsArr = Array.isArray(act.tickets) ? act.tickets.filter(t => (Number(t.qty) || 0) > 0 && (Number(t.unitPrice) || 0) > 0) : [];
@@ -1735,7 +1784,15 @@ function buildPkpassBuffer(activity, tripName) {
     Evento: "rgb(225, 29, 72)",
     Passeio: "rgb(147, 51, 234)",
     Restaurante: "rgb(234, 88, 12)",
-    Viagem: "rgb(37, 99, 235)"
+    Viagem: "rgb(37, 99, 235)",
+    Desenvolvimento: "rgb(37, 99, 235)",
+    "Reunião": "rgb(2, 132, 199)",
+    "Viagem Corp.": "rgb(217, 119, 6)",
+    Recebimento: "rgb(5, 150, 105)",
+    Despesa: "rgb(220, 38, 38)",
+    Entrega: "rgb(79, 70, 229)",
+    Marco: "rgb(14, 165, 233)",
+    "Follow-up": "rgb(124, 58, 237)"
   };
 
   const qrMap = {
@@ -1745,22 +1802,22 @@ function buildPkpassBuffer(activity, tripName) {
   };
   const pkBarcodeFormat = qrMap[String(act.qrFormat || "").toLowerCase()] || "PKBarcodeFormatQR";
   const barcodeMsg = String(act.qrPayload || "").trim()
-    || `FERIASPRO|${act.id || suffix}|${cleanName}|${act.start || ""}|${act.bookingRef || ""}`;
+    || `MYPLAN|${act.id || suffix}|${cleanName}|${act.start || ""}|${act.bookingRef || ""}`;
   const mainBarcode = {
     message: barcodeMsg,
     format: pkBarcodeFormat,
     messageEncoding: pkBarcodeFormat === "PKBarcodeFormatQR" ? "utf-8" : "iso-8859-1",
-    altText: String(act.bookingRef || act.airline || `FP-${suffix.toUpperCase()}`).slice(0, 36)
+    altText: String(act.bookingRef || act.airline || `MP-${suffix.toUpperCase()}`).slice(0, 36)
   };
 
   const passObj = {
     formatVersion: 1,
-    passTypeIdentifier: "pass.com.feriaspro.pass",
-    serialNumber: `fp-${suffix}`,
-    teamIdentifier: "FERIASPRO1",
-    organizationName: "Férias Pro",
-    description: `${cleanName} — ${tripName || "Viagem"}`,
-    logoText: "Férias Pro",
+    passTypeIdentifier: "pass.com.myplan.pass",
+    serialNumber: `mp-${suffix}`,
+    teamIdentifier: "MYPLAN1",
+    organizationName: "My Plan",
+    description: `${cleanName} — ${tripName || "Planejamento"}`,
+    logoText: "My Plan",
     backgroundColor: bgColors[actType] || "rgb(79, 70, 229)",
     foregroundColor: "rgb(255, 255, 255)",
     labelColor: "rgb(224, 231, 255)",
@@ -1775,7 +1832,7 @@ function buildPkpassBuffer(activity, tripName) {
 
   const isTravel = ["Viagem", "Voo", "Trem", "Ônibus", "Navio"].includes(actType);
   const secondaryFields = [
-    { key: "trip", label: "VIAGEM", value: String(tripName || "Férias Pro").slice(0, 48) },
+    { key: "trip", label: "PLANEJAMENTO", value: String(tripName || "My Plan").slice(0, 48) },
     { key: "date", label: isTravel ? "SAÍDA / CHEGADA" : "DATA", value: dateLabel }
   ];
   if (act.airline) {
@@ -1784,8 +1841,13 @@ function buildPkpassBuffer(activity, tripName) {
   const auxiliaryFields = [];
   if (act.startTime) auxiliaryFields.push({ key: "time", label: "HORÁRIO", value: String(act.startTime).slice(0, 5) });
   if (act.bookingRef) auxiliaryFields.push({ key: "ref", label: "LOCALIZADOR", value: String(act.bookingRef).slice(0, 32) });
+  if (act.location) auxiliaryFields.push({ key: "loc", label: "LOCAL", value: String(act.location).slice(0, 40) });
+  if (act.client) auxiliaryFields.push({ key: "client", label: "CLIENTE", value: String(act.client).slice(0, 32) });
   if (totalTickets > 0) auxiliaryFields.push({ key: "tickets", label: "INGRESSOS", value: `${totalTickets} un.` });
   if (totalCost > 0) auxiliaryFields.push({ key: "cost", label: "VALOR", value: `R$ ${totalCost.toFixed(2).replace(".", ",")}` });
+  else if (act.finDirection && act.finDirection !== "none" && Number(act.amount) > 0) {
+    auxiliaryFields.push({ key: "fin", label: act.finDirection === "income" ? "RECEBIMENTO" : "DESPESA", value: `R$ ${Number(act.amount).toFixed(2).replace(".", ",")}` });
+  }
 
   const backFields = [
     { key: "type_full", label: "Tipo de Atividade", value: actType },
@@ -1879,7 +1941,7 @@ function storeWalletPkpass(buf, activityName) {
     if (oldestKey) walletPassTokens.delete(oldestKey);
   }
   const token = crypto.randomBytes(24).toString("hex");
-  const cleanFile = safeFileName(String(activityName || "passe_ferias_pro").replace(/\s+/g, "_").replace(/[^\w-]/g, "")) || "passe_ferias_pro";
+  const cleanFile = safeFileName(String(activityName || "passe_my_plan").replace(/\s+/g, "_").replace(/[^\w-]/g, "")) || "passe_my_plan";
   walletPassTokens.set(token, {
     buf,
     filename: `${cleanFile}.pkpass`,
@@ -2347,6 +2409,7 @@ const server = http.createServer(async (req, res) => {
         .map(t => ({
           id: t.id,
           name: t.name,
+          mode: getTripMode(t),
           role: "owner",
           ownerName: user.name,
           ownerEmail: user.email,
@@ -2367,6 +2430,7 @@ const server = http.createServer(async (req, res) => {
           return {
             id: t.id,
             name: t.name,
+            mode: getTripMode(t),
             role: s.role || "editor",
             shareId: s.id,
             ownerName: owner ? owner.name : "Usuário",
@@ -2388,6 +2452,7 @@ const server = http.createServer(async (req, res) => {
             id: s.id,
             tripId: t.id,
             tripName: t.name,
+            mode: getTripMode(t),
             role: s.role || "editor",
             ownerName: owner ? owner.name : "Usuário",
             ownerEmail: owner ? owner.email : "",
@@ -2418,6 +2483,7 @@ const server = http.createServer(async (req, res) => {
           return {
             id: t.id,
             name: t.name,
+            mode: getTripMode(t),
             isDemoTrip: Boolean(t.isDemoTrip || owner?.isDemo),
             ownerId: t.ownerId,
             ownerName: owner ? owner.name : "Usuário removido",
@@ -2509,6 +2575,7 @@ const server = http.createServer(async (req, res) => {
         return {
           id: t.id,
           name: t.name,
+          mode: getTripMode(t),
           isDemoTrip: Boolean(t.isDemoTrip),
           createdAt: t.createdAt || null,
           updatedAt: t.updatedAt || null,
@@ -2742,9 +2809,9 @@ const server = http.createServer(async (req, res) => {
       try {
         const result = await sendTransactionalEmail({
           to,
-          subject: "Férias Pro — Teste de E-mail / SMTP",
+          subject: "My Plan — Teste de E-mail / SMTP",
           text: `Teste de envio concluído com sucesso em ${new Date().toLocaleString("pt-BR")}.`,
-          html: `<p>Teste de envio do <b>Férias Pro</b> concluído com sucesso em ${new Date().toLocaleString("pt-BR")}.</p>`
+          html: `<p>Teste de envio do <b>My Plan</b> concluído com sucesso em ${new Date().toLocaleString("pt-BR")}.</p>`
         });
         auditLog("admin.test_smtp", { userId: auth.user.id, email: auth.user.email, ip: getClientIp(req), detail: `Enviado via ${result.transport} para ${maskEmail(to)}` });
         saveDb();
@@ -2800,7 +2867,7 @@ const server = http.createServer(async (req, res) => {
       const user = auth.user;
 
       const ownFull = Object.values(db.trips)
-        .filter(t => t.ownerId === user.id)
+        .filter(t => t.ownerId === user.id && getTripMode(t) === "personal")
         .map(t => ({
           id: t.id,
           name: t.name,
@@ -2815,7 +2882,7 @@ const server = http.createServer(async (req, res) => {
         .filter(s => s.status === "accepted" && (s.targetUserId === user.id || s.targetEmail === user.email))
         .map(s => {
           const t = db.trips[s.tripId];
-          if (!t) return null;
+          if (!t || getTripMode(t) !== "personal") return null;
           const owner = db.users[t.ownerId];
           return {
             id: t.id,
@@ -2836,15 +2903,18 @@ const server = http.createServer(async (req, res) => {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
       const body = await readBody(req);
-      const name = String(body.name || "").trim() || "Nova Viagem";
+      const mode = (body.mode === "professional" || body.data?.mode === "professional") ? "professional" : "personal";
+      const name = String(body.name || "").trim() || (mode === "professional" ? "Novo Projeto" : "Nova Viagem");
       if (!body.data || !Array.isArray(body.data.activities)) {
-        return sendJson(res, 400, { ok: false, error: "Dados da viagem inválidos." });
+        return sendJson(res, 400, { ok: false, error: "Dados do planejamento inválidos." });
       }
+      body.data.mode = mode;
       const tripId = uid("t_");
       const now = Date.now();
       db.trips[tripId] = {
         id: tripId,
         name,
+        mode,
         ownerId: auth.user.id,
         calToken: crypto.randomBytes(18).toString("hex"),
         createdAt: now,
@@ -2862,9 +2932,9 @@ const server = http.createServer(async (req, res) => {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
       const trip = db.trips[tripMatch[1]];
-      if (!trip) return sendJson(res, 404, { ok: false, error: "Viagem não encontrada." });
+      if (!trip) return sendJson(res, 404, { ok: false, error: "Planejamento não encontrado." });
       const access = getTripAccess(trip, auth.user);
-      if (!access) return sendJson(res, 403, { ok: false, error: "Sem permissão nesta viagem." });
+      if (!access) return sendJson(res, 403, { ok: false, error: "Sem permissão neste planejamento." });
 
       if (req.method === "GET") {
         if (!trip.calToken) {
@@ -2886,6 +2956,7 @@ const server = http.createServer(async (req, res) => {
           trip: {
             id: trip.id,
             name: trip.name,
+            mode: getTripMode(trip),
             ownerId: trip.ownerId,
             ownerName: owner ? owner.name : "",
             role: access,
@@ -2905,7 +2976,14 @@ const server = http.createServer(async (req, res) => {
         }
         const body = await readBody(req);
         if (body.name !== undefined) trip.name = String(body.name || "").trim() || trip.name;
-        if (body.data && Array.isArray(body.data.activities)) trip.data = body.data;
+        const nextMode = (body.mode === "professional" || body.data?.mode === "professional")
+          ? "professional"
+          : (body.mode === "personal" || body.data?.mode === "personal" ? "personal" : getTripMode(trip));
+        trip.mode = nextMode;
+        if (body.data && Array.isArray(body.data.activities)) {
+          body.data.mode = nextMode;
+          trip.data = body.data;
+        }
         if (typeof body.gmapsKey === "string") trip.gmapsKey = body.gmapsKey;
         trip.revision = (trip.revision || 1) + 1;
         trip.updatedAt = Math.max(Date.now(), Number(body.updatedAt) || 0);
@@ -3083,7 +3161,145 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    /* ---------- GEMINI AI (PLANEJAR COM ÁUDIO/IMAGENS + VEÍCULOS + ATIVIDADE) ---------- */
+    /* ---------- GEMINI AI (TRANSCRIÇÃO DE ÁUDIO + PLANEJAMENTO + IMPORTAR CALENDÁRIO POR IMAGEM) ---------- */
+    if (pathname === "/api/ai/transcribe" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.geminiKey) {
+        return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key uma única vez na Central de Integrações." });
+      }
+      const body = await readBody(req);
+      const audioPart = parseGeminiMediaPart(body.audio);
+      if (!audioPart) {
+        return sendJson(res, 400, { ok: false, error: "Áudio vazio ou inválido." });
+      }
+      const lang = String(body.language || "pt-BR").slice(0, 16);
+      const parts = [
+        {
+          text: `Transcreva com máxima fidelidade o áudio anexo (idioma principal esperado: ${lang}). Não invente absolutamente nada que não tenha sido falado no áudio.`
+        },
+        audioPart
+      ];
+      const sysTranscribe = `Você é um motor de transcrição exata de voz do aplicativo My Plan.
+Ouça atentamente o áudio enviado e transcreva palavra por palavra tudo que foi falado pelo usuário (mantendo datas, horários, cidades, nomes próprios, clientes, valores em reais e tarefas exatamente como ditos).
+REGRAS INVIOLÁVEIS:
+1. Se o áudio estiver mudo, apenas ruído estático, vazio ou completamente incompreensível, retorne audible=false, transcript="" e warning explicando que nenhuma fala compreensível foi captada no microfone.
+2. NUNCA invente, complete ou adivinhe frases ou viagens/projetos que não estão claramente no áudio.
+Retorne EXCLUSIVAMENTE JSON válido:
+{
+  "audible": true,
+  "transcript": "Texto exato transcrito do que o usuário falou.",
+  "warning": ""
+}`;
+      try {
+        const out = await callGeminiJSON(creds.geminiKey, parts, sysTranscribe);
+        const transcript = String(out?.transcript || "").trim();
+        const audible = Boolean(out?.audible !== false && transcript.length > 0);
+        const warning = String(out?.warning || (!audible ? "Áudio silencioso ou sem fala compreensível. Verifique o microfone e grave novamente." : "")).trim();
+        return sendJson(res, 200, { ok: true, audible, transcript: audible ? transcript : "", warning });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: err.message || "Falha ao transcrever áudio com Gemini AI." });
+      }
+    }
+
+    if (pathname === "/api/ai/import-calendar" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.geminiKey) {
+        return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key uma única vez na Central de Integrações." });
+      }
+      const body = await readBody(req);
+      const mediaParts = Array.isArray(body.media)
+        ? body.media.slice(0, 10).map(parseGeminiMediaPart).filter(Boolean)
+        : [];
+      if (!mediaParts.length) {
+        return sendJson(res, 400, { ok: false, error: "Envie ao menos uma imagem ou PDF de calendário para analisar." });
+      }
+      const isPro = body.mode === "professional";
+      const todayIso = String(body.baseDate || new Date().toISOString().slice(0, 10));
+      const userHint = String(body.hint || "").trim();
+      const parts = [
+        {
+          text: `Data de referência hoje: ${todayIso}. Modo atual do usuário: ${isPro ? "Profissional" : "Pessoal"}.${userHint ? ` Contexto informado pelo usuário: ${userHint}.` : ""} Analise TODAS as imagens/PDFs anexos (planilha Excel, calendário personalizado, agenda impressa, grade semanal/mensal, cronograma de trabalho/viagem) e extraia TODOS os eventos e datas visíveis com precisão absoluta.`
+        },
+        ...mediaParts
+      ];
+      const validTypes = isPro
+        ? "Desenvolvimento | Reunião | Viagem Corp. | Recebimento | Despesa | Entrega | Marco | Follow-up | Outro"
+        : "Viagem | Voo | Trem | Ônibus | Navio | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro";
+      const sysImportCal = `Você é o extrator visual de calendários do aplicativo My Plan.
+O usuário enviou 1 ou mais imagens/PDFs contendo um calendário ou cronograma (ex.: planilha Excel, tabela de datas, calendário de parede/mensal, print de agenda, Trello, Notion, roteiro ou cronograma customizado).
+Leia CADA linha, célula, coluna ou bloco de data nas imagens e extraia TODOS os eventos encontrados em ordem cronológica.
+Regras:
+1. Converta todas as datas identificadas para YYYY-MM-DD (se o ano não estiver explícito, infira o ano mais lógico em torno de ${todayIso} e avise em "warnings" se assumiu o ano).
+2. Se um evento ocupar vários dias consecutivos (ex.: faixa/bloco em calendário ou início e fim na planilha), preencha start e end corretamente. Se for pontual no mesmo dia, end = start.
+3. Use APENAS tipos válidos em "type": ${validTypes}.
+4. Se houver horário explícito, preencha startTime / endTime em "HH:MM". Se houver valor monetário explícito, informe "finDirection" ("income" ou "expense") e "amount" numérico.
+5. Nunca invente eventos que não existam nas imagens. Se algum trecho estiver ilegível, registre em "warnings".
+Retorne EXCLUSIVAMENTE JSON válido:
+{
+  "suggestedName": "Nome sugerido para este calendário",
+  "detectedPeriod": "Período detectado (ex: Março a Abril de 2027)",
+  "summary": "Resumo claro do que foi encontrado nas imagens",
+  "warnings": [],
+  "events": [
+    {
+      "name": "Nome do evento/atividade",
+      "start": "YYYY-MM-DD",
+      "end": "YYYY-MM-DD",
+      "startTime": "",
+      "endTime": "",
+      "type": "Outro",
+      "location": "",
+      "client": "",
+      "finDirection": "none",
+      "amount": 0,
+      "notes": ""
+    }
+  ]
+}`;
+      try {
+        const raw = await callGeminiJSON(creds.geminiKey, parts, sysImportCal);
+        const isoRe = /^\d{4}-\d{2}-\d{2}$/;
+        const rawEvents = Array.isArray(raw?.events) ? raw.events : [];
+        const events = rawEvents
+          .filter(ev => ev && (ev.name || ev.start))
+          .map(ev => {
+            const start = isoRe.test(String(ev.start || "").trim()) ? String(ev.start).trim() : todayIso;
+            const endRaw = isoRe.test(String(ev.end || "").trim()) ? String(ev.end).trim() : start;
+            const end = endRaw < start ? start : endRaw;
+            return {
+              name: String(ev.name || "Evento importado").trim().slice(0, 140),
+              start,
+              end,
+              startTime: /^\d{2}:\d{2}/.test(String(ev.startTime || "")) ? String(ev.startTime).slice(0, 5) : "",
+              endTime: /^\d{2}:\d{2}/.test(String(ev.endTime || "")) ? String(ev.endTime).slice(0, 5) : "",
+              type: String(ev.type || "Outro").trim(),
+              location: String(ev.location || "").trim().slice(0, 160),
+              client: String(ev.client || "").trim().slice(0, 120),
+              finDirection: ["income", "expense", "none"].includes(ev.finDirection) ? ev.finDirection : "none",
+              amount: Math.max(0, Number(ev.amount) || 0),
+              notes: String(ev.notes || "").trim().slice(0, 500)
+            };
+          })
+          .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+        return sendJson(res, 200, {
+          ok: true,
+          result: {
+            suggestedName: String(raw?.suggestedName || "Calendário Importado").trim().slice(0, 90),
+            detectedPeriod: String(raw?.detectedPeriod || "").trim().slice(0, 120),
+            summary: String(raw?.summary || `${events.length} evento(s) identificado(s).`).trim().slice(0, 320),
+            warnings: Array.isArray(raw?.warnings) ? raw.warnings.map(w => String(w || "").trim()).filter(Boolean).slice(0, 8) : [],
+            events
+          }
+        });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: err.message || "Falha ao analisar imagens do calendário com IA." });
+      }
+    }
+
     if (pathname === "/api/ai/plan-trip" && req.method === "POST") {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
@@ -3092,9 +3308,13 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key uma única vez na Central de Integrações." });
       }
       const body = await readBody(req);
+      const isPro = body.mode === "professional";
       const todayIso = String(body.baseDate || new Date().toISOString().slice(0, 10));
+      const userPrompt = String(body.prompt || "").trim();
       const parts = [{
-        text: `Data de referência hoje: ${todayIso}. Instruções do usuário: ${String(body.prompt || "Analise os áudios e imagens anexos para criar um planejamento completo de férias.").trim()}`
+        text: `Data de referência hoje: ${todayIso}.
+Instruções e/ou transcrição fiel do usuário: ${userPrompt || (isPro ? "Analise rigorosamente os áudios e imagens anexos para estruturar o projeto solicitado." : "Analise rigorosamente os áudios e imagens anexos para criar o planejamento solicitado.")}
+REGRA CRÍTICA: Siga EXCLUSIVAMENTE o que o usuário pediu no texto e nos áudios/imagens anexos. NUNCA invente destinos, empresas, valores ou datas aleatórias sem base nas entradas fornecidas.`
       }];
       if (Array.isArray(body.media)) {
         body.media.slice(0, 10).forEach(m => {
@@ -3102,11 +3322,51 @@ const server = http.createServer(async (req, res) => {
           if (p) parts.push(p);
         });
       }
-      const sysPrompt = `Você é o planejador especialista do aplicativo Férias Pro.
-Analise TODOS os áudios, imagens (passagens aéreas, cruzeiros/navios, ingressos, reservas de hotel, documento CRLV de carro) e textos enviados pelo usuário.
+      const sysPrompt = isPro
+        ? `Você é o arquiteto executivo de projetos do aplicativo My Plan (Modo Profissional).
+Analise TODOS os áudios, imagens (propostas, contratos, notas fiscais, pautas de reunião, passagens corporativas) e textos enviados pelo usuário.
+Baseie-se ESTRITAMENTE nas solicitações reais do usuário (sem inventar projetos genéricos ou dados aleatórios não solicitados).
 Retorne EXCLUSIVAMENTE um JSON válido com esta estrutura exata:
 {
-  "tripName": "Nome claro das férias (ex: Férias Europa Julho 2027)",
+  "tripName": "Nome claro do projeto ou agenda profissional (ex: Lançamento App Mobile Q4)",
+  "mode": "professional",
+  "params": {
+    "revenueTarget": 0,
+    "costBudget": 0,
+    "taxRatePct": 0
+  },
+  "activities": [
+    {
+      "type": "Desenvolvimento | Reunião | Viagem Corp. | Recebimento | Despesa | Entrega | Marco | Follow-up | Outro",
+      "columnId": "backlog | todo | doing | review | done",
+      "name": "Título curto e objetivo do cartão",
+      "start": "YYYY-MM-DD",
+      "end": "YYYY-MM-DD",
+      "startTime": "HH:MM (opcional)",
+      "endTime": "HH:MM (opcional)",
+      "priority": "Crítica | Alta | Média | Baixa",
+      "progress": 0,
+      "client": "Cliente ou stakeholder",
+      "assignee": "Responsável",
+      "location": "Local, sala ou link de reunião",
+      "finDirection": "income | expense | none",
+      "amount": 0,
+      "finStatus": "Previsto | Liquidado",
+      "subtasks": [{ "text": "Subtarefa objetiva", "done": false }],
+      "notes": "Escopo, entregáveis e observações relevantes"
+    }
+  ],
+  "checklist": [
+    { "cat": "Escopo | Financeiro | Operacional | Entrega | Viagem Corp.", "item": "Tarefa importante", "prio": "Alta | Média | Baixa", "notes": "" }
+  ]
+}
+Regras: Converta datas relativas usando ${todayIso} no formato YYYY-MM-DD. Se o item for um recebimento/faturamento use type="Recebimento" e finDirection="income". Se for despesa/pagamento/passagem use finDirection="expense".`
+        : `Você é o planejador especialista do aplicativo My Plan.
+Analise TODOS os áudios, imagens (passagens aéreas, cruzeiros/navios, ingressos, reservas de hotel, documento CRLV de carro) e textos enviados pelo usuário.
+Baseie-se ESTRITAMENTE nas solicitações reais do usuário — NUNCA crie uma viagem aleatória diferente do que o usuário ditou/escreveu ou anexou.
+Retorne EXCLUSIVAMENTE um JSON válido com esta estrutura exata:
+{
+  "tripName": "Nome claro do planejamento/viagem baseado exclusivamente no pedido",
   "vehicle": {
     "name": "Modelo completo do carro se identificado ou padrão",
     "powertrain": "PHEV | HEV | COMBUSTION | BEV",
@@ -3206,7 +3466,8 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
       const barcodeHint = detectedBarcode
         ? `\nCódigo de barras/QR detectado no bilhete (${detectedBarcode.format}): ${detectedBarcode.rawValue}`
         : "";
-      const parts = [{ text: `Data de referência hoje: ${todayIso}. Extraia todos os dados completos de atividade/passagem/bilhete/reserva/viagem desta entrada (imagem, áudio, PDF ou texto): ${String(body.prompt || "").trim()}${barcodeHint}` }];
+      const isPro = body.mode === "professional";
+      const parts = [{ text: `Data de referência hoje: ${todayIso}. Extraia todos os dados completos ${isPro ? "do cartão profissional (tarefa, desenvolvimento, reunião, viagem corporativa, recebimento, despesa, entrega ou marco)" : "de atividade/passagem/bilhete/reserva/viagem"} desta entrada (imagem, áudio, PDF ou texto): ${String(body.prompt || "").trim()}${barcodeHint}` }];
       if (Array.isArray(body.media)) {
         body.media.slice(0, 4).forEach(m => {
           const p = parseGeminiMediaPart(m);
@@ -3214,10 +3475,29 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
         });
       }
       try {
-        const activity = await callGeminiJSON(
-          creds.geminiKey,
-          parts,
-          `Você é especialista em leitura de áudios falados, textos, tickets aéreos, cartões de embarque, reservas de navio/cruzeiro, trem, ônibus, hotéis e ingressos para o Férias Pro.
+        const sysAnalyze = isPro
+          ? `Você é especialista em produtividade executiva e extração de dados para o My Plan (Modo Profissional).
+Analise áudios, textos, prints de contratos, notas fiscais, convites de reunião e passagens corporativas. Converta datas relativas usando ${todayIso} para YYYY-MM-DD e retorne JSON:
+{
+  "type": "Desenvolvimento | Reunião | Viagem Corp. | Recebimento | Despesa | Entrega | Marco | Follow-up | Outro",
+  "columnId": "backlog | todo | doing | review | done",
+  "name": "Título curto e claro do cartão",
+  "start": "YYYY-MM-DD",
+  "end": "YYYY-MM-DD",
+  "startTime": "HH:MM",
+  "endTime": "HH:MM",
+  "priority": "Crítica | Alta | Média | Baixa",
+  "progress": 0,
+  "client": "Cliente ou empresa",
+  "assignee": "Responsável",
+  "location": "Local, sala ou link da reunião",
+  "finDirection": "income | expense | none",
+  "amount": 0,
+  "finStatus": "Previsto | Liquidado",
+  "subtasks": [{ "text": "Subtarefa", "done": false }],
+  "notes": "Detalhes, pauta ou escopo"
+}`
+          : `Você é especialista em leitura de áudios falados, textos, tickets aéreos, cartões de embarque, reservas de navio/cruzeiro, trem, ônibus, hotéis e ingressos para o My Plan.
 Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para passagem aérea/embarque, "Navio" para cruzeiro/balsa/barco, "Trem", "Ônibus", "Viagem", "Hospedagem", "Ingresso", "Evento", etc.), converta datas relativas usando ${todayIso} para YYYY-MM-DD, e preencha TODOS os campos identificados em JSON:
 {
   "type": "Viagem | Voo | Trem | Ônibus | Navio | Hospedagem | Ingresso | Evento | Passeio | Restaurante | Período | Outro",
@@ -3236,8 +3516,8 @@ Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para
   "qrPayload": "Texto completo legível do QR Code / Aztec / PDF417 / código de barras do ticket se houver, senão vazio",
   "qrFormat": "qr_code | aztec | pdf417 | code_128 | ",
   "notes": "Horários, terminal/portão, assento, cabine, franquia de bagagem, endereço ou detalhes importantes"
-}`
-        );
+}`;
+        const activity = await callGeminiJSON(creds.geminiKey, parts, sysAnalyze);
         if (detectedBarcode && activity && typeof activity === "object") {
           if (!activity.qrPayload) activity.qrPayload = detectedBarcode.rawValue;
           if (!activity.qrFormat) activity.qrFormat = detectedBarcode.format;
@@ -3357,7 +3637,7 @@ Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para
       if (!body.activity) return sendJson(res, 400, { ok: false, error: "Dados da atividade ausentes." });
       try {
         const originHost = req.headers.origin || `${req.headers["x-forwarded-proto"] || "https"}://${req.headers.host}`;
-        const saveUrl = buildGoogleWalletSaveUrl(creds.walletIssuerId, creds.walletSaJson, body.activity, body.tripName || "Férias Pro", originHost);
+        const saveUrl = buildGoogleWalletSaveUrl(creds.walletIssuerId, creds.walletSaJson, body.activity, body.tripName || "My Plan", originHost);
         return sendJson(res, 200, { ok: true, configured: true, saveUrl });
       } catch (err) {
         return sendJson(res, 400, { ok: false, error: err.message || "Falha ao assinar passe da Carteira do Google." });
@@ -3370,7 +3650,7 @@ Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para
       const body = await readBody(req);
       if (!body.activity) return sendJson(res, 400, { ok: false, error: "Dados da atividade ausentes." });
       try {
-        const pkBuf = buildPkpassBuffer(body.activity, body.tripName || "Férias Pro");
+        const pkBuf = buildPkpassBuffer(body.activity, body.tripName || "My Plan");
         const { token, filename } = storeWalletPkpass(pkBuf, body.activity.name);
         return sendJson(res, 200, {
           ok: true,
@@ -3392,7 +3672,7 @@ Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para
       }
       res.writeHead(200, {
         "Content-Type": "application/vnd.apple.pkpass",
-        "Content-Disposition": `attachment; filename="${item.filename}"`,
+        "Content-Disposition": `inline; filename="${item.filename}"`,
         "Content-Length": item.buf.length,
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff"
@@ -3424,7 +3704,7 @@ Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para
       const ics = buildTripIcs(trip);
       res.writeHead(200, {
         "Content-Type": "text/calendar; charset=utf-8",
-        "Content-Disposition": `inline; filename="ferias_pro_${trip.id}.ics"`,
+        "Content-Disposition": `inline; filename="my_plan_${trip.id}.ics"`,
         "Cache-Control": "no-cache, no-store, must-revalidate"
       });
       return res.end(ics);
@@ -3483,6 +3763,6 @@ process.on("SIGTERM", gracefulShutdown);
 
 server.listen(PORT, HOST, () => {
   const sys = getGlobalConfig();
-  console.log(`Férias Pro Server ativo em http://${HOST}:${PORT}`);
+  console.log(`My Plan Server ativo em http://${HOST}:${PORT}`);
   console.log(`DB: ${DB_FILE} | Google OAuth: ${sys.googleClientId ? "Ativo" : "Não configurado"} | AES-256-GCM: Ativo`);
 });
