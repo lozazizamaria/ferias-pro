@@ -93,11 +93,14 @@
   }
 
   function buildGoogleCalendarTemplateUrl(a, tripName, mode = "personal") {
-    const startCompact = a.start.replace(/-/g, "");
-    let datesParam = `${startCompact}/${addDaysISO(a.end || a.start, 1).replace(/-/g, "")}`;
+    const fallbackToday = new Date().toISOString().slice(0, 10);
+    const startIso = a.start || fallbackToday;
+    const endIso = a.end || startIso;
+    const startCompact = startIso.replace(/-/g, "");
+    let datesParam = `${startCompact}/${addDaysISO(endIso, 1).replace(/-/g, "")}`;
     if (a.startTime && /^\d{2}:\d{2}/.test(String(a.startTime))) {
       const st = String(a.startTime).slice(0, 5).replace(":", "") + "00";
-      const endDateCompact = (a.end || a.start).replace(/-/g, "");
+      const endDateCompact = endIso.replace(/-/g, "");
       let et = st;
       if (a.endTime && /^\d{2}:\d{2}/.test(String(a.endTime))) {
         et = String(a.endTime).slice(0, 5).replace(":", "") + "00";

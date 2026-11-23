@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=33">
+<link rel="manifest" href="/manifest.webmanifest?v=34">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=33">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=34">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=33">
+<link rel="stylesheet" href="styles.css?v=34">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=33" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=34" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=33" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=34" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -701,8 +701,12 @@
               </div>
               <div class="gantt-pop-grid">
                 <div class="gantt-pop-field span2">
-                  <span class="gantt-pop-lbl">Buscar</span>
-                  <input type="search" id="proBoardSearch" placeholder="🔎 Buscar cartão, cliente ou nota...">
+                  <span class="gantt-pop-lbl">Buscar (Título, Notas, Local)</span>
+                  <input type="search" id="proBoardSearch" placeholder="🔎 Buscar cartão, cliente, local ou nota...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Lista</span>
+                  <div id="proBoardColFilter" class="msel-host msel-compact" aria-label="Filtrar listas no quadro"></div>
                 </div>
                 <div class="gantt-pop-field">
                   <span class="gantt-pop-lbl">Tipo</span>
@@ -712,7 +716,11 @@
                   <span class="gantt-pop-lbl">Etiqueta</span>
                   <div id="proBoardLabelFilter" class="msel-host msel-compact" aria-label="Filtrar etiquetas no quadro"></div>
                 </div>
-                <div class="gantt-pop-field span2">
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Tags</span>
+                  <div id="proBoardTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no quadro"></div>
+                </div>
+                <div class="gantt-pop-field">
                   <span class="gantt-pop-lbl">Prioridade</span>
                   <select id="proBoardPrioFilter" aria-label="Filtrar prioridade no quadro">
                     <option value="">Todas prioridades</option>
@@ -721,6 +729,54 @@
                     <option value="Média">Média</option>
                     <option value="Baixa">Baixa</option>
                   </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Responsável</span>
+                  <select id="proBoardAssigneeFilter" aria-label="Filtrar responsável no quadro">
+                    <option value="">Todos</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Cliente / Conta</span>
+                  <input type="search" id="proBoardClientFilter" placeholder="Filtrar cliente...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Local / Link</span>
+                  <input type="search" id="proBoardLocationFilter" placeholder="Filtrar local...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Progresso / Conclusão</span>
+                  <select id="proBoardDoneFilter" aria-label="Filtrar conclusão no quadro">
+                    <option value="">Todos</option>
+                    <option value="pending">Pendentes (&lt; 100%)</option>
+                    <option value="done">Concluídos (100%)</option>
+                    <option value="nodate">Sem data / Sem prazo</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Movimento Fin.</span>
+                  <select id="proBoardFinDirFilter" aria-label="Filtrar movimento financeiro no quadro">
+                    <option value="">Todos</option>
+                    <option value="income">💵 Recebimento (+)</option>
+                    <option value="expense">💳 Despesa (−)</option>
+                    <option value="none">Sem lançamento</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Status Financeiro</span>
+                  <select id="proBoardFinStatusFilter" aria-label="Filtrar status financeiro no quadro">
+                    <option value="">Todos</option>
+                    <option value="Previsto">⏳ Previsto</option>
+                    <option value="Liquidado">✅ Liquidado</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">De</span>
+                  <input type="date" id="proBoardDateFrom" aria-label="Data inicial no quadro">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Até</span>
+                  <input type="date" id="proBoardDateTo" aria-label="Data final no quadro">
                 </div>
               </div>
             </div>
@@ -754,17 +810,75 @@
                   <button type="button" class="btn ghost small" id="btnProGanttClearFilters" hidden>✕ Limpar</button>
                 </div>
                 <div class="gantt-pop-grid">
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Tipo</span>
-                    <div id="proGanttTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no Gantt profissional"></div>
+                  <div class="gantt-pop-field span2">
+                    <span class="gantt-pop-lbl">Buscar (Título, Notas, Local)</span>
+                    <input type="search" id="proGanttSearch" placeholder="🔎 Buscar cartão, cliente, local ou nota...">
                   </div>
                   <div class="gantt-pop-field">
                     <span class="gantt-pop-lbl">Lista</span>
                     <div id="proGanttColFilter" class="msel-host msel-compact" aria-label="Filtrar listas no Gantt profissional"></div>
                   </div>
                   <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tipo</span>
+                    <div id="proGanttTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no Gantt profissional"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Etiqueta</span>
+                    <div id="proGanttLabelFilter" class="msel-host msel-compact" aria-label="Filtrar etiquetas no Gantt profissional"></div>
+                  </div>
+                  <div class="gantt-pop-field">
                     <span class="gantt-pop-lbl">Tags</span>
                     <div id="proGanttTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no Gantt profissional"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Prioridade</span>
+                    <select id="proGanttPrioFilter" aria-label="Filtrar prioridade no Gantt profissional">
+                      <option value="">Todas prioridades</option>
+                      <option value="Crítica">Crítica</option>
+                      <option value="Alta">Alta</option>
+                      <option value="Média">Média</option>
+                      <option value="Baixa">Baixa</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Responsável</span>
+                    <select id="proGanttAssigneeFilter" aria-label="Filtrar responsável no Gantt profissional">
+                      <option value="">Todos</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Cliente / Conta</span>
+                    <input type="search" id="proGanttClientFilter" placeholder="Filtrar cliente...">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Local / Link</span>
+                    <input type="search" id="proGanttLocationFilter" placeholder="Filtrar local...">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Progresso / Conclusão</span>
+                    <select id="proGanttDoneFilter" aria-label="Filtrar conclusão no Gantt profissional">
+                      <option value="">Todos</option>
+                      <option value="pending">Pendentes (&lt; 100%)</option>
+                      <option value="done">Concluídos (100%)</option>
+                      <option value="nodate">Sem data / Sem prazo</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Movimento Fin.</span>
+                    <select id="proGanttFinDirFilter" aria-label="Filtrar movimento financeiro no Gantt profissional">
+                      <option value="">Todos</option>
+                      <option value="income">💵 Recebimento (+)</option>
+                      <option value="expense">💳 Despesa (−)</option>
+                      <option value="none">Sem lançamento</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Status Financeiro</span>
+                    <select id="proGanttFinStatusFilter" aria-label="Filtrar status financeiro no Gantt profissional">
+                      <option value="">Todos</option>
+                      <option value="Previsto">⏳ Previsto</option>
+                      <option value="Liquidado">✅ Liquidado</option>
+                    </select>
                   </div>
                   <div class="gantt-pop-field">
                     <span class="gantt-pop-lbl">De</span>
@@ -798,8 +912,9 @@
                   <div class="seg" id="proGanttGroupSeg" role="group" aria-label="Agrupamento no Gantt">
                     <button type="button" class="active" data-pgroup="none" title="Ordem cronológica">Crono</button>
                     <button type="button" data-pgroup="column" title="Agrupar por Lista Trello">Por Lista</button>
-                    <button type="button" data-pgroup="type" title="Agrupar por Tipo">Por Tipo</button>
+                    <button type="button" data-pgroup="type" title="Dividir por Tipo de Cartão">Tipo de Cartão</button>
                   </div>
+                  <button type="button" class="btn ghost small" id="btnProGanttResetTypeOrder" hidden style="margin-top:4px;width:100%">↺ Ordem automática por Tipo de Cartão</button>
                 </div>
                 <div class="gantt-pop-section">
                   <span class="gantt-pop-lbl">Calendários &amp; Atalhos</span>
@@ -852,13 +967,75 @@
               <button type="button" class="btn ghost small" id="btnProDashClearFilters" hidden>✕ Limpar</button>
             </div>
             <div class="gantt-pop-grid">
+              <div class="gantt-pop-field span2">
+                <span class="gantt-pop-lbl">Buscar (Título, Notas, Local)</span>
+                <input type="search" id="proDashSearch" placeholder="🔎 Buscar cartão, cliente, local ou nota...">
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Lista</span>
+                <div id="proDashColFilter" class="msel-host msel-compact" aria-label="Filtrar listas no dashboard profissional"></div>
+              </div>
               <div class="gantt-pop-field">
                 <span class="gantt-pop-lbl">Tipo</span>
                 <div id="proDashTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no dashboard profissional"></div>
               </div>
               <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Etiqueta</span>
+                <div id="proDashLabelFilter" class="msel-host msel-compact" aria-label="Filtrar etiquetas no dashboard profissional"></div>
+              </div>
+              <div class="gantt-pop-field">
                 <span class="gantt-pop-lbl">Tags</span>
                 <div id="proDashTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no dashboard profissional"></div>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Prioridade</span>
+                <select id="proDashPrioFilter" aria-label="Filtrar prioridade no dashboard profissional">
+                  <option value="">Todas prioridades</option>
+                  <option value="Crítica">Crítica</option>
+                  <option value="Alta">Alta</option>
+                  <option value="Média">Média</option>
+                  <option value="Baixa">Baixa</option>
+                </select>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Responsável</span>
+                <select id="proDashAssigneeFilter" aria-label="Filtrar responsável no dashboard profissional">
+                  <option value="">Todos</option>
+                </select>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Cliente / Conta</span>
+                <input type="search" id="proDashClientFilter" placeholder="Filtrar cliente...">
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Local / Link</span>
+                <input type="search" id="proDashLocationFilter" placeholder="Filtrar local...">
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Progresso / Conclusão</span>
+                <select id="proDashDoneFilter" aria-label="Filtrar conclusão no dashboard profissional">
+                  <option value="">Todos</option>
+                  <option value="pending">Pendentes (&lt; 100%)</option>
+                  <option value="done">Concluídos (100%)</option>
+                  <option value="nodate">Sem data / Sem prazo</option>
+                </select>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Movimento Fin.</span>
+                <select id="proDashFinDirFilter" aria-label="Filtrar movimento financeiro no dashboard profissional">
+                  <option value="">Todos</option>
+                  <option value="income">💵 Recebimento (+)</option>
+                  <option value="expense">💳 Despesa (−)</option>
+                  <option value="none">Sem lançamento</option>
+                </select>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Status Financeiro</span>
+                <select id="proDashFinStatusFilter" aria-label="Filtrar status financeiro no dashboard profissional">
+                  <option value="">Todos</option>
+                  <option value="Previsto">⏳ Previsto</option>
+                  <option value="Liquidado">✅ Liquidado</option>
+                </select>
               </div>
               <div class="gantt-pop-field">
                 <span class="gantt-pop-lbl">De</span>
@@ -926,13 +1103,75 @@
               <button type="button" class="btn ghost small" id="btnProFinClearFilters" hidden>✕ Limpar</button>
             </div>
             <div class="gantt-pop-grid">
+              <div class="gantt-pop-field span2">
+                <span class="gantt-pop-lbl">Buscar (Título, Notas, Local)</span>
+                <input type="search" id="proFinSearch" placeholder="🔎 Buscar cartão, cliente, local ou nota...">
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Lista</span>
+                <div id="proFinColFilter" class="msel-host msel-compact" aria-label="Filtrar listas no financeiro profissional"></div>
+              </div>
               <div class="gantt-pop-field">
                 <span class="gantt-pop-lbl">Tipo</span>
                 <div id="proFinTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no financeiro profissional"></div>
               </div>
               <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Etiqueta</span>
+                <div id="proFinLabelFilter" class="msel-host msel-compact" aria-label="Filtrar etiquetas no financeiro profissional"></div>
+              </div>
+              <div class="gantt-pop-field">
                 <span class="gantt-pop-lbl">Tags</span>
                 <div id="proFinTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no financeiro profissional"></div>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Prioridade</span>
+                <select id="proFinPrioFilter" aria-label="Filtrar prioridade no financeiro profissional">
+                  <option value="">Todas prioridades</option>
+                  <option value="Crítica">Crítica</option>
+                  <option value="Alta">Alta</option>
+                  <option value="Média">Média</option>
+                  <option value="Baixa">Baixa</option>
+                </select>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Responsável</span>
+                <select id="proFinAssigneeFilter" aria-label="Filtrar responsável no financeiro profissional">
+                  <option value="">Todos</option>
+                </select>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Cliente / Conta</span>
+                <input type="search" id="proFinClientFilter" placeholder="Filtrar cliente...">
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Local / Link</span>
+                <input type="search" id="proFinLocationFilter" placeholder="Filtrar local...">
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Progresso / Conclusão</span>
+                <select id="proFinDoneFilter" aria-label="Filtrar conclusão no financeiro profissional">
+                  <option value="">Todos</option>
+                  <option value="pending">Pendentes (&lt; 100%)</option>
+                  <option value="done">Concluídos (100%)</option>
+                  <option value="nodate">Sem data / Sem prazo</option>
+                </select>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Movimento Fin.</span>
+                <select id="proFinFinDirFilter" aria-label="Filtrar movimento financeiro no financeiro profissional">
+                  <option value="">Todos</option>
+                  <option value="income">💵 Recebimento (+)</option>
+                  <option value="expense">💳 Despesa (−)</option>
+                  <option value="none">Sem lançamento</option>
+                </select>
+              </div>
+              <div class="gantt-pop-field">
+                <span class="gantt-pop-lbl">Status Financeiro</span>
+                <select id="proFinFinStatusFilter" aria-label="Filtrar status financeiro no financeiro profissional">
+                  <option value="">Todos</option>
+                  <option value="Previsto">⏳ Previsto</option>
+                  <option value="Liquidado">✅ Liquidado</option>
+                </select>
               </div>
               <div class="gantt-pop-field">
                 <span class="gantt-pop-lbl">De</span>
@@ -1008,8 +1247,8 @@
                 </div>
                 <div class="gantt-pop-grid">
                   <div class="gantt-pop-field span2">
-                    <span class="gantt-pop-lbl">Buscar</span>
-                    <input type="search" id="proSearch" placeholder="🔎 Buscar cartão, cliente, nota...">
+                    <span class="gantt-pop-lbl">Buscar (Título, Notas, Local)</span>
+                    <input type="search" id="proSearch" placeholder="🔎 Buscar cartão, cliente, local, nota...">
                   </div>
                   <div class="gantt-pop-field">
                     <span class="gantt-pop-lbl">Lista</span>
@@ -1018,6 +1257,10 @@
                   <div class="gantt-pop-field">
                     <span class="gantt-pop-lbl">Tipo</span>
                     <div id="proFilterType" class="msel-host msel-compact" aria-label="Filtrar tipos na tabela"></div>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Etiqueta</span>
+                    <div id="proFilterLabel" class="msel-host msel-compact" aria-label="Filtrar etiquetas na tabela"></div>
                   </div>
                   <div class="gantt-pop-field">
                     <span class="gantt-pop-lbl">Tags</span>
@@ -1032,6 +1275,54 @@
                       <option value="Média">Média</option>
                       <option value="Baixa">Baixa</option>
                     </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Responsável</span>
+                    <select id="proFilterAssignee" aria-label="Filtrar responsável na tabela">
+                      <option value="">Todos</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Cliente / Conta</span>
+                    <input type="search" id="proFilterClient" placeholder="Filtrar cliente...">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Local / Link</span>
+                    <input type="search" id="proFilterLocation" placeholder="Filtrar local...">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Progresso / Conclusão</span>
+                    <select id="proFilterDone" aria-label="Filtrar conclusão na tabela">
+                      <option value="">Todos</option>
+                      <option value="pending">Pendentes (&lt; 100%)</option>
+                      <option value="done">Concluídos (100%)</option>
+                      <option value="nodate">Sem data / Sem prazo</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Movimento Fin.</span>
+                    <select id="proFilterFinDir" aria-label="Filtrar movimento financeiro na tabela">
+                      <option value="">Todos</option>
+                      <option value="income">💵 Recebimento (+)</option>
+                      <option value="expense">💳 Despesa (−)</option>
+                      <option value="none">Sem lançamento</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Status Financeiro</span>
+                    <select id="proFilterFinStatus" aria-label="Filtrar status financeiro na tabela">
+                      <option value="">Todos</option>
+                      <option value="Previsto">⏳ Previsto</option>
+                      <option value="Liquidado">✅ Liquidado</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">De</span>
+                    <input type="date" id="proFilterDateFrom" aria-label="Data inicial na tabela">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Até</span>
+                    <input type="date" id="proFilterDateTo" aria-label="Data final na tabela">
                   </div>
                 </div>
               </div>
@@ -1107,6 +1398,17 @@
           <strong style="font-size:0.86rem;display:block;margin-bottom:8px">🏷️ Etiquetas do Quadro</strong>
           <div id="proLabelsManager" class="pro-labels-manager"></div>
         </div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="card-head">
+          <h2>👤 Responsáveis do Projeto</h2>
+        </div>
+        <form id="proAssigneeAddForm" class="key-input-row" style="margin-bottom:10px">
+          <input type="text" id="proNewAssigneeInput" placeholder="Nome do responsável (ex: Maria, Equipe Dev, Financeiro)..." maxlength="48" autocomplete="off">
+          <button type="submit" class="btn primary small">➕ Adicionar Responsável</button>
+        </form>
+        <div id="proAssigneesManager" class="pro-types-manager"></div>
       </div>
 
       <div class="card" style="margin-top:14px">
@@ -1287,12 +1589,19 @@
       <label class="span2">Tipo de atividade / meio de locomoção
         <select name="type" id="f-type"></select>
       </label>
-      <div class="field-box modal-tags-field">
+      <div class="field-box modal-tags-field span2">
         <label for="f-tagsTrigger">Tags</label>
         <div id="modalTagsHost" class="msel-host" aria-label="Tags da atividade"></div>
       </div>
+      <div class="field-box" id="f-targetModeWrap">
+        <label for="f-targetMode">Perfil / Modo</label>
+        <select id="f-targetMode" aria-label="Mudar perfil da atividade">
+          <option value="personal">🌴 Manter em Pessoal</option>
+          <option value="professional">💼 Mudar para Profissional</option>
+        </select>
+      </div>
       <div class="field-box" id="f-targetTripWrap">
-        <label for="f-targetTrip">Evento</label>
+        <label for="f-targetTrip">Calendário / Evento destino</label>
         <select id="f-targetTrip" aria-label="Associar ao evento"></select>
       </div>
 
@@ -2021,8 +2330,8 @@
                 <button type="button" class="btn ghost small icon-compact" id="btnProQuickAddType" title="Criar novo tipo de cartão">+</button>
               </div>
             </label>
-            <label>Data inicial *
-              <input type="date" id="pc-start" required>
+            <label>Data inicial <small class="muted">(opcional)</small>
+              <input type="date" id="pc-start">
             </label>
             <label>Data final / Prazo
               <input type="date" id="pc-end">
@@ -2048,7 +2357,10 @@
               <input type="text" id="pc-client" placeholder="Ex: Cliente Alpha">
             </label>
             <label>Responsável
-              <input type="text" id="pc-assignee" placeholder="Ex: Você / Equipe">
+              <div class="pro-type-picker-row">
+                <select id="pc-assignee" aria-label="Responsável pelo cartão"></select>
+                <button type="button" class="btn ghost small icon-compact" id="btnProQuickAddAssignee" title="Inserir novo responsável">+</button>
+              </div>
             </label>
             <label class="span2">Local / Link da Reunião
               <input type="text" id="pc-location" placeholder="Ex: Meet, Escritório, São Paulo - SP">
@@ -2061,12 +2373,19 @@
           <div id="pc-coverColors" class="pro-cover-swatches"></div>
           <div id="pc-labelsBox" class="pro-labels-picker" style="margin-top:8px"></div>
           <div class="form-grid" style="margin-top:8px">
-            <div class="field-box modal-tags-field">
+            <div class="field-box modal-tags-field span2">
               <label for="pc-tagsTrigger">Tags</label>
               <div id="pc-tagsHost" class="msel-host" aria-label="Tags do cartão"></div>
             </div>
+            <div class="field-box" id="pc-targetModeWrap">
+              <label for="pc-targetMode">Perfil / Modo</label>
+              <select id="pc-targetMode" aria-label="Mudar perfil do cartão">
+                <option value="professional">💼 Manter em Profissional</option>
+                <option value="personal">🌴 Mudar para Pessoal</option>
+              </select>
+            </div>
             <div class="field-box" id="pc-targetTripWrap">
-              <label for="pc-targetTrip">Evento</label>
+              <label for="pc-targetTrip">Calendário / Evento destino</label>
               <select id="pc-targetTrip" aria-label="Associar ao evento"></select>
             </div>
           </div>
@@ -2176,15 +2495,15 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=33"></script>
-<script src="vehicles.js?v=33"></script>
-<script src="countries.js?v=33"></script>
-<script src="data.js?v=33"></script>
-<script src="maps.js?v=33"></script>
-<script src="calendar.js?v=33"></script>
-<script src="report.js?v=33"></script>
-<script src="api.js?v=33"></script>
-<script src="pro.js?v=33"></script>
-<script src="app.js?v=33"></script>
+<script src="config.example.js?v=34"></script>
+<script src="vehicles.js?v=34"></script>
+<script src="countries.js?v=34"></script>
+<script src="data.js?v=34"></script>
+<script src="maps.js?v=34"></script>
+<script src="calendar.js?v=34"></script>
+<script src="report.js?v=34"></script>
+<script src="api.js?v=34"></script>
+<script src="pro.js?v=34"></script>
+<script src="app.js?v=34"></script>
 </body>
 </html>

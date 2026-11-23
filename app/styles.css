@@ -4538,7 +4538,8 @@ dialog.pro-card-dialog {
 }
 .pro-type-ico-preview .pro-ico-svg { width: 17px; height: 17px; }
 #btnProQuickAddType,
-#btnProQuickAddCol {
+#btnProQuickAddCol,
+#btnProQuickAddAssignee {
   flex: 0 0 auto;
   width: 34px;
   min-height: 34px;
@@ -4546,6 +4547,37 @@ dialog.pro-card-dialog {
   padding: 0;
   font-weight: 800;
   font-size: 1.05rem;
+}
+
+.g-type-order-btns {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.g-order-btn {
+  width: 19px;
+  height: 19px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-strong);
+  font-size: 0.62rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.g-order-btn:hover:not(:disabled) {
+  border-color: var(--accent2);
+  background: var(--surface-hover);
+}
+.g-order-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 dialog.pro-type-dialog {

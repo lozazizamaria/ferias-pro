@@ -1480,8 +1480,8 @@
         <td>${esc(a.type)}</td>
         <td class="wrap"><b>${esc(a.name)}</b></td>
         <td class="wrap">${esc(who)}</td>
-        <td>${fmtShortBR(a.start)}${a.end && a.end !== a.start ? "–" + fmtShortBR(a.end) : ""}</td>
-        <td class="num">${days(a)}</td>
+        <td>${a.start ? `${fmtShortBR(a.start)}${a.end && a.end !== a.start ? "–" + fmtShortBR(a.end) : ""}` : "Sem prazo"}</td>
+        <td class="num">${a.start ? days(a) : "—"}</td>
         <td class="num">${Number(a.progress) || 0}%</td>
         <td>${esc(a.priority || "Média")}</td>
         <td class="num" style="color:#059669">${inc > 0 ? money(inc) : ""}</td>
@@ -1555,8 +1555,9 @@
     const t = totalsObj || {};
     const colMap = new Map((state.columns || []).map(c => [c.id, c.title]));
     const doneChk = (state.checklist || []).filter(c => c.status === "Concluído").length;
-    const minISO = sorted.length ? fmtBR(sorted[0].start) : fmtBR(new Date().toISOString().slice(0, 10));
-    const maxRaw = sorted.length ? sorted.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, sorted[0].start) : "";
+    const datedSorted = sorted.filter(a => Boolean(a.start));
+    const minISO = datedSorted.length ? fmtBR(datedSorted[0].start) : fmtBR(new Date().toISOString().slice(0, 10));
+    const maxRaw = datedSorted.length ? datedSorted.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, datedSorted[0].start) : "";
     const maxISO = maxRaw ? fmtBR(maxRaw) : minISO;
 
     const kpisHtml = [
@@ -1575,17 +1576,17 @@
           const fin = formatProFinBadge(c, money);
           return `<div class="rk-card">
             <b>${esc(c.name)}</b>
-            <small>${esc(c.type)} · ${fmtBR(c.start)}${c.client ? " · " + esc(c.client) : ""}${fin ? " · " + esc(fin) : ""}</small>
+            <small>${esc(c.type)} · ${c.start ? fmtBR(c.start) : "Sem prazo"}${c.client ? " · " + esc(c.client) : ""}${fin ? " · " + esc(fin) : ""}</small>
           </div>`;
         }).join("") || `<div class="rk-empty">Sem cartões</div>`}</div>
       </div>`;
     }).join("")}</div>`;
 
-    const ganttHtml = sorted.length
-      ? buildGanttHtmlBlock(sorted, sorted[0].start, maxRaw || sorted[0].start, helpers, "Cartão / Entrega", { isPro: true, colMap })
-      : "<p>Sem cartões no cronograma.</p>";
+    const ganttHtml = datedSorted.length
+      ? buildGanttHtmlBlock(datedSorted, datedSorted[0].start, maxRaw || datedSorted[0].start, helpers, "Cartão / Entrega", { isPro: true, colMap })
+      : "<p>Sem cartões com data no cronograma.</p>";
 
-    const timelineHtml = sorted.map(a => {
+    const timelineHtml = datedSorted.map(a => {
       const info = getTypeInfo(a.type);
       const colors = getTypeColorPair(a.type, true, info);
       const d = parseD(a.start);

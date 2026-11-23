@@ -243,14 +243,155 @@ function populateEventSelect(selEl, mode = "personal", currentTripId = "") {
     });
     html += `</optgroup>`;
   }
-  if (!html && activeTrip) {
-    html = `<option value="${esc(activeTrip.id)}">${esc(state.title || activeTrip.name || "Atual")}</option>`;
+  if (!html) {
+    if (activeTrip && getTripMode(activeTrip) === targetMode) {
+      html = `<option value="${esc(activeTrip.id)}">${esc(state.title || activeTrip.name || "Atual")}</option>`;
+    } else {
+      const newLabel = targetMode === "professional"
+        ? "➕ Criar novo Projeto Profissional"
+        : "➕ Criar novo Planejamento Pessoal";
+      html = `<option value="__create_${targetMode}__">${esc(newLabel)}</option>`;
+    }
   }
   selEl.innerHTML = html;
   const pickId = currentTripId && [...selEl.options].some(o => o.value === currentTripId)
     ? currentTripId
     : (activeTrip && [...selEl.options].some(o => o.value === activeTrip.id) ? activeTrip.id : (selEl.options[0]?.value || ""));
   if (pickId) selEl.value = pickId;
+}
+
+async function ensureTargetTripForMode(chosenId, targetMode) {
+  const mode = targetMode === "professional" ? "professional" : "personal";
+  if (chosenId && !String(chosenId).startsWith("__create_")) {
+    const resolved = await resolveTripRefById(chosenId).catch(() => null);
+    if (resolved) return resolved;
+  }
+  const existingOwn = (tripsCache.ownTrips || []).find(t => getTripMode(t) === mode);
+  if (existingOwn) {
+    const resolved = await resolveTripRefById(existingOwn.id).catch(() => null);
+    if (resolved) return resolved;
+  }
+  for (const tr of loadedTripsMap.values()) {
+    if (getTripMode(tr) === mode && tr.role !== "viewer") return tr;
+  }
+  if (window.FeriasApi?.isServer?.()) {
+    if (mode === "professional") {
+      const initialPro = clone(window.createDefaultProData ? window.createDefaultProData() : window.PRO_DEFAULT_DATA);
+      const created = await window.FeriasApi.createTrip(initialPro.title || "Roadmap & Entregas Profissionais", initialPro, "", "professional");
+      tripsCache = await window.FeriasApi.listTrips();
+      const newId = created?.trip?.id || created?.id;
+      if (newId) return await resolveTripRefById(newId);
+    } else {
+      const initialPer = clone(window.DEFAULT_DATA);
+      const created = await window.FeriasApi.createTrip(initialPer.title || "Planejamento Pessoal", initialPer, window.FeriasMaps?.getKey?.() || "", "personal");
+      tripsCache = await window.FeriasApi.listTrips();
+      const newId = created?.trip?.id || created?.id;
+      if (newId) return await resolveTripRefById(newId);
+    }
+  }
+  const localId = "local_" + uid();
+  const localData = mode === "professional" && window.MyPlanPro
+    ? window.MyPlanPro.migrateProState(clone(window.createDefaultProData ? window.createDefaultProData() : window.PRO_DEFAULT_DATA))
+    : migrateState(clone(window.DEFAULT_DATA));
+  const localTrip = { id: localId, name: localData.title, mode, role: "owner", data: localData };
+  loadedTripsMap.set(localId, localTrip);
+  return localTrip;
+}
+
+function convertPersonalActivityToProCard(a, targetTrip) {
+  const tgtData = targetTrip?.data;
+  const cols = Array.isArray(tgtData?.columns) && tgtData.columns.length ? tgtData.columns : (window.PRO_DEFAULT_COLUMNS || [{ id: "todo", title: "A Fazer" }]);
+  const typeMap = {
+    Viagem: "Viagem",
+    Voo: "Viagem",
+    Trem: "Viagem",
+    "Ônibus": "Viagem",
+    Navio: "Viagem",
+    Hospedagem: "Viagem",
+    Evento: "Reunião",
+    Ingresso: "Despesa",
+    Passeio: "Marco",
+    Restaurante: "Despesa",
+    "Período": "Planejamento",
+    Outro: "Outro"
+  };
+  const proType = typeMap[a.type] || "Outro";
+  const c = calc(a);
+  const totalCost = Math.round(((c.total || 0) + (Number(a.extraCost) || 0)) * 100) / 100;
+  const today = fmtISO(new Date());
+  const start = a.start || today;
+  const end = a.end && a.end >= start ? a.end : start;
+  const colId = cols[0]?.id || "todo";
+  const nextOrder = (tgtData?.activities || []).filter(x => x.columnId === colId).length;
+  return {
+    id: a.id || uid(),
+    type: proType,
+    columnId: colId,
+    order: nextOrder,
+    name: a.name || "Cartão Migrado",
+    start,
+    end,
+    startTime: a.startTime || "",
+    endTime: a.endTime || "",
+    priority: "Média",
+    progress: a.done ? 100 : 0,
+    completed: Boolean(a.done),
+    client: tgtData?.params?.clientDefault || "",
+    assignee: "",
+    location: a.location || (a.from && a.to ? `${a.from} ➔ ${a.to}` : (a.to || a.from || "")),
+    coverColor: "",
+    labels: [],
+    tags: Array.isArray(a.tags) ? [...a.tags] : [],
+    finDirection: totalCost > 0 ? "expense" : "none",
+    amount: totalCost > 0 ? totalCost : 0,
+    actualAmount: 0,
+    finStatus: "Previsto",
+    finDueDate: end || start,
+    subtasks: [],
+    notes: [
+      a.notes || "",
+      a.airline ? `Cia/Empresa: ${a.airline}` : "",
+      a.bookingRef ? `Reserva: ${a.bookingRef}` : ""
+    ].filter(Boolean).join(" · "),
+    attachments: clone(a.attachments || []),
+    qrPayload: a.qrPayload || "",
+    qrFormat: a.qrFormat || ""
+  };
+}
+
+function convertProCardToPersonalActivity(card) {
+  const typeMap = {
+    Viagem: "Viagem",
+    "Reunião": "Evento",
+    Marco: "Evento",
+    Recebimento: "Outro",
+    Despesa: "Ingresso"
+  };
+  const perType = typeMap[card.type] || "Evento";
+  const today = fmtISO(new Date());
+  const start = card.start || today;
+  const end = (card.end && card.end >= start) ? card.end : start;
+  const val = Number(card.actualAmount) > 0 ? Number(card.actualAmount) : (Number(card.amount) || 0);
+  const extraCost = card.finDirection === "expense" && val > 0 ? val : 0;
+  const noteParts = [
+    card.notes || "",
+    card.client ? `Cliente: ${card.client}` : "",
+    card.assignee ? `Responsável: ${card.assignee}` : "",
+    card.location ? `Local: ${card.location}` : ""
+  ].filter(Boolean);
+  return {
+    id: card.id || uid(),
+    type: perType,
+    name: card.name || "Atividade Migrada",
+    start,
+    end,
+    startTime: card.startTime || "",
+    extraCost,
+    tickets: extraCost > 0 ? [{ label: card.type || "Custo", qty: 1, unitPrice: extraCost }] : [],
+    tags: Array.isArray(card.tags) ? [...card.tags] : [],
+    notes: noteParts.join(" · "),
+    attachments: clone(card.attachments || [])
+  };
 }
 
 function saveTripRecord(targetTrip, msg, skipRender = false) {
@@ -4109,8 +4250,17 @@ window.openModal = function (idOrOpts) {
   const editableTrips = trips.filter(t => t.role !== "viewer");
   editingTripRef = ctx?.trip || editableTrips[0] || activeTrip;
 
+  const tgtModeSel = $("#f-targetMode");
   const tgtWrap = $("#f-targetTripWrap");
   const tgtSel = $("#f-targetTrip");
+  if (tgtModeSel) {
+    tgtModeSel.value = "personal";
+    tgtModeSel.onchange = () => {
+      const m = tgtModeSel.value === "professional" ? "professional" : "personal";
+      const prefId = m === "personal" ? (editingTripRef?.id || activeTrip?.id || "") : "";
+      populateEventSelect(tgtSel, m, prefId);
+    };
+  }
   if (tgtWrap && tgtSel) {
     populateEventSelect(tgtSel, "personal", editingTripRef?.id || activeTrip?.id || "");
     tgtWrap.hidden = false;
@@ -5225,10 +5375,13 @@ async function boot() {
       buildUnifiedItems,
       clone,
       closeAllGanttPopovers,
+      convertPersonalActivityToProCard,
+      convertProCardToPersonalActivity,
       createMultiSelect,
       DAY,
       days,
       detectUnifiedConflicts,
+      ensureTargetTripForMode,
       ensureUnifiedSelection,
       ensureUnifiedTripsLoaded,
       esc,
@@ -6784,11 +6937,33 @@ $("#form").onsubmit = async e => {
   const a = readForm();
   if (!a.name || !a.start) return;
   const sourceTrip = editingTripRef || activeTrip;
+  const chosenMode = $("#f-targetMode")?.value === "professional" ? "professional" : "personal";
   const chosenId = $("#f-targetTrip")?.value;
+
+  if (chosenMode === "professional") {
+    if (editing && sourceTrip?.role === "viewer") {
+      return toast("👁️ O evento de origem é somente leitura.");
+    }
+    const targetProTrip = await ensureTargetTripForMode(chosenId, "professional");
+    if (!targetProTrip || targetProTrip.role === "viewer") {
+      return toast("👁️ Projeto profissional destino é somente leitura.");
+    }
+    if (editing && sourceTrip?.data?.activities) {
+      sourceTrip.data.activities = sourceTrip.data.activities.filter(x => x.id !== editing);
+      saveTripRecord(sourceTrip, "", true);
+    }
+    const proCard = convertPersonalActivityToProCard({ ...a, id: editing || modalDraftId || uid() }, targetProTrip);
+    if (!Array.isArray(targetProTrip.data.activities)) targetProTrip.data.activities = [];
+    targetProTrip.data.activities.push(proCard);
+    $("#modal").close();
+    saveTripRecord(targetProTrip, `💼 Migrado para Profissional ("${targetProTrip.data.title || targetProTrip.name}")!`);
+    return;
+  }
+
   let targetTrip = sourceTrip;
   if (chosenId && chosenId !== sourceTrip?.id) {
     try {
-      targetTrip = (await resolveTripRefById(chosenId)) || sourceTrip;
+      targetTrip = (await ensureTargetTripForMode(chosenId, "personal")) || sourceTrip;
     } catch {
       targetTrip = sourceTrip;
     }
