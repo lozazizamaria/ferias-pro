@@ -1,7 +1,7 @@
 services:
-  ferias-pro:
+  myplan:
     build: .
-    container_name: ferias-pro
+    container_name: myplan
     restart: always
     ports:
       - "127.0.0.1:3080:3080"
@@ -12,8 +12,8 @@ services:
       PORT: "3080"
       DATA_DIR: "/app/data"
     volumes:
-      - ferias_data:/app/data
+      - myplan_data:/app/data
 
 volumes:
-  ferias_data:
+  myplan_data:
     driver: local

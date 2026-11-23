@@ -1,4 +1,4 @@
-# Abrir e Editar o Férias Pro no Laptop (Guia Rápido)
+# Abrir e Editar o My Plan no Laptop (Guia Rápido)
 
 Todo o código, o arquivo `GEMINI.md`, as regras e os plugins completos de arquitetura (`ferias-pro-architect` e `ads-intelligence-architect`) agora moram **dentro do próprio repositório Git** (em `.agents/plugins/`). Você não precisa copiar pastas do outro computador para editar no aeroporto!
 
@@ -9,8 +9,8 @@ Todo o código, o arquivo `GEMINI.md`, as regras e os plugins completos de arqui
 Abra o **PowerShell** no laptop e cole estes comandos:
 
 ```powershell
-git clone https://github.com/lozazizamaria/ferias-pro.git C:\Projetos\ferias-pro
-cd C:\Projetos\ferias-pro
+git clone https://github.com/lozazizamaria/ferias-pro.git C:\Projetos\MyPlan
+cd C:\Projetos\MyPlan
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-laptop.ps1
 ```
 
@@ -25,7 +25,7 @@ O script `setup-laptop.ps1`:
 ## 2. Abrir no Google Antigravity
 
 1. Abra o **Google Antigravity** no laptop e faça login com a mesma conta Google.
-2. Clique em **Open Folder** e selecione `C:\Projetos\ferias-pro`.
+2. Clique em **Open Folder** e selecione `C:\Projetos\MyPlan`.
 3. Pronto: o Antigravity já reconhece automaticamente `GEMINI.md`, as regras permanentes e os agentes `ferias-pro-architect` e `ads-intelligence-architect`.
 
 ---
@@ -35,13 +35,13 @@ O script `setup-laptop.ps1`:
 O arquivo `.env` não vai para o GitHub por segurança. Na VPS ele já continua salvo normalmente; caso queira testar login Google ou IA Gemini direto em `localhost` no laptop, você tem 3 caminhos fáceis:
 
 1. Responder às perguntas opcionais do próprio script `.\scripts\setup-laptop.ps1`;
-2. Copiar o seu arquivo `.env` deste computador (pendrive / gerenciador de senhas) para `C:\Projetos\ferias-pro\.env`;
+2. Copiar o seu arquivo `.env` deste computador (pendrive / gerenciador de senhas) para `C:\Projetos\MyPlan\.env`;
 3. Ou puxar por `scp` da VPS (substituindo `IP_DA_VPS`):
 
 ```powershell
-scp root@IP_DA_VPS:/var/www/ferias-pro/.env C:\Projetos\ferias-pro\.env
+scp root@IP_DA_VPS:/var/www/MyPlan/.env C:\Projetos\MyPlan\.env
 ```
-*(Obs.: se suas credenciais estiverem em `/etc/ferias-pro.env`, ajuste o caminho de origem ou configure tudo direto no painel **Admin ➔ 🔐 Credenciais & Backups** no site.)*
+*(Obs.: se suas credenciais estiverem em `/etc/myplan.env`, ajuste o caminho de origem ou configure tudo direto no painel **Admin ➔ 🔐 Credenciais & Backups** no site.)*
 
 ---
 
@@ -50,5 +50,5 @@ scp root@IP_DA_VPS:/var/www/ferias-pro/.env C:\Projetos\ferias-pro\.env
 No terminal do Antigravity (após `git push origin main`), conecte na VPS e rode o comando de sempre:
 
 ```bash
-cd /var/www/ferias-pro && git pull origin main && systemctl restart ferias-pro
+cd /var/www/MyPlan && git pull origin main && systemctl restart myplan
 ```

@@ -6200,7 +6200,7 @@ async function loadAndRenderAdminVault() {
                 <input type="password" id="vlt-gmapsKey" value="${s.vaultHasMaps ? "••••••••" : ""}" placeholder="${s.hasMaps ? "Ativo — digite apenas para trocar" : "AIza..."}">
               </label>
               <label>APP_BASE_URL (Links de reset de senha)
-                <input type="url" id="vlt-appBaseUrl" value="${esc(s.appBaseUrl || "")}" placeholder="https://feriaspro.digitalinpulse.com.br">
+                <input type="url" id="vlt-appBaseUrl" value="${esc(s.appBaseUrl || "")}" placeholder="https://myplan.digitalinpulse.com.br">
               </label>
             </div>
           </div>
@@ -6755,7 +6755,7 @@ async function executeSmartCalendarSync() {
             <a class="btn ghost small" href="${esc(webcalUrl)}">🍎 Assinar no iPhone / Mac</a>
             <button type="button" class="btn ghost small" id="btnCopyCalFeed">📋 Copiar link</button>
           </div>
-          ${isLocalHost ? `<p class="muted small">💡 A assinatura automática por link webcal funciona no domínio público (<code>https://feriaspro.digitalinpulse.com.br</code>). Localmente, use o botão <b>Baixar .ics agora</b> abaixo.</p>` : `<p class="muted small">ℹ️ Ao assinar, este evento aparece como um calendário separado no seu Google Agenda sem misturar com outros planejamentos.</p>`}
+          ${isLocalHost ? `<p class="muted small">💡 A assinatura automática por link webcal funciona no domínio público (<code>https://myplan.digitalinpulse.com.br</code>). Localmente, use o botão <b>Baixar .ics agora</b> abaixo.</p>` : `<p class="muted small">ℹ️ Ao assinar, este evento aparece como um calendário separado no seu Google Agenda sem misturar com outros planejamentos.</p>`}
         </div>
       ` : ""}
 

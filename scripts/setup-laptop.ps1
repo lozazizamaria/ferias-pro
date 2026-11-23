@@ -6,7 +6,7 @@
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-Write-Host "=== Férias Pro — Setup Rápido de Ambiente no Laptop ===" -ForegroundColor Cyan
+Write-Host "=== My Plan — Setup Rápido de Ambiente no Laptop ===" -ForegroundColor Cyan
 Write-Host "Pasta do projeto: $repoRoot"
 
 # 1. Verificar Git e Node.js (>= 18.10)
@@ -92,4 +92,4 @@ Write-Host "=== TUDO PRONTO NO LAPTOP! ===" -ForegroundColor Green
 Write-Host "1. Abra o Google Antigravity e clique em 'Open Folder' -> $repoRoot"
 Write-Host "2. Os agentes, skills, regras (GEMINI.md) e arquitetura ja estarão carregados."
 Write-Host "3. Para rodar localmente: npm start (abre em http://127.0.0.1:3080)"
-Write-Host "4. Para enviar suas alterações para a VPS depois do push: cd /var/www/ferias-pro && git pull origin main && systemctl restart ferias-pro"
+Write-Host "4. Para enviar suas alterações para a VPS depois do push: cd /var/www/MyPlan && git pull origin main && systemctl restart myplan"
