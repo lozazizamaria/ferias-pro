@@ -1,25 +1,25 @@
 /* ===== Service Worker PWA — My Plan (Network-First Shell + Leituras Offline) ===== */
-const CACHE = "my-plan-v32";
-const DATA_CACHE = "my-plan-data-v32";
+const CACHE = "my-plan-v33";
+const DATA_CACHE = "my-plan-data-v33";
 const SHELL = [
   "/",
   "/index.html",
   "/como-usar.html",
-  "/styles.css?v=32",
-  "/sobre.css?v=32",
-  "/vehicles.js?v=32",
-  "/countries.js?v=32",
-  "/data.js?v=32",
-  "/maps.js?v=32",
-  "/calendar.js?v=32",
-  "/report.js?v=32",
-  "/api.js?v=32",
-  "/pro.js?v=32",
-  "/app.js?v=32",
-  "/manifest.webmanifest?v=32",
+  "/styles.css?v=33",
+  "/sobre.css?v=33",
+  "/vehicles.js?v=33",
+  "/countries.js?v=33",
+  "/data.js?v=33",
+  "/maps.js?v=33",
+  "/calendar.js?v=33",
+  "/report.js?v=33",
+  "/api.js?v=33",
+  "/pro.js?v=33",
+  "/app.js?v=33",
+  "/manifest.webmanifest?v=33",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
-  "/icons/icon.svg?v=32"
+  "/icons/icon.svg?v=33"
 ];
 
 /* Apenas leituras essenciais GET ficam disponíveis em fallback offline read-only. */

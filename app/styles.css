@@ -4537,7 +4537,8 @@ dialog.pro-card-dialog {
   flex-shrink: 0;
 }
 .pro-type-ico-preview .pro-ico-svg { width: 17px; height: 17px; }
-#btnProQuickAddType {
+#btnProQuickAddType,
+#btnProQuickAddCol {
   flex: 0 0 auto;
   width: 34px;
   min-height: 34px;

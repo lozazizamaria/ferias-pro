@@ -56,6 +56,7 @@
 
   // Estado do modal de lista/coluna
   let editingProColId = null;
+  let proColModalCallback = null;
 
   // Estado do modal de tipo de cartão customizado & conclusão
   let editingProTypeId = null;
@@ -211,7 +212,11 @@
       if (!a.id) a.id = core.uid();
       const mappedType = legacyMap[a.type] || a.type;
       a.type = (validTypes[mappedType] || customTypeMap.has(mappedType)) ? mappedType : "Desenvolvimento";
-      if (!a.columnId || !colIds.has(a.columnId)) a.columnId = firstColId;
+      if (a.columnId === "") {
+        a.columnId = "";
+      } else if (!a.columnId || !colIds.has(a.columnId)) {
+        a.columnId = firstColId;
+      }
       if (a.order == null || !isFinite(Number(a.order))) a.order = idx;
       if (!a.start) a.start = today;
       if (!a.end || a.end < a.start) a.end = a.start;
@@ -455,7 +460,7 @@
       iconHtml: t.iconHtml || t.icon,
       color: t.color
     }));
-    const colItems = cols.map(c => ({ id: c.id, label: c.title }));
+    const colItems = [...cols.map(c => ({ id: c.id, label: c.title })), { id: "__none__", label: "Sem lista (Gantt/Timeline)" }];
     const labelItems = labels.map(l => ({ id: l.id, label: l.name }));
     const tagItems = core.getAllAvailableTags(allCards).map(tg => ({ id: tg, label: tg }));
 
@@ -634,7 +639,7 @@
 
     board.innerHTML = cols.map(col => {
       const colCards = allCards
-        .filter(c => c.columnId === col.id || (!cols.some(x => x.id === c.columnId) && col === cols[0]))
+        .filter(c => Boolean(c.columnId) && (c.columnId === col.id || (!cols.some(x => x.id === c.columnId) && col === cols[0])))
         .slice()
         .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || String(a.start).localeCompare(String(b.start)));
 
@@ -882,7 +887,10 @@
   function applyProUnifiedFilters(allCards, includeCol = false) {
     return (allCards || []).filter(a => {
       if (!proGanttTypeSet.has(a.type)) return false;
-      if (includeCol && proGanttColSet.size > 0 && !proGanttColSet.has(a.columnId)) return false;
+      if (includeCol && proGanttColSet.size > 0) {
+        const colKey = a.columnId || "__none__";
+        if (!proGanttColSet.has(colKey)) return false;
+      }
       if (proGanttTagSet.size > 0 && !(Array.isArray(a.tags) && a.tags.some(t => proGanttTagSet.has(t)))) return false;
       if (proDateFrom && (a.end || a.start) < proDateFrom) return false;
       if (proDateTo && a.start > proDateTo) return false;
@@ -964,7 +972,7 @@
       if (unifiedState.conflictsOnly && !core.unifiedConflictMap?.has(it)) return false;
       if (meta.mode === "professional") {
         if (!proGanttTypeSet.has(it.type)) return false;
-        if (proGanttColSet.size > 0 && !proGanttColSet.has(it.columnId)) return false;
+        if (proGanttColSet.size > 0 && !proGanttColSet.has(it.columnId || "__none__")) return false;
       } else {
         if (proGanttColSet.size > 0) return false;
         if (proPartial && !proGanttTypeSet.has(it.type)) return false;
@@ -1175,6 +1183,12 @@
         renderItems.push({ kind: "group", gid, label: col.title, count: items.length, color: col.color });
         if (!collapsedGanttGroups.has(gid)) items.forEach(a => renderItems.push({ kind: "card", a }));
       });
+      const unlinkedItems = s.filter(a => !a.columnId || !cols.some(c => c.id === a.columnId));
+      if (unlinkedItems.length) {
+        const gid = "col:__none__";
+        renderItems.push({ kind: "group", gid, label: "Sem lista (Gantt & Timeline)", count: unlinkedItems.length, color: "#64748b" });
+        if (!collapsedGanttGroups.has(gid)) unlinkedItems.forEach(a => renderItems.push({ kind: "card", a }));
+      }
     } else if (!unified && proGanttGroup === "type") {
       Object.values(getAllProTypes()).forEach(tp => {
         const items = s.filter(a => a.type === tp.id);
@@ -1217,7 +1231,7 @@
       const typeColStyle = info.isCustom && info.color ? `--t-color:${core.esc(info.color)};` : "";
       const rowStyleExtra = `${meta ? `--cal-color:${meta.calColor};` : ""}${typeColStyle}`;
       const badgeHtml = meta ? core.renderUnifiedCardSubBadges(a) : getCardTripBadgeHTML(a);
-      const doneBtnHtml = umode === "professional"
+      const doneBtnHtml = (umode === "professional" && a.columnId)
         ? `<button type="button" class="g-done-btn${done ? " is-done" : ""}" data-gantt-done="${core.esc(a.id)}" title="${done ? "Reabrir tarefa" : "Marcar como concluída"}" aria-label="${done ? "Reabrir tarefa" : "Marcar como concluída"}">✓</button>`
         : "";
 
@@ -1690,7 +1704,7 @@
     const prio = $("#proFilterPrio")?.value || "";
     const cards = allCardsOpt || getProSortedActivities();
     return cards.filter(a => {
-      if (proTableColSet.size > 0 && !proTableColSet.has(a.columnId)) return false;
+      if (proTableColSet.size > 0 && !proTableColSet.has(a.columnId || "__none__")) return false;
       if (!proTableTypeSet.has(a.type)) return false;
       if (proTableTagSet.size > 0 && !(Array.isArray(a.tags) && a.tags.some(t => proTableTagSet.has(t)))) return false;
       if (prio && a.priority !== prio) return false;
@@ -1718,7 +1732,8 @@
     </tr></thead><tbody>`;
 
     rows.forEach((a, idx) => {
-      const colOpts = cols.map(c => `<option value="${core.esc(c.id)}" ${c.id === a.columnId ? "selected" : ""}>${core.esc(c.title)}</option>`).join("");
+      const colOpts = `<option value="" ${!a.columnId ? "selected" : ""}>— Sem lista —</option>`
+        + cols.map(c => `<option value="${core.esc(c.id)}" ${c.id === a.columnId ? "selected" : ""}>${core.esc(c.title)}</option>`).join("");
       const tOpts = typeOpts.map(tp => `<option value="${core.esc(tp)}" ${tp === a.type ? "selected" : ""}>${core.esc(tp)}</option>`).join("");
       const pOpts = ["Crítica", "Alta", "Média", "Baixa"].map(p => `<option ${p === a.priority ? "selected" : ""}>${p}</option>`).join("");
       const fOpts = [["none", "—"], ["income", "+ Recebim."], ["expense", "− Despesa"]].map(([k, l]) => `<option value="${k}" ${k === a.finDirection ? "selected" : ""}>${l}</option>`).join("");
@@ -2327,6 +2342,16 @@
     core.save(`🗑️ Tipo "${typeId}" removido${reassigned ? ` (${reassigned} cartão(ões) movidos para Outro)` : ""}`);
   }
 
+  function populateProColumnSelect(dataOpt = null) {
+    const sel = $("#pc-column");
+    if (!sel) return;
+    const cols = (dataOpt && Array.isArray(dataOpt.columns) && dataOpt.columns.length)
+      ? dataOpt.columns
+      : (editingProTripRef?.data?.columns || getMergedColumns());
+    sel.innerHTML = `<option value="">— Sem lista (apenas Gantt &amp; Timeline) —</option>`
+      + cols.map(c => `<option value="${core.esc(c.id)}">${core.esc(c.title)}</option>`).join("");
+  }
+
   function populateProTypeSelect(dataOpt = null) {
     const sel = $("#pc-type");
     if (!sel) return;
@@ -2354,9 +2379,7 @@
 
     populateProTypeSelect(editingProTripRef?.data || null);
     const cols = editingProTripRef?.data?.columns || getMergedColumns();
-    if ($("#pc-column")) {
-      $("#pc-column").innerHTML = cols.map(c => `<option value="${core.esc(c.id)}">${core.esc(c.title)}</option>`).join("");
-    }
+    populateProColumnSelect(editingProTripRef?.data || null);
 
     const today = core.fmtISO(new Date());
     const rawInitType = a ? a.type : (opts?.type || "Desenvolvimento");
@@ -2367,7 +2390,7 @@
     $("#proCardModalTitle").textContent = a ? `Editar Cartão` : "Novo Cartão Profissional";
     $("#pc-name").value = a ? a.name : "";
     $("#pc-notes").value = a ? (a.notes || "") : "";
-    $("#pc-column").value = a ? a.columnId : (opts?.columnId || cols[0]?.id || "todo");
+    $("#pc-column").value = a ? (a.columnId ?? "") : (opts && "columnId" in opts ? opts.columnId : (cols[0]?.id || ""));
     $("#pc-type").value = initType;
     updateProModalTypePreview();
     $("#pc-start").value = a ? a.start : (opts?.start || today);
@@ -2433,7 +2456,7 @@
 
     return {
       type: $("#pc-type").value || "Desenvolvimento",
-      columnId: $("#pc-column").value || getMergedColumns()[0].id,
+      columnId: $("#pc-column").value || "",
       name: $("#pc-name").value.trim() || "Cartão Profissional",
       start: startVal,
       end: endVal,
@@ -2565,10 +2588,15 @@
   }
 
   /* ---------- MODAL DE LISTA/COLUNA ---------- */
-  function openProColumnModal(colId = null) {
-    const cols = getMergedColumns();
+  function openProColumnModal(colIdOrOpts = null) {
+    const opts = (colIdOrOpts && typeof colIdOrOpts === "object") ? colIdOrOpts : null;
+    const colId = typeof colIdOrOpts === "string" ? colIdOrOpts : (opts?.editId || null);
+    const active = core.getActiveTrip();
+    if (active?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+    const cols = editingProTripRef?.data?.columns || getMergedColumns();
     const col = colId ? cols.find(c => c.id === colId) : null;
     editingProColId = col ? col.id : null;
+    proColModalCallback = typeof opts?.onCreated === "function" ? opts.onCreated : null;
     $("#proColModalTitle").textContent = col ? "Editar Lista do Quadro" : "Nova Lista do Quadro";
     $("#pcol-name").value = col ? col.title : "";
     $("#pcol-color").value = col ? (col.color || "#2563eb") : "#2563eb";
@@ -2802,6 +2830,18 @@
     bindParam("#pp-remTime", "calendarReminderTime", false);
     bindParam("#pp-doneColumnId", "doneColumnId", false);
     if ($("#btnProAddColumn")) $("#btnProAddColumn").onclick = () => openProColumnModal();
+    if ($("#btnProQuickAddCol")) {
+      $("#btnProQuickAddCol").onclick = () => {
+        openProColumnModal({
+          onCreated(newCol) {
+            populateProColumnSelect();
+            if ($("#pc-column") && newCol?.id) {
+              $("#pc-column").value = newCol.id;
+            }
+          }
+        });
+      };
+    }
     if ($("#btnProAddCardType")) $("#btnProAddCardType").onclick = () => openProTypeModal({});
     if ($("#btnProQuickAddType")) {
       $("#btnProQuickAddType").onclick = () => {
@@ -3013,7 +3053,7 @@
         const tgtData = targetTrip?.data || core.getState();
         if (!Array.isArray(tgtData.activities)) tgtData.activities = [];
         const tgtCols = Array.isArray(tgtData.columns) && tgtData.columns.length ? tgtData.columns : getMergedColumns();
-        if (!tgtCols.some(c => c.id === data.columnId) && tgtCols[0]?.id) {
+        if (data.columnId && !tgtCols.some(c => c.id === data.columnId) && tgtCols[0]?.id) {
           data.columnId = tgtCols[0].id;
         }
 
@@ -3134,14 +3174,28 @@
         const title = $("#pcol-name").value.trim();
         const color = $("#pcol-color").value || "#2563eb";
         if (!title) return;
+        let createdObj = null;
         if (editingProColId) {
           const c = st.columns.find(x => x.id === editingProColId);
-          if (c) { c.title = title; c.color = color; }
+          if (c) { c.title = title; c.color = color; createdObj = c; }
         } else {
-          st.columns.push({ id: "col_" + core.uid(), title, color });
+          createdObj = { id: "col_" + core.uid(), title, color };
+          st.columns.push(createdObj);
         }
+        if (editingProTripRef && editingProTripRef.data && editingProTripRef.data !== st) {
+          if (!Array.isArray(editingProTripRef.data.columns)) editingProTripRef.data.columns = [];
+          if (editingProColId) {
+            const tc = editingProTripRef.data.columns.find(x => x.id === editingProColId);
+            if (tc) { tc.title = title; tc.color = color; }
+          } else if (createdObj) {
+            editingProTripRef.data.columns.push({ ...createdObj });
+          }
+        }
+        const cb = proColModalCallback;
+        proColModalCallback = null;
         $("#proColumnModal").close();
         core.save(editingProColId ? "✏️ Lista atualizada" : "➕ Lista criada no quadro!");
+        if (cb && createdObj) cb(createdObj);
       };
     }
 
