@@ -2059,6 +2059,331 @@
   let proMapActiveGroupKey = "";
   let proMapActiveCardId = "";
   let proMapTableSort = { col: "start", dir: "asc" };
+  let proMapExploded = false;
+  let proMapMarkers = [];
+  let proMapPolylines = [];
+  let proMapZoomListener = null;
+  let proMapZoomTimer = null;
+  let proMapMarkerClass = null;
+  let proMapExplodedPosByCardId = new Map();
+
+  function updateProMapExplodeBtn(totalCards = 0) {
+    const host = $("#proMapFloatControls");
+    const btn = $("#btnProMapExplode");
+    const badge = $("#proMapExplodeBadge");
+    if (host) host.hidden = totalCards <= 0;
+    if (!btn) return;
+    btn.classList.toggle("is-exploded", proMapExploded);
+    btn.setAttribute("aria-pressed", proMapExploded ? "true" : "false");
+    const ico = $(".pro-map-explode-ico", btn);
+    const lbl = $(".pro-map-explode-lbl", btn);
+    if (ico) ico.textContent = proMapExploded ? "📍" : "💥";
+    if (lbl) lbl.textContent = proMapExploded ? "Agrupar locais" : "Explodir mapa";
+    btn.title = proMapExploded
+      ? "Voltar ao modo agrupado por localidade"
+      : "Expandir e mostrar todas as missões separadas no mapa de uma só vez";
+    if (badge) {
+      badge.textContent = String(totalCards);
+      badge.hidden = totalCards <= 0;
+    }
+  }
+
+  function clearProMapOverlays() {
+    proMapMarkers.forEach(m => { try { m.map = null; } catch {} });
+    proMapMarkers = [];
+    proMapPolylines.forEach(p => { try { p.setMap(null); } catch {} });
+    proMapPolylines = [];
+    proMapExplodedPosByCardId.clear();
+  }
+
+  function latLngToWorldPx(lat, lng, zoom) {
+    const scale = 256 * Math.pow(2, zoom);
+    const x = ((lng + 180) / 360) * scale;
+    const sinLat = Math.max(-0.9999, Math.min(0.9999, Math.sin((lat * Math.PI) / 180)));
+    const y = (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * scale;
+    return { x, y };
+  }
+
+  function worldPxToLatLng(x, y, zoom) {
+    const scale = 256 * Math.pow(2, zoom);
+    const lng = (x / scale) * 360 - 180;
+    const n = Math.PI - (2 * Math.PI * y) / scale;
+    const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    return {
+      lat: Math.max(-85, Math.min(85, lat)),
+      lng: ((lng + 540) % 360) - 180
+    };
+  }
+
+  function createExplodedMissionInnerHTML(card, group, isMobile = false) {
+    const asgList = getCardAssigneesList(card);
+    const primaryAsg = asgList.find(e => e.travels) || asgList[0];
+    const hasTraveler = asgList.some(e => e.travels);
+    const tagCol = primaryAsg ? colorForAssignee(primaryAsg.name).hex : (getProTypeInfo(card?.type).color || "#38bdf8");
+    const maxLen = isMobile ? 16 : 24;
+    const rawName = String(card?.name || "Sem título");
+    const shortName = rawName.length > maxLen ? rawName.slice(0, maxLen - 1) + "…" : rawName;
+    const dtChip = (!isMobile && card?.start)
+      ? `<span class="pro-map-mission-dt">${core.esc(core.fmtShortBR(card.start))}</span>`
+      : "";
+    const pinIcon = hasTraveler ? "✈️" : "📍";
+    const dur = cardDurationDays(card);
+    const dtFull = card?.start ? `${core.fmtBR(card.start)}${card.end && card.end !== card.start ? ` – ${core.fmtBR(card.end)}` : ""} (${dur}d)` : "Sem data";
+    const asgStr = asgList.length ? ` · ${asgList.map(e => e.name).join(", ")}` : "";
+    const tooltip = `${rawName} — ${group.cityLabel} · ${dtFull}${asgStr}`;
+    return {
+      tagCol,
+      shortName,
+      hasDt: Boolean(dtChip),
+      tooltip,
+      html: `<span class="pro-map-marker-pin">${pinIcon}</span><span class="pro-map-marker-txt">${core.esc(shortName)}</span>${dtChip}`
+    };
+  }
+
+  function layoutExplodedPointsPx(groups, toAnchorPx, boundsBox = null, isMobile = false) {
+    const anchors = [];
+    const items = [];
+    const baseRx = isMobile ? 74 : 104;
+    const baseRy = isMobile ? 42 : 52;
+
+    groups.forEach(g => {
+      const ancPt = toAnchorPx(g);
+      const ax = ancPt.x;
+      const ay = ancPt.y;
+      const sortedCards = g.cards.slice().sort((a, b) =>
+        String(a.start || a.end || "9999-99-99").localeCompare(String(b.start || b.end || "9999-99-99")) ||
+        String(a.name || "").localeCompare(String(b.name || ""))
+      );
+      const n = sortedCards.length;
+      const anchorRec = { group: g, ax, ay, hasSpread: n > 1 };
+      anchors.push(anchorRec);
+
+      // Distribui múltiplos cartões em anéis elípticos concêntricos sem sobreposição inicial
+      let remaining = n;
+      let ringIdx = 0;
+      let cursor = 0;
+      const ringSlots = [];
+      while (remaining > 0) {
+        const cap = Math.min(remaining, 6 + ringIdx * 4);
+        ringSlots.push({ ringIdx, cap, start: cursor });
+        cursor += cap;
+        remaining -= cap;
+        ringIdx++;
+      }
+
+      sortedCards.forEach((card, idx) => {
+        const meta = createExplodedMissionInnerHTML(card, g, isMobile);
+        const w = isMobile
+          ? Math.min(166, Math.max(88, Math.ceil(meta.shortName.length * 7.2 + 40)))
+          : Math.min(244, Math.max(96, Math.ceil(meta.shortName.length * 7.6 + 46 + (meta.hasDt ? 48 : 0))));
+        const h = isMobile ? 31 : 34;
+
+        let sx = ax;
+        let sy = ay;
+        if (n > 1) {
+          const slot = ringSlots.find(s => idx >= s.start && idx < s.start + s.cap) || ringSlots[0];
+          const posInRing = idx - slot.start;
+          const scale = 1 + slot.ringIdx * 0.85;
+          const angleOffset = -Math.PI / 2 + (slot.ringIdx % 2) * (Math.PI / Math.max(1, slot.cap));
+          const theta = angleOffset + (2 * Math.PI * posInRing) / Math.max(1, slot.cap);
+          sx = ax + Math.cos(theta) * baseRx * scale;
+          sy = ay + Math.sin(theta) * baseRy * scale;
+        }
+
+        items.push({
+          card,
+          group: g,
+          anchorRec,
+          meta,
+          ax,
+          ay,
+          x: sx,
+          y: sy,
+          w,
+          h,
+          isMulti: n > 1
+        });
+      });
+    });
+
+    // Solver iterativo AABB em espaço de pixels: elimina 100% das colisões dentro e entre cidades vizinhas
+    const padX = isMobile ? 7 : 10;
+    const padY = isMobile ? 7 : 9;
+    const hubRadius = isMobile ? 16 : 18;
+
+    const clampItem = (A) => {
+      if (!boundsBox) return;
+      const loX = boundsBox.minX + A.w / 2;
+      const hiX = boundsBox.maxX - A.w / 2;
+      const loY = boundsBox.minY + A.h / 2;
+      const hiY = boundsBox.maxY - A.h / 2;
+      if (hiX >= loX) A.x = Math.max(loX, Math.min(hiX, A.x));
+      if (hiY >= loY) A.y = Math.max(loY, Math.min(hiY, A.y));
+    };
+
+    const getActiveHubs = () => anchors.filter(anc =>
+      anc.group.cards.length > 1 ||
+      items.some(it => it.anchorRec === anc && Math.hypot(it.x - anc.ax, it.y - anc.ay) > 4)
+    );
+
+    for (let iter = 0; iter < 120; iter++) {
+      let movedAny = false;
+
+      // 1. Repulsão pílula vs pílula (ciente das bordas quando limitado a boundsBox)
+      for (let i = 0; i < items.length; i++) {
+        const A = items[i];
+        for (let j = i + 1; j < items.length; j++) {
+          const B = items[j];
+          const dx = B.x - A.x;
+          const dy = B.y - A.y;
+          const minDx = (A.w + B.w) / 2 + padX;
+          const minDy = (A.h + B.h) / 2 + padY;
+          const ovX = minDx - Math.abs(dx);
+          const ovY = minDy - Math.abs(dy);
+          if (ovX > 0 && ovY > 0) {
+            movedAny = true;
+            if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
+              const ang = ((i * 7 + j * 13) % 12) * (Math.PI / 6);
+              A.x -= Math.cos(ang) * 16;
+              A.y -= Math.sin(ang) * 12;
+              B.x += Math.cos(ang) * 16;
+              B.y += Math.sin(ang) * 12;
+            } else {
+              const nearYWall = boundsBox && (
+                A.y <= boundsBox.minY + A.h / 2 + 2 || A.y >= boundsBox.maxY - A.h / 2 - 2 ||
+                B.y <= boundsBox.minY + B.h / 2 + 2 || B.y >= boundsBox.maxY - B.h / 2 - 2
+              );
+              const nearXWall = boundsBox && (
+                A.x <= boundsBox.minX + A.w / 2 + 2 || A.x >= boundsBox.maxX - A.w / 2 - 2 ||
+                B.x <= boundsBox.minX + B.w / 2 + 2 || B.x >= boundsBox.maxX - B.w / 2 - 2
+              );
+              const preferX = (nearYWall && !nearXWall) ? true : ((nearXWall && !nearYWall) ? false : (ovX / minDx <= ovY / minDy));
+              if (preferX) {
+                const sx = dx >= 0 ? 1 : -1;
+                const push = ovX * 0.54;
+                A.x -= sx * push;
+                B.x += sx * push;
+              } else {
+                const sy = dy >= 0 ? 1 : -1;
+                const push = ovY * 0.54;
+                A.y -= sy * push;
+                B.y += sy * push;
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Repulsão pílula vs nós centrais de cidades (evita tampar qualquer ponto hub)
+      const activeHubs = getActiveHubs();
+      for (let hIdx = 0; hIdx < activeHubs.length; hIdx++) {
+        const hub = activeHubs[hIdx];
+        for (let i = 0; i < items.length; i++) {
+          const A = items[i];
+          const dx = A.x - hub.ax;
+          const dy = A.y - hub.ay;
+          const minDx = A.w / 2 + hubRadius;
+          const minDy = A.h / 2 + hubRadius;
+          const ovX = minDx - Math.abs(dx);
+          const ovY = minDy - Math.abs(dy);
+          if (ovX > 0 && ovY > 0) {
+            movedAny = true;
+            if (ovX / minDx <= ovY / minDy) {
+              A.x += (dx >= 0 ? 1 : -1) * (ovX * 0.78 + 1);
+            } else {
+              A.y += (dy >= 0 ? 1 : -1) * (ovY * 0.78 + 1);
+            }
+          }
+        }
+      }
+
+      // 3. Elástico suave mantendo missões próximas de suas cidades (apenas nas 40 primeiras passagens)
+      if (iter < 40) {
+        for (let i = 0; i < items.length; i++) {
+          const A = items[i];
+          const dist = Math.hypot(A.x - A.ax, A.y - A.ay);
+          const minPullDist = A.isMulti ? (isMobile ? 48 : 64) : 0;
+          if (dist > minPullDist + 6) {
+            const k = A.isMulti ? 0.02 : 0.032;
+            A.x += (A.ax - A.x) * k;
+            A.y += (A.ay - A.y) * k;
+          }
+        }
+      }
+
+      if (boundsBox) {
+        for (let i = 0; i < items.length; i++) clampItem(items[i]);
+      }
+
+      if (!movedAny && iter >= 42) break;
+    }
+
+    // 4. Garantia estrita final em container limitado (Fallback SVG): busca em espiral por vaga 100% livre
+    if (boundsBox) {
+      const calcPenalty = (idx, cx, cy, activeHubs) => {
+        const A = items[idx];
+        let pen = 0;
+        for (let j = 0; j < items.length; j++) {
+          if (j === idx) continue;
+          const B = items[j];
+          const ox = (A.w + B.w) / 2 + 4 - Math.abs(cx - B.x);
+          const oy = (A.h + B.h) / 2 + 4 - Math.abs(cy - B.y);
+          if (ox > 0 && oy > 0) pen += ox * oy;
+        }
+        for (let h = 0; h < activeHubs.length; h++) {
+          const hub = activeHubs[h];
+          const ox = A.w / 2 + 14 - Math.abs(cx - hub.ax);
+          const oy = A.h / 2 + 14 - Math.abs(cy - hub.ay);
+          if (ox > 0 && oy > 0) pen += ox * oy * 1.2;
+        }
+        return pen;
+      };
+
+      for (let pass = 0; pass < 3; pass++) {
+        const activeHubs = getActiveHubs();
+        let fixed = false;
+        for (let i = 0; i < items.length; i++) {
+          const A = items[i];
+          const curPen = calcPenalty(i, A.x, A.y, activeHubs);
+          if (curPen <= 0) continue;
+          const loX = boundsBox.minX + A.w / 2;
+          const hiX = boundsBox.maxX - A.w / 2;
+          const loY = boundsBox.minY + A.h / 2;
+          const hiY = boundsBox.maxY - A.h / 2;
+          let bestX = A.x, bestY = A.y, bestPen = curPen, bestDist = Infinity;
+          for (let r = 20; r <= 320; r += 18) {
+            for (let a = 0; a < 24; a++) {
+              const ang = (a * Math.PI * 2) / 24;
+              const cx = hiX >= loX ? Math.max(loX, Math.min(hiX, A.ax + Math.cos(ang) * r)) : A.x;
+              const cy = hiY >= loY ? Math.max(loY, Math.min(hiY, A.ay + Math.sin(ang) * r)) : A.y;
+              const pen = calcPenalty(i, cx, cy, activeHubs);
+              const dist = Math.hypot(cx - A.ax, cy - A.ay);
+              if (pen < bestPen || (pen === 0 && bestPen === 0 && dist < bestDist)) {
+                bestPen = pen;
+                bestX = cx;
+                bestY = cy;
+                bestDist = dist;
+              }
+            }
+            if (bestPen === 0) break;
+          }
+          if (bestPen < curPen) {
+            A.x = bestX;
+            A.y = bestY;
+            fixed = true;
+          }
+        }
+        if (!fixed) break;
+      }
+    }
+
+    items.forEach(it => {
+      it.movedPx = Math.hypot(it.x - it.ax, it.y - it.ay);
+      if (it.movedPx > 4) it.anchorRec.hasSpread = true;
+    });
+
+    return { anchors, items };
+  }
 
   function shortLocationCityName(rawLoc) {
     const clean = String(rawLoc || "").trim();
@@ -2144,13 +2469,17 @@
     const back = $("#proMapInspectorBackdrop");
     if (insp) { insp.hidden = true; insp.innerHTML = ""; }
     if (back) back.hidden = true;
-    document.querySelectorAll(".pro-map-marker-pill.is-active").forEach(el => el.classList.remove("is-active"));
+    document.querySelectorAll(".pro-map-marker-pill.is-active, .pro-map-hub-node.is-active").forEach(el => el.classList.remove("is-active"));
     document.querySelectorAll("#proMapTripsTable tr.is-active, #proMapTripsMobileCards .m-card.is-active").forEach(el => el.classList.remove("is-active"));
   }
 
   function syncActiveMapHighlights() {
     document.querySelectorAll("[data-map-group-key]").forEach(el => {
-      el.classList.toggle("is-active", el.dataset.mapGroupKey === proMapActiveGroupKey);
+      const match = el.dataset.mapGroupKey === proMapActiveGroupKey && (!proMapExploded || !proMapActiveCardId);
+      el.classList.toggle("is-active", match);
+    });
+    document.querySelectorAll("[data-map-card-id]").forEach(el => {
+      el.classList.toggle("is-active", el.dataset.mapCardId === proMapActiveCardId);
     });
     document.querySelectorAll("[data-map-row-card]").forEach(el => {
       el.classList.toggle("is-active", el.dataset.mapRowCard === proMapActiveCardId);
@@ -2257,8 +2586,10 @@
 
     if (panMap && resolvedGroup && proMapInstance) {
       try {
-        proMapInstance.panTo({ lat: resolvedGroup.displayLat ?? resolvedGroup.lat, lng: resolvedGroup.displayLng ?? resolvedGroup.lng });
-        if ((proMapInstance.getZoom?.() || 5) < 7) proMapInstance.setZoom(8);
+        const explodedPos = (proMapExploded && card) ? proMapExplodedPosByCardId.get(card.id) : null;
+        const targetPos = explodedPos || { lat: resolvedGroup.displayLat ?? resolvedGroup.lat, lng: resolvedGroup.displayLng ?? resolvedGroup.lng };
+        proMapInstance.panTo(targetPos);
+        if (!proMapExploded && (proMapInstance.getZoom?.() || 5) < 7) proMapInstance.setZoom(8);
       } catch {}
     }
 
@@ -2318,6 +2649,7 @@
     const isLight = document.documentElement.getAttribute("data-theme") === "light";
     const bg = isLight ? "#e2e8f0" : "#0b1325";
     const gridCol = isLight ? "rgba(15,23,42,0.08)" : "rgba(148,163,184,0.1)";
+    const isMobile = window.innerWidth < 768;
     if (!groups.length) {
       canvas.innerHTML = `<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:8px">
         <div style="font-size:1.8rem">🗺️</div>
@@ -2326,35 +2658,138 @@
       </div>`;
       return;
     }
-    const lats = groups.map(g => g.displayLat ?? g.lat);
-    const lngs = groups.map(g => g.displayLng ?? g.lng);
+    const lats = groups.map(g => (proMapExploded ? g.lat : (g.displayLat ?? g.lat)));
+    const lngs = groups.map(g => (proMapExploded ? g.lng : (g.displayLng ?? g.lng)));
     let minLat = Math.min(...lats) - 2.5, maxLat = Math.max(...lats) + 2.5;
     let minLng = Math.min(...lngs) - 3.5, maxLng = Math.max(...lngs) + 3.5;
     if (maxLat - minLat < 4) { minLat -= 2; maxLat += 2; }
     if (maxLng - minLng < 5) { minLng -= 2.5; maxLng += 2.5; }
 
-    // Posicionamento sem colisão em % para o fallback SVG
-    const placed = [];
-    const pinsHtml = groups.map(g => {
+    const rect = canvas.getBoundingClientRect();
+    const W = Math.max(320, Math.round(rect.width || canvas.clientWidth || 720));
+    const H = Math.max(300, Math.round(rect.height || canvas.clientHeight || 420));
+
+    if (proMapExploded) {
+      const padX = Math.max(48, Math.round(W * 0.12));
+      const padYTop = 64;
+      const padYBot = 46;
+      const usableW = Math.max(120, W - padX * 2);
+      const usableH = Math.max(120, H - padYTop - padYBot);
+
+      const { anchors, items } = layoutExplodedPointsPx(
+        groups,
+        g => ({
+          x: padX + ((g.lng - minLng) / (maxLng - minLng)) * usableW,
+          y: padYTop + (1 - (g.lat - minLat) / (maxLat - minLat)) * usableH
+        }),
+        { minX: 8, maxX: W - 8, minY: 56, maxY: H - 8 },
+        isMobile
+      );
+
+      const linesSvg = items
+        .filter(it => it.movedPx > 4 || it.group.cards.length > 1)
+        .map(it => `<line x1="${it.ax.toFixed(1)}" y1="${it.ay.toFixed(1)}" x2="${it.x.toFixed(1)}" y2="${it.y.toFixed(1)}" stroke="${core.esc(it.meta.tagCol)}" stroke-width="1.8" stroke-opacity="${isLight ? "0.62" : "0.7"}" stroke-dasharray="4 3" />`)
+        .join("");
+
+      const hubsHtml = anchors
+        .filter(anc => anc.hasSpread)
+        .map(anc => {
+          const g = anc.group;
+          const isAct = g.key === proMapActiveGroupKey && !proMapActiveCardId ? " is-active" : "";
+          return `<button type="button" class="pro-map-hub-node${isAct}" data-map-group-key="${core.esc(g.key)}" style="position:absolute;left:${anc.ax.toFixed(1)}px;top:${anc.ay.toFixed(1)}px;transform:translate(-50%,-50%);z-index:4" title="📍 ${core.esc(g.cityLabel)} — ${g.cards.length} ${g.cards.length === 1 ? "missão" : "missões"}">${g.cards.length > 1 ? g.cards.length : ""}</button>`;
+        }).join("");
+
+      const pillsHtml = items.map(it => {
+        const isAct = it.card.id === proMapActiveCardId ? " is-active" : "";
+        return `<div class="pro-map-tag-group" style="position:absolute;left:${it.x.toFixed(1)}px;top:${it.y.toFixed(1)}px;transform:translate(-50%,-50%);z-index:${isAct ? 9 : 6}">
+          <button type="button" class="pro-map-marker-pill pro-map-marker-pill--mission${isAct}" data-map-card-id="${core.esc(it.card.id)}" style="--tag-c:${core.esc(it.meta.tagCol)}" title="${core.esc(it.meta.tooltip)}">
+            ${it.meta.html}
+          </button>
+        </div>`;
+      }).join("");
+
+      canvas.innerHTML = `<div style="position:relative;width:100%;height:100%;background:${bg};background-image:linear-gradient(${gridCol} 1px, transparent 1px),linear-gradient(90deg, ${gridCol} 1px, transparent 1px);background-size:44px 44px;overflow:hidden">
+        <svg class="pro-map-spider-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${linesSvg}</svg>
+        ${hubsHtml}
+        ${pillsHtml}
+      </div>`;
+
+      canvas.querySelectorAll("[data-map-group-key]").forEach(btn => {
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          const grp = proMapCachedGroups.find(x => x.key === btn.dataset.mapGroupKey);
+          if (grp) openProMapInspector({ group: grp, card: grp.cards.length === 1 ? grp.cards[0] : null, panMap: false });
+        };
+      });
+      canvas.querySelectorAll("[data-map-card-id]").forEach(btn => {
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          const cid = btn.dataset.mapCardId;
+          const grp = proMapCachedGroups.find(x => x.cards.some(c => c.id === cid));
+          const crd = grp?.cards.find(c => c.id === cid);
+          if (grp && crd) openProMapInspector({ group: grp, card: crd, panMap: false });
+        };
+      });
+      return;
+    }
+
+    // Posicionamento sem colisão em pixels dentro do container para o fallback SVG (modo agrupado)
+    const gPadX = Math.max(24, Math.round(W * 0.08));
+    const gPadYTop = 64;
+    const gPadYBot = 28;
+    const gUsableW = Math.max(120, W - gPadX * 2);
+    const gUsableH = Math.max(120, H - gPadYTop - gPadYBot);
+
+    const nodes = groups.map(g => {
       const lat = g.displayLat ?? g.lat;
       const lng = g.displayLng ?? g.lng;
-      let xPct = Math.max(10, Math.min(90, ((lng - minLng) / (maxLng - minLng)) * 100));
-      let yPct = Math.max(12, Math.min(88, (1 - (lat - minLat) / (maxLat - minLat)) * 100));
-      for (let attempt = 0; attempt < 8; attempt++) {
-        const hit = placed.find(p => Math.abs(p.x - xPct) < 15 && Math.abs(p.y - yPct) < 10);
-        if (!hit) break;
-        const ang = (attempt + 1) * 0.95;
-        xPct = Math.max(8, Math.min(92, xPct + Math.cos(ang) * 9));
-        yPct = Math.max(10, Math.min(90, yPct + Math.sin(ang) * 7));
-      }
-      placed.push({ x: xPct, y: yPct });
       const { tagCol, html } = createClusterMarkerInnerHTML(g);
-      const isAct = g.key === proMapActiveGroupKey ? " is-active" : "";
-      return `<div class="pro-map-tag-group" style="position:absolute;left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%;transform:translate(-50%,-100%);z-index:5">
-        <button type="button" class="pro-map-marker-pill${isAct}" data-map-group-key="${core.esc(g.key)}" style="--tag-c:${core.esc(tagCol)}" title="${core.esc(g.cityLabel)} (${g.cards.length} cartão/ões)">
-          ${html}
+      const labelTxt = g.cards.length === 1 ? `${g.cityLabel} · ${g.cards[0].name.slice(0, 22)}` : `${g.cityLabel} ${g.cards.length}`;
+      const w = Math.min(isMobile ? 215 : 242, Math.max(106, Math.ceil(labelTxt.length * 7.5 + 48)));
+      const h = 44;
+      const x = gPadX + ((lng - minLng) / (maxLng - minLng)) * gUsableW;
+      const y = gPadYTop + (1 - (lat - minLat) / (maxLat - minLat)) * gUsableH;
+      return { g, tagCol, html, x, y, w, h };
+    });
+
+    for (let iter = 0; iter < 50; iter++) {
+      let moved = false;
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const A = nodes[i], B = nodes[j];
+          const dx = B.x - A.x, dy = B.y - A.y;
+          const minDx = (A.w + B.w) / 2 + 8;
+          const minDy = (A.h + B.h) / 2 + 8;
+          const ovX = minDx - Math.abs(dx);
+          const ovY = minDy - Math.abs(dy);
+          if (ovX > 0 && ovY > 0) {
+            moved = true;
+            const cantFitSideBySide = (A.w + B.w + 24) >= W;
+            const nearXWall = A.x <= 10 + A.w / 2 || A.x >= W - 10 - A.w / 2 || B.x <= 10 + B.w / 2 || B.x >= W - 10 - B.w / 2;
+            if (!cantFitSideBySide && !nearXWall && (ovX / minDx <= ovY / minDy)) {
+              const s = dx >= 0 ? 1 : -1;
+              A.x -= s * ovX * 0.52; B.x += s * ovX * 0.52;
+            } else {
+              const s = dy >= 0 ? 1 : -1;
+              A.y -= s * ovY * 0.54; B.y += s * ovY * 0.54;
+            }
+          }
+        }
+      }
+      nodes.forEach(A => {
+        A.x = Math.max(8 + A.w / 2, Math.min(W - 8 - A.w / 2, A.x));
+        A.y = Math.max(58 + A.h / 2, Math.min(H - 8 - A.h / 2, A.y));
+      });
+      if (!moved) break;
+    }
+
+    const pinsHtml = nodes.map(n => {
+      const isAct = n.g.key === proMapActiveGroupKey ? " is-active" : "";
+      return `<div class="pro-map-tag-group" style="position:absolute;left:${n.x.toFixed(1)}px;top:${n.y.toFixed(1)}px;transform:translate(-50%,-50%);z-index:5">
+        <button type="button" class="pro-map-marker-pill${isAct}" data-map-group-key="${core.esc(n.g.key)}" style="--tag-c:${core.esc(n.tagCol)}" title="${core.esc(n.g.cityLabel)} (${n.g.cards.length} cartão/ões)">
+          ${n.html}
         </button>
-        <span class="pro-map-pin-dot" style="--tag-c:${core.esc(tagCol)}"></span>
+        <span class="pro-map-pin-dot" style="--tag-c:${core.esc(n.tagCol)}"></span>
       </div>`;
     }).join("");
 
@@ -2739,6 +3174,185 @@
     }
   }
 
+  function drawGoogleMapOverlays(groups, { refit = false } = {}) {
+    const map = proMapInstance;
+    const AdvMarker = proMapMarkerClass;
+    if (!map || !AdvMarker) return;
+
+    clearProMapOverlays();
+    if (!groups.length) return;
+
+    const isDark = document.documentElement.getAttribute("data-theme") !== "light";
+    const isMobile = window.innerWidth < 768;
+
+    if (!proMapExploded) {
+      const bounds = new google.maps.LatLngBounds();
+      groups.forEach(g => {
+        const pos = { lat: g.displayLat ?? g.lat, lng: g.displayLng ?? g.lng };
+        bounds.extend(pos);
+
+        const content = document.createElement("div");
+        content.className = "pro-map-tag-group";
+
+        const { tagCol, html } = createClusterMarkerInnerHTML(g);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `pro-map-marker-pill${g.key === proMapActiveGroupKey ? " is-active" : ""}`;
+        btn.dataset.mapGroupKey = g.key;
+        btn.style.setProperty("--tag-c", tagCol);
+        btn.innerHTML = html;
+        btn.title = `${g.cityLabel} (${g.cards.length} ${g.cards.length === 1 ? "cartão" : "cartões"}) — clique para ver resumo`;
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          openProMapInspector({
+            group: g,
+            card: g.cards.length === 1 ? g.cards[0] : null,
+            panMap: true
+          });
+        };
+        content.appendChild(btn);
+
+        const dot = document.createElement("span");
+        dot.className = "pro-map-pin-dot";
+        dot.style.setProperty("--tag-c", tagCol);
+        content.appendChild(dot);
+
+        const marker = new AdvMarker({
+          map,
+          position: pos,
+          content,
+          title: `${g.cityLabel} (${g.cards.length})`,
+          zIndex: g.key === proMapActiveGroupKey ? 20 : 10
+        });
+        proMapMarkers.push(marker);
+      });
+
+      if (refit && groups.length > 1) {
+        map.fitBounds(bounds, 64);
+      }
+      return;
+    }
+
+    // MODO EXPLODIDO: exibe todas as missões separadas com linhas spiderfy até o ponto real da localidade
+    if (refit) {
+      if (groups.length > 1) {
+        const cityBounds = new google.maps.LatLngBounds();
+        groups.forEach(g => cityBounds.extend({ lat: g.lat, lng: g.lng }));
+        map.fitBounds(cityBounds, isMobile ? 66 : 96);
+      } else if (groups.length === 1) {
+        map.panTo({ lat: groups[0].lat, lng: groups[0].lng });
+      }
+    }
+
+    const zoom = Number(map.getZoom?.()) || (groups.length === 1 ? 10 : 5);
+    const { anchors, items } = layoutExplodedPointsPx(
+      groups,
+      g => latLngToWorldPx(g.lat, g.lng, zoom),
+      null,
+      isMobile
+    );
+
+    // 1. Nós centrais (Hubs) nos pontos reais das localidades com múltiplas missões ou deslocadas
+    anchors.forEach(anc => {
+      if (!anc.hasSpread) return;
+      const g = anc.group;
+      const hubWrap = document.createElement("div");
+      hubWrap.className = "pro-map-hub-wrap";
+
+      const hubBtn = document.createElement("button");
+      hubBtn.type = "button";
+      hubBtn.className = `pro-map-hub-node${g.key === proMapActiveGroupKey && !proMapActiveCardId ? " is-active" : ""}`;
+      hubBtn.dataset.mapGroupKey = g.key;
+      hubBtn.textContent = g.cards.length > 1 ? String(g.cards.length) : "";
+      hubBtn.title = `📍 ${g.cityLabel} — ${g.cards.length} ${g.cards.length === 1 ? "missão" : "missões"} (clique para listar)`;
+      hubBtn.onclick = (ev) => {
+        ev.stopPropagation();
+        openProMapInspector({
+          group: g,
+          card: g.cards.length === 1 ? g.cards[0] : null,
+          panMap: false
+        });
+      };
+      hubWrap.appendChild(hubBtn);
+
+      const hubMarker = new AdvMarker({
+        map,
+        position: { lat: g.lat, lng: g.lng },
+        content: hubWrap,
+        title: `${g.cityLabel} (${g.cards.length})`,
+        zIndex: 6
+      });
+      proMapMarkers.push(hubMarker);
+    });
+
+    // 2. Linhas conectoras (Spiderfy) + pílula individual de cada missão
+    items.forEach(it => {
+      const isSpread = it.movedPx > 4 || it.group.cards.length > 1;
+      const pos = isSpread
+        ? worldPxToLatLng(it.x, it.y, zoom)
+        : { lat: it.group.lat, lng: it.group.lng };
+      proMapExplodedPosByCardId.set(it.card.id, pos);
+
+      if (isSpread) {
+        const line = new google.maps.Polyline({
+          path: [{ lat: it.group.lat, lng: it.group.lng }, pos],
+          geodesic: false,
+          strokeColor: it.meta.tagCol || (isDark ? "#38bdf8" : "#2563eb"),
+          strokeOpacity: isDark ? 0.68 : 0.6,
+          strokeWeight: 1.8,
+          clickable: false,
+          map
+        });
+        proMapPolylines.push(line);
+      }
+
+      const content = document.createElement("div");
+      content.className = "pro-map-tag-group pro-map-tag-group--exploded";
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      const isAct = it.card.id === proMapActiveCardId;
+      btn.className = `pro-map-marker-pill pro-map-marker-pill--mission${isAct ? " is-active" : ""}`;
+      btn.dataset.mapCardId = it.card.id;
+      btn.style.setProperty("--tag-c", it.meta.tagCol);
+      btn.innerHTML = it.meta.html;
+      btn.title = it.meta.tooltip;
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        openProMapInspector({
+          group: it.group,
+          card: it.card,
+          panMap: false
+        });
+      };
+      content.appendChild(btn);
+
+      if (!isSpread) {
+        const dot = document.createElement("span");
+        dot.className = "pro-map-pin-dot";
+        dot.style.setProperty("--tag-c", it.meta.tagCol);
+        content.appendChild(dot);
+      }
+
+      const marker = new AdvMarker({
+        map,
+        position: pos,
+        content,
+        title: it.meta.tooltip,
+        zIndex: isAct ? 25 : 12
+      });
+      proMapMarkers.push(marker);
+    });
+
+    if (refit && groups.length > 1) {
+      google.maps.event.addListenerOnce(map, "idle", () => {
+        if (proMapInstance === map && proMapExploded && (Number(map.getZoom?.()) || zoom) !== zoom) {
+          drawGoogleMapOverlays(proMapCachedGroups, { refit: false });
+        }
+      });
+    }
+  }
+
   async function renderProMap(filteredCardsOpt) {
     const canvas = $("#proMapCanvas");
     if (!canvas) return;
@@ -2804,10 +3418,11 @@
     const groups = clusterMapGroupsByProximity([...rawGroupMap.values()]);
     proMapCachedGroups = groups;
 
+    const totalCardsOnMap = groups.reduce((s, g) => s + g.cards.length, 0);
     if ($("#proMapCountBadge")) {
-      const totalCardsOnMap = groups.reduce((s, g) => s + g.cards.length, 0);
       $("#proMapCountBadge").textContent = `Exibindo ${totalCardsOnMap} ${totalCardsOnMap === 1 ? "cartão" : "cartões"} em ${groups.length} ${groups.length === 1 ? "local" : "locais"}`;
     }
+    updateProMapExplodeBtn(totalCardsOnMap);
 
     // Fechar inspector se o cartão/cluster selecionado não estiver mais no filtro atual
     if (proMapActiveGroupKey && !groups.some(g => g.key === proMapActiveGroupKey)) {
@@ -2816,6 +3431,13 @@
 
     // Renderizar Dashboard Analítico Reativo abaixo do mapa
     renderProMapAnalytics(cards, groups);
+
+    if (proMapZoomListener) {
+      try { google.maps.event.removeListener(proMapZoomListener); } catch {}
+      proMapZoomListener = null;
+    }
+    clearTimeout(proMapZoomTimer);
+    clearProMapOverlays();
 
     if (!groups.length || !window.FeriasMaps?.hasKey()) {
       proMapInstance = null;
@@ -2828,6 +3450,7 @@
       if (seq !== proMapRenderSeq) return;
       const { Map } = await google.maps.importLibrary("maps");
       const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
+      proMapMarkerClass = AdvancedMarkerElement;
       const isDark = document.documentElement.getAttribute("data-theme") !== "light";
 
       canvas.innerHTML = "";
@@ -2852,48 +3475,18 @@
         closeProMapInspector();
       });
 
-      const bounds = new google.maps.LatLngBounds();
-      groups.forEach(g => {
-        const pos = { lat: g.displayLat ?? g.lat, lng: g.displayLng ?? g.lng };
-        bounds.extend(pos);
-
-        const content = document.createElement("div");
-        content.className = "pro-map-tag-group";
-
-        const { tagCol, html } = createClusterMarkerInnerHTML(g);
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = `pro-map-marker-pill${g.key === proMapActiveGroupKey ? " is-active" : ""}`;
-        btn.dataset.mapGroupKey = g.key;
-        btn.style.setProperty("--tag-c", tagCol);
-        btn.innerHTML = html;
-        btn.title = `${g.cityLabel} (${g.cards.length} ${g.cards.length === 1 ? "cartão" : "cartões"}) — clique para ver resumo`;
-        btn.onclick = (ev) => {
-          ev.stopPropagation();
-          openProMapInspector({
-            group: g,
-            card: g.cards.length === 1 ? g.cards[0] : null,
-            panMap: true
-          });
-        };
-        content.appendChild(btn);
-
-        const dot = document.createElement("span");
-        dot.className = "pro-map-pin-dot";
-        dot.style.setProperty("--tag-c", tagCol);
-        content.appendChild(dot);
-
-        new AdvancedMarkerElement({
-          map,
-          position: pos,
-          content,
-          title: `${g.cityLabel} (${g.cards.length})`
-        });
+      // Recalcula automaticamente o layout sem sobreposição do modo explodido ao dar zoom in/out
+      proMapZoomListener = map.addListener("zoom_changed", () => {
+        if (!proMapExploded || !proMapCachedGroups.length) return;
+        clearTimeout(proMapZoomTimer);
+        proMapZoomTimer = setTimeout(() => {
+          if (proMapInstance === map && proMapExploded) {
+            drawGoogleMapOverlays(proMapCachedGroups, { refit: false });
+          }
+        }, 90);
       });
 
-      if (groups.length > 1) {
-        map.fitBounds(bounds, 64);
-      }
+      drawGoogleMapOverlays(groups, { refit: true });
     } catch {
       proMapInstance = null;
       renderProMapFallbackSvg(canvas, groups);
@@ -4523,6 +5116,40 @@
 
     // Mapa controls
     if ($("#btnProMapAddCard")) $("#btnProMapAddCard").onclick = () => openProCardModal();
+    if ($("#btnProMapExplode")) {
+      $("#btnProMapExplode").onclick = () => {
+        proMapExploded = !proMapExploded;
+        const totalCards = proMapCachedGroups.reduce((s, g) => s + g.cards.length, 0);
+        updateProMapExplodeBtn(totalCards);
+        if (proMapExploded && !proMapActiveCardId) {
+          closeProMapInspector();
+        }
+        if (proMapInstance && proMapMarkerClass && proMapCachedGroups.length) {
+          drawGoogleMapOverlays(proMapCachedGroups, { refit: true });
+        } else {
+          const canvas = $("#proMapCanvas");
+          if (canvas) renderProMapFallbackSvg(canvas, proMapCachedGroups);
+        }
+        core.toast(proMapExploded
+          ? `💥 Mapa explodido: ${totalCards} ${totalCards === 1 ? "missão separada" : "missões separadas"}`
+          : `📍 Mapa agrupado em ${proMapCachedGroups.length} ${proMapCachedGroups.length === 1 ? "local" : "locais"}`
+        );
+      };
+    }
+    let proMapResizeTimer = null;
+    window.addEventListener("resize", () => {
+      if (!$("#view-pro-map")?.classList.contains("active")) return;
+      clearTimeout(proMapResizeTimer);
+      proMapResizeTimer = setTimeout(() => {
+        if (!proMapCachedGroups.length) return;
+        if (proMapInstance && proMapMarkerClass && proMapExploded) {
+          drawGoogleMapOverlays(proMapCachedGroups, { refit: false });
+        } else if (!proMapInstance) {
+          const canvas = $("#proMapCanvas");
+          if (canvas) renderProMapFallbackSvg(canvas, proMapCachedGroups);
+        }
+      }, 140);
+    });
     if ($("#proMapQuickAssignee")) {
       $("#proMapQuickAssignee").onchange = e => {
         proFilterAssignee = e.target.value || "";

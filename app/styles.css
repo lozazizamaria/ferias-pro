@@ -4234,6 +4234,80 @@ dialog.import-cal-dialog {
   width: 100%;
   min-width: 0;
 }
+.pro-map-float-controls {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 22;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.pro-map-float-controls[hidden] {
+  display: none !important;
+}
+.pro-map-explode-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f8fafc;
+  border: 1.5px solid rgba(56, 189, 248, 0.55);
+  box-shadow: 0 8px 22px rgba(2, 8, 23, 0.42);
+  backdrop-filter: blur(8px);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, border-color 0.14s ease;
+}
+html[data-theme="light"] .pro-map-explode-btn {
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f172a;
+  border-color: rgba(37, 99, 235, 0.4);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.18);
+}
+.pro-map-explode-btn:hover {
+  transform: translateY(-1px);
+  border-color: #38bdf8;
+  box-shadow: 0 10px 26px rgba(2, 8, 23, 0.52);
+}
+.pro-map-explode-btn.is-exploded {
+  background: linear-gradient(135deg, #2563eb, #0284c7);
+  color: #ffffff;
+  border-color: #7dd3fc;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25), 0 8px 22px rgba(2, 132, 199, 0.45);
+}
+.pro-map-explode-ico {
+  font-size: 0.92rem;
+  line-height: 1;
+}
+.pro-map-explode-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.2);
+  color: #7dd3fc;
+  font-size: 0.71rem;
+  font-weight: 800;
+  line-height: 1;
+}
+html[data-theme="light"] .pro-map-explode-badge {
+  background: rgba(37, 99, 235, 0.13);
+  color: #1d4ed8;
+}
+.pro-map-explode-btn.is-exploded .pro-map-explode-badge {
+  background: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+}
 .pro-map-canvas {
   width: 100%;
   height: 65vh;
@@ -4323,6 +4397,74 @@ html[data-theme="light"] .pro-map-tag {
   border: 2px solid #ffffff;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
+.pro-map-tag-group--exploded {
+  transform: translateY(50%);
+}
+.pro-map-marker-pill--mission {
+  padding: 4px 10px;
+  font-size: 0.74rem;
+  gap: 5px;
+  max-width: 235px;
+}
+.pro-map-mission-dt {
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+  flex-shrink: 0;
+}
+html[data-theme="light"] .pro-map-mission-dt {
+  background: rgba(15, 23, 42, 0.08);
+  color: #475569;
+}
+.pro-map-hub-wrap {
+  transform: translateY(50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pro-map-hub-node {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background: #0284c7;
+  color: #ffffff;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(2, 8, 23, 0.48);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+}
+.pro-map-hub-node:empty {
+  width: 13px;
+  height: 13px;
+  background: #38bdf8;
+}
+.pro-map-hub-node:hover {
+  transform: scale(1.16);
+  background: #2563eb;
+}
+.pro-map-hub-node.is-active {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.34), 0 4px 12px rgba(2, 8, 23, 0.55);
+  transform: scale(1.18);
+}
+.pro-map-spider-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
 
 /* INSPECTOR DE CARTÃO / CLUSTER (Popover Desktop / Bottom Sheet Mobile) */
 .pro-map-inspector-backdrop {
@@ -4336,16 +4478,19 @@ html[data-theme="light"] .pro-map-tag {
   max-height: calc(100% - 28px);
   display: flex;
   flex-direction: column;
-  background: var(--card);
-  border: 1px solid var(--border2);
+  background: var(--bg2);
+  border: 1px solid var(--border-strong);
   border-radius: 14px;
-  box-shadow: 0 18px 42px rgba(2, 8, 23, 0.46);
-  z-index: 35;
+  box-shadow: 0 18px 42px rgba(2, 8, 23, 0.56);
+  z-index: 45;
   overflow: hidden;
   animation: proPopIn 0.16s ease-out;
 }
 .pro-map-inspector[hidden] {
   display: none !important;
+}
+.pro-map-insp-drag {
+  display: none;
 }
 .pro-map-insp-head {
   display: flex;
@@ -4354,7 +4499,7 @@ html[data-theme="light"] .pro-map-tag {
   gap: 8px;
   padding: 12px 14px 10px;
   border-bottom: 1px solid var(--border);
-  background: var(--bg2);
+  background: var(--bg3);
 }
 .pro-map-insp-head-left {
   display: flex;
@@ -4364,7 +4509,7 @@ html[data-theme="light"] .pro-map-tag {
   min-width: 0;
 }
 .pro-map-insp-back {
-  background: var(--card);
+  background: var(--bg2);
   border: 1px solid var(--border);
   color: var(--text-strong);
   border-radius: 7px;
@@ -4403,11 +4548,11 @@ html[data-theme="light"] .pro-map-tag {
 }
 .pro-map-insp-close:hover {
   color: var(--text-strong);
-  border-color: var(--border2);
+  border-color: var(--border-strong);
 }
 .pro-map-insp-title {
   margin: 0;
-  padding: 11px 14px 4px;
+  padding: 2px 0 0;
   font-size: 0.98rem;
   font-weight: 800;
   color: var(--text-strong);
@@ -4421,14 +4566,15 @@ html[data-theme="light"] .pro-map-tag {
   border-bottom: 1px solid var(--border);
 }
 .pro-map-insp-body {
-  padding: 8px 14px 12px;
+  padding: 10px 14px 12px;
   display: grid;
-  gap: 8px;
+  gap: 9px;
   overflow-y: auto;
+  background: var(--bg2);
 }
 .pro-map-insp-row {
   display: grid;
-  grid-template-columns: 98px minmax(0, 1fr);
+  grid-template-columns: 110px minmax(0, 1fr);
   gap: 8px;
   align-items: baseline;
   font-size: 0.8rem;
@@ -4462,7 +4608,11 @@ html[data-theme="light"] .pro-map-tag {
 .pro-map-insp-foot {
   padding: 10px 14px 12px;
   border-top: 1px solid var(--border);
-  background: var(--bg2);
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .pro-map-cluster-list {
   padding: 8px 10px 12px;
@@ -4470,6 +4620,7 @@ html[data-theme="light"] .pro-map-tag {
   gap: 6px;
   overflow-y: auto;
   max-height: 320px;
+  background: var(--bg2);
 }
 .pro-map-cluster-item {
   width: 100%;
@@ -4557,7 +4708,7 @@ html[data-theme="light"] .pro-map-tag {
   gap: 12px;
 }
 .pro-map-kpi-card {
-  background: var(--card);
+  background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 13px;
   padding: 13px 15px;
@@ -4875,6 +5026,23 @@ html[data-theme="light"] .pro-map-tag {
     min-height: 310px;
     max-height: 460px;
   }
+  .pro-map-float-controls {
+    top: 10px;
+    left: 10px;
+  }
+  .pro-map-explode-btn {
+    padding: 6px 11px;
+    font-size: 0.76rem;
+    gap: 5px;
+  }
+  .pro-map-marker-pill--mission {
+    padding: 3px 8px;
+    font-size: 0.7rem;
+    max-width: 162px;
+  }
+  .pro-map-marker-pill--mission .pro-map-marker-txt {
+    max-width: 122px;
+  }
 
   /* Bottom Sheet para resumo do cartão / cluster no Mobile */
   .pro-map-inspector-backdrop {
@@ -4897,8 +5065,18 @@ html[data-theme="light"] .pro-map-tag {
     max-height: 78vh;
     border-radius: 18px 18px 0 0;
     border-bottom: 0;
+    background: var(--bg2);
     z-index: 130;
-    box-shadow: 0 -12px 36px rgba(2, 8, 23, 0.55);
+    box-shadow: 0 -12px 36px rgba(2, 8, 23, 0.65);
+  }
+  .pro-map-insp-drag {
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    margin: 8px auto 0;
+    flex-shrink: 0;
   }
 
   /* Dashboard do Mapa no Mobile: KPIs 2 colunas, Gráficos 1 coluna, Lista em Cards */

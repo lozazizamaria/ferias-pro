@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=39">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=39">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=39">
+<link rel="manifest" href="/manifest.webmanifest?v=40">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=40">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=40">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=39">
+<link rel="stylesheet" href="styles.css?v=40">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=39" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=40" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=39" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=40" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -1098,6 +1098,13 @@
 
       <div class="card pro-map-card" id="proMapViewportCard">
         <div class="pro-map-stage">
+          <div class="pro-map-float-controls" id="proMapFloatControls" hidden>
+            <button type="button" class="pro-map-explode-btn" id="btnProMapExplode" aria-pressed="false" title="Expandir e mostrar todas as missões separadas no mapa de uma só vez">
+              <span class="pro-map-explode-ico" aria-hidden="true">💥</span>
+              <span class="pro-map-explode-lbl">Explodir mapa</span>
+              <span class="pro-map-explode-badge" id="proMapExplodeBadge" hidden></span>
+            </button>
+          </div>
           <div id="proMapCanvas" class="pro-map-canvas" aria-label="Mapa de eventos e destinos sem sobreposição"></div>
           <div id="proMapInspectorBackdrop" class="pro-map-inspector-backdrop" hidden></div>
           <aside id="proMapInspector" class="pro-map-inspector" aria-live="polite" hidden></aside>
@@ -2807,15 +2814,15 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=39"></script>
-<script src="vehicles.js?v=39"></script>
-<script src="countries.js?v=39"></script>
-<script src="data.js?v=39"></script>
-<script src="maps.js?v=39"></script>
-<script src="calendar.js?v=39"></script>
-<script src="report.js?v=39"></script>
-<script src="api.js?v=39"></script>
-<script src="pro.js?v=39"></script>
-<script src="app.js?v=39"></script>
+<script src="config.example.js?v=40"></script>
+<script src="vehicles.js?v=40"></script>
+<script src="countries.js?v=40"></script>
+<script src="data.js?v=40"></script>
+<script src="maps.js?v=40"></script>
+<script src="calendar.js?v=40"></script>
+<script src="report.js?v=40"></script>
+<script src="api.js?v=40"></script>
+<script src="pro.js?v=40"></script>
+<script src="app.js?v=40"></script>
 </body>
 </html>
