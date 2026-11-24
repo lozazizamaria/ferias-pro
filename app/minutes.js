@@ -12,6 +12,8 @@
   let activeCardId = "";
   let activeTripRef = null;
   let activeMinuteId = "";
+  let standaloneDraft = null;
+  let standaloneLinkMode = "existing";
   let autoSaveTimer = null;
   let lastFocusedBlock = null;
   let pendingQuickCardText = "";
@@ -96,13 +98,167 @@
   }
 
   function getActiveContext() {
-    if (!activeCardId || !host) return null;
+    if (!host) return null;
+    if (!activeCardId) {
+      if (standaloneDraft) {
+        return { trip: host.core.getActiveTrip(), data: host.core.getState(), card: null, activity: null, minute: standaloneDraft, isStandalone: true };
+      }
+      return null;
+    }
     const ctx = host.findCardContext(activeCardId);
     if (!ctx) return null;
     const a = ctx.activity;
     if (!Array.isArray(a.minutes)) a.minutes = [];
     const minute = a.minutes.find(m => m.id === activeMinuteId) || null;
-    return { ...ctx, card: a, minute };
+    return { ...ctx, card: a, minute, isStandalone: false };
+  }
+
+  function populateStandaloneCardLinkUI(filterTxt = "") {
+    const sel = $("#pm-linkCardSelect");
+    const colSel = $("#pm-newCardCol");
+    const cards = host?.getSortedActivities ? host.getSortedActivities() : [];
+    const cols = host?.getMergedColumns ? host.getMergedColumns() : [];
+    if (sel) {
+      const q = String(filterTxt || "").trim().toLowerCase();
+      const prev = sel.value || "";
+      const filtered = q ? cards.filter(c => String(c.name || "").toLowerCase().includes(q) || String(c.location || "").toLowerCase().includes(q)) : cards;
+      sel.innerHTML = `<option value="">— Selecione um cartão existente (${filtered.length}) —</option>`
+        + filtered.map(c => `<option value="${esc(c.id)}">${esc(c.name)}${c.columnTitle ? ` (${esc(c.columnTitle)})` : ""}</option>`).join("");
+      if (prev && filtered.some(c => c.id === prev)) sel.value = prev;
+    }
+    if (colSel && !colSel.options.length) {
+      colSel.innerHTML = cols.map(c => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join("");
+    }
+  }
+
+  function setStandaloneLinkMode(mode) {
+    standaloneLinkMode = mode === "new" ? "new" : "existing";
+    $("#pm-cardLinkModeSeg")?.querySelectorAll("button").forEach(b => {
+      b.classList.toggle("active", b.dataset.pmLinkMode === standaloneLinkMode);
+    });
+    if ($("#pm-linkExistingWrap")) $("#pm-linkExistingWrap").hidden = standaloneLinkMode !== "existing";
+    if ($("#pm-linkNewWrap")) $("#pm-linkNewWrap").hidden = standaloneLinkMode !== "new";
+  }
+
+  function ensureStandaloneLinked(explicit = false) {
+    if (activeCardId && activeMinuteId) return getActiveContext();
+    if (!standaloneDraft || !host) return null;
+    // Sincronizar campos atuais no rascunho antes de vincular
+    standaloneDraft.title = ($("#pm-title")?.value || "").trim() || "Ata de Reunião";
+    standaloneDraft.meetingDate = $("#pm-meetingDate")?.value || "";
+    standaloneDraft.location = ($("#pm-location")?.value || "").trim();
+    standaloneDraft.html = $("#pm-editor")?.innerHTML || "<p><br></p>";
+    standaloneDraft.updatedAt = new Date().toISOString();
+
+    if (standaloneLinkMode === "existing") {
+      const pickedId = $("#pm-linkCardSelect")?.value || "";
+      if (!pickedId) {
+        if (explicit) toast("⚠️ Selecione um cartão existente ou escolha 'Criar novo cartão' para salvar a ata.");
+        return null;
+      }
+      const ctx = host.findCardContext(pickedId);
+      if (!ctx) return null;
+      if (ctx.trip?.role === "viewer") {
+        if (explicit) toast("👁️ Este cartão pertence a um projeto somente visualização.");
+        return null;
+      }
+      if (!Array.isArray(ctx.activity.minutes)) ctx.activity.minutes = [];
+      ctx.activity.minutes.unshift(standaloneDraft);
+      activeCardId = ctx.activity.id;
+      activeTripRef = ctx.trip;
+      activeMinuteId = standaloneDraft.id;
+      standaloneDraft = null;
+      if ($("#pm-cardLinkBox")) $("#pm-cardLinkBox").hidden = true;
+      if ($("#pm-topCardBadge")) $("#pm-topCardBadge").textContent = `🗂️ ${ctx.activity.name || "Cartão"}`;
+      return getActiveContext();
+    }
+
+    // Modo: Criar um novo cartão na lista escolhida
+    const trip = host.core.getActiveTrip();
+    if (!trip || trip.role === "viewer") {
+      if (explicit) toast("👁️ Projeto atual é somente para visualização.");
+      return null;
+    }
+    const cols = host.getMergedColumns ? host.getMergedColumns() : [];
+    const colId = $("#pm-newCardCol")?.value || cols[0]?.id || "";
+    const newCardTitle = ($("#pm-newCardTitle")?.value || "").trim() || standaloneDraft.title || "Novo Cartão";
+    const mDateIso = String(standaloneDraft.meetingDate || "").slice(0, 10) || host.core.fmtISO(new Date());
+    const newCardId = uid();
+    const parts = Array.isArray(standaloneDraft.participants) ? standaloneDraft.participants : [];
+    const newCard = {
+      id: newCardId,
+      name: newCardTitle,
+      type: "Reunião",
+      columnId: colId,
+      start: mDateIso,
+      end: mDateIso,
+      startTime: String(standaloneDraft.meetingDate || "").slice(11, 16) || "",
+      priority: "Média",
+      progress: 0,
+      location: standaloneDraft.location || "",
+      assignee: parts[0] || "",
+      assigneesList: parts.map(p => ({ name: p, travels: false })),
+      minutes: [standaloneDraft],
+      attachments: [],
+      subtasks: []
+    };
+    if (!Array.isArray(trip.data.activities)) trip.data.activities = [];
+    trip.data.activities.push(newCard);
+    activeCardId = newCardId;
+    activeTripRef = trip;
+    activeMinuteId = standaloneDraft.id;
+    standaloneDraft = null;
+    if ($("#pm-cardLinkBox")) $("#pm-cardLinkBox").hidden = true;
+    if ($("#pm-topCardBadge")) $("#pm-topCardBadge").textContent = `🗂️ ${newCardTitle}`;
+    return getActiveContext();
+  }
+
+  function openStandaloneNewMinute() {
+    if (!host) return;
+    bindEvents();
+    const trip = host.core.getActiveTrip();
+    if (trip?.role === "viewer") return toast("👁️ Projeto compartilhado somente para visualização.");
+
+    activeCardId = "";
+    activeTripRef = trip;
+    activeMinuteId = "";
+    standaloneDraft = normalizeMinute({
+      id: uid(),
+      title: "Nova Ata de Reunião",
+      meetingDate: `${host.core.fmtISO(new Date())}T${fmtTimeNow()}`,
+      location: "",
+      participants: [],
+      html: TEMPLATES.executive()
+    }, "Reunião");
+
+    if ($("#pm-topCardBadge")) $("#pm-topCardBadge").textContent = "📝 Nova Ata (vincule a um cartão)";
+    if ($("#pm-title")) $("#pm-title").value = standaloneDraft.title;
+    if ($("#pm-meetingDate")) $("#pm-meetingDate").value = standaloneDraft.meetingDate.slice(0, 16);
+    if ($("#pm-location")) $("#pm-location").value = "";
+    if ($("#pm-linkCardSearch")) $("#pm-linkCardSearch").value = "";
+    if ($("#pm-newCardTitle")) $("#pm-newCardTitle").value = "";
+    if ($("#pm-newCardCol")) $("#pm-newCardCol").innerHTML = "";
+    populateStandaloneCardLinkUI("");
+    const hasCards = (host.getSortedActivities ? host.getSortedActivities().length : 0) > 0;
+    setStandaloneLinkMode(hasCards ? "existing" : "new");
+    if ($("#pm-cardLinkBox")) $("#pm-cardLinkBox").hidden = false;
+    if ($("#pm-headerBox")) $("#pm-headerBox").open = true;
+
+    populateParticipantsPicker(standaloneDraft);
+    renderParticipantsChips(standaloneDraft);
+    const ed = $("#pm-editor");
+    if (ed) ed.innerHTML = standaloneDraft.html;
+    updateWordCount();
+    updateHistoryBadge(standaloneDraft);
+    renderMinuteAttachments(standaloneDraft);
+    if ($("#pm-saveStatus")) $("#pm-saveStatus").textContent = "Selecione um cartão ou clique em Salvar Ata";
+    hideFloatingMenus();
+
+    const dlg = $("#proMinuteEditorModal");
+    if (dlg) {
+      dlg.classList.remove("is-focus-mode");
+      if (!dlg.open) dlg.showModal();
+    }
   }
 
   /* ---------- LISTA DE ATAS DENTRO DO MODAL DE CARTÃO ---------- */
@@ -207,6 +363,8 @@
     activeCardId = cardId;
     activeTripRef = ctx.trip;
     activeMinuteId = min.id;
+    standaloneDraft = null;
+    if ($("#pm-cardLinkBox")) $("#pm-cardLinkBox").hidden = true;
 
     if ($("#pm-topCardBadge")) $("#pm-topCardBadge").textContent = `🗂️ ${ctx.activity.name || "Cartão"}`;
     if ($("#pm-title")) $("#pm-title").value = min.title || "";
@@ -279,13 +437,31 @@
     el.hidden = !n;
   }
 
-  function scheduleAutoSave(immediate = false) {
+  function scheduleAutoSave(immediate = false, explicitFeedback = false) {
     clearTimeout(autoSaveTimer);
     if ($("#pm-saveStatus")) $("#pm-saveStatus").textContent = "Salvando...";
     const run = async () => {
-      const ctx = getActiveContext();
-      if (!ctx?.minute) return;
-      ctx.minute.title = ($("#pm-title")?.value || "").trim() || `Ata - ${ctx.card.name || "Reunião"}`;
+      let ctx = getActiveContext();
+      if (ctx?.isStandalone) {
+        // No modo +Ata, só vincula automaticamente no auto-save se o usuário já escolheu um cartão existente;
+        // se estiver em "Criar novo cartão", vincula ao clicar em "Salvar Ata" (explicitFeedback = true).
+        if (standaloneLinkMode === "existing" && $("#pm-linkCardSelect")?.value) {
+          ctx = ensureStandaloneLinked(false);
+        } else if (explicitFeedback) {
+          ctx = ensureStandaloneLinked(true);
+        } else {
+          if (standaloneDraft) {
+            standaloneDraft.title = ($("#pm-title")?.value || "").trim() || "Nova Ata de Reunião";
+            standaloneDraft.meetingDate = $("#pm-meetingDate")?.value || "";
+            standaloneDraft.location = ($("#pm-location")?.value || "").trim();
+            standaloneDraft.html = $("#pm-editor")?.innerHTML || "<p><br></p>";
+          }
+          if ($("#pm-saveStatus")) $("#pm-saveStatus").textContent = "Rascunho — vincule um cartão ou clique em Salvar Ata";
+          return false;
+        }
+      }
+      if (!ctx?.minute || !ctx?.trip) return false;
+      ctx.minute.title = ($("#pm-title")?.value || "").trim() || `Ata - ${ctx.card?.name || "Reunião"}`;
       ctx.minute.meetingDate = $("#pm-meetingDate")?.value || "";
       ctx.minute.location = ($("#pm-location")?.value || "").trim();
       ctx.minute.html = $("#pm-editor")?.innerHTML || "<p><br></p>";
@@ -293,9 +469,22 @@
       await host.core.saveTripRecord(ctx.trip, "");
       if ($("#pm-saveStatus")) $("#pm-saveStatus").textContent = `✓ Salvo às ${fmtTimeNow()}`;
       renderCardMinutesList(activeCardId);
+      if (explicitFeedback) {
+        const btn = $("#btnPmSave");
+        if (btn) {
+          btn.classList.add("is-saved");
+          btn.textContent = "✓ Ata salva!";
+          setTimeout(() => {
+            btn.classList.remove("is-saved");
+            btn.textContent = "💾 Salvar Ata";
+          }, 2200);
+        }
+        toast("✅ Ata salva com sucesso!");
+      }
+      return true;
     };
-    if (immediate) run();
-    else autoSaveTimer = setTimeout(run, 800);
+    if (immediate) return run();
+    autoSaveTimer = setTimeout(run, 800);
   }
 
   function pushVersionSnapshot(minute, label) {
@@ -350,7 +539,10 @@
       b.onclick = () => {
         const ctx = getActiveContext();
         if (!ctx?.minute) return;
-        ctx.minute.attachments.splice(parseInt(b.dataset.pmAttDel, 10), 1);
+        const idx = parseInt(b.dataset.pmAttDel, 10);
+        const att = ctx.minute.attachments[idx];
+        if (!confirm(`Excluir o documento "${att?.fileName || "anexo"}" desta ata?`)) return;
+        ctx.minute.attachments.splice(idx, 1);
         renderMinuteAttachments(ctx.minute);
         scheduleAutoSave(true);
       };
@@ -1026,9 +1218,29 @@
       if ($("#pm-exportMenu")) $("#pm-exportMenu").hidden = true;
     };
 
+    if ($("#btnPmSave")) {
+      $("#btnPmSave").onclick = () => {
+        closeDropdowns();
+        scheduleAutoSave(true, true);
+      };
+    }
+    $("#pm-cardLinkModeSeg")?.querySelectorAll("button").forEach(b => {
+      b.onclick = () => setStandaloneLinkMode(b.dataset.pmLinkMode);
+    });
+    if ($("#pm-linkCardSearch")) {
+      $("#pm-linkCardSearch").oninput = e => populateStandaloneCardLinkUI(e.target.value);
+    }
+    if ($("#pm-linkCardSelect")) {
+      $("#pm-linkCardSelect").onchange = () => {
+        if ($("#pm-linkCardSelect").value && standaloneDraft) {
+          ensureStandaloneLinked(false);
+          scheduleAutoSave(true);
+        }
+      };
+    }
     if ($("#btnPmClose")) {
       $("#btnPmClose").onclick = () => {
-        scheduleAutoSave(true);
+        if (activeCardId) scheduleAutoSave(true);
         closeDropdowns();
         $("#proMinuteEditorModal")?.close();
       };
@@ -1389,6 +1601,7 @@
     normalizeMinute,
     renderCardMinutesList,
     createNewMinuteForCard,
+    openStandaloneNewMinute,
     openMinuteEditor,
     exportMinute
   };

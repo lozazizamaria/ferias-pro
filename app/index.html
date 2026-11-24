@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=46">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=46">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=46">
+<link rel="manifest" href="/manifest.webmanifest?v=47">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=47">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=47">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=46">
+<link rel="stylesheet" href="styles.css?v=47">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=46" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=47" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=46" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=47" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -163,6 +163,10 @@
         <button class="btn primary small btn-add-top" id="btnAdd" type="button" title="Adicionar evento ou atividade">
           <svg class="plus-ico" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
           <span class="btn-text" id="btnAddLabel">Evento</span>
+        </button>
+        <button class="btn ghost small btn-add-minute-top" id="btnAddMinuteTop" type="button" title="Criar nova Ata de Reunião" hidden>
+          <svg class="plus-ico" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
+          <span class="btn-text">Ata</span>
         </button>
         <div class="dropdown">
           <button class="btn ghost small" id="btnMenu" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções">⋯</button>
@@ -3299,13 +3303,17 @@
           <span>Carteira</span>
         </button>
       </div>
-      <button type="button" class="icon-btn modal-close" id="btnProCardCloseX" aria-label="Fechar">✕</button>
+      <div class="modal-head-right">
+        <button type="button" class="btn primary small" id="btnProCardHeadSave" title="Salvar alterações do cartão">💾 Salvar</button>
+        <button type="button" class="btn ghost small" id="btnProCardHeadNewMinute" title="Criar nova Ata de Reunião vinculada a este cartão">📝 Nova Ata</button>
+        <button type="button" class="icon-btn modal-close" id="btnProCardCloseX" aria-label="Fechar">✕</button>
+      </div>
     </div>
 
     <!-- IA GEMINI NO CARTÃO PROFISSIONAL -->
     <div class="modal-ai-strip" id="proCardAiStrip">
       <div class="modal-ai-top">
-        <span>✨ Preencher cartão com Gemini IA (áudio, print de e-mail/nota ou descrição)</span>
+        <span>✨ Preencher com IA (áudio, print ou descrição)</span>
         <div class="inline-actions">
           <button type="button" class="btn ai-pill small" id="btnProCardAiUpload">📷 Imagem / PDF</button>
           <button type="button" class="btn ghost small" id="btnProCardAiAudio">🎙️ Áudio</button>
@@ -3714,8 +3722,9 @@
       </div>
       <button type="button" class="btn ghost small" id="btnPmHistory" title="Ver histórico de versões e restaurar">🕘 Histórico <span class="gantt-pop-count" id="pm-historyCount" hidden></span></button>
       <button type="button" class="btn ghost small" id="btnPmSlides" title="Gerar apresentação clean (fundo branco, letra preta)">📊 Criar Apresentação</button>
+      <button type="button" class="btn primary small" id="btnPmSave" title="Salvar Ata agora (o salvamento automático também continua ativo)">💾 Salvar Ata</button>
       <div class="pm-dd-host">
-        <button type="button" class="btn primary small" id="btnPmExportMenu" aria-expanded="false">⬇️ Baixar / Exportar ▾</button>
+        <button type="button" class="btn ghost small" id="btnPmExportMenu" aria-expanded="false">⬇️ Baixar / Exportar ▾</button>
         <div class="pm-dd-menu pm-export-menu" id="pm-exportMenu" hidden>
           <div class="pm-dd-sec-title">📄 Ata Simples (somente esta ata)</div>
           <button type="button" data-pm-exp="simple:docx">📘 Word (.docx) — Editável</button>
@@ -3743,6 +3752,23 @@
       </div>
     </summary>
     <div class="pm-header-grid">
+      <div class="pm-card-link-box span4" id="pm-cardLinkBox" hidden>
+        <div class="pm-card-link-head">
+          <strong>🗂️ Vínculo com Cartão</strong>
+          <div class="seg" id="pm-cardLinkModeSeg" role="group" aria-label="Modo de vínculo com cartão">
+            <button type="button" class="active" data-pm-link-mode="existing">🔗 Cartão existente</button>
+            <button type="button" data-pm-link-mode="new">➕ Criar novo cartão</button>
+          </div>
+        </div>
+        <div class="pm-card-link-row" id="pm-linkExistingWrap">
+          <input type="search" id="pm-linkCardSearch" placeholder="🔎 Filtrar cartões existentes..." autocomplete="off">
+          <select id="pm-linkCardSelect" aria-label="Selecionar cartão existente"></select>
+        </div>
+        <div class="pm-card-link-row" id="pm-linkNewWrap" hidden>
+          <input type="text" id="pm-newCardTitle" placeholder="Título do novo cartão (deixe vazio para usar o título da ata)...">
+          <select id="pm-newCardCol" aria-label="Lista do novo cartão"></select>
+        </div>
+      </div>
       <label class="pm-hfield span2">
         <span>Título da Ata</span>
         <input type="text" id="pm-title" placeholder="Ex: Ata - Reunião de Alinhamento">
@@ -3941,16 +3967,16 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=46"></script>
-<script src="vehicles.js?v=46"></script>
-<script src="countries.js?v=46"></script>
-<script src="data.js?v=46"></script>
-<script src="maps.js?v=46"></script>
-<script src="calendar.js?v=46"></script>
-<script src="report.js?v=46"></script>
-<script src="api.js?v=46"></script>
-<script src="minutes.js?v=46"></script>
-<script src="pro.js?v=46"></script>
-<script src="app.js?v=46"></script>
+<script src="config.example.js?v=47"></script>
+<script src="vehicles.js?v=47"></script>
+<script src="countries.js?v=47"></script>
+<script src="data.js?v=47"></script>
+<script src="maps.js?v=47"></script>
+<script src="calendar.js?v=47"></script>
+<script src="report.js?v=47"></script>
+<script src="api.js?v=47"></script>
+<script src="minutes.js?v=47"></script>
+<script src="pro.js?v=47"></script>
+<script src="app.js?v=47"></script>
 </body>
 </html>

@@ -5136,6 +5136,7 @@
           const idx = parseInt(btn.dataset.tfRankDel, 10);
           const tf = ensureWritableTravelFinanceConfig(st);
           if (tf.ranks.length <= 1) return core.toast("Mantenha ao menos 1 posto/graduação na tabela.");
+          if (!confirm(`Excluir o posto/graduação "${tf.ranks[idx]?.name || ""}" da tabela?`)) return;
           tf.ranks.splice(idx, 1);
           core.save("🗑️ Posto/Graduação removido da tabela");
         };
@@ -7669,7 +7670,12 @@
       });
       root.querySelectorAll("[data-pcedit]").forEach(b => { b.onclick = () => core.openCheckModal(b.dataset.pcedit); });
       root.querySelectorAll("[data-pcdel]").forEach(b => {
-        b.onclick = () => { st.checklist = st.checklist.filter(x => x.id !== b.dataset.pcdel); core.save("Item removido"); };
+        b.onclick = () => {
+          const it = (st.checklist || []).find(x => x.id === b.dataset.pcdel);
+          if (!confirm(`Excluir o item "${it?.item || "selecionado"}" do checklist?`)) return;
+          st.checklist = st.checklist.filter(x => x.id !== b.dataset.pcdel);
+          core.save("🗑️ Item removido do checklist");
+        };
       });
     };
     let draggingId = null;
@@ -7752,7 +7758,10 @@
     });
     listEl.querySelectorAll("[data-sub-del]").forEach(btn => {
       btn.onclick = () => {
-        proModalSubtasks.splice(parseInt(btn.dataset.subDel, 10), 1);
+        const idx = parseInt(btn.dataset.subDel, 10);
+        const sub = proModalSubtasks[idx];
+        if (!confirm(`Excluir a subtarefa "${sub?.text || ""}"?`)) return;
+        proModalSubtasks.splice(idx, 1);
         renderProModalSubtasks();
       };
     });
@@ -7777,6 +7786,7 @@
       b.onclick = async () => {
         const idx = parseInt(b.dataset.pattDel, 10);
         const att = proModalAttachments[idx];
+        if (!confirm(`Excluir o anexo "${att?.fileName || att?.url || "arquivo"}"?`)) return;
         if (att && att.id && !att.isLink) {
           await window.FeriasApi.deleteAttachment(att.id).catch(() => {});
         }
@@ -7959,6 +7969,7 @@
   function deleteProCustomType(typeId) {
     const active = core.getActiveTrip();
     if (active?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+    if (!confirm(`Excluir o tipo de cartão "${typeId}"? Cartões existentes desse tipo serão movidos para "Outro".`)) return;
     const st = core.getState();
     st.customCardTypes = (st.customCardTypes || []).filter(t => t.id !== typeId);
     let reassigned = 0;
@@ -8094,6 +8105,8 @@
     box.querySelectorAll("[data-tk-del]").forEach(btn => {
       btn.onclick = () => {
         const i = parseInt(btn.dataset.tkDel, 10);
+        const tk = proModalTickets[i];
+        if (!confirm(`Excluir o bilhete "${tk?.fileName || "bilhete"}"?`)) return;
         proModalTickets.splice(i, 1);
         renderProModalTicketsList();
       };
@@ -8271,6 +8284,8 @@
     box.querySelectorAll("[data-seg-del]").forEach(btn => {
       btn.onclick = () => {
         const i = parseInt(btn.dataset.segDel, 10);
+        const s = proModalSegments[i];
+        if (!confirm(`Excluir o trecho "${s?.origin || "Origem"} → ${s?.destination || "Destino"}"?`)) return;
         proModalSegments.splice(i, 1);
         if (proEditingSegmentIdx === i) proEditingSegmentIdx = -1;
         else if (proEditingSegmentIdx > i) proEditingSegmentIdx--;
@@ -8797,6 +8812,8 @@
     box.querySelectorAll("[data-ex-asg-del]").forEach(btn => {
       btn.onclick = () => {
         const i = parseInt(btn.dataset.exAsgDel, 10);
+        const nm = proModalExtraAssignees[i]?.name || "este responsável";
+        if (!confirm(`Remover "${nm}" deste cartão?`)) return;
         proModalExtraAssignees.splice(i, 1);
         renderProModalExtraAssignees();
       };
@@ -9095,6 +9112,7 @@
     const ctx = findProCardContext(id);
     if (!ctx) return;
     if (ctx.trip?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+    if (!confirm(`Excluir permanentemente o cartão "${ctx.activity?.name || "Sem título"}"?`)) return;
     ctx.data.activities = (ctx.data.activities || []).filter(x => x.id !== id);
     core.saveTripRecord(ctx.trip, "🗑️ Cartão removido");
   }
@@ -9219,7 +9237,10 @@
     const fallback = st.columns.find(c => c.id !== colId);
     if (!target || !fallback) return;
     const count = (st.activities || []).filter(a => a.columnId === colId).length;
-    if (count > 0 && !confirm(`Remover a lista "${target.title}" e mover ${count} cartão(ões) para "${fallback.title}"?`)) return;
+    const msg = count > 0
+      ? `Excluir a lista "${target.title}" e mover ${count} cartão(ões) para "${fallback.title}"?`
+      : `Excluir a lista "${target.title}"?`;
+    if (!confirm(msg)) return;
     (st.activities || []).forEach(a => { if (a.columnId === colId) a.columnId = fallback.id; });
     st.columns = st.columns.filter(c => c.id !== colId);
     core.save(`🗑️ Lista "${target.title}" removida`);
@@ -9629,6 +9650,24 @@
           return core.toast("⚠️ Salve o cartão primeiro para criar Atas de Reunião vinculadas.");
         }
         window.MyPlanMinutes?.createNewMinuteForCard(editingProCardId);
+      };
+    }
+    if ($("#btnProCardHeadSave")) {
+      $("#btnProCardHeadSave").onclick = () => {
+        $("#proCardForm")?.requestSubmit();
+      };
+    }
+    if ($("#btnProCardHeadNewMinute")) {
+      $("#btnProCardHeadNewMinute").onclick = () => {
+        if (!editingProCardId) {
+          return core.toast("⚠️ Salve o cartão primeiro (botão Salvar ao lado) para abrir uma Ata vinculada.");
+        }
+        window.MyPlanMinutes?.createNewMinuteForCard(editingProCardId);
+      };
+    }
+    if ($("#btnAddMinuteTop")) {
+      $("#btnAddMinuteTop").onclick = () => {
+        window.MyPlanMinutes?.openStandaloneNewMinute();
       };
     }
     if ($("#btnProDocsResetInline")) $("#btnProDocsResetInline").onclick = resetProDocsFilters;
@@ -10090,8 +10129,14 @@
     if ($("#btnProCardDelete")) {
       $("#btnProCardDelete").onclick = () => {
         const id = editingProCardId;
+        if (!id) return;
+        const ctx = findProCardContext(id);
+        if (!ctx) return;
+        if (ctx.trip?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+        if (!confirm(`Excluir permanentemente o cartão "${ctx.activity?.name || "Sem título"}"?`)) return;
         $("#proCardModal").close();
-        if (id) deleteProCard(id);
+        ctx.data.activities = (ctx.data.activities || []).filter(x => x.id !== id);
+        core.saveTripRecord(ctx.trip, "🗑️ Cartão removido");
       };
     }
     if ($("#btnProCardDuplicate")) {
@@ -10435,6 +10480,7 @@
         window.MyPlanMinutes.init({
           core,
           findCardContext: findProCardContext,
+          getSortedActivities: getProSortedActivities,
           getMergedColumns,
           getAllAssignees: getAllProAssignees,
           openCardModal: openProCardModal,

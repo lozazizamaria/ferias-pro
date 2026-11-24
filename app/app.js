@@ -3879,7 +3879,12 @@ function renderChecklist() {
       b.onclick = () => openCheckModal(b.dataset.cedit);
     });
     root.querySelectorAll("[data-cdel]").forEach(b => {
-      b.onclick = () => { state.checklist = state.checklist.filter(x => x.id !== b.dataset.cdel); save("Item removido"); };
+      b.onclick = () => {
+        const it = (state.checklist || []).find(x => x.id === b.dataset.cdel);
+        if (!confirm(`Excluir o item "${it?.item || "selecionado"}" do checklist?`)) return;
+        state.checklist = state.checklist.filter(x => x.id !== b.dataset.cdel);
+        save("🗑️ Item removido");
+      };
     });
   };
   bindEvents(tb);
@@ -5773,6 +5778,7 @@ async function setAppMode(nextMode, opts = {}) {
 
   if ($("#btnAddLabel")) $("#btnAddLabel").textContent = isPro ? "Cartão" : "Evento";
   if ($("#btnAdd")) $("#btnAdd").title = isPro ? "Adicionar cartão profissional" : "Adicionar evento ou viagem";
+  if ($("#btnAddMinuteTop")) $("#btnAddMinuteTop").hidden = !isPro;
   if ($("#btnNewTrip")) $("#btnNewTrip").title = isPro ? "Criar novo projeto profissional" : "Criar nova viagem";
   if ($("#btnPrintReport")) $("#btnPrintReport").textContent = isPro ? "🖨️ Imprimir relatório executivo" : "🖨️ Imprimir relatório da viagem";
   if ($("#btnShareTripLabel")) $("#btnShareTripLabel").textContent = isPro ? "Compartilhar projeto" : "Compartilhar viagem";
@@ -7023,7 +7029,14 @@ $("#form").onsubmit = async e => {
   saveTripRecord(targetTrip, editing ? "✔️ Atividade atualizada" : "➕ Atividade adicionada");
 };
 
-$("#btnDelete").onclick = () => { const id = editing; $("#modal").close(); delActivity(id); };
+$("#btnDelete").onclick = () => {
+  const id = editing;
+  if (!id) return;
+  const ctx = findActivityContext(id);
+  if (!confirm(`Excluir permanentemente "${ctx?.activity?.name || "este evento"}"?`)) return;
+  $("#modal").close();
+  delActivity(id);
+};
 $("#btnDuplicate").onclick = () => {
   const targetTrip = editingTripRef || activeTrip;
   if (targetTrip?.role === "viewer") return toast("👁️ Viagem compartilhada somente para visualização.");
