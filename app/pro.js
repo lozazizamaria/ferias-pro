@@ -52,6 +52,10 @@
   let proMapTypeMsel = null;
   let proMapLabelMsel = null;
   let proMapTagMsel = null;
+  let proTravelsColMsel = null;
+  let proTravelsTypeMsel = null;
+  let proTravelsLabelMsel = null;
+  let proTravelsTagMsel = null;
   let proDashColMsel = null;
   let proDashTypeMsel = null;
   let proDashLabelMsel = null;
@@ -549,6 +553,7 @@
       "#proBoardAssigneeFilter",
       "#proGanttAssigneeFilter",
       "#proMapAssigneeFilter",
+      "#proTravelsAssigneeFilter",
       "#proDashAssigneeFilter",
       "#proFinAssigneeFilter",
       "#proFilterAssignee"
@@ -561,13 +566,15 @@
         + list.map(a => `<option value="${core.esc(a)}">${core.esc(a)}</option>`).join("");
       if ([...el.options].some(o => o.value === prev)) el.value = prev;
     });
-    const quickMapSel = $("#proMapQuickAssignee");
-    if (quickMapSel) {
-      const prev = quickMapSel.value;
-      quickMapSel.innerHTML = `<option value="">👤 Todas as pessoas</option>`
+    ["#proMapQuickAssignee", "#proTravelsQuickAssignee"].forEach(qSel => {
+      const el = $(qSel);
+      if (!el) return;
+      const prev = el.value;
+      const allLbl = qSel === "#proTravelsQuickAssignee" ? "👤 Todos os responsáveis" : "👤 Todas as pessoas";
+      el.innerHTML = `<option value="">${allLbl}</option>`
         + list.map(a => `<option value="${core.esc(a)}">👤 ${core.esc(a)}</option>`).join("");
-      if ([...quickMapSel.options].some(o => o.value === prev)) quickMapSel.value = prev;
-    }
+      if ([...el.options].some(o => o.value === prev)) el.value = prev;
+    });
   }
 
   function isCardDone(a, cols, paramsOpt = null) {
@@ -799,25 +806,29 @@
     };
     if (!proGanttColMsel && $("#proGanttColFilter")) proGanttColMsel = core.createMultiSelect($("#proGanttColFilter"), colOptCfg);
     if (!proMapColMsel && $("#proMapColFilter")) proMapColMsel = core.createMultiSelect($("#proMapColFilter"), colOptCfg);
+    if (!proTravelsColMsel && $("#proTravelsColFilter")) proTravelsColMsel = core.createMultiSelect($("#proTravelsColFilter"), colOptCfg);
     if (!proDashColMsel && $("#proDashColFilter")) proDashColMsel = core.createMultiSelect($("#proDashColFilter"), colOptCfg);
     if (!proFinColMsel && $("#proFinColFilter")) proFinColMsel = core.createMultiSelect($("#proFinColFilter"), colOptCfg);
     if (!proGanttTypeMsel && $("#proGanttTypeFilter")) proGanttTypeMsel = core.createMultiSelect($("#proGanttTypeFilter"), typeOptCfg);
     if (!proMapTypeMsel && $("#proMapTypeFilter")) proMapTypeMsel = core.createMultiSelect($("#proMapTypeFilter"), typeOptCfg);
+    if (!proTravelsTypeMsel && $("#proTravelsTypeFilter")) proTravelsTypeMsel = core.createMultiSelect($("#proTravelsTypeFilter"), typeOptCfg);
     if (!proDashTypeMsel && $("#proDashTypeFilter")) proDashTypeMsel = core.createMultiSelect($("#proDashTypeFilter"), typeOptCfg);
     if (!proFinTypeMsel && $("#proFinTypeFilter")) proFinTypeMsel = core.createMultiSelect($("#proFinTypeFilter"), typeOptCfg);
     if (!proGanttLabelMsel && $("#proGanttLabelFilter")) proGanttLabelMsel = core.createMultiSelect($("#proGanttLabelFilter"), labelOptCfg);
     if (!proMapLabelMsel && $("#proMapLabelFilter")) proMapLabelMsel = core.createMultiSelect($("#proMapLabelFilter"), labelOptCfg);
+    if (!proTravelsLabelMsel && $("#proTravelsLabelFilter")) proTravelsLabelMsel = core.createMultiSelect($("#proTravelsLabelFilter"), labelOptCfg);
     if (!proDashLabelMsel && $("#proDashLabelFilter")) proDashLabelMsel = core.createMultiSelect($("#proDashLabelFilter"), labelOptCfg);
     if (!proFinLabelMsel && $("#proFinLabelFilter")) proFinLabelMsel = core.createMultiSelect($("#proFinLabelFilter"), labelOptCfg);
     if (!proGanttTagMsel && $("#proGanttTagFilter")) proGanttTagMsel = core.createMultiSelect($("#proGanttTagFilter"), tagOptCfg);
     if (!proMapTagMsel && $("#proMapTagFilter")) proMapTagMsel = core.createMultiSelect($("#proMapTagFilter"), tagOptCfg);
+    if (!proTravelsTagMsel && $("#proTravelsTagFilter")) proTravelsTagMsel = core.createMultiSelect($("#proTravelsTagFilter"), tagOptCfg);
     if (!proDashTagMsel && $("#proDashTagFilter")) proDashTagMsel = core.createMultiSelect($("#proDashTagFilter"), tagOptCfg);
     if (!proFinTagMsel && $("#proFinTagFilter")) proFinTagMsel = core.createMultiSelect($("#proFinTagFilter"), tagOptCfg);
 
-    [proGanttColMsel, proMapColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setOptions(colItems, [...proGanttColSet]); });
-    [proGanttTypeMsel, proMapTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setOptions(typeItems, [...proGanttTypeSet]); });
-    [proGanttLabelMsel, proMapLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setOptions(labelItems, [...proGanttLabelSet]); });
-    [proGanttTagMsel, proMapTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setOptions(tagItems, [...proGanttTagSet]); });
+    [proGanttColMsel, proMapColMsel, proTravelsColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setOptions(colItems, [...proGanttColSet]); });
+    [proGanttTypeMsel, proMapTypeMsel, proTravelsTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setOptions(typeItems, [...proGanttTypeSet]); });
+    [proGanttLabelMsel, proMapLabelMsel, proTravelsLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setOptions(labelItems, [...proGanttLabelSet]); });
+    [proGanttTagMsel, proMapTagMsel, proTravelsTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setOptions(tagItems, [...proGanttTagSet]); });
     syncProFilterUIs();
 
     // Tabela filtros
@@ -1347,31 +1358,32 @@
     const typesArr = [...proGanttTypeSet];
     const labelsArr = [...proGanttLabelSet];
     const tagsArr = [...proGanttTagSet];
-    [proGanttColMsel, proMapColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setSelected(colsArr); });
-    [proGanttTypeMsel, proMapTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setSelected(typesArr); });
-    [proGanttLabelMsel, proMapLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setSelected(labelsArr); });
-    [proGanttTagMsel, proMapTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setSelected(tagsArr); });
+    [proGanttColMsel, proMapColMsel, proTravelsColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setSelected(colsArr); });
+    [proGanttTypeMsel, proMapTypeMsel, proTravelsTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setSelected(typesArr); });
+    [proGanttLabelMsel, proMapLabelMsel, proTravelsLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setSelected(labelsArr); });
+    [proGanttTagMsel, proMapTagMsel, proTravelsTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setSelected(tagsArr); });
     const syncInps = (sels, val) => sels.forEach(s => { if ($(s) && $(s).value !== val) $(s).value = val; });
-    syncInps(["#proGanttSearch", "#proMapSearch", "#proDashSearch", "#proFinSearch"], proFilterSearch);
-    syncInps(["#proGanttPrioFilter", "#proMapPrioFilter", "#proDashPrioFilter", "#proFinPrioFilter"], proFilterPrio);
-    syncInps(["#proGanttAssigneeFilter", "#proMapAssigneeFilter", "#proMapQuickAssignee", "#proDashAssigneeFilter", "#proFinAssigneeFilter"], proFilterAssignee);
-    syncInps(["#proGanttTravelFilter", "#proMapTravelFilter", "#proMapQuickTravel", "#proDashTravelFilter", "#proFinTravelFilter"], proFilterTravel);
-    syncInps(["#proGanttClientFilter", "#proMapClientFilter", "#proDashClientFilter", "#proFinClientFilter"], proFilterClient);
-    syncInps(["#proGanttLocationFilter", "#proMapLocationFilter", "#proDashLocationFilter", "#proFinLocationFilter"], proFilterLocation);
-    syncInps(["#proGanttDoneFilter", "#proMapDoneFilter", "#proDashDoneFilter", "#proFinDoneFilter"], proFilterDone);
-    syncInps(["#proGanttFinDirFilter", "#proMapFinDirFilter", "#proDashFinDirFilter", "#proFinFinDirFilter"], proFilterFinDir);
-    syncInps(["#proGanttFinStatusFilter", "#proMapFinStatusFilter", "#proDashFinStatusFilter", "#proFinFinStatusFilter"], proFilterFinStatus);
-    syncInps(["#proGanttDateFrom", "#proMapDateFrom", "#proDashDateFrom", "#proFinDateFrom"], proDateFrom);
-    syncInps(["#proGanttDateTo", "#proMapDateTo", "#proDashDateTo", "#proFinDateTo"], proDateTo);
+    syncInps(["#proGanttSearch", "#proMapSearch", "#proTravelsSearch", "#proDashSearch", "#proFinSearch"], proFilterSearch);
+    syncInps(["#proGanttPrioFilter", "#proMapPrioFilter", "#proTravelsPrioFilter", "#proDashPrioFilter", "#proFinPrioFilter"], proFilterPrio);
+    syncInps(["#proGanttAssigneeFilter", "#proMapAssigneeFilter", "#proMapQuickAssignee", "#proTravelsAssigneeFilter", "#proTravelsQuickAssignee", "#proDashAssigneeFilter", "#proFinAssigneeFilter"], proFilterAssignee);
+    syncInps(["#proGanttTravelFilter", "#proMapTravelFilter", "#proMapQuickTravel", "#proTravelsTravelFilter", "#proDashTravelFilter", "#proFinTravelFilter"], proFilterTravel);
+    syncInps(["#proGanttClientFilter", "#proMapClientFilter", "#proTravelsClientFilter", "#proDashClientFilter", "#proFinClientFilter"], proFilterClient);
+    syncInps(["#proGanttLocationFilter", "#proMapLocationFilter", "#proTravelsLocationFilter", "#proDashLocationFilter", "#proFinLocationFilter"], proFilterLocation);
+    syncInps(["#proGanttDoneFilter", "#proMapDoneFilter", "#proTravelsDoneFilter", "#proDashDoneFilter", "#proFinDoneFilter"], proFilterDone);
+    syncInps(["#proGanttFinDirFilter", "#proMapFinDirFilter", "#proTravelsFinDirFilter", "#proDashFinDirFilter", "#proFinFinDirFilter"], proFilterFinDir);
+    syncInps(["#proGanttFinStatusFilter", "#proMapFinStatusFilter", "#proTravelsFinStatusFilter", "#proDashFinStatusFilter", "#proFinFinStatusFilter"], proFilterFinStatus);
+    syncInps(["#proGanttDateFrom", "#proMapDateFrom", "#proTravelsDateFrom", "#proDashDateFrom", "#proFinDateFrom"], proDateFrom);
+    syncInps(["#proGanttDateTo", "#proMapDateTo", "#proTravelsDateTo", "#proDashDateTo", "#proFinDateTo"], proDateTo);
 
     const activeCount = countActiveProUnifiedFilters();
     const dirty = activeCount > 0;
-    ["#btnProGanttClearFilters", "#btnProMapClearFilters", "#btnProDashClearFilters", "#btnProFinClearFilters"].forEach(sel => {
+    ["#btnProGanttClearFilters", "#btnProMapClearFilters", "#btnProTravelsClearFilters", "#btnProDashClearFilters", "#btnProFinClearFilters"].forEach(sel => {
       if ($(sel)) $(sel).hidden = !dirty;
     });
     [
       ["#btnProGanttFilterPop", "#proGanttFilterCount", activeCount],
       ["#btnProMapFilterPop", "#proMapFilterCount", activeCount],
+      ["#btnProTravelsFilterPop", "#proTravelsFilterCount", activeCount],
       ["#btnProDashFilterPop", "#proDashFilterCount", activeCount],
       ["#btnProFinFilterPop", "#proFinFilterCount", activeCount]
     ].forEach(([btnSel, cntSel, cnt]) => {
@@ -1393,6 +1405,7 @@
     renderProGantt(cards);
     renderProTimeline(cards);
     renderProMap(filteredCards);
+    renderProTravels(filteredCards);
     renderProDashboard(filteredCards, t);
     renderProFinance(filteredCards, t);
   }
@@ -2001,6 +2014,7 @@
     { id: "pro-board",     tabId: "tab-pro-board",     label: "🗂️ Quadro" },
     { id: "pro-gantt",     tabId: "tab-pro-gantt",     label: "📅 Gantt & Timeline" },
     { id: "pro-map",       tabId: "tab-pro-map",       label: "🗺️ Mapa" },
+    { id: "pro-travels",   tabId: "tab-pro-travels",   label: "✈️ Deslocamentos" },
     { id: "pro-dashboard", tabId: "tab-pro-dashboard", label: "📊 Dashboard" },
     { id: "pro-finance",   tabId: "tab-pro-finance",   label: "💼 Financeiro" },
     { id: "pro-table",     tabId: "tab-pro-table",     label: "🧾 Tabela" },
@@ -3490,6 +3504,918 @@
     } catch {
       proMapInstance = null;
       renderProMapFallbackSvg(canvas, groups);
+    }
+  }
+
+  /* ---------- 2C. RELATÓRIO & GRÁFICOS DE DESLOCAMENTOS POR RESPONSÁVEL ---------- */
+  let proTravelsScope = "travels";
+  let proTravelsTableSort = { col: "start", dir: "asc" };
+  const proTravelsExpandedPeople = new Set();
+  let proTravelsLastReport = null;
+
+  function personInitials(name) {
+    const parts = String(name || "?").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function computeUniqueCalendarDays(entries) {
+    const daySet = new Set();
+    entries.forEach(ent => {
+      const c = ent.card;
+      if (!c?.start) return;
+      const dStart = core.parseD(c.start);
+      const dEnd = core.parseD(c.end || c.start);
+      if (!isFinite(dStart) || !isFinite(dEnd)) return;
+      const span = Math.min(366, Math.max(1, Math.round((dEnd - dStart) / 86400000) + 1));
+      for (let i = 0; i < span; i++) {
+        const dt = new Date(dStart.getFullYear(), dStart.getMonth(), dStart.getDate() + i);
+        daySet.add(core.fmtISO(dt));
+      }
+    });
+    return daySet.size;
+  }
+
+  function detectPersonTravelConflicts(entries) {
+    const conflicts = [];
+    const dated = entries.filter(e => e.start).sort((a, b) => a.start.localeCompare(b.start));
+    for (let i = 0; i < dated.length; i++) {
+      const A = dated[i];
+      const aEnd = A.end || A.start;
+      for (let j = i + 1; j < dated.length; j++) {
+        const B = dated[j];
+        if (B.start > aEnd) break;
+        if (A.card.id === B.card.id) continue;
+        conflicts.push({ a: A, b: B });
+      }
+    }
+    return conflicts;
+  }
+
+  function buildProTravelsAnalytics(cards) {
+    const cols = getMergedColumns();
+    const todayIso = core.fmtISO(new Date());
+    const filterAsgLow = (proFilterAssignee && proFilterAssignee !== "__none__") ? proFilterAssignee.toLowerCase() : "";
+
+    const entries = [];
+    const uniqueCardIds = new Set();
+    const uniqueCitiesSet = new Set();
+    const personMap = new Map();
+    const destMap = new Map();
+    const monthMap = new Map();
+
+    let fallbackLocCount = 0;
+    let fallbackAllAsgCount = 0;
+
+    (cards || []).forEach(c => {
+      const asgList = getCardAssigneesList(c);
+      const rawLoc = String(c.location || "").trim();
+      if (rawLoc && asgList.length) fallbackLocCount++;
+      if (asgList.length) fallbackAllAsgCount++;
+
+      let matchedAsgs = [];
+      if (proTravelsScope === "travels") {
+        matchedAsgs = asgList.filter(e => e.travels);
+      } else if (proTravelsScope === "with_location") {
+        if (!rawLoc) return;
+        matchedAsgs = asgList;
+      } else {
+        matchedAsgs = asgList;
+      }
+
+      if (filterAsgLow) {
+        matchedAsgs = matchedAsgs.filter(e => e.name.toLowerCase() === filterAsgLow);
+      }
+      if (!matchedAsgs.length) return;
+
+      const dur = cardDurationDays(c);
+      const city = rawLoc ? shortLocationCityName(rawLoc) : "Sem local definido";
+      const start = c.start || "";
+      const end = c.end || c.start || "";
+      const ym = (start || end).slice(0, 7);
+      const done = isCardDone(c, cols);
+      const colTitle = cols.find(col => col.id === c.columnId)?.title || c.columnTitle || "Sem lista";
+      const cost = c.finDirection === "expense"
+        ? (Number(c.actualAmount) > 0 ? Number(c.actualAmount) : (Number(c.amount) || 0))
+        : 0;
+
+      uniqueCardIds.add(c.id);
+      if (rawLoc) uniqueCitiesSet.add(city);
+
+      matchedAsgs.forEach(asg => {
+        const pKey = asg.name.toLowerCase();
+        const pCol = colorForAssignee(asg.name);
+        const coTravelers = asgList
+          .filter(other => other.name.toLowerCase() !== pKey && (proTravelsScope !== "travels" || other.travels))
+          .map(other => other.name);
+
+        const ent = {
+          personKey: pKey,
+          personName: asg.name,
+          personColor: pCol,
+          travelsFlag: Boolean(asg.travels),
+          card: c,
+          city,
+          rawLocation: rawLoc,
+          dur,
+          start,
+          end,
+          ym: ym.length === 7 ? ym : "",
+          done,
+          colTitle,
+          cost,
+          coTravelers
+        };
+        entries.push(ent);
+
+        if (!personMap.has(pKey)) {
+          personMap.set(pKey, {
+            key: pKey,
+            name: asg.name,
+            initials: personInitials(asg.name),
+            color: pCol,
+            entries: [],
+            tripCount: 0,
+            totalDays: 0,
+            doneCount: 0,
+            pendingCount: 0,
+            totalCost: 0,
+            citiesMap: new Map(),
+            monthsMap: new Map()
+          });
+        }
+        const p = personMap.get(pKey);
+        p.entries.push(ent);
+        p.tripCount++;
+        p.totalDays += dur;
+        if (done) p.doneCount++;
+        else p.pendingCount++;
+        p.totalCost += cost;
+
+        if (!p.citiesMap.has(city)) p.citiesMap.set(city, { city, trips: 0, days: 0 });
+        const pc = p.citiesMap.get(city);
+        pc.trips++;
+        pc.days += dur;
+
+        if (ent.ym) {
+          if (!p.monthsMap.has(ent.ym)) p.monthsMap.set(ent.ym, { ym: ent.ym, trips: 0, days: 0, cities: new Set() });
+          const pm = p.monthsMap.get(ent.ym);
+          pm.trips++;
+          pm.days += dur;
+          if (rawLoc) pm.cities.add(city);
+
+          if (!monthMap.has(ent.ym)) monthMap.set(ent.ym, { ym: ent.ym, trips: 0, days: 0, byPerson: new Map() });
+          const gm = monthMap.get(ent.ym);
+          gm.trips++;
+          gm.days += dur;
+          if (!gm.byPerson.has(pKey)) gm.byPerson.set(pKey, { key: pKey, name: asg.name, color: pCol.hex, trips: 0, days: 0 });
+          const gmp = gm.byPerson.get(pKey);
+          gmp.trips++;
+          gmp.days += dur;
+        }
+
+        if (rawLoc) {
+          if (!destMap.has(city)) destMap.set(city, { city, trips: 0, days: 0, byPerson: new Map() });
+          const dRec = destMap.get(city);
+          dRec.trips++;
+          dRec.days += dur;
+          if (!dRec.byPerson.has(pKey)) dRec.byPerson.set(pKey, { key: pKey, name: asg.name, color: pCol.hex, trips: 0, days: 0 });
+          const dp = dRec.byPerson.get(pKey);
+          dp.trips++;
+          dp.days += dur;
+        }
+      });
+    });
+
+    const people = [...personMap.values()].map(p => {
+      p.entries.sort((a, b) =>
+        String(a.start || "9999-99-99").localeCompare(String(b.start || "9999-99-99")) ||
+        String(a.card.name || "").localeCompare(String(b.card.name || ""))
+      );
+      p.uniqueDays = computeUniqueCalendarDays(p.entries);
+      p.avgDays = p.tripCount ? p.totalDays / p.tripCount : 0;
+      p.donePct = p.tripCount ? Math.round((p.doneCount / p.tripCount) * 100) : 0;
+      p.topCities = [...p.citiesMap.values()].sort((a, b) => b.trips - a.trips || b.days - a.days || a.city.localeCompare(b.city));
+      p.uniqueCitiesCount = p.topCities.filter(c => c.city !== "Sem local definido").length;
+      p.favCity = p.topCities.find(c => c.city !== "Sem local definido") || p.topCities[0] || null;
+      p.longestTrip = p.entries.reduce((best, e) => (!best || e.dur > best.dur ? e : best), null);
+      p.nextTrip = p.entries.find(e => e.end && e.end >= todayIso && !e.done) || p.entries.find(e => e.end && e.end >= todayIso) || null;
+      p.conflicts = detectPersonTravelConflicts(p.entries);
+      return p;
+    }).sort((a, b) => b.tripCount - a.tripCount || b.totalDays - a.totalDays || a.name.localeCompare(b.name));
+
+    const monthsSorted = [...monthMap.values()].sort((a, b) => a.ym.localeCompare(b.ym));
+    const destStacked = [...destMap.values()].sort((a, b) => b.trips - a.trips || b.days - a.days || a.city.localeCompare(b.city));
+    const totalPersonTrips = entries.length;
+    const totalPersonDays = entries.reduce((s, e) => s + e.dur, 0);
+    const totalDoneEntries = entries.filter(e => e.done).length;
+    const totalConflicts = people.reduce((s, p) => s + p.conflicts.length, 0);
+    const upcomingSorted = entries
+      .filter(e => e.end && e.end >= todayIso && !e.done)
+      .sort((a, b) => a.start.localeCompare(b.start));
+
+    return {
+      entries,
+      people,
+      monthsSorted,
+      destStacked,
+      totalUniqueTrips: uniqueCardIds.size,
+      totalPersonTrips,
+      totalPersonDays,
+      uniqueCitiesCount: uniqueCitiesSet.size,
+      totalDoneEntries,
+      donePct: totalPersonTrips ? Math.round((totalDoneEntries / totalPersonTrips) * 100) : 0,
+      totalConflicts,
+      leader: people[0] || null,
+      nextGlobalTrip: upcomingSorted[0] || null,
+      fallbackLocCount,
+      fallbackAllAsgCount
+    };
+  }
+
+  function printProTravelsReport() {
+    const rep = proTravelsLastReport || buildProTravelsAnalytics(applyProUnifiedFilters(getProSortedActivities()));
+    if (!rep || !rep.entries.length) {
+      return core.toast("✈️ Não há deslocamentos neste filtro para imprimir.");
+    }
+    const st = core.getState();
+    const title = st.title || "Projeto Profissional";
+    const scopeLabel = proTravelsScope === "travels"
+      ? 'Apenas marcados como "Viaja"'
+      : (proTravelsScope === "with_location" ? "Todos os cartões com Local" : "Todos os cartões com responsável");
+    const generatedAt = new Date().toLocaleString("pt-BR");
+
+    const summaryRows = rep.people.map(p => `
+      <tr>
+        <td><span class="dot" style="background:${core.esc(p.color.hex)}"></span><strong>${core.esc(p.name)}</strong></td>
+        <td class="num">${p.tripCount}</td>
+        <td class="num">${p.totalDays} d${p.uniqueDays && p.uniqueDays !== p.totalDays ? ` (${p.uniqueDays} únicos)` : ""}</td>
+        <td class="num">${core.num(p.avgDays, 1)} d</td>
+        <td class="num">${p.uniqueCitiesCount}</td>
+        <td>${p.favCity ? `${core.esc(p.favCity.city)} (${p.favCity.trips}×)` : "—"}</td>
+        <td class="num">${p.donePct}%</td>
+        <td class="num">${p.conflicts.length ? `⚠️ ${p.conflicts.length}` : "OK"}</td>
+      </tr>
+    `).join("");
+
+    const personSections = rep.people.map(p => {
+      const rows = p.entries.map(e => {
+        const dt = e.start ? `${core.fmtBR(e.start)}${e.end && e.end !== e.start ? ` – ${core.fmtBR(e.end)}` : ""}` : "Sem data";
+        return `<tr>
+          <td>${core.esc(dt)}</td>
+          <td><strong>${core.esc(e.card.name)}</strong>${e.coTravelers.length ? `<br><small>Com: ${core.esc(e.coTravelers.join(", "))}</small>` : ""}</td>
+          <td>${core.esc(e.rawLocation || e.city)}</td>
+          <td class="num">${e.dur} ${e.dur === 1 ? "dia" : "dias"}</td>
+          <td>${e.done ? "✅ Concluído" : `⏳ ${core.esc(e.colTitle)}`}</td>
+        </tr>`;
+      }).join("");
+      return `
+        <section class="person-block">
+          <h3><span class="dot" style="background:${core.esc(p.color.hex)}"></span>${core.esc(p.name)} — ${p.tripCount} viagem(ns) · ${p.totalDays} dia(s) · ${p.uniqueCitiesCount} destino(s)</h3>
+          <table>
+            <thead><tr><th>Período</th><th>Viagem / Missão</th><th>Destino</th><th class="num">Duração</th><th>Status</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </section>
+      `;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+      <title>Relatório de Deslocamentos — ${core.esc(title)}</title>
+      <style>
+        body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;margin:24px;line-height:1.45}
+        h1{margin:0 0 4px;font-size:20px}
+        .meta{color:#475569;font-size:12px;margin-bottom:16px}
+        .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+        .kpi{border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;background:#f8fafc}
+        .kpi small{display:block;color:#64748b;font-size:11px;text-transform:uppercase;font-weight:700}
+        .kpi strong{font-size:18px;color:#0f172a}
+        h2{font-size:15px;margin:18px 0 8px;border-bottom:1px solid #cbd5e1;padding-bottom:4px}
+        h3{font-size:13.5px;margin:14px 0 6px;display:flex;align-items:center;gap:6px}
+        table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}
+        th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:left;vertical-align:top}
+        th{background:#f1f5f9;font-weight:700}
+        .num{text-align:right;white-space:nowrap}
+        .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+        .person-block{page-break-inside:avoid;margin-bottom:14px}
+        @media print{body{margin:12px}}
+      </style></head><body>
+      <h1>✈️ Relatório de Deslocamentos por Responsável — ${core.esc(title)}</h1>
+      <div class="meta">Escopo: ${core.esc(scopeLabel)}${proFilterAssignee ? ` · Responsável: ${core.esc(proFilterAssignee)}` : ""} · Gerado em ${core.esc(generatedAt)}</div>
+      <div class="kpis">
+        <div class="kpi"><small>Viagens / Missões</small><strong>${rep.totalUniqueTrips} (${rep.totalPersonTrips} partic.)</strong></div>
+        <div class="kpi"><small>Responsáveis</small><strong>${rep.people.length}</strong></div>
+        <div class="kpi"><small>Dias Totais</small><strong>${rep.totalPersonDays} dias</strong></div>
+        <div class="kpi"><small>Destinos Únicos</small><strong>${rep.uniqueCitiesCount}</strong></div>
+      </div>
+      <h2>Resumo Comparativo por Responsável</h2>
+      <table>
+        <thead><tr><th>Responsável</th><th class="num">Viagens</th><th class="num">Dias</th><th class="num">Média</th><th class="num">Destinos</th><th>Principal Destino</th><th class="num">Concluídas</th><th class="num">Conflitos</th></tr></thead>
+        <tbody>${summaryRows}</tbody>
+      </table>
+      <h2>Roteiro Detalhado por Responsável</h2>
+      ${personSections}
+      <script>window.onload=function(){window.print();};</script>
+      </body></html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) return core.toast("⚠️ Permita pop-ups para imprimir o relatório.");
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  }
+
+  function renderProTravels(filteredCardsOpt) {
+    const viewEl = $("#view-pro-travels");
+    if (!viewEl) return;
+
+    const cards = filteredCardsOpt || applyProUnifiedFilters(getProSortedActivities());
+    const rep = buildProTravelsAnalytics(cards);
+    proTravelsLastReport = rep;
+
+    if ($("#proTravelsScopeSel") && $("#proTravelsScopeSel").value !== proTravelsScope) {
+      $("#proTravelsScopeSel").value = proTravelsScope;
+    }
+
+    const badge = $("#proTravelsCountBadge");
+    if (badge) {
+      badge.textContent = `${rep.totalUniqueTrips} ${rep.totalUniqueTrips === 1 ? "viagem" : "viagens"} · ${rep.people.length} ${rep.people.length === 1 ? "responsável" : "responsáveis"} · ${rep.totalPersonDays}d`;
+    }
+
+    // Banner de estado vazio contextual
+    const emptyEl = $("#proTravelsEmptyBanner");
+    if (emptyEl) {
+      if (!rep.entries.length) {
+        emptyEl.hidden = false;
+        const canSwitchLoc = proTravelsScope === "travels" && rep.fallbackLocCount > 0;
+        const canSwitchAll = proTravelsScope !== "all" && rep.fallbackAllAsgCount > 0;
+        emptyEl.innerHTML = `
+          <div class="pro-travels-empty-inner">
+            <div style="font-size:2rem">✈️</div>
+            <h3>Nenhum deslocamento encontrado neste filtro</h3>
+            <p class="muted small">
+              ${proTravelsScope === "travels"
+                ? 'Marque a opção <b>"✈️ Viaja"</b> no responsável dentro dos cartões ou altere o escopo acima para visualizar todos os cartões com localidade.'
+                : "Atribua um responsável (e um local) aos cartões do projeto para gerar automaticamente os gráficos e o relatório de deslocamentos."}
+            </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:4px">
+              ${canSwitchLoc ? `<button type="button" class="btn primary small" id="btnProTravelsSwitchLoc">📍 Ver todos os cartões com Local (${rep.fallbackLocCount})</button>` : ""}
+              ${!canSwitchLoc && canSwitchAll ? `<button type="button" class="btn primary small" id="btnProTravelsSwitchAll">🗂️ Ver todos os cartões com responsável (${rep.fallbackAllAsgCount})</button>` : ""}
+              <button type="button" class="btn ghost small" id="btnProTravelsEmptyAdd">➕ Novo Cartão</button>
+            </div>
+          </div>`;
+        if ($("#btnProTravelsSwitchLoc", emptyEl)) {
+          $("#btnProTravelsSwitchLoc", emptyEl).onclick = () => {
+            proTravelsScope = "with_location";
+            renderProTravels();
+          };
+        }
+        if ($("#btnProTravelsSwitchAll", emptyEl)) {
+          $("#btnProTravelsSwitchAll", emptyEl).onclick = () => {
+            proTravelsScope = "all";
+            renderProTravels();
+          };
+        }
+        if ($("#btnProTravelsEmptyAdd", emptyEl)) {
+          $("#btnProTravelsEmptyAdd", emptyEl).onclick = () => openProCardModal();
+        }
+      } else {
+        emptyEl.hidden = true;
+        emptyEl.innerHTML = "";
+      }
+    }
+
+    const togglePersonFilter = (personName) => {
+      if (!personName) return;
+      proFilterAssignee = proFilterAssignee.toLowerCase() === personName.toLowerCase() ? "" : personName;
+      applyAndRenderProFilteredViews();
+    };
+
+    // 1. CARDS DE KPIs EXECUTIVOS (6 KPIs)
+    const kpisEl = $("#proTravelsKpis");
+    if (kpisEl) {
+      const avgDays = rep.totalPersonTrips ? core.num(rep.totalPersonDays / rep.totalPersonTrips, 1) : "0,0";
+      const leaderVal = rep.leader ? rep.leader.name : "—";
+      const leaderSub = rep.leader
+        ? `${rep.leader.tripCount} ${rep.leader.tripCount === 1 ? "viagem" : "viagens"} · ${rep.leader.totalDays}d`
+        : "Sem viagens";
+      const leaderCol = rep.leader ? rep.leader.color.hex : "#f59e0b";
+
+      const statusLbl = rep.totalConflicts > 0
+        ? "Alertas de Agenda"
+        : (rep.nextGlobalTrip ? "Próxima Saída" : "Conclusão");
+      const statusVal = rep.totalConflicts > 0
+        ? `⚠️ ${rep.totalConflicts} ${rep.totalConflicts === 1 ? "conflito" : "conflitos"}`
+        : (rep.nextGlobalTrip ? core.fmtShortBR(rep.nextGlobalTrip.start) : `${rep.donePct}%`);
+      const statusSub = rep.totalConflicts > 0
+        ? "Sobreposição de datas para a mesma pessoa"
+        : (rep.nextGlobalTrip
+            ? `${rep.nextGlobalTrip.personName} ➔ ${rep.nextGlobalTrip.city}`
+            : `${rep.totalDoneEntries}/${rep.totalPersonTrips} viagens concluídas`);
+      const statusCol = rep.totalConflicts > 0 ? "#f87171" : "#22d3ee";
+
+      const kpis = [
+        ["Viagens / Missões", String(rep.totalUniqueTrips), `${rep.totalPersonTrips} participação(ões) de equipe`, "#38bdf8"],
+        ["Responsáveis Viajando", String(rep.people.length), rep.people.length === 1 ? "1 pessoa em deslocamento" : `${rep.people.length} pessoas em deslocamento`, "#a855f7"],
+        ["Dias de Viagem", `${rep.totalPersonDays}d`, `Média de ${avgDays} dia(s) por viagem`, "#10b981"],
+        ["Destinos Únicos", String(rep.uniqueCitiesCount), rep.destStacked[0] ? `Top: ${rep.destStacked[0].city} (${rep.destStacked[0].trips}×)` : "Cidades visitadas", "#f59e0b"],
+        ["Mais Viajante", leaderVal, leaderSub, leaderCol],
+        [statusLbl, statusVal, statusSub, statusCol]
+      ];
+      kpisEl.innerHTML = kpis.map(([lbl, val, sub, col]) => `
+        <div class="kpi pro-map-kpi-card pro-travels-kpi" style="--c:${core.esc(col)}">
+          <div class="lbl">${core.esc(lbl)}</div>
+          <div class="val" title="${core.esc(val)}">${core.esc(val)}</div>
+          <div class="sub" title="${core.esc(sub)}">${core.esc(sub)}</div>
+        </div>
+      `).join("");
+    }
+
+    const emptyChartHtml = `<p class="muted small" style="padding:18px 0;text-align:center">Sem deslocamentos para exibir neste filtro.</p>`;
+
+    // 2.1 Gráfico: Ranking de Viagens por Responsável
+    const cTrips = $("#proTravelsChartTripsByPerson");
+    if (cTrips) {
+      if (!rep.people.length) {
+        cTrips.innerHTML = emptyChartHtml;
+      } else {
+        const maxT = Math.max(1, ...rep.people.map(p => p.tripCount));
+        cTrips.innerHTML = `<div class="pro-map-hbars">${rep.people.map(p => {
+          const pct = Math.max(6, Math.round((p.tripCount / maxT) * 100));
+          const share = rep.totalPersonTrips ? Math.round((p.tripCount / rep.totalPersonTrips) * 100) : 0;
+          const isFocus = proFilterAssignee && proFilterAssignee.toLowerCase() === p.key;
+          const tip = `${p.name}: ${p.tripCount} viagem(ns) (${share}% do total) · ${p.totalDays} dia(s) · ${p.uniqueCitiesCount} destino(s)`;
+          return `<button type="button" class="pro-map-hbar-row${isFocus ? " is-focused" : ""}" data-travel-pick-person="${core.esc(p.name)}" data-tooltip="${core.esc(tip)}" title="${core.esc(tip)}">
+            <div class="pro-map-hbar-top">
+              <span class="pro-map-hbar-lbl"><span class="pro-map-hbar-dot" style="background:${core.esc(p.color.hex)}"></span>${core.esc(p.name)}</span>
+              <b class="pro-map-hbar-val">${p.tripCount} ${p.tripCount === 1 ? "viagem" : "viagens"} <span class="muted">(${share}%)</span></b>
+            </div>
+            <div class="pro-map-hbar-track">
+              <div class="pro-map-hbar-fill" style="width:${pct}%;background:${core.esc(p.color.hex)}"></div>
+            </div>
+          </button>`;
+        }).join("")}</div>`;
+        cTrips.querySelectorAll("[data-travel-pick-person]").forEach(b => {
+          b.onclick = () => togglePersonFilter(b.dataset.travelPickPerson);
+        });
+      }
+    }
+
+    // 2.2 Gráfico: Carga de Dias Viajados por Responsável
+    const cDays = $("#proTravelsChartDaysByPerson");
+    if (cDays) {
+      if (!rep.people.length) {
+        cDays.innerHTML = emptyChartHtml;
+      } else {
+        const byDays = rep.people.slice().sort((a, b) => b.totalDays - a.totalDays || b.tripCount - a.tripCount);
+        const maxD = Math.max(1, ...byDays.map(p => p.totalDays));
+        cDays.innerHTML = `<div class="pro-map-hbars">${byDays.map(p => {
+          const pct = Math.max(6, Math.round((p.totalDays / maxD) * 100));
+          const isFocus = proFilterAssignee && proFilterAssignee.toLowerCase() === p.key;
+          const uniqNote = p.uniqueDays && p.uniqueDays !== p.totalDays ? ` · ${p.uniqueDays}d únicos` : "";
+          const tip = `${p.name}: ${p.totalDays} dia(s) em missão · Média ${core.num(p.avgDays, 1)}d/viagem${uniqNote}`;
+          return `<button type="button" class="pro-map-hbar-row${isFocus ? " is-focused" : ""}" data-travel-pick-person="${core.esc(p.name)}" data-tooltip="${core.esc(tip)}" title="${core.esc(tip)}">
+            <div class="pro-map-hbar-top">
+              <span class="pro-map-hbar-lbl"><span class="pro-map-hbar-dot" style="background:${core.esc(p.color.hex)}"></span>${core.esc(p.name)}</span>
+              <b class="pro-map-hbar-val">${p.totalDays} ${p.totalDays === 1 ? "dia" : "dias"} <span class="muted">(Ø ${core.num(p.avgDays, 1)}d)</span></b>
+            </div>
+            <div class="pro-map-hbar-track">
+              <div class="pro-map-hbar-fill" style="width:${pct}%;background:${core.esc(p.color.hex)}"></div>
+            </div>
+          </button>`;
+        }).join("")}</div>`;
+        cDays.querySelectorAll("[data-travel-pick-person]").forEach(b => {
+          b.onclick = () => togglePersonFilter(b.dataset.travelPickPerson);
+        });
+      }
+    }
+
+    // 2.3 Gráfico: Donut SVG de Participação de Dias por Responsável
+    const cDonut = $("#proTravelsChartShareDonut");
+    if (cDonut) {
+      if (!rep.people.length || rep.totalPersonDays <= 0) {
+        cDonut.innerHTML = emptyChartHtml;
+      } else {
+        const byDays = rep.people.slice().sort((a, b) => b.totalDays - a.totalDays);
+        const R = 58;
+        const C = 2 * Math.PI * R;
+        let offsetAcc = 0;
+        const segsSvg = byDays.map(p => {
+          const frac = p.totalDays / rep.totalPersonDays;
+          const len = Math.max(2, frac * C);
+          const dashOffset = -offsetAcc;
+          offsetAcc += frac * C;
+          const pct = Math.round(frac * 100);
+          return `<circle cx="90" cy="90" r="${R}" fill="none" stroke="${core.esc(p.color.hex)}" stroke-width="20" stroke-dasharray="${len.toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${dashOffset.toFixed(2)}" transform="rotate(-90 90 90)">
+            <title>${core.esc(p.name)}: ${p.totalDays} dias (${pct}%)</title>
+          </circle>`;
+        }).join("");
+        const legendHtml = byDays.map(p => {
+          const pct = Math.round((p.totalDays / rep.totalPersonDays) * 100);
+          return `<button type="button" class="pro-travels-donut-leg-item" data-travel-pick-person="${core.esc(p.name)}" title="Filtrar por ${core.esc(p.name)}">
+            <span class="pro-map-hbar-dot" style="background:${core.esc(p.color.hex)}"></span>
+            <span class="pro-travels-donut-name">${core.esc(p.name)}</span>
+            <b>${pct}%</b>
+            <span class="muted small">(${p.totalDays}d)</span>
+          </button>`;
+        }).join("");
+
+        cDonut.innerHTML = `
+          <div class="pro-travels-donut-wrap">
+            <div class="pro-travels-donut-svg-box">
+              <svg viewBox="0 0 180 180" width="164" height="164" role="img" aria-label="Participação de dias de viagem por responsável">
+                <circle cx="90" cy="90" r="${R}" fill="none" stroke="var(--border)" stroke-width="20"></circle>
+                ${segsSvg}
+              </svg>
+              <div class="pro-travels-donut-center">
+                <strong>${rep.totalPersonDays}d</strong>
+                <span>${rep.people.length} ${rep.people.length === 1 ? "pessoa" : "pessoas"}</span>
+              </div>
+            </div>
+            <div class="pro-travels-donut-legend">${legendHtml}</div>
+          </div>`;
+        cDonut.querySelectorAll("[data-travel-pick-person]").forEach(b => {
+          b.onclick = () => togglePersonFilter(b.dataset.travelPickPerson);
+        });
+      }
+    }
+
+    // 2.4 Gráfico: Top Destinos Empilhados por Responsável
+    const cDest = $("#proTravelsChartDestByPerson");
+    if (cDest) {
+      if (!rep.destStacked.length) {
+        cDest.innerHTML = emptyChartHtml;
+      } else {
+        const topDest = rep.destStacked.slice(0, 8);
+        const maxDestTrips = Math.max(1, ...topDest.map(d => d.trips));
+        cDest.innerHTML = `<div class="pro-map-hbars">${topDest.map(d => {
+          const widthPct = Math.max(10, Math.round((d.trips / maxDestTrips) * 100));
+          const pSegs = [...d.byPerson.values()].sort((a, b) => b.trips - a.trips);
+          const segHtml = pSegs.map(ps => {
+            const segPct = (ps.trips / d.trips) * 100;
+            return `<span class="pro-travels-seg" style="width:${segPct.toFixed(2)}%;background:${core.esc(ps.color)}" title="${core.esc(ps.name)}: ${ps.trips} viagem(ns) · ${ps.days}d"></span>`;
+          }).join("");
+          const tipPeople = pSegs.map(ps => `${ps.name} (${ps.trips}×/${ps.days}d)`).join(", ");
+          const tip = `${d.city}: ${d.trips} viagem(ns) · ${d.days}d — ${tipPeople}`;
+          return `<div class="pro-map-hbar-row" data-tooltip="${core.esc(tip)}" title="${core.esc(tip)}" tabindex="0">
+            <div class="pro-map-hbar-top">
+              <span class="pro-map-hbar-lbl">📍 ${core.esc(d.city)}</span>
+              <b class="pro-map-hbar-val">${d.trips}× <span class="muted">(${d.days}d)</span></b>
+            </div>
+            <div class="pro-map-hbar-track">
+              <div class="pro-travels-stacked-fill" style="width:${widthPct}%">${segHtml}</div>
+            </div>
+            <div class="pro-travels-mini-who">${pSegs.slice(0, 4).map(ps => `<span class="pro-travels-who-chip"><i style="background:${core.esc(ps.color)}"></i>${core.esc(ps.name)} ${ps.trips}×</span>`).join("")}</div>
+          </div>`;
+        }).join("")}</div>`;
+      }
+    }
+
+    // 2.5 Gráfico: Evolução Mensal Empilhada por Responsável
+    const cMonthly = $("#proTravelsChartMonthlyStacked");
+    if (cMonthly) {
+      if (!rep.monthsSorted.length) {
+        cMonthly.innerHTML = `<p class="muted small" style="padding:18px 0;text-align:center">Adicione datas aos cartões com deslocamento para visualizar a evolução mensal.</p>`;
+      } else {
+        const maxM = Math.max(1, ...rep.monthsSorted.map(m => m.trips));
+        const legendPeople = rep.people.slice(0, 10).map(p =>
+          `<button type="button" class="pro-travels-leg-pill" data-travel-pick-person="${core.esc(p.name)}"><i style="background:${core.esc(p.color.hex)}"></i>${core.esc(p.name)}</button>`
+        ).join("");
+        const colsHtml = rep.monthsSorted.map(m => {
+          const [yr, mo] = m.ym.split("-");
+          const lbl = `${core.MON[parseInt(mo, 10) - 1]}/${yr.slice(2)}`;
+          const totalH = Math.max(14, Math.round((m.trips / maxM) * 100));
+          const pSegs = [...m.byPerson.values()].sort((a, b) => b.trips - a.trips);
+          const stackSegs = pSegs.map(ps => {
+            const hPct = (ps.trips / m.trips) * 100;
+            return `<div class="pro-travels-vseg" style="height:${hPct.toFixed(2)}%;background:${core.esc(ps.color)}" title="${core.esc(ps.name)}: ${ps.trips}v · ${ps.days}d"></div>`;
+          }).join("");
+          const tip = `${lbl}: ${m.trips} viagem(ns) · ${m.days}d — ${pSegs.map(ps => `${ps.name} (${ps.trips}v/${ps.days}d)`).join(", ")}`;
+          return `<div class="pro-vbar-col pro-travels-mcol" data-tooltip="${core.esc(tip)}" title="${core.esc(tip)}" tabindex="0">
+            <span class="pro-vbar-val">${m.trips}v · ${m.days}d</span>
+            <div class="pro-travels-vcol-track">
+              <div class="pro-travels-vcol-stack" style="height:${totalH}%">${stackSegs}</div>
+            </div>
+            <span class="pro-vbar-lbl">${lbl}</span>
+          </div>`;
+        }).join("");
+
+        cMonthly.innerHTML = `
+          <div class="pro-travels-legend-bar">${legendPeople}</div>
+          <div class="pro-vbars-chart pro-travels-monthly-chart">${colsHtml}</div>`;
+        cMonthly.querySelectorAll("[data-travel-pick-person]").forEach(b => {
+          b.onclick = () => togglePersonFilter(b.dataset.travelPickPerson);
+        });
+      }
+    }
+
+    // 2.6 Gráfico: Matriz Calor (Heatmap Responsável × Mês)
+    const cHeat = $("#proTravelsChartHeatmap");
+    if (cHeat) {
+      if (!rep.people.length || !rep.monthsSorted.length) {
+        cHeat.innerHTML = `<p class="muted small" style="padding:16px 0;text-align:center">Adicione datas aos deslocamentos para visualizar a matriz mensal por responsável.</p>`;
+      } else {
+        let maxCellDays = 1;
+        rep.people.forEach(p => {
+          p.monthsMap.forEach(m => { if (m.days > maxCellDays) maxCellDays = m.days; });
+        });
+        const headMonths = rep.monthsSorted.map(m => {
+          const [yr, mo] = m.ym.split("-");
+          return `<th>${core.MON[parseInt(mo, 10) - 1]}/${yr.slice(2)}</th>`;
+        }).join("");
+
+        const bodyRows = rep.people.map(p => {
+          const cells = rep.monthsSorted.map(m => {
+            const pm = p.monthsMap.get(m.ym);
+            if (!pm) return `<td class="heat-empty">—</td>`;
+            const ratio = Math.min(1, pm.days / maxCellDays);
+            const alpha = (0.18 + ratio * 0.56).toFixed(2);
+            const citiesStr = [...pm.cities].join(", ");
+            const tip = `${p.name} em ${m.ym}: ${pm.trips} viagem(ns) · ${pm.days} dia(s)${citiesStr ? ` (${citiesStr})` : ""}`;
+            return `<td class="heat-cell" style="--hc:${core.esc(p.color.hex)};--ha:${alpha}" title="${core.esc(tip)}">
+              <strong>${pm.trips}v</strong>
+              <span>${pm.days}d</span>
+            </td>`;
+          }).join("");
+          return `<tr class="pro-travels-heat-row" data-travel-pick-person="${core.esc(p.name)}">
+            <td class="heat-person">
+              <span class="pro-map-hbar-dot" style="background:${core.esc(p.color.hex)}"></span>
+              <strong>${core.esc(p.name)}</strong>
+            </td>
+            ${cells}
+            <td class="heat-total"><b>${p.tripCount}v</b> · ${p.totalDays}d</td>
+          </tr>`;
+        }).join("");
+
+        cHeat.innerHTML = `
+          <table class="pro-travels-heatmap-table">
+            <thead>
+              <tr>
+                <th>Responsável</th>
+                ${headMonths}
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>${bodyRows}</tbody>
+          </table>`;
+        cHeat.querySelectorAll("[data-travel-pick-person]").forEach(tr => {
+          tr.onclick = () => togglePersonFilter(tr.dataset.travelPickPerson);
+        });
+      }
+    }
+
+    // 3. RELATÓRIO INDIVIDUAL DETALHADO POR RESPONSÁVEL
+    const pplBadge = $("#proTravelsPeopleBadge");
+    if (pplBadge) pplBadge.textContent = `${rep.people.length} ${rep.people.length === 1 ? "responsável" : "responsáveis"}`;
+
+    const personGrid = $("#proTravelsPersonCards");
+    if (personGrid) {
+      if (!rep.people.length) {
+        personGrid.innerHTML = "";
+      } else {
+        personGrid.innerHTML = rep.people.map(p => {
+          const isExpanded = proTravelsExpandedPeople.has(p.key);
+          const visibleTrips = isExpanded ? p.entries : p.entries.slice(0, 5);
+          const hiddenCount = Math.max(0, p.entries.length - visibleTrips.length);
+          const isFocused = proFilterAssignee && proFilterAssignee.toLowerCase() === p.key;
+
+          const citiesChips = p.topCities.slice(0, 6).map(ct =>
+            `<span class="pro-travels-city-chip">📍 ${core.esc(ct.city)} <b>${ct.trips}×</b> <small>(${ct.days}d)</small></span>`
+          ).join("");
+
+          const tripRowsHtml = visibleTrips.map(e => {
+            const info = getProTypeInfo(e.card.type);
+            const dt = e.start ? `${core.fmtShortBR(e.start)}${e.end && e.end !== e.start ? `–${core.fmtShortBR(e.end)}` : ""}` : "Sem data";
+            const coTxt = e.coTravelers.length ? ` · 👥 ${core.esc(e.coTravelers.join(", "))}` : "";
+            return `<button type="button" class="pro-travels-trip-item" data-travel-open-card="${core.esc(e.card.id)}">
+              <span class="pro-travels-trip-dt">${core.esc(dt)}</span>
+              <span class="pro-travels-trip-main">
+                <strong>${info.icon} ${core.esc(e.card.name)}</strong>
+                <small>📍 ${core.esc(e.city)}${coTxt}</small>
+              </span>
+              <span class="pro-travels-trip-right">
+                <span class="pro-map-dur-pill">${e.dur}d</span>
+                <span class="pill ${e.done ? "ok" : ""}" style="font-size:0.65rem">${e.done ? "✅" : `${e.card.progress || 0}%`}</span>
+              </span>
+            </button>`;
+          }).join("");
+
+          const conflictBanner = p.conflicts.length
+            ? `<div class="pro-travels-conflict-alert">⚠️ <b>${p.conflicts.length} ${p.conflicts.length === 1 ? "choque de datas" : "choques de datas"}:</b> ${p.conflicts.slice(0, 2).map(cf => `${core.esc(cf.a.card.name)} (${core.esc(cf.a.city)}) × ${core.esc(cf.b.card.name)} (${core.esc(cf.b.city)})`).join("; ")}</div>`
+            : "";
+
+          return `<article class="card pro-travels-person-card" style="--p-col:${core.esc(p.color.hex)}">
+            <div class="pro-travels-person-head">
+              <div class="pro-travels-person-id">
+                <span class="pro-travels-avatar" style="background:${core.esc(p.color.hex)}">${core.esc(p.initials)}</span>
+                <div style="min-width:0">
+                  <h3 class="pro-travels-person-name">${core.esc(p.name)}</h3>
+                  <div class="muted small">
+                    ${p.favCity ? `Destino nº 1: <b>${core.esc(p.favCity.city)}</b> (${p.favCity.trips}×)` : "Sem destino definido"}
+                    ${p.nextTrip ? ` · Próxima: <b>${core.fmtShortBR(p.nextTrip.start)}</b> (${core.esc(p.nextTrip.city)})` : ""}
+                  </div>
+                </div>
+              </div>
+              <div class="pro-travels-person-actions">
+                <button type="button" class="btn ghost small" data-travel-goto-map="${core.esc(p.name)}" title="Ver viagens desta pessoa no Mapa">🗺️ Mapa</button>
+                <button type="button" class="btn ${isFocused ? "primary" : "ghost"} small" data-travel-pick-person="${core.esc(p.name)}" title="${isFocused ? "Remover filtro" : "Filtrar relatório nesta pessoa"}">${isFocused ? "✕ Limpar" : "🔍 Focar"}</button>
+              </div>
+            </div>
+
+            ${conflictBanner}
+
+            <div class="pro-travels-person-stats">
+              <div class="pro-travels-pstat">
+                <span>Viagens</span>
+                <strong>${p.tripCount}</strong>
+              </div>
+              <div class="pro-travels-pstat">
+                <span>Dias Totais</span>
+                <strong>${p.totalDays}d</strong>
+                ${p.uniqueDays && p.uniqueDays !== p.totalDays ? `<small>${p.uniqueDays}d únicos</small>` : ""}
+              </div>
+              <div class="pro-travels-pstat">
+                <span>Média / Viagem</span>
+                <strong>${core.num(p.avgDays, 1)}d</strong>
+                ${p.longestTrip ? `<small>Máx: ${p.longestTrip.dur}d</small>` : ""}
+              </div>
+              <div class="pro-travels-pstat">
+                <span>Destinos</span>
+                <strong>${p.uniqueCitiesCount}</strong>
+                <small>${p.donePct}% concluído</small>
+              </div>
+            </div>
+
+            <div class="pro-travels-prog-wrap" title="${p.doneCount} de ${p.tripCount} viagens concluídas (${p.donePct}%)">
+              <div class="pro-travels-prog-top">
+                <span class="muted small">Conclusão das missões (${p.doneCount}/${p.tripCount})</span>
+                <span class="muted small">${p.totalCost > 0 ? `💳 ${core.money(p.totalCost)} · ` : ""}<b>${p.donePct}%</b></span>
+              </div>
+              <div class="pro-travels-prog-track"><div class="pro-travels-prog-fill" style="width:${p.donePct}%;background:${core.esc(p.color.hex)}"></div></div>
+            </div>
+
+            ${citiesChips ? `<div class="pro-travels-cities-row">${citiesChips}</div>` : ""}
+
+            <div class="pro-travels-trip-list">${tripRowsHtml}</div>
+
+            ${p.entries.length > 5 ? `
+              <button type="button" class="btn ghost small pro-travels-expand-btn" data-travel-expand="${core.esc(p.key)}">
+                ${isExpanded ? "▴ Recolher roteiro" : `▾ Ver todas as ${p.entries.length} viagens (+${hiddenCount})`}
+              </button>` : ""}
+          </article>`;
+        }).join("");
+
+        personGrid.querySelectorAll("[data-travel-open-card]").forEach(b => {
+          b.onclick = () => openProCardModal(b.dataset.travelOpenCard);
+        });
+        personGrid.querySelectorAll("[data-travel-pick-person]").forEach(b => {
+          b.onclick = () => togglePersonFilter(b.dataset.travelPickPerson);
+        });
+        personGrid.querySelectorAll("[data-travel-goto-map]").forEach(b => {
+          b.onclick = () => {
+            proFilterAssignee = b.dataset.travelGotoMap;
+            if (proTravelsScope === "travels") proFilterTravel = "travels";
+            applyAndRenderProFilteredViews();
+            core?.switchProView?.("pro-map");
+          };
+        });
+        personGrid.querySelectorAll("[data-travel-expand]").forEach(b => {
+          b.onclick = () => {
+            const k = b.dataset.travelExpand;
+            if (proTravelsExpandedPeople.has(k)) proTravelsExpandedPeople.delete(k);
+            else proTravelsExpandedPeople.add(k);
+            renderProTravels(cards);
+          };
+        });
+      }
+    }
+
+    // 4. TABELA CONSOLIDADA DE TODOS OS DESLOCAMENTOS (DESKTOP ORDENÁVEL + CARDS MOBILE)
+    const tblCount = $("#proTravelsTableCountBadge");
+    if (tblCount) tblCount.textContent = `${rep.entries.length} ${rep.entries.length === 1 ? "registro" : "registros"}`;
+
+    const sortedEntries = rep.entries.slice().sort((a, b) => {
+      const dir = proTravelsTableSort.dir === "desc" ? -1 : 1;
+      const col = proTravelsTableSort.col;
+      if (col === "person") return dir * a.personName.localeCompare(b.personName);
+      if (col === "name") return dir * String(a.card.name || "").localeCompare(String(b.card.name || ""));
+      if (col === "city") return dir * a.city.localeCompare(b.city);
+      if (col === "days") return dir * (a.dur - b.dur);
+      if (col === "status") return dir * (Number(a.done) - Number(b.done) || (a.card.progress || 0) - (b.card.progress || 0));
+      return dir * String(a.start || "9999-99-99").localeCompare(String(b.start || "9999-99-99"));
+    });
+
+    const tableEl = $("#proTravelsTable");
+    if (tableEl) {
+      const arrow = col => proTravelsTableSort.col === col ? (proTravelsTableSort.dir === "asc" ? " ▲" : " ▼") : "";
+      tableEl.innerHTML = `
+        <thead>
+          <tr>
+            <th><button type="button" class="pro-map-sort-th" data-trv-sort="person">Responsável${arrow("person")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-trv-sort="name">Viagem / Missão${arrow("name")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-trv-sort="city">Destino${arrow("city")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-trv-sort="start">Período${arrow("start")}</button></th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-trv-sort="days">Duração${arrow("days")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-trv-sort="status">Status${arrow("status")}</button></th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sortedEntries.map(e => {
+            const info = getProTypeInfo(e.card.type);
+            const period = e.start ? `${core.fmtBR(e.start)}${e.end && e.end !== e.start ? ` – ${core.fmtBR(e.end)}` : ""}` : "Sem data";
+            const typeColStyle = info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : "";
+            return `<tr class="pro-map-trip-row" data-travel-open-card="${core.esc(e.card.id)}">
+              <td>
+                <span class="pro-assignee-badge" style="--asg-bg:${e.personColor.bg};--asg-fg:${e.personColor.fg};--asg-bd:${e.personColor.bd}">
+                  ${e.travelsFlag ? "✈️" : "👤"} ${core.esc(e.personName)}
+                </span>
+              </td>
+              <td>
+                <div style="display:flex;align-items:center;gap:7px">
+                  <span class="chip ${info.cls}"${typeColStyle}>${info.icon} ${core.esc(info.short)}</span>
+                  <strong>${core.esc(e.card.name)}</strong>
+                </div>
+              </td>
+              <td>📍 ${core.esc(e.rawLocation || e.city)}</td>
+              <td>${core.esc(period)}</td>
+              <td class="num"><span class="pro-map-dur-pill">${e.dur} ${e.dur === 1 ? "dia" : "dias"}</span></td>
+              <td><span class="pill ${e.done ? "ok" : ""}">${e.done ? "✅ Concluído" : `⏳ ${core.esc(e.colTitle)}`}</span></td>
+              <td>
+                <div style="display:flex;gap:4px">
+                  ${e.rawLocation ? `<button type="button" class="btn ghost small" data-travel-row-map="${core.esc(e.personName)}" title="Ver no Mapa">🗺️</button>` : ""}
+                  <button type="button" class="btn ghost small" data-travel-row-edit="${core.esc(e.card.id)}" title="Editar cartão">✏️</button>
+                </div>
+              </td>
+            </tr>`;
+          }).join("") || `<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">Nenhum deslocamento encontrado para os filtros atuais.</td></tr>`}
+        </tbody>`;
+
+      tableEl.querySelectorAll("[data-trv-sort]").forEach(btn => {
+        btn.onclick = () => {
+          const col = btn.dataset.trvSort;
+          if (proTravelsTableSort.col === col) {
+            proTravelsTableSort.dir = proTravelsTableSort.dir === "asc" ? "desc" : "asc";
+          } else {
+            proTravelsTableSort.col = col;
+            proTravelsTableSort.dir = col === "days" ? "desc" : "asc";
+          }
+          renderProTravels(cards);
+        };
+      });
+      tableEl.querySelectorAll("tr[data-travel-open-card]").forEach(tr => {
+        tr.onclick = (ev) => {
+          if (ev.target.closest("button")) return;
+          openProCardModal(tr.dataset.travelOpenCard);
+        };
+      });
+      tableEl.querySelectorAll("[data-travel-row-edit]").forEach(btn => {
+        btn.onclick = (ev) => { ev.stopPropagation(); openProCardModal(btn.dataset.travelRowEdit); };
+      });
+      tableEl.querySelectorAll("[data-travel-row-map]").forEach(btn => {
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          proFilterAssignee = btn.dataset.travelRowMap;
+          applyAndRenderProFilteredViews();
+          core?.switchProView?.("pro-map");
+        };
+      });
+    }
+
+    const mobileEl = $("#proTravelsMobileCards");
+    if (mobileEl) {
+      mobileEl.innerHTML = sortedEntries.map(e => {
+        const info = getProTypeInfo(e.card.type);
+        const period = e.start ? `${core.fmtShortBR(e.start)}${e.end && e.end !== e.start ? ` – ${core.fmtShortBR(e.end)}` : ""}` : "Sem data";
+        return `<div class="m-card pro-map-mcard" data-travel-open-card="${core.esc(e.card.id)}">
+          <div class="m-card-head">
+            <div style="min-width:0">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+                <span class="pro-assignee-badge" style="--asg-bg:${e.personColor.bg};--asg-fg:${e.personColor.fg};--asg-bd:${e.personColor.bd}">${e.travelsFlag ? "✈️" : "👤"} ${core.esc(e.personName)}</span>
+                <span class="pro-map-dur-pill">${e.dur}d</span>
+                <span class="pill ${e.done ? "ok" : ""}" style="font-size:0.66rem">${e.done ? "✅" : core.esc(e.colTitle)}</span>
+              </div>
+              <b style="display:block;font-size:0.9rem;color:var(--text-strong)">${info.icon} ${core.esc(e.card.name)}</b>
+            </div>
+            <button type="button" class="icon-btn" data-travel-row-edit="${core.esc(e.card.id)}" title="Editar cartão">✏️</button>
+          </div>
+          <div class="pro-map-mcard-meta">
+            <div>📍 <b>${core.esc(e.city)}</b></div>
+            <div>📅 ${core.esc(period)}</div>
+          </div>
+        </div>`;
+      }).join("") || `<p class="muted small" style="text-align:center;padding:14px">Nenhum deslocamento encontrado para os filtros atuais.</p>`;
+
+      mobileEl.querySelectorAll("[data-travel-open-card]").forEach(el => {
+        el.onclick = (ev) => {
+          if (ev.target.closest("button")) return;
+          openProCardModal(el.dataset.travelOpenCard);
+        };
+      });
+      mobileEl.querySelectorAll("[data-travel-row-edit]").forEach(btn => {
+        btn.onclick = (ev) => { ev.stopPropagation(); openProCardModal(btn.dataset.travelRowEdit); };
+      });
     }
   }
 
@@ -5163,6 +6089,22 @@
       };
     }
 
+    // Deslocamentos controls
+    if ($("#btnProTravelsAddCard")) $("#btnProTravelsAddCard").onclick = () => openProCardModal();
+    if ($("#btnProTravelsPrint")) $("#btnProTravelsPrint").onclick = printProTravelsReport;
+    if ($("#proTravelsQuickAssignee")) {
+      $("#proTravelsQuickAssignee").onchange = e => {
+        proFilterAssignee = e.target.value || "";
+        applyAndRenderProFilteredViews();
+      };
+    }
+    if ($("#proTravelsScopeSel")) {
+      $("#proTravelsScopeSel").onchange = e => {
+        proTravelsScope = e.target.value || "travels";
+        renderProTravels();
+      };
+    }
+
     // Gantt controls
     if ($("#btnProAddCardGantt")) $("#btnProAddCardGantt").onclick = () => openProCardModal();
     $("#proGanttModeSeg")?.querySelectorAll("button").forEach(b => {
@@ -5193,13 +6135,13 @@
         core.save("↺ Ordem automática por Tipo de Cartão restaurada");
       };
     }
-    // Filtros unificados (Gantt / Mapa / Dashboard / Financeiro)
+    // Filtros unificados (Gantt / Mapa / Deslocamentos / Dashboard / Financeiro)
     const bindUnifiedFilterGroup = (prefix, clearSel) => {
       const searchEl = $(`#${prefix}Search`);
       if (searchEl) {
         searchEl.oninput = () => {
           proFilterSearch = searchEl.value || "";
-          ["#proGanttSearch", "#proMapSearch", "#proDashSearch", "#proFinSearch"].forEach(s => {
+          ["#proGanttSearch", "#proMapSearch", "#proTravelsSearch", "#proDashSearch", "#proFinSearch"].forEach(s => {
             if ($(s) && $(s) !== searchEl) $(s).value = proFilterSearch;
           });
           applyAndRenderProFilteredViews();
@@ -5242,6 +6184,7 @@
     };
     bindUnifiedFilterGroup("proGantt", "#btnProGanttClearFilters");
     bindUnifiedFilterGroup("proMap", "#btnProMapClearFilters");
+    bindUnifiedFilterGroup("proTravels", "#btnProTravelsClearFilters");
     bindUnifiedFilterGroup("proDash", "#btnProDashClearFilters");
     bindUnifiedFilterGroup("proFin", "#btnProFinClearFilters");
 
@@ -5918,6 +6861,7 @@
     renderProGantt(cards);
     renderProTimeline(cards);
     renderProMap(filteredCards);
+    renderProTravels(filteredCards);
     renderProDashboard(filteredCards, t);
     renderProFinance(filteredCards, t);
     renderProTable(cards);
@@ -5937,6 +6881,7 @@
     renderProGantt,
     renderProTimeline,
     renderProMap,
+    renderProTravels,
     renderProBoard,
     buildProSummaryHTML,
     openProCardModal,

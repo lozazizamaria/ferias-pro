@@ -5740,6 +5740,7 @@ function switchProView(viewId) {
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
   if (viewId === "admin") loadAndRenderAdmin();
   if (viewId === "pro-map" && window.MyPlanPro?.renderProMap) window.MyPlanPro.renderProMap();
+  if (viewId === "pro-travels" && window.MyPlanPro?.renderProTravels) window.MyPlanPro.renderProTravels();
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();
 }

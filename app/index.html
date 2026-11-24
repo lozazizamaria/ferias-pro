@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=40">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=40">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=40">
+<link rel="manifest" href="/manifest.webmanifest?v=41">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=41">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=41">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=40">
+<link rel="stylesheet" href="styles.css?v=41">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=40" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=41" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=40" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=41" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -216,6 +216,7 @@
       <button class="tab active" data-pro-view="pro-board" id="tab-pro-board" type="button">🗂️ Quadro</button>
       <button class="tab" data-pro-view="pro-gantt" id="tab-pro-gantt" type="button">📅 Gantt &amp; Timeline</button>
       <button class="tab" data-pro-view="pro-map" id="tab-pro-map" type="button">🗺️ Mapa</button>
+      <button class="tab" data-pro-view="pro-travels" id="tab-pro-travels" type="button">✈️ Deslocamentos</button>
       <button class="tab" data-pro-view="pro-dashboard" id="tab-pro-dashboard" type="button">📊 Dashboard</button>
       <button class="tab" data-pro-view="pro-finance" id="tab-pro-finance" type="button">💼 Financeiro</button>
       <button class="tab" data-pro-view="pro-table" id="tab-pro-table" type="button">🧾 Tabela</button>
@@ -1174,6 +1175,226 @@
           </div>
           <div id="proMapTripsMobileCards" class="mobile-cards pro-map-mobile-list"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- MODO PROFISSIONAL: RELATÓRIO & GRÁFICOS DE DESLOCAMENTOS POR RESPONSÁVEL -->
+    <section class="view" id="view-pro-travels">
+      <div class="card pro-board-toolbar-card pro-travels-toolbar-card">
+        <div class="gantt-controls gantt-toolbar-row pro-compact-toolbar pro-travels-header-bar">
+          <div class="gantt-pop-host pro-travels-hdr-filter">
+            <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProTravelsFilterPop" aria-expanded="false" aria-controls="proTravelsFilterPopPanel" title="Filtros de Deslocamentos">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              <span>Filtros</span>
+              <span class="gantt-pop-count" id="proTravelsFilterCount" hidden></span>
+            </button>
+            <div class="gantt-pop-panel" id="proTravelsFilterPopPanel" hidden>
+              <div class="gantt-pop-head">
+                <strong>Filtros de Deslocamentos</strong>
+                <button type="button" class="btn ghost small" id="btnProTravelsClearFilters" hidden>✕ Limpar</button>
+              </div>
+              <div class="gantt-pop-grid">
+                <div class="gantt-pop-field span2">
+                  <span class="gantt-pop-lbl">Buscar (Título, Notas, Local)</span>
+                  <input type="search" id="proTravelsSearch" placeholder="🔎 Buscar missão, cliente, local ou nota...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Lista</span>
+                  <div id="proTravelsColFilter" class="msel-host msel-compact" aria-label="Filtrar listas em deslocamentos"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Tipo</span>
+                  <div id="proTravelsTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos em deslocamentos"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Etiqueta</span>
+                  <div id="proTravelsLabelFilter" class="msel-host msel-compact" aria-label="Filtrar etiquetas em deslocamentos"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Tags</span>
+                  <div id="proTravelsTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags em deslocamentos"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Prioridade</span>
+                  <select id="proTravelsPrioFilter" aria-label="Filtrar prioridade em deslocamentos">
+                    <option value="">Todas prioridades</option>
+                    <option value="Crítica">Crítica</option>
+                    <option value="Alta">Alta</option>
+                    <option value="Média">Média</option>
+                    <option value="Baixa">Baixa</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Responsável</span>
+                  <select id="proTravelsAssigneeFilter" aria-label="Filtrar responsável em deslocamentos">
+                    <option value="">Todos</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Deslocamento / Viagem</span>
+                  <select id="proTravelsTravelFilter" aria-label="Filtrar viagem em deslocamentos">
+                    <option value="">Todos</option>
+                    <option value="travels">✈️ Com responsável que viaja</option>
+                    <option value="local">🏢 Sem viagem</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Cliente / Conta</span>
+                  <input type="search" id="proTravelsClientFilter" placeholder="Filtrar cliente...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Local</span>
+                  <input type="search" id="proTravelsLocationFilter" placeholder="Filtrar cidade ou local...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Progresso / Conclusão</span>
+                  <select id="proTravelsDoneFilter" aria-label="Filtrar conclusão em deslocamentos">
+                    <option value="">Todos</option>
+                    <option value="pending">Pendentes (&lt; 100%)</option>
+                    <option value="done">Concluídos (100%)</option>
+                    <option value="nodate">Sem data / Sem prazo</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Movimento Fin.</span>
+                  <select id="proTravelsFinDirFilter" aria-label="Filtrar movimento financeiro em deslocamentos">
+                    <option value="">Todos</option>
+                    <option value="income">💵 Recebimento (+)</option>
+                    <option value="expense">💳 Despesa (−)</option>
+                    <option value="none">Sem lançamento</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Status Financeiro</span>
+                  <select id="proTravelsFinStatusFilter" aria-label="Filtrar status financeiro em deslocamentos">
+                    <option value="">Todos</option>
+                    <option value="Previsto">⏳ Previsto</option>
+                    <option value="Liquidado">✅ Liquidado</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">De</span>
+                  <input type="date" id="proTravelsDateFrom" aria-label="Data inicial em deslocamentos">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Até</span>
+                  <input type="date" id="proTravelsDateTo" aria-label="Data final em deslocamentos">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pro-travels-quick-filters">
+            <select id="proTravelsQuickAssignee" class="pro-map-quick-sel" aria-label="Focar em um responsável">
+              <option value="">👤 Todos os responsáveis</option>
+            </select>
+            <select id="proTravelsScopeSel" class="pro-map-quick-sel" aria-label="Escopo dos deslocamentos">
+              <option value="travels">✈️ Apenas marcados como "Viaja"</option>
+              <option value="with_location">📍 Todos os cartões com Local</option>
+              <option value="all">🗂️ Todos os cartões com responsável</option>
+            </select>
+          </div>
+
+          <div class="gantt-toolbar-right pro-travels-hdr-right">
+            <span class="pill pro-travels-count-pill" id="proTravelsCountBadge">0 deslocamentos · 0 pessoas</span>
+            <button type="button" class="btn ghost small pro-travels-print-btn" id="btnProTravelsPrint" title="Imprimir relatório de deslocamentos em PDF">🖨️ <span class="hide-xs">Relatório</span></button>
+            <button type="button" class="btn primary small pro-travels-add-btn" id="btnProTravelsAddCard">➕ Novo Cartão</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BANNER DE ESTADO VAZIO CONTEXTUAL (EX: QUANDO HÁ CARTÕES COM LOCAL MAS NENHUM MARCADO COM 'VIAJA') -->
+      <div id="proTravelsEmptyBanner" class="card pro-travels-empty" hidden></div>
+
+      <!-- 1. CARDS DE KPIS EXECUTIVOS DE DESLOCAMENTOS -->
+      <div class="pro-travels-kpis" id="proTravelsKpis"></div>
+
+      <!-- 2. GRÁFICOS INTERATIVOS DOS RESPONSÁVEIS POR VIAGEM -->
+      <div class="pro-travels-charts-grid" id="proTravelsChartsGrid">
+        <div class="card pro-travels-chart-card">
+          <div class="card-head">
+            <div>
+              <h2>✈️ Ranking de Viagens por Responsável</h2>
+              <span class="muted small">Clique em uma pessoa para filtrar todo o relatório</span>
+            </div>
+          </div>
+          <div id="proTravelsChartTripsByPerson" class="pro-map-chart-body"></div>
+        </div>
+
+        <div class="card pro-travels-chart-card">
+          <div class="card-head">
+            <div>
+              <h2>🗓️ Carga de Dias Viajados por Responsável</h2>
+              <span class="muted small">Total de dias em missão e média por viagem</span>
+            </div>
+          </div>
+          <div id="proTravelsChartDaysByPerson" class="pro-map-chart-body"></div>
+        </div>
+
+        <div class="card pro-travels-chart-card">
+          <div class="card-head">
+            <div>
+              <h2>🍩 Participação por Responsável (Dias de Viagem)</h2>
+              <span class="muted small">Distribuição percentual da carga entre a equipe</span>
+            </div>
+          </div>
+          <div id="proTravelsChartShareDonut" class="pro-map-chart-body"></div>
+        </div>
+
+        <div class="card pro-travels-chart-card">
+          <div class="card-head">
+            <div>
+              <h2>📍 Top Destinos por Responsável</h2>
+              <span class="muted small">Segmentação colorida mostrando quem mais vai a cada cidade</span>
+            </div>
+          </div>
+          <div id="proTravelsChartDestByPerson" class="pro-map-chart-body"></div>
+        </div>
+
+        <div class="card pro-travels-chart-card pro-travels-span2">
+          <div class="card-head">
+            <div>
+              <h2>📈 Evolução Mensal de Deslocamentos por Responsável</h2>
+              <span class="muted small">Volume de viagens empilhado por pessoa ao longo dos meses</span>
+            </div>
+          </div>
+          <div id="proTravelsChartMonthlyStacked" class="pro-map-chart-body"></div>
+        </div>
+
+        <div class="card pro-travels-chart-card pro-travels-span2">
+          <div class="card-head">
+            <div>
+              <h2>🔥 Matriz de Carga: Responsável × Mês</h2>
+              <span class="muted small">Intensidade de viagens e dias de cada pessoa mês a mês</span>
+            </div>
+          </div>
+          <div id="proTravelsChartHeatmap" class="pro-travels-heatmap-wrap"></div>
+        </div>
+      </div>
+
+      <!-- 3. RELATÓRIO INDIVIDUAL DETALHADO POR RESPONSÁVEL -->
+      <div class="pro-travels-section-head">
+        <div>
+          <h2>👥 Relatório Individual por Responsável</h2>
+          <span class="muted small">Resumo completo, destinos frequentes, alertas de choque de datas e roteiro cronológico de cada viajante</span>
+        </div>
+        <span class="pill" id="proTravelsPeopleBadge">0 responsáveis</span>
+      </div>
+      <div class="pro-travels-person-grid" id="proTravelsPersonCards"></div>
+
+      <!-- 4. TABELA CONSOLIDADA DE TODOS OS DESLOCAMENTOS (DESKTOP ORDENÁVEL + CARDS MOBILE) -->
+      <div class="card pro-map-table-card">
+        <div class="card-head">
+          <div>
+            <h2>📋 Relatório Completo de Deslocamentos</h2>
+            <span class="muted small">Todas as viagens por responsável — clique nos títulos para ordenar ou abra o cartão para editar</span>
+          </div>
+          <span class="pill" id="proTravelsTableCountBadge">0 registros</span>
+        </div>
+        <div class="table-wrap desktop-table-wrap">
+          <table id="proTravelsTable" class="pro-map-trips-table"></table>
+        </div>
+        <div id="proTravelsMobileCards" class="mobile-cards pro-map-mobile-list"></div>
       </div>
     </section>
 
@@ -2814,15 +3035,15 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=40"></script>
-<script src="vehicles.js?v=40"></script>
-<script src="countries.js?v=40"></script>
-<script src="data.js?v=40"></script>
-<script src="maps.js?v=40"></script>
-<script src="calendar.js?v=40"></script>
-<script src="report.js?v=40"></script>
-<script src="api.js?v=40"></script>
-<script src="pro.js?v=40"></script>
-<script src="app.js?v=40"></script>
+<script src="config.example.js?v=41"></script>
+<script src="vehicles.js?v=41"></script>
+<script src="countries.js?v=41"></script>
+<script src="data.js?v=41"></script>
+<script src="maps.js?v=41"></script>
+<script src="calendar.js?v=41"></script>
+<script src="report.js?v=41"></script>
+<script src="api.js?v=41"></script>
+<script src="pro.js?v=41"></script>
+<script src="app.js?v=41"></script>
 </body>
 </html>
