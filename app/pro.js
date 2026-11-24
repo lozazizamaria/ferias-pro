@@ -2054,6 +2054,27 @@
   }
 
   let proMapRenderSeq = 0;
+  let proMapInstance = null;
+  let proMapCachedGroups = [];
+  let proMapActiveGroupKey = "";
+  let proMapActiveCardId = "";
+  let proMapTableSort = { col: "start", dir: "asc" };
+
+  function shortLocationCityName(rawLoc) {
+    const clean = String(rawLoc || "").trim();
+    if (!clean) return "Sem local";
+    const parts = clean.split(",").map(s => s.trim()).filter(Boolean);
+    const first = parts[0] || clean;
+    if (parts.length >= 2 && parts[1].length <= 24 && !/brasil|brazil/i.test(parts[1])) {
+      return `${first} (${parts[1]})`;
+    }
+    return first;
+  }
+
+  function cardDurationDays(a) {
+    if (!a || !a.start) return 1;
+    return Math.max(1, core.days(a));
+  }
 
   async function resolveCardCoordinates(card) {
     if (card.locationLat != null && card.locationLng != null && isFinite(Number(card.locationLat)) && isFinite(Number(card.locationLng))) {
@@ -2072,6 +2093,227 @@
     return null;
   }
 
+  function clusterMapGroupsByProximity(rawGroups) {
+    const sorted = rawGroups.slice().sort((a, b) => b.cards.length - a.cards.length);
+    const clusters = [];
+    const THRESHOLD_DEG = 0.14; // ~15 km — agrupa marcadores da mesma cidade/região sem sobrepor
+
+    sorted.forEach(g => {
+      const match = clusters.find(cl => Math.hypot(cl.lat - g.lat, cl.lng - g.lng) <= THRESHOLD_DEG);
+      if (match) {
+        g.cards.forEach(c => {
+          if (!match.cards.some(x => x.id === c.id)) match.cards.push(c);
+        });
+      } else {
+        const city = shortLocationCityName(g.label);
+        clusters.push({
+          key: `cl_${clusters.length}_${g.lat.toFixed(3)}_${g.lng.toFixed(3)}`,
+          lat: g.lat,
+          lng: g.lng,
+          label: g.label,
+          cityLabel: city,
+          cards: [...g.cards]
+        });
+      }
+    });
+
+    // Segunda passagem: se dois clusters distintos ficarem próximos visualmente, calcula offset radial (spiderfy suave) para nunca colidir
+    for (let i = 0; i < clusters.length; i++) {
+      for (let j = i + 1; j < clusters.length; j++) {
+        const A = clusters[i], B = clusters[j];
+        const dist = Math.hypot(A.lat - B.lat, A.lng - B.lng);
+        if (dist > 0 && dist < 0.45) {
+          const angle = Math.atan2(B.lat - A.lat, B.lng - A.lng) || (j * 1.1);
+          const push = (0.45 - dist) * 0.5;
+          B.displayLat = (B.displayLat ?? B.lat) + Math.sin(angle) * push;
+          B.displayLng = (B.displayLng ?? B.lng) + Math.cos(angle) * push;
+        }
+      }
+    }
+    clusters.forEach(cl => {
+      if (cl.displayLat == null) cl.displayLat = cl.lat;
+      if (cl.displayLng == null) cl.displayLng = cl.lng;
+    });
+    return clusters;
+  }
+
+  function closeProMapInspector() {
+    proMapActiveGroupKey = "";
+    proMapActiveCardId = "";
+    const insp = $("#proMapInspector");
+    const back = $("#proMapInspectorBackdrop");
+    if (insp) { insp.hidden = true; insp.innerHTML = ""; }
+    if (back) back.hidden = true;
+    document.querySelectorAll(".pro-map-marker-pill.is-active").forEach(el => el.classList.remove("is-active"));
+    document.querySelectorAll("#proMapTripsTable tr.is-active, #proMapTripsMobileCards .m-card.is-active").forEach(el => el.classList.remove("is-active"));
+  }
+
+  function syncActiveMapHighlights() {
+    document.querySelectorAll("[data-map-group-key]").forEach(el => {
+      el.classList.toggle("is-active", el.dataset.mapGroupKey === proMapActiveGroupKey);
+    });
+    document.querySelectorAll("[data-map-row-card]").forEach(el => {
+      el.classList.toggle("is-active", el.dataset.mapRowCard === proMapActiveCardId);
+    });
+  }
+
+  function buildCardSummaryDetailHTML(c, groupOpt = null) {
+    const cols = getMergedColumns();
+    const info = getProTypeInfo(c.type);
+    const done = isCardDone(c, cols);
+    const dur = cardDurationDays(c);
+    const periodStr = c.start
+      ? `${core.fmtBR(c.start)}${c.end && c.end !== c.start ? ` até ${core.fmtBR(c.end)}` : ""} (${dur} ${dur === 1 ? "dia" : "dias"})`
+      : "Sem data definida";
+    const asgBadges = renderAssigneeBadgesHTML(c) || `<span class="muted small">Sem responsável atribuído</span>`;
+    const colTitle = cols.find(col => col.id === c.columnId)?.title || c.columnTitle || "Sem lista";
+    const typeColStyle = info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : "";
+    const backBtn = (groupOpt && groupOpt.cards.length > 1)
+      ? `<button type="button" class="btn ghost small" id="btnProMapInspBack">← Voltar para ${core.esc(groupOpt.cityLabel)} (${groupOpt.cards.length})</button>`
+      : "";
+
+    return `
+      <div class="pro-map-insp-drag" aria-hidden="true"></div>
+      <div class="pro-map-insp-head">
+        <div style="min-width:0;flex:1">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+            <span class="chip ${info.cls}"${typeColStyle}>${info.icon} ${core.esc(info.short)}</span>
+            <span class="pill ${done ? "ok" : ""}">${done ? "✅ Concluído" : `⏳ ${core.esc(colTitle)} (${c.progress || 0}%)`}</span>
+            ${c.priority ? `<span class="pill">${core.esc(c.priority)}</span>` : ""}
+          </div>
+          <h3 class="pro-map-insp-title">${core.esc(c.name)}</h3>
+        </div>
+        <button type="button" class="icon-btn" id="btnProMapInspClose" aria-label="Fechar resumo">✕</button>
+      </div>
+      <div class="pro-map-insp-body">
+        <div class="pro-map-insp-row">
+          <span class="pro-map-insp-lbl">📍 Localidade</span>
+          <strong>${core.esc(c.location || groupOpt?.label || "—")}</strong>
+        </div>
+        <div class="pro-map-insp-row">
+          <span class="pro-map-insp-lbl">📅 Período &amp; Duração</span>
+          <strong>${core.esc(periodStr)}${c.startTime ? ` · 🕒 ${core.esc(c.startTime)}${c.endTime ? `–${core.esc(c.endTime)}` : ""}` : ""}</strong>
+        </div>
+        <div class="pro-map-insp-row">
+          <span class="pro-map-insp-lbl">👤 Responsável(is) / Participantes</span>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:2px">${asgBadges}</div>
+        </div>
+        ${c.client ? `<div class="pro-map-insp-row"><span class="pro-map-insp-lbl">🏢 Cliente / Conta</span><span>${core.esc(c.client)}</span></div>` : ""}
+        ${c.meetingLink ? `<div class="pro-map-insp-row"><span class="pro-map-insp-lbl">🔗 Link da Reunião</span><a href="${core.esc(c.meetingLink)}" target="_blank" rel="noopener" style="color:var(--accent2);word-break:break-all">${core.esc(c.meetingLink)} ↗</a></div>` : ""}
+        ${c.notes ? `<div class="pro-map-insp-row"><span class="pro-map-insp-lbl">📝 Notas</span><span class="muted small">${core.esc(c.notes)}</span></div>` : ""}
+      </div>
+      <div class="pro-map-insp-foot">
+        ${backBtn}
+        <button type="button" class="btn primary small" id="btnProMapInspEdit" style="margin-left:auto">✏️ Ver detalhes completos / Editar</button>
+      </div>
+    `;
+  }
+
+  function buildClusterListInspectorHTML(group) {
+    const cols = getMergedColumns();
+    const totalDays = group.cards.reduce((s, c) => s + cardDurationDays(c), 0);
+    const itemsHtml = group.cards.map(c => {
+      const info = getProTypeInfo(c.type);
+      const done = isCardDone(c, cols);
+      const dur = cardDurationDays(c);
+      const dtStr = c.start ? `${core.fmtShortBR(c.start)}${c.end && c.end !== c.start ? `–${core.fmtShortBR(c.end)}` : ""} (${dur}d)` : "Sem data";
+      const asgBadges = renderAssigneeBadgesHTML(c);
+      const typeColStyle = info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : "";
+      return `<div class="pro-map-cluster-item" data-insp-pick-card="${core.esc(c.id)}">
+        <div class="pro-map-cluster-item-top">
+          <span class="chip ${info.cls}"${typeColStyle}>${info.icon} ${core.esc(info.short)}</span>
+          <span class="muted small">📅 ${core.esc(dtStr)}</span>
+          <span class="pill ${done ? "ok" : ""}" style="margin-left:auto;font-size:0.66rem">${done ? "✅ 100%" : `${c.progress || 0}%`}</span>
+        </div>
+        <strong class="pro-map-cluster-item-title">${core.esc(c.name)}</strong>
+        ${asgBadges ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px">${asgBadges}</div>` : ""}
+      </div>`;
+    }).join("");
+
+    return `
+      <div class="pro-map-insp-drag" aria-hidden="true"></div>
+      <div class="pro-map-insp-head">
+        <div style="min-width:0;flex:1">
+          <span class="pill" style="margin-bottom:4px">📍 ${group.cards.length} cartões · ${totalDays} dia(s) acumulados</span>
+          <h3 class="pro-map-insp-title">${core.esc(group.cityLabel)}</h3>
+          <div class="muted small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${core.esc(group.label)}</div>
+        </div>
+        <button type="button" class="icon-btn" id="btnProMapInspClose" aria-label="Fechar lista do local">✕</button>
+      </div>
+      <div class="pro-map-cluster-list">
+        ${itemsHtml}
+      </div>
+    `;
+  }
+
+  function openProMapInspector({ group = null, card = null, panMap = true } = {}) {
+    const insp = $("#proMapInspector");
+    const back = $("#proMapInspectorBackdrop");
+    if (!insp) return;
+
+    const resolvedGroup = group || (card ? proMapCachedGroups.find(g => g.cards.some(x => x.id === card.id)) : null);
+    proMapActiveGroupKey = resolvedGroup?.key || "";
+    proMapActiveCardId = card ? card.id : (resolvedGroup?.cards.length === 1 ? resolvedGroup.cards[0].id : "");
+
+    if (panMap && resolvedGroup && proMapInstance) {
+      try {
+        proMapInstance.panTo({ lat: resolvedGroup.displayLat ?? resolvedGroup.lat, lng: resolvedGroup.displayLng ?? resolvedGroup.lng });
+        if ((proMapInstance.getZoom?.() || 5) < 7) proMapInstance.setZoom(8);
+      } catch {}
+    }
+
+    const targetCard = card || (resolvedGroup && resolvedGroup.cards.length === 1 ? resolvedGroup.cards[0] : null);
+    if (targetCard) {
+      insp.innerHTML = buildCardSummaryDetailHTML(targetCard, resolvedGroup);
+    } else if (resolvedGroup) {
+      insp.innerHTML = buildClusterListInspectorHTML(resolvedGroup);
+    } else {
+      return closeProMapInspector();
+    }
+
+    insp.hidden = false;
+    if (back) back.hidden = window.innerWidth >= 768;
+    syncActiveMapHighlights();
+
+    const closeBtn = $("#btnProMapInspClose", insp);
+    if (closeBtn) closeBtn.onclick = closeProMapInspector;
+    if (back) back.onclick = closeProMapInspector;
+
+    const editBtn = $("#btnProMapInspEdit", insp);
+    if (editBtn && targetCard) {
+      editBtn.onclick = () => openProCardModal(targetCard.id);
+    }
+    const backListBtn = $("#btnProMapInspBack", insp);
+    if (backListBtn && resolvedGroup) {
+      backListBtn.onclick = () => openProMapInspector({ group: resolvedGroup, card: null, panMap: false });
+    }
+    insp.querySelectorAll("[data-insp-pick-card]").forEach(el => {
+      el.onclick = () => {
+        const picked = resolvedGroup?.cards.find(x => x.id === el.dataset.inspPickCard);
+        if (picked) openProMapInspector({ group: resolvedGroup, card: picked, panMap: false });
+      };
+    });
+  }
+
+  function createClusterMarkerInnerHTML(g) {
+    const count = g.cards.length;
+    const firstCard = g.cards[0];
+    const asgList = getCardAssigneesList(firstCard);
+    const primaryAsg = asgList.find(e => e.travels) || asgList[0];
+    const tagCol = primaryAsg ? colorForAssignee(primaryAsg.name).hex : (getProTypeInfo(firstCard?.type).color || "#38bdf8");
+    const isSingle = count === 1;
+    const mainTxt = isSingle
+      ? `${g.cityLabel} · ${firstCard.name.length > 22 ? firstCard.name.slice(0, 21) + "…" : firstCard.name}`
+      : `${g.cityLabel}`;
+    const countBadge = count > 1
+      ? `<span class="pro-map-marker-count">${count}</span>`
+      : "";
+    return {
+      tagCol,
+      html: `<span class="pro-map-marker-pin">📍</span><span class="pro-map-marker-txt">${core.esc(mainTxt)}</span>${countBadge}`
+    };
+  }
+
   function renderProMapFallbackSvg(canvas, groups) {
     const isLight = document.documentElement.getAttribute("data-theme") === "light";
     const bg = isLight ? "#e2e8f0" : "#0b1325";
@@ -2080,39 +2322,421 @@
       canvas.innerHTML = `<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:8px">
         <div style="font-size:1.8rem">🗺️</div>
         <strong>Nenhum cartão com local para exibir neste filtro</strong>
-        <span class="muted small">Preencha o campo <b>Local</b> nos cartões (ex: Brasília, São Paulo, Rio de Janeiro...) para visualizá-los no mapa com a tag do título.</span>
+        <span class="muted small">Preencha o campo <b>Local</b> nos cartões (ex: Brasília, São Paulo, Rio de Janeiro...) para visualizá-los no mapa e no dashboard analítico abaixo.</span>
       </div>`;
       return;
     }
-    const lats = groups.map(g => g.lat);
-    const lngs = groups.map(g => g.lng);
+    const lats = groups.map(g => g.displayLat ?? g.lat);
+    const lngs = groups.map(g => g.displayLng ?? g.lng);
     let minLat = Math.min(...lats) - 2.5, maxLat = Math.max(...lats) + 2.5;
     let minLng = Math.min(...lngs) - 3.5, maxLng = Math.max(...lngs) + 3.5;
     if (maxLat - minLat < 4) { minLat -= 2; maxLat += 2; }
     if (maxLng - minLng < 5) { minLng -= 2.5; maxLng += 2.5; }
 
+    // Posicionamento sem colisão em % para o fallback SVG
+    const placed = [];
     const pinsHtml = groups.map(g => {
-      const xPct = Math.max(8, Math.min(92, ((g.lng - minLng) / (maxLng - minLng)) * 100));
-      const yPct = Math.max(10, Math.min(90, (1 - (g.lat - minLat) / (maxLat - minLat)) * 100));
-      const tagsHtml = g.cards.map(c => {
-        const asgList = getCardAssigneesList(c);
-        const primaryAsg = asgList.find(e => e.travels) || asgList[0];
-        const tagCol = primaryAsg ? colorForAssignee(primaryAsg.name).hex : (getProTypeInfo(c.type).color || "#38bdf8");
-        return `<button type="button" class="pro-map-tag" data-map-card="${core.esc(c.id)}" style="--tag-c:${core.esc(tagCol)}" title="${core.esc(c.name)} — ${core.esc(g.label)}">${core.esc(c.name)}</button>`;
-      }).join("");
-      const dotColor = g.cards.length ? (getProTypeInfo(g.cards[0].type).color || "#38bdf8") : "#38bdf8";
+      const lat = g.displayLat ?? g.lat;
+      const lng = g.displayLng ?? g.lng;
+      let xPct = Math.max(10, Math.min(90, ((lng - minLng) / (maxLng - minLng)) * 100));
+      let yPct = Math.max(12, Math.min(88, (1 - (lat - minLat) / (maxLat - minLat)) * 100));
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const hit = placed.find(p => Math.abs(p.x - xPct) < 15 && Math.abs(p.y - yPct) < 10);
+        if (!hit) break;
+        const ang = (attempt + 1) * 0.95;
+        xPct = Math.max(8, Math.min(92, xPct + Math.cos(ang) * 9));
+        yPct = Math.max(10, Math.min(90, yPct + Math.sin(ang) * 7));
+      }
+      placed.push({ x: xPct, y: yPct });
+      const { tagCol, html } = createClusterMarkerInnerHTML(g);
+      const isAct = g.key === proMapActiveGroupKey ? " is-active" : "";
       return `<div class="pro-map-tag-group" style="position:absolute;left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%;transform:translate(-50%,-100%);z-index:5">
-        ${tagsHtml}
-        <span class="pro-map-pin-dot" style="--tag-c:${core.esc(dotColor)}" title="${core.esc(g.label)}"></span>
+        <button type="button" class="pro-map-marker-pill${isAct}" data-map-group-key="${core.esc(g.key)}" style="--tag-c:${core.esc(tagCol)}" title="${core.esc(g.cityLabel)} (${g.cards.length} cartão/ões)">
+          ${html}
+        </button>
+        <span class="pro-map-pin-dot" style="--tag-c:${core.esc(tagCol)}"></span>
       </div>`;
     }).join("");
 
     canvas.innerHTML = `<div style="position:relative;width:100%;height:100%;background:${bg};background-image:linear-gradient(${gridCol} 1px, transparent 1px),linear-gradient(90deg, ${gridCol} 1px, transparent 1px);background-size:44px 44px;overflow:hidden">
       ${pinsHtml}
     </div>`;
-    canvas.querySelectorAll("[data-map-card]").forEach(btn => {
-      btn.onclick = () => openProCardModal(btn.dataset.mapCard);
+    canvas.querySelectorAll("[data-map-group-key]").forEach(btn => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        const grp = proMapCachedGroups.find(x => x.key === btn.dataset.mapGroupKey);
+        if (grp) openProMapInspector({ group: grp, card: grp.cards.length === 1 ? grp.cards[0] : null, panMap: false });
+      };
     });
+  }
+
+  function renderProMapAnalytics(cards, groups) {
+    const cols = getMergedColumns();
+    const mapCards = groups.flatMap(g => g.cards);
+    const totalTrips = mapCards.length;
+    const totalDays = mapCards.reduce((sum, c) => sum + cardDurationDays(c), 0);
+    const uniqueLocations = groups.length;
+
+    const peopleSet = new Set();
+    mapCards.forEach(c => {
+      getCardAssigneesList(c).forEach(e => {
+        if (e.name) peopleSet.add(e.name.trim());
+      });
+    });
+    const uniquePeople = peopleSet.size;
+
+    // 1. Cards de KPIs (grid-cols-2 no mobile, grid-cols-4 no desktop)
+    const kpisEl = $("#proMapDashKpis");
+    if (kpisEl) {
+      const kpis = [
+        ["Total de Viagens / Cartões", String(totalTrips), `${cards.length} cartão(ões) no filtro geral`, "#38bdf8"],
+        ["Total de Dias", `${totalDays} ${totalDays === 1 ? "dia" : "dias"}`, totalTrips ? `Média de ${core.num(totalDays / totalTrips, 1)} d/cartão` : "Soma das durações", "#10b981"],
+        ["Localidades Visitadas", String(uniqueLocations), uniqueLocations === 1 ? "1 destino único" : `${uniqueLocations} destinos únicos`, "#f59e0b"],
+        ["Pessoas / Responsáveis", String(uniquePeople), uniquePeople === 1 ? "1 responsável envolvido" : `${uniquePeople} responsáveis únicos`, "#a855f7"]
+      ];
+      kpisEl.innerHTML = kpis.map(([lbl, val, sub, col]) => `
+        <div class="kpi pro-map-kpi-card" style="--c:${col}">
+          <div class="lbl">${lbl}</div>
+          <div class="val">${val}</div>
+          <div class="sub">${sub}</div>
+        </div>
+      `).join("");
+    }
+
+    // Agregações por Localidade
+    const byLoc = groups.map(g => {
+      const days = g.cards.reduce((s, c) => s + cardDurationDays(c), 0);
+      return {
+        key: g.key,
+        city: g.cityLabel,
+        fullLabel: g.label,
+        trips: g.cards.length,
+        days,
+        group: g
+      };
+    });
+
+    const renderHorizBarChart = (hostSel, items, valKey, unitSingular, unitPlural, barGradient, onPickItem) => {
+      const host = $(hostSel);
+      if (!host) return;
+      if (!items.length) {
+        host.innerHTML = `<p class="muted small" style="padding:14px 0;text-align:center">Sem dados para os filtros selecionados.</p>`;
+        return;
+      }
+      const sorted = items.slice().sort((a, b) => b[valKey] - a[valKey] || a.label.localeCompare(b.label));
+      const maxVal = Math.max(1, ...sorted.map(x => x[valKey]));
+      host.innerHTML = `<div class="pro-map-hbars">${sorted.map((it, idx) => {
+        const val = it[valKey];
+        const pct = Math.max(6, Math.round((val / maxVal) * 100));
+        const unit = val === 1 ? unitSingular : unitPlural;
+        const barCol = it.color ? it.color : barGradient;
+        const tooltip = it.tooltip || `${it.label}: ${val} ${unit}`;
+        return `<button type="button" class="pro-map-hbar-row" data-hbar-idx="${idx}" data-tooltip="${core.esc(tooltip)}" title="${core.esc(tooltip)}">
+          <div class="pro-map-hbar-top">
+            <span class="pro-map-hbar-lbl">${core.esc(it.label)}</span>
+            <b class="pro-map-hbar-val">${val} ${unit}</b>
+          </div>
+          <div class="pro-map-hbar-track">
+            <div class="pro-map-hbar-fill" style="width:${pct}%;background:${barCol}"></div>
+          </div>
+        </button>`;
+      }).join("")}</div>`;
+      if (typeof onPickItem === "function") {
+        host.querySelectorAll("[data-hbar-idx]").forEach(btn => {
+          btn.onclick = () => {
+            const it = sorted[parseInt(btn.dataset.hbarIdx, 10)];
+            if (it) onPickItem(it);
+          };
+        });
+      }
+    };
+
+    const locChartItems = byLoc.map(l => ({
+      label: l.city,
+      trips: l.trips,
+      days: l.days,
+      group: l.group,
+      tooltip: `${l.city}: ${l.trips} viagem(ns)/cartão(ões) · ${l.days} dia(s)`
+    }));
+
+    // 2.1 Número de Viagens por Localidade
+    renderHorizBarChart(
+      "#proMapChartTripsByLoc",
+      locChartItems,
+      "trips",
+      "viagem",
+      "viagens",
+      "linear-gradient(90deg, #2563eb, #38bdf8)",
+      it => {
+        if (it.group) {
+          $("#proMapViewportCard")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          openProMapInspector({ group: it.group, card: it.group.cards.length === 1 ? it.group.cards[0] : null, panMap: true });
+        }
+      }
+    );
+
+    // 2.2 Total de Dias por Localidade
+    renderHorizBarChart(
+      "#proMapChartDaysByLoc",
+      locChartItems,
+      "days",
+      "dia",
+      "dias",
+      "linear-gradient(90deg, #059669, #34d399)",
+      it => {
+        if (it.group) {
+          $("#proMapViewportCard")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          openProMapInspector({ group: it.group, card: it.group.cards.length === 1 ? it.group.cards[0] : null, panMap: true });
+        }
+      }
+    );
+
+    // Agregações por Responsável
+    const byPersonMap = new Map();
+    mapCards.forEach(c => {
+      const list = getCardAssigneesList(c);
+      const dur = cardDurationDays(c);
+      if (!list.length) {
+        const k = "__none__";
+        if (!byPersonMap.has(k)) {
+          byPersonMap.set(k, { label: "Sem responsável", name: "__none__", trips: 0, days: 0, color: "#64748b" });
+        }
+        const b = byPersonMap.get(k);
+        b.trips++;
+        b.days += dur;
+        return;
+      }
+      list.forEach(e => {
+        const k = e.name.toLowerCase();
+        if (!byPersonMap.has(k)) {
+          byPersonMap.set(k, {
+            label: e.name,
+            name: e.name,
+            trips: 0,
+            days: 0,
+            color: colorForAssignee(e.name).hex
+          });
+        }
+        const b = byPersonMap.get(k);
+        b.trips++;
+        b.days += dur;
+      });
+    });
+    const personChartItems = [...byPersonMap.values()].map(p => ({
+      ...p,
+      tooltip: `${p.label}: ${p.trips} viagem(ns) · ${p.days} dia(s)`
+    }));
+
+    // 2.3 Número de Viagens por Responsável
+    renderHorizBarChart(
+      "#proMapChartTripsByPerson",
+      personChartItems,
+      "trips",
+      "viagem",
+      "viagens",
+      "linear-gradient(90deg, #6366f1, #a855f7)",
+      it => {
+        if (it.name) {
+          proFilterAssignee = proFilterAssignee === it.name ? "" : it.name;
+          applyAndRenderProFilteredViews();
+        }
+      }
+    );
+
+    // 2.4 Total de Dias por Responsável
+    renderHorizBarChart(
+      "#proMapChartDaysByPerson",
+      personChartItems,
+      "days",
+      "dia",
+      "dias",
+      "linear-gradient(90deg, #d97706, #fbbf24)",
+      it => {
+        if (it.name) {
+          proFilterAssignee = proFilterAssignee === it.name ? "" : it.name;
+          applyAndRenderProFilteredViews();
+        }
+      }
+    );
+
+    // 2.5 Distribuição Temporal (Mensal) — Colunas interativas com tooltips
+    const monthlyEl = $("#proMapChartMonthly");
+    if (monthlyEl) {
+      const byMonth = new Map();
+      mapCards.forEach(c => {
+        const iso = c.start || c.end;
+        if (!iso || iso.length < 7) return;
+        const ym = iso.slice(0, 7);
+        if (!byMonth.has(ym)) byMonth.set(ym, { ym, trips: 0, days: 0 });
+        const b = byMonth.get(ym);
+        b.trips++;
+        b.days += cardDurationDays(c);
+      });
+      const mList = [...byMonth.values()].sort((a, b) => a.ym.localeCompare(b.ym));
+      if (!mList.length) {
+        monthlyEl.innerHTML = `<p class="muted small" style="padding:14px 0;text-align:center">Adicione datas aos cartões com local para visualizar a distribuição mensal.</p>`;
+      } else {
+        const maxTrips = Math.max(1, ...mList.map(m => m.trips));
+        const maxDays = Math.max(1, ...mList.map(m => m.days));
+        monthlyEl.innerHTML = `
+          <div class="fin-legend" style="margin-bottom:6px">
+            <span><i style="background:#38bdf8"></i> Viagens / Cartões</span>
+            <span><i style="background:#10b981"></i> Total de Dias</span>
+          </div>
+          <div class="pro-vbars-chart pro-map-monthly-chart">${mList.map(m => {
+            const [yr, mo] = m.ym.split("-");
+            const lbl = `${core.MON[parseInt(mo, 10) - 1]}/${yr.slice(2)}`;
+            const tPct = Math.max(10, Math.round((m.trips / maxTrips) * 100));
+            const dPct = Math.max(10, Math.round((m.days / maxDays) * 100));
+            const tip = `${lbl}: ${m.trips} viagem(ns) · ${m.days} dia(s)`;
+            return `<div class="pro-vbar-col pro-map-mcol" data-tooltip="${core.esc(tip)}" title="${core.esc(tip)}">
+              <span class="pro-vbar-val">${m.trips}v · ${m.days}d</span>
+              <div class="pro-map-mcol-pair">
+                <div class="pro-vbar-track"><div class="pro-vbar-fill" style="height:${tPct}%;background:linear-gradient(180deg,#38bdf8,#2563eb)"></div></div>
+                <div class="pro-vbar-track"><div class="pro-vbar-fill" style="height:${dPct}%;background:linear-gradient(180deg,#34d399,#059669)"></div></div>
+              </div>
+              <span class="pro-vbar-lbl">${lbl}</span>
+            </div>`;
+          }).join("")}</div>`;
+      }
+    }
+
+    // 3. Lista / Tabela Detalhada das Viagens Filtradas (Ordenável no Desktop + Cards no Mobile)
+    const tableEl = $("#proMapTripsTable");
+    const mobileListEl = $("#proMapTripsMobileCards");
+    const tblCountBadge = $("#proMapTableCountBadge");
+    if (tblCountBadge) tblCountBadge.textContent = `${mapCards.length} ${mapCards.length === 1 ? "viagem/evento" : "viagens/eventos"}`;
+
+    const groupByCardId = new Map();
+    groups.forEach(g => g.cards.forEach(c => groupByCardId.set(c.id, g)));
+
+    const sortedRows = mapCards.slice().sort((a, b) => {
+      const dir = proMapTableSort.dir === "desc" ? -1 : 1;
+      const col = proMapTableSort.col;
+      if (col === "name") return dir * String(a.name || "").localeCompare(String(b.name || ""));
+      if (col === "location") return dir * String(a.location || "").localeCompare(String(b.location || ""));
+      if (col === "assignee") {
+        const aAsg = getCardAssigneesList(a).map(e => e.name).join(", ");
+        const bAsg = getCardAssigneesList(b).map(e => e.name).join(", ");
+        return dir * aAsg.localeCompare(bAsg);
+      }
+      if (col === "days") return dir * (cardDurationDays(a) - cardDurationDays(b));
+      return dir * String(a.start || "9999-99-99").localeCompare(String(b.start || "9999-99-99"));
+    });
+
+    const focusCardOnMap = (cardId) => {
+      const card = mapCards.find(c => c.id === cardId);
+      const grp = groupByCardId.get(cardId);
+      if (!card || !grp) return;
+      $("#proMapViewportCard")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      openProMapInspector({ group: grp, card, panMap: true });
+    };
+
+    if (tableEl) {
+      const sortArrow = col => proMapTableSort.col === col ? (proMapTableSort.dir === "asc" ? " ▲" : " ▼") : "";
+      tableEl.innerHTML = `
+        <thead>
+          <tr>
+            <th><button type="button" class="pro-map-sort-th" data-map-sort="name">Nome da Viagem / Cartão${sortArrow("name")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-map-sort="location">Destino (Localidade)${sortArrow("location")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-map-sort="assignee">Responsável(is)${sortArrow("assignee")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-map-sort="start">Período${sortArrow("start")}</button></th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-map-sort="days">Duração${sortArrow("days")}</button></th>
+            <th>Ação</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sortedRows.map(c => {
+            const info = getProTypeInfo(c.type);
+            const dur = cardDurationDays(c);
+            const period = c.start ? `${core.fmtBR(c.start)}${c.end && c.end !== c.start ? ` – ${core.fmtBR(c.end)}` : ""}` : "Sem data";
+            const asgHtml = renderAssigneeBadgesHTML(c) || `<span class="muted small">—</span>`;
+            const isAct = c.id === proMapActiveCardId ? " is-active" : "";
+            const typeColStyle = info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : "";
+            return `<tr class="pro-map-trip-row${isAct}" data-map-row-card="${core.esc(c.id)}">
+              <td>
+                <div style="display:flex;align-items:center;gap:7px">
+                  <span class="chip ${info.cls}"${typeColStyle}>${info.icon} ${core.esc(info.short)}</span>
+                  <strong>${core.esc(c.name)}</strong>
+                </div>
+              </td>
+              <td>📍 ${core.esc(c.location)}</td>
+              <td><div style="display:flex;flex-wrap:wrap;gap:4px">${asgHtml}</div></td>
+              <td>${core.esc(period)}</td>
+              <td class="num"><span class="pill">${dur} ${dur === 1 ? "dia" : "dias"}</span></td>
+              <td>
+                <button type="button" class="btn ghost small" data-map-edit-direct="${core.esc(c.id)}" title="Editar cartão">✏️</button>
+              </td>
+            </tr>`;
+          }).join("") || `<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">Nenhuma viagem com localidade para os filtros atuais.</td></tr>`}
+        </tbody>
+      `;
+      tableEl.querySelectorAll("[data-map-sort]").forEach(btn => {
+        btn.onclick = () => {
+          const col = btn.dataset.mapSort;
+          if (proMapTableSort.col === col) {
+            proMapTableSort.dir = proMapTableSort.dir === "asc" ? "desc" : "asc";
+          } else {
+            proMapTableSort.col = col;
+            proMapTableSort.dir = col === "days" ? "desc" : "asc";
+          }
+          renderProMapAnalytics(cards, groups);
+        };
+      });
+      tableEl.querySelectorAll("tr[data-map-row-card]").forEach(tr => {
+        tr.onclick = (ev) => {
+          if (ev.target.closest("[data-map-edit-direct]")) return;
+          focusCardOnMap(tr.dataset.mapRowCard);
+        };
+      });
+      tableEl.querySelectorAll("[data-map-edit-direct]").forEach(btn => {
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          openProCardModal(btn.dataset.mapEditDirect);
+        };
+      });
+    }
+
+    if (mobileListEl) {
+      mobileListEl.innerHTML = sortedRows.map(c => {
+        const info = getProTypeInfo(c.type);
+        const dur = cardDurationDays(c);
+        const period = c.start ? `${core.fmtShortBR(c.start)}${c.end && c.end !== c.start ? ` – ${core.fmtShortBR(c.end)}` : ""}` : "Sem data";
+        const asgHtml = renderAssigneeBadgesHTML(c) || `<span class="muted small">Sem responsável</span>`;
+        const isAct = c.id === proMapActiveCardId ? " is-active" : "";
+        const typeColStyle = info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : "";
+        return `<div class="m-card pro-map-mcard${isAct}" data-map-row-card="${core.esc(c.id)}">
+          <div class="m-card-head">
+            <div style="min-width:0">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px">
+                <span class="chip ${info.cls}"${typeColStyle}>${info.icon} ${core.esc(info.short)}</span>
+                <span class="pill">${dur} ${dur === 1 ? "dia" : "dias"}</span>
+              </div>
+              <b style="display:block;font-size:0.9rem;color:var(--text-strong)">${core.esc(c.name)}</b>
+            </div>
+            <button type="button" class="icon-btn" data-map-edit-direct="${core.esc(c.id)}" title="Editar cartão">✏️</button>
+          </div>
+          <div class="pro-map-mcard-meta">
+            <div>📍 <b>${core.esc(shortLocationCityName(c.location))}</b> <span class="muted small">(${core.esc(c.location)})</span></div>
+            <div>📅 ${core.esc(period)}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px">${asgHtml}</div>
+          </div>
+        </div>`;
+      }).join("") || `<p class="muted small" style="text-align:center;padding:14px">Nenhuma viagem com localidade para os filtros atuais.</p>`;
+
+      mobileListEl.querySelectorAll("[data-map-row-card]").forEach(cardEl => {
+        cardEl.onclick = (ev) => {
+          if (ev.target.closest("[data-map-edit-direct]")) return;
+          focusCardOnMap(cardEl.dataset.mapRowCard);
+        };
+      });
+      mobileListEl.querySelectorAll("[data-map-edit-direct]").forEach(btn => {
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          openProCardModal(btn.dataset.mapEditDirect);
+        };
+      });
+    }
   }
 
   async function renderProMap(filteredCardsOpt) {
@@ -2145,39 +2769,56 @@
           const col = colorForAssignee(p.name);
           const stopsHtml = p.stops.map(s => {
             const dt = s.date ? ` (${core.fmtShortBR(s.date)})` : "";
-            return `<button type="button" class="btn ghost small" data-map-jump-card="${core.esc(s.card.id)}" style="padding:2px 8px;min-height:24px;font-size:0.74rem">📍 ${core.esc(s.loc.split(",")[0])} · <b>${core.esc(s.card.name)}</b>${dt}</button>`;
+            return `<button type="button" class="btn ghost small" data-map-jump-card="${core.esc(s.card.id)}" style="padding:2px 8px;min-height:24px;font-size:0.74rem">📍 ${core.esc(shortLocationCityName(s.loc))} · <b>${core.esc(s.card.name)}</b>${dt}</button>`;
           }).join(" ➔ ");
           return `<div class="pro-map-person-row">
             <span class="pro-assignee-badge" style="--asg-bg:${col.bg};--asg-fg:${col.fg};--asg-bd:${col.bd}">✈️ ${core.esc(p.name)}</span>
-            <span class="muted small">Viaja para:</span>
+            <span class="muted small">Roteiro de viagens:</span>
             <div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px">${stopsHtml}</div>
           </div>`;
         }).join("");
         summaryEl.querySelectorAll("[data-map-jump-card]").forEach(b => {
-          b.onclick = () => openProCardModal(b.dataset.mapJumpCard);
+          b.onclick = () => {
+            const cId = b.dataset.mapJumpCard;
+            const grp = proMapCachedGroups.find(g => g.cards.some(x => x.id === cId));
+            const crd = grp?.cards.find(x => x.id === cId);
+            if (grp && crd) openProMapInspector({ group: grp, card: crd, panMap: true });
+            else openProCardModal(cId);
+          };
         });
       }
     }
 
-    const groupMap = new Map();
+    const rawGroupMap = new Map();
     for (const c of withLoc) {
       const coords = await resolveCardCoordinates(c);
       if (seq !== proMapRenderSeq) return;
       if (!coords) continue;
       const gKey = `${coords.lat.toFixed(3)},${coords.lng.toFixed(3)}`;
-      if (!groupMap.has(gKey)) {
-        groupMap.set(gKey, { lat: coords.lat, lng: coords.lng, label: c.location, cards: [] });
+      if (!rawGroupMap.has(gKey)) {
+        rawGroupMap.set(gKey, { lat: coords.lat, lng: coords.lng, label: c.location, cards: [] });
       }
-      groupMap.get(gKey).cards.push(c);
+      rawGroupMap.get(gKey).cards.push(c);
     }
 
-    const groups = [...groupMap.values()];
+    const groups = clusterMapGroupsByProximity([...rawGroupMap.values()]);
+    proMapCachedGroups = groups;
+
     if ($("#proMapCountBadge")) {
       const totalCardsOnMap = groups.reduce((s, g) => s + g.cards.length, 0);
-      $("#proMapCountBadge").textContent = `${totalCardsOnMap} cartão(ões) em ${groups.length} local(is)`;
+      $("#proMapCountBadge").textContent = `Exibindo ${totalCardsOnMap} ${totalCardsOnMap === 1 ? "cartão" : "cartões"} em ${groups.length} ${groups.length === 1 ? "local" : "locais"}`;
     }
 
+    // Fechar inspector se o cartão/cluster selecionado não estiver mais no filtro atual
+    if (proMapActiveGroupKey && !groups.some(g => g.key === proMapActiveGroupKey)) {
+      closeProMapInspector();
+    }
+
+    // Renderizar Dashboard Analítico Reativo abaixo do mapa
+    renderProMapAnalytics(cards, groups);
+
     if (!groups.length || !window.FeriasMaps?.hasKey()) {
+      proMapInstance = null;
       renderProMapFallbackSvg(canvas, groups);
       return;
     }
@@ -2198,53 +2839,63 @@
       const map = new Map(mapDiv, {
         mapId: "DEMO_MAP_ID",
         colorScheme: isDark ? "DARK" : "LIGHT",
-        center: { lat: groups[0].lat, lng: groups[0].lng },
-        zoom: groups.length === 1 ? 11 : 5,
+        center: { lat: groups[0].displayLat ?? groups[0].lat, lng: groups[0].displayLng ?? groups[0].lng },
+        zoom: groups.length === 1 ? 10 : 5,
+        gestureHandling: "cooperative",
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: true
       });
+      proMapInstance = map;
+
+      map.addListener("click", () => {
+        closeProMapInspector();
+      });
 
       const bounds = new google.maps.LatLngBounds();
       groups.forEach(g => {
-        const pos = { lat: g.lat, lng: g.lng };
+        const pos = { lat: g.displayLat ?? g.lat, lng: g.displayLng ?? g.lng };
         bounds.extend(pos);
+
         const content = document.createElement("div");
         content.className = "pro-map-tag-group";
-        g.cards.forEach(c => {
-          const asgList = getCardAssigneesList(c);
-          const primaryAsg = asgList.find(e => e.travels) || asgList[0];
-          const tagCol = primaryAsg ? colorForAssignee(primaryAsg.name).hex : (getProTypeInfo(c.type).color || "#38bdf8");
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "pro-map-tag";
-          btn.style.setProperty("--tag-c", tagCol);
-          btn.textContent = c.name;
-          btn.title = `${c.name} — ${g.label}`;
-          btn.onclick = (ev) => {
-            ev.stopPropagation();
-            openProCardModal(c.id);
-          };
-          content.appendChild(btn);
-        });
+
+        const { tagCol, html } = createClusterMarkerInnerHTML(g);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `pro-map-marker-pill${g.key === proMapActiveGroupKey ? " is-active" : ""}`;
+        btn.dataset.mapGroupKey = g.key;
+        btn.style.setProperty("--tag-c", tagCol);
+        btn.innerHTML = html;
+        btn.title = `${g.cityLabel} (${g.cards.length} ${g.cards.length === 1 ? "cartão" : "cartões"}) — clique para ver resumo`;
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          openProMapInspector({
+            group: g,
+            card: g.cards.length === 1 ? g.cards[0] : null,
+            panMap: true
+          });
+        };
+        content.appendChild(btn);
+
         const dot = document.createElement("span");
         dot.className = "pro-map-pin-dot";
-        const firstCol = getProTypeInfo(g.cards[0].type).color || "#38bdf8";
-        dot.style.setProperty("--tag-c", firstCol);
+        dot.style.setProperty("--tag-c", tagCol);
         content.appendChild(dot);
 
         new AdvancedMarkerElement({
           map,
           position: pos,
           content,
-          title: g.cards.map(c => c.name).join(" | ")
+          title: `${g.cityLabel} (${g.cards.length})`
         });
       });
 
       if (groups.length > 1) {
-        map.fitBounds(bounds, 56);
+        map.fitBounds(bounds, 64);
       }
     } catch {
+      proMapInstance = null;
       renderProMapFallbackSvg(canvas, groups);
     }
   }

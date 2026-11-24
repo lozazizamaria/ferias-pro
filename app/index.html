@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=38">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=38">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=38">
+<link rel="manifest" href="/manifest.webmanifest?v=39">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=39">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=39">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=38">
+<link rel="stylesheet" href="styles.css?v=39">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=38" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=39" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=38" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=39" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -975,9 +975,9 @@
 
     <!-- MODO PROFISSIONAL: MAPA DE EVENTOS & VIAGENS DOS RESPONSÁVEIS -->
     <section class="view" id="view-pro-map">
-      <div class="card pro-board-toolbar-card">
-        <div class="gantt-controls gantt-toolbar-row pro-compact-toolbar">
-          <div class="gantt-pop-host">
+      <div class="card pro-board-toolbar-card pro-map-toolbar-card">
+        <div class="gantt-controls gantt-toolbar-row pro-compact-toolbar pro-map-header-bar">
+          <div class="gantt-pop-host pro-map-hdr-filter">
             <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProMapFilterPop" aria-expanded="false" aria-controls="proMapFilterPopPanel" title="Filtros do Mapa">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
               <span>Filtros</span>
@@ -1089,16 +1089,84 @@
             </select>
           </div>
 
-          <div class="gantt-toolbar-right">
-            <span class="pill" id="proMapCountBadge">0 locais</span>
-            <button type="button" class="btn primary small" id="btnProMapAddCard">➕ Novo Cartão</button>
+          <div class="gantt-toolbar-right pro-map-hdr-right">
+            <span class="pill pro-map-count-pill" id="proMapCountBadge">Exibindo 0 cartões em 0 locais</span>
+            <button type="button" class="btn primary small pro-map-add-btn" id="btnProMapAddCard">➕ Novo Cartão</button>
           </div>
         </div>
       </div>
 
-      <div class="card pro-map-card">
-        <div id="proMapCanvas" class="pro-map-canvas" aria-label="Mapa de eventos com tags de título dos cartões"></div>
+      <div class="card pro-map-card" id="proMapViewportCard">
+        <div class="pro-map-stage">
+          <div id="proMapCanvas" class="pro-map-canvas" aria-label="Mapa de eventos e destinos sem sobreposição"></div>
+          <div id="proMapInspectorBackdrop" class="pro-map-inspector-backdrop" hidden></div>
+          <aside id="proMapInspector" class="pro-map-inspector" aria-live="polite" hidden></aside>
+        </div>
         <div id="proMapTravelSummary" class="pro-map-travel-summary" hidden></div>
+      </div>
+
+      <!-- DASHBOARD ANALÍTICO REATIVO DO MAPA (MOBILE & DESKTOP) -->
+      <div class="pro-map-analytics" id="proMapAnalytics">
+        <!-- 1. CARDS DE KPIS (2 colunas Mobile / 4 colunas Desktop) -->
+        <div class="pro-map-kpis" id="proMapDashKpis"></div>
+
+        <!-- 2. GRÁFICOS INTERATIVOS COM TOOLTIPS (1 coluna Mobile / 2 colunas Desktop) -->
+        <div class="pro-map-charts-grid">
+          <div class="card pro-map-chart-card">
+            <div class="card-head">
+              <h2>📍 Número de Viagens por Localidade</h2>
+              <span class="muted small">Toque ou passe o mouse</span>
+            </div>
+            <div id="proMapChartTripsByLoc" class="pro-map-chart-body"></div>
+          </div>
+
+          <div class="card pro-map-chart-card">
+            <div class="card-head">
+              <h2>🗓️ Total de Dias por Localidade</h2>
+              <span class="muted small">Concentração de permanência</span>
+            </div>
+            <div id="proMapChartDaysByLoc" class="pro-map-chart-body"></div>
+          </div>
+
+          <div class="card pro-map-chart-card">
+            <div class="card-head">
+              <h2>👤 Número de Viagens por Responsável</h2>
+              <span class="muted small">Quantidade por pessoa</span>
+            </div>
+            <div id="proMapChartTripsByPerson" class="pro-map-chart-body"></div>
+          </div>
+
+          <div class="card pro-map-chart-card">
+            <div class="card-head">
+              <h2>⏱️ Total de Dias por Responsável</h2>
+              <span class="muted small">Carga acumulada de dias</span>
+            </div>
+            <div id="proMapChartDaysByPerson" class="pro-map-chart-body"></div>
+          </div>
+
+          <div class="card pro-map-chart-card pro-map-chart-span2">
+            <div class="card-head">
+              <h2>📈 Distribuição Temporal (Mensal)</h2>
+              <span class="muted small">Volume de viagens e dias ao longo dos meses</span>
+            </div>
+            <div id="proMapChartMonthly" class="pro-map-chart-body"></div>
+          </div>
+        </div>
+
+        <!-- 3. LISTA / TABELA DETALHADA DAS VIAGENS FILTRADAS -->
+        <div class="card pro-map-table-card">
+          <div class="card-head">
+            <div>
+              <h2>📋 Viagens &amp; Eventos no Mapa</h2>
+              <span class="muted small">Clique em qualquer item para centralizar o mapa e abrir o resumo do cartão</span>
+            </div>
+            <span class="pill" id="proMapTableCountBadge">0 itens</span>
+          </div>
+          <div class="table-wrap desktop-table-wrap">
+            <table id="proMapTripsTable" class="pro-map-trips-table"></table>
+          </div>
+          <div id="proMapTripsMobileCards" class="mobile-cards pro-map-mobile-list"></div>
+        </div>
       </div>
     </section>
 
@@ -2739,15 +2807,15 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=38"></script>
-<script src="vehicles.js?v=38"></script>
-<script src="countries.js?v=38"></script>
-<script src="data.js?v=38"></script>
-<script src="maps.js?v=38"></script>
-<script src="calendar.js?v=38"></script>
-<script src="report.js?v=38"></script>
-<script src="api.js?v=38"></script>
-<script src="pro.js?v=38"></script>
-<script src="app.js?v=38"></script>
+<script src="config.example.js?v=39"></script>
+<script src="vehicles.js?v=39"></script>
+<script src="countries.js?v=39"></script>
+<script src="data.js?v=39"></script>
+<script src="maps.js?v=39"></script>
+<script src="calendar.js?v=39"></script>
+<script src="report.js?v=39"></script>
+<script src="api.js?v=39"></script>
+<script src="pro.js?v=39"></script>
+<script src="app.js?v=39"></script>
 </body>
 </html>
