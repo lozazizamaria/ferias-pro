@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=42">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=42">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=42">
+<link rel="manifest" href="/manifest.webmanifest?v=43">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=43">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=43">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=42">
+<link rel="stylesheet" href="styles.css?v=43">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=42" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=43" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=42" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=43" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -788,6 +788,10 @@
                   <span class="gantt-pop-lbl">Até</span>
                   <input type="date" id="proBoardDateTo" aria-label="Data final no quadro">
                 </div>
+                <label class="gantt-pop-check-row span2">
+                  <input type="checkbox" id="proBoardTripsOnlyFilter">
+                  <span>✈️ Mostrar apenas viagens (Data de Ida e Regresso)</span>
+                </label>
               </div>
             </div>
           </div>
@@ -911,6 +915,10 @@
                     <span class="gantt-pop-lbl">Até</span>
                     <input type="date" id="proGanttDateTo" aria-label="Data final no Gantt profissional">
                   </div>
+                  <label class="gantt-pop-check-row span2">
+                    <input type="checkbox" id="proGanttTripsOnlyFilter">
+                    <span>✈️ Mostrar apenas viagens (Data de Ida e Regresso)</span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -1077,6 +1085,10 @@
                   <span class="gantt-pop-lbl">Até</span>
                   <input type="date" id="proMapDateTo" aria-label="Data final no mapa">
                 </div>
+                <label class="gantt-pop-check-row span2">
+                  <input type="checkbox" id="proMapTripsOnlyFilter">
+                  <span>✈️ Mostrar apenas viagens (Data de Ida e Regresso)</span>
+                </label>
               </div>
             </div>
           </div>
@@ -1281,6 +1293,10 @@
                   <span class="gantt-pop-lbl">Até</span>
                   <input type="date" id="proTravelsDateTo" aria-label="Data final em deslocamentos">
                 </div>
+                <label class="gantt-pop-check-row span2">
+                  <input type="checkbox" id="proTravelsTripsOnlyFilter">
+                  <span>✈️ Mostrar apenas viagens (Data de Ida e Regresso)</span>
+                </label>
               </div>
             </div>
           </div>
@@ -1501,6 +1517,10 @@
                   <span class="gantt-pop-lbl">Até</span>
                   <input type="date" id="proControlDateTo" aria-label="Data final no controle">
                 </div>
+                <label class="gantt-pop-check-row span2">
+                  <input type="checkbox" id="proControlTripsOnlyFilter">
+                  <span>✈️ Mostrar apenas viagens (Data de Ida e Regresso)</span>
+                </label>
               </div>
             </div>
           </div>
@@ -1515,7 +1535,10 @@
               <option value="grat_rep">🎖️ Grat. Representação</option>
               <option value="comissionamento">📋 Comissionamento</option>
             </select>
-            <select id="proControlQuickMonth" class="pro-map-quick-sel" aria-label="Filtrar mês/ano">
+            <select id="proControlQuickYear" class="pro-map-quick-sel" aria-label="Filtrar ano">
+              <option value="">🗓️ Todos os anos</option>
+            </select>
+            <select id="proControlQuickMonth" class="pro-map-quick-sel" aria-label="Filtrar mês">
               <option value="">📅 Todos os meses</option>
             </select>
             <select id="proControlScopeSel" class="pro-map-quick-sel" aria-label="Escopo das viagens no controle">
@@ -1539,12 +1562,17 @@
 
       <!-- 2. TABELA PRINCIPAL DE CONTROLE FINANCEIRO (CLIQUE DIRETO NAS MODALIDADES) -->
       <div class="card pro-map-table-card pro-control-main-card">
-        <div class="card-head">
+        <div class="card-head pro-ctrl-table-head">
           <div>
             <h2>📋 Controle de Viagens &amp; Financeiro</h2>
-            <span class="muted small">Clique diretamente em <b>Diária</b>, <b>Grat. Representação</b> ou <b>Comissionamento</b> para definir o recebimento — ou clique na viagem para editar o cartão</span>
+            <span class="muted small">Clique em <b>Diária</b>, <b>Grat. Rep.</b> ou <b>Comissionamento</b> para definir o recebimento (cálculo pelas datas de Ida/Volta) — ou clique na viagem para editar</span>
           </div>
-          <span class="pill" id="proControlTableCountBadge">0 lançamentos</span>
+          <div class="pro-ctrl-export-bar">
+            <span class="pill" id="proControlTableCountBadge">0 lançamentos</span>
+            <button type="button" class="btn ghost small" id="btnProControlPrintSheet" title="Imprimir apenas a planilha de Controle em Paisagem (Horizontal)">🖨️ Planilha</button>
+            <button type="button" class="btn ghost small" id="btnProControlExportXlsx" title="Baixar dados tabulares puros em Excel (.xlsx)">📊 Excel</button>
+            <button type="button" class="btn primary small" id="btnProControlPrintReport" title="Imprimir relatório completo em PDF (Retrato / Vertical)">📄 Relatório PDF</button>
+          </div>
         </div>
         <div class="table-wrap desktop-table-wrap">
           <table id="proControlTable" class="pro-map-trips-table pro-control-table"></table>
@@ -1734,6 +1762,10 @@
                 <span class="gantt-pop-lbl">Até</span>
                 <input type="date" id="proDashDateTo" aria-label="Data final no dashboard profissional">
               </div>
+              <label class="gantt-pop-check-row span2">
+                <input type="checkbox" id="proDashTripsOnlyFilter">
+                <span>✈️ Mostrar apenas viagens (Data de Ida e Regresso)</span>
+              </label>
             </div>
           </div>
         </div>
@@ -1906,6 +1938,10 @@
                 <span class="gantt-pop-lbl">Até</span>
                 <input type="date" id="proFinDateTo" aria-label="Data final no financeiro profissional">
               </div>
+              <label class="gantt-pop-check-row span2">
+                <input type="checkbox" id="proFinTripsOnlyFilter">
+                <span>✈️ Mostrar apenas viagens (Data de Ida e Regresso)</span>
+              </label>
             </div>
           </div>
         </div>
@@ -2057,6 +2093,10 @@
                     <span class="gantt-pop-lbl">Até</span>
                     <input type="date" id="proFilterDateTo" aria-label="Data final na tabela">
                   </div>
+                  <label class="gantt-pop-check-row span2">
+                    <input type="checkbox" id="proFilterTripsOnly">
+                    <span>✈️ Mostrar apenas viagens (Data de Ida e Regresso)</span>
+                  </label>
                 </div>
               </div>
             </div>
@@ -3164,11 +3204,11 @@
                 <button type="button" class="btn ghost small icon-compact" id="btnProQuickAddType" title="Criar novo tipo de cartão">+</button>
               </div>
             </label>
-            <label>Data final / Prazo
-              <input type="date" id="pc-end">
-            </label>
             <label>Data inicial
               <input type="date" id="pc-start">
+            </label>
+            <label>Data final / Prazo
+              <input type="date" id="pc-end">
             </label>
             <label>Hora início
               <input type="time" id="pc-startTime">
@@ -3210,6 +3250,16 @@
                 </select>
                 <button type="button" class="btn ghost small" id="btnProAddCardAssigneeRow" title="Adicionar mais um responsável neste cartão">➕ Outro responsável</button>
               </div>
+              <div class="pro-asg-travel-dates" id="pc-primaryTravelDatesRow" hidden>
+                <label>
+                  <span>🛫 Saída (Ida)</span>
+                  <input type="datetime-local" id="pc-primaryTravelStart" aria-label="Data e hora de saída do responsável principal">
+                </label>
+                <label>
+                  <span>🛬 Regresso (Volta)</span>
+                  <input type="datetime-local" id="pc-primaryTravelEnd" aria-label="Data e hora de regresso do responsável principal">
+                </label>
+              </div>
               <div id="pc-extraAssigneesList" class="pro-extra-assignees-list"></div>
             </div>
             <div class="span2 pro-travel-fin-box" id="pc-travelFinanceBox" hidden>
@@ -3232,6 +3282,45 @@
               </div>
               <div id="pc-travelFinancePreview" class="pro-travel-fin-preview"></div>
             </div>
+            <details class="span2 pro-travel-details-box" id="pc-travelDetailsBox" hidden>
+              <summary class="pro-travel-details-sum">
+                <span>🧳 Detalhes da Viagem <small class="muted">(opcional · bilhete IA, transporte e observações)</small></span>
+              </summary>
+              <div class="pro-travel-details-body">
+                <div class="pro-ticket-upload-block">
+                  <div class="route-head-row">
+                    <span class="route-title">🎫 Bilhete / Ticket de Viagem (PDF ou Imagem)</span>
+                    <button type="button" class="btn ai-pill small" id="btnProTicketUpload">✨ Anexar &amp; Ler com IA</button>
+                  </div>
+                  <input type="file" id="pc-ticketInput" accept=".pdf,image/*" hidden>
+                  <div id="pc-ticketStatus" class="modal-ai-status" role="status" aria-live="polite" hidden style="margin-top:6px"></div>
+                  <div id="pc-ticketFilePreview" class="pro-ticket-preview" hidden></div>
+                </div>
+                <div class="form-grid" style="margin-top:8px">
+                  <label>Modalidade de Transporte
+                    <select id="pc-travelTransport" aria-label="Modalidade de transporte da viagem">
+                      <option value="">— Selecionar —</option>
+                      <option value="Avião">✈️ Avião</option>
+                      <option value="Ônibus">🚌 Ônibus</option>
+                      <option value="Carro">🚗 Carro</option>
+                      <option value="Outro">🧭 Outro</option>
+                    </select>
+                  </label>
+                  <label>Teve Custo Financeiro?
+                    <select id="pc-travelHasCost" aria-label="Viagem teve custo financeiro">
+                      <option value="no">Não</option>
+                      <option value="yes">Sim</option>
+                    </select>
+                  </label>
+                  <label class="span2" id="pc-travelCostWrap" hidden>Valor do Custo / Passagem (R$)
+                    <input type="number" id="pc-travelCostAmount" step="0.01" min="0" placeholder="Ex: 1250.00">
+                  </label>
+                  <label class="span2">Observações da Viagem
+                    <textarea id="pc-travelNotes" rows="2" placeholder="Ex: Localizador ABC123, Voo LA3410, assento, hotel..."></textarea>
+                  </label>
+                </div>
+              </div>
+            </details>
             <label class="span2 ac-wrap">Local (Padronizado Google Maps)
               <input type="text" id="pc-location" placeholder="Digite cidade, aeroporto ou endereço (busca Google Maps)..." autocomplete="off">
               <div class="ac-list" id="ac-pro-location" hidden></div>
@@ -3369,15 +3458,15 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=42"></script>
-<script src="vehicles.js?v=42"></script>
-<script src="countries.js?v=42"></script>
-<script src="data.js?v=42"></script>
-<script src="maps.js?v=42"></script>
-<script src="calendar.js?v=42"></script>
-<script src="report.js?v=42"></script>
-<script src="api.js?v=42"></script>
-<script src="pro.js?v=42"></script>
-<script src="app.js?v=42"></script>
+<script src="config.example.js?v=43"></script>
+<script src="vehicles.js?v=43"></script>
+<script src="countries.js?v=43"></script>
+<script src="data.js?v=43"></script>
+<script src="maps.js?v=43"></script>
+<script src="calendar.js?v=43"></script>
+<script src="report.js?v=43"></script>
+<script src="api.js?v=43"></script>
+<script src="pro.js?v=43"></script>
+<script src="app.js?v=43"></script>
 </body>
 </html>

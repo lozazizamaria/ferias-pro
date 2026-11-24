@@ -44,6 +44,8 @@
   let proFilterDone = "";
   let proFilterFinDir = "";
   let proFilterFinStatus = "";
+  let proFilterTripsOnly = false;
+  let proModalTicketFile = null;
   let proGanttTypeMsel = null;
   let proGanttColMsel = null;
   let proGanttLabelMsel = null;
@@ -298,38 +300,56 @@
       a.assigneeTravels = Boolean(a.assigneeTravels);
       const normEntries = [];
       const seenEntry = new Set();
-      const pushEntry = (rawName, travelsFlag, travelModeRaw = "") => {
+      const pushEntry = (rawName, travelsFlag, travelModeRaw = "", travelStartRaw = "", travelEndRaw = "") => {
         const nm = String(rawName || "").trim();
         if (!nm) return;
         const k = nm.toLowerCase();
         const tm = sanitizeTravelMode(travelModeRaw);
+        const ts = sanitizeTravelDateTime(travelStartRaw);
+        const te = sanitizeTravelDateTime(travelEndRaw);
         if (seenEntry.has(k)) {
           const ex = normEntries.find(e => e.name.toLowerCase() === k);
           if (ex) {
             if (travelsFlag) ex.travels = true;
             if (!ex.travelMode && tm) ex.travelMode = tm;
+            if (!ex.travelStart && ts) ex.travelStart = ts;
+            if (!ex.travelEnd && te) ex.travelEnd = te;
           }
           return;
         }
         seenEntry.add(k);
-        normEntries.push({ name: nm, travels: Boolean(travelsFlag), travelMode: tm });
+        normEntries.push({ name: nm, travels: Boolean(travelsFlag), travelMode: tm, travelStart: ts, travelEnd: te });
         if (!merged.assignees.some(x => x.toLowerCase() === k)) {
           merged.assignees.push(nm);
         }
       };
       if (Array.isArray(a.assigneesList)) {
         a.assigneesList.forEach(item => {
-          if (item && typeof item === "object") pushEntry(item.name, item.travels, item.travelMode);
-          else if (typeof item === "string") pushEntry(item, false, "");
+          if (item && typeof item === "object") pushEntry(item.name, item.travels, item.travelMode, item.travelStart, item.travelEnd);
+          else if (typeof item === "string") pushEntry(item, false, "", "", "");
         });
       }
-      if (a.assignee) pushEntry(a.assignee, a.assigneeTravels, a.assigneeTravelMode || "");
+      if (a.assignee) pushEntry(a.assignee, a.assigneeTravels, a.assigneeTravelMode || "", a.assigneeTravelStart || "", a.assigneeTravelEnd || "");
       a.assigneesList = normEntries;
       a.assignee = normEntries[0]?.name || "";
       a.assigneeTravels = Boolean(normEntries[0]?.travels);
       a.assigneeTravelMode = normEntries[0]?.travelMode || "";
+      a.assigneeTravelStart = normEntries[0]?.travelStart || "";
+      a.assigneeTravelEnd = normEntries[0]?.travelEnd || "";
       a.travelFinanceMode = sanitizeTravelMode(a.travelFinanceMode) || "diaria";
       a.travelFreeLodging = Boolean(a.travelFreeLodging);
+      if (a.travelDetails && typeof a.travelDetails === "object") {
+        const td = a.travelDetails;
+        a.travelDetails = {
+          ticketFile: td.ticketFile && typeof td.ticketFile === "object" ? { ...td.ticketFile } : null,
+          transport: ["Avião", "Ônibus", "Carro", "Outro"].includes(td.transport) ? td.transport : "",
+          hasCost: Boolean(td.hasCost),
+          costAmount: Math.max(0, Number(td.costAmount) || 0),
+          notes: String(td.notes || "")
+        };
+      } else {
+        a.travelDetails = { ticketFile: null, transport: "", hasCost: false, costAmount: 0, notes: "" };
+      }
       a.location = String(a.location || "");
       a.meetingLink = String(a.meetingLink || "");
       if (!a.meetingLink && /^https?:\/\//i.test(a.location.trim())) {
@@ -430,33 +450,149 @@
     return "";
   }
 
+  function sanitizeTravelDateTime(v) {
+    const raw = String(v || "").trim();
+    if (!raw) return "";
+    const m = raw.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2})/);
+    if (m) return `${m[1]}T${m[2]}`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T08:00`;
+    return "";
+  }
+
+  function computeDefaultTravelDates(eventStart, eventEnd) {
+    const s = String(eventStart || "").trim();
+    const e = String(eventEnd || eventStart || "").trim();
+    if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return { travelStart: "", travelEnd: "" };
+    const d1 = core.parseD(s);
+    const prevDay = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate() - 1);
+    const idaIso = core.fmtISO(prevDay);
+    const voltaIso = (e && /^\d{4}-\d{2}-\d{2}$/.test(e) && e >= s) ? e : s;
+    return {
+      travelStart: `${idaIso}T08:00`,
+      travelEnd: `${voltaIso}T18:00`
+    };
+  }
+
+  function formatDateTimeShortBR(dtStr, fallbackDateIso = "") {
+    const clean = sanitizeTravelDateTime(dtStr);
+    if (clean) return `${core.fmtShortBR(clean.slice(0, 10))} ${clean.slice(11, 16)}`;
+    if (fallbackDateIso) return core.fmtShortBR(fallbackDateIso);
+    return "—";
+  }
+
+  function formatDateTimeFullBR(dtStr, fallbackDateIso = "") {
+    const clean = sanitizeTravelDateTime(dtStr);
+    if (clean) return `${core.fmtBR(clean.slice(0, 10))} ${clean.slice(11, 16)}`;
+    if (fallbackDateIso) return core.fmtBR(fallbackDateIso);
+    return "";
+  }
+
+  function getEffectivePersonTravelDates(card, personEntry = null) {
+    const ts = sanitizeTravelDateTime(personEntry?.travelStart);
+    const te = sanitizeTravelDateTime(personEntry?.travelEnd);
+    const evStart = String(card?._origStart || card?.start || "").trim();
+    const evEnd = String(card?._origEnd || card?.end || evStart).trim();
+    const idaIso = ts ? ts.slice(0, 10) : evStart;
+    const rawVoltaIso = te ? te.slice(0, 10) : evEnd;
+    const voltaIso = (idaIso && rawVoltaIso && rawVoltaIso < idaIso) ? idaIso : (rawVoltaIso || idaIso);
+    const idaTime = ts ? ts.slice(11, 16) : "";
+    const voltaTime = te ? te.slice(11, 16) : "";
+    return {
+      idaDt: ts || (idaIso ? `${idaIso}T08:00` : ""),
+      voltaDt: te || (voltaIso ? `${voltaIso}T18:00` : ""),
+      hasExplicitStart: Boolean(ts),
+      hasExplicitEnd: Boolean(te),
+      idaIso,
+      voltaIso,
+      idaTime,
+      voltaTime
+    };
+  }
+
+  function getCardTravelDateRange(card, assigneeFilter = "") {
+    const list = getCardAssigneesList(card).filter(e => e.travels);
+    if (!list.length) return null;
+    const filt = String(assigneeFilter || "").trim().toLowerCase();
+    const matched = (filt && filt !== "__none__")
+      ? list.filter(e => e.name.toLowerCase() === filt)
+      : list;
+    if (!matched.length) return null;
+
+    let minIso = "";
+    let maxIso = "";
+    let minTime = "";
+    let maxTime = "";
+    matched.forEach(ent => {
+      const td = getEffectivePersonTravelDates(card, ent);
+      if (td.idaIso && (!minIso || td.idaIso < minIso)) {
+        minIso = td.idaIso;
+        minTime = td.idaTime;
+      }
+      if (td.voltaIso && (!maxIso || td.voltaIso > maxIso)) {
+        maxIso = td.voltaIso;
+        maxTime = td.voltaTime;
+      }
+    });
+    if (!minIso) minIso = String(card?.start || "");
+    if (!maxIso) maxIso = String(card?.end || card?.start || minIso);
+    if (minIso && maxIso && maxIso < minIso) maxIso = minIso;
+    return { start: minIso, end: maxIso, startTime: minTime, endTime: maxTime, travelers: matched };
+  }
+
+  function projectCardsForTravelDates(cards, tripsOnly = false, assigneeFilter = "") {
+    if (!tripsOnly) return cards;
+    const out = [];
+    (cards || []).forEach(c => {
+      const rng = getCardTravelDateRange(c, assigneeFilter);
+      if (!rng) return;
+      out.push({
+        ...c,
+        start: rng.start,
+        end: rng.end,
+        startTime: rng.startTime || c.startTime || "",
+        endTime: rng.endTime || c.endTime || "",
+        _isTravelProjected: true,
+        _origStart: c.start || "",
+        _origEnd: c.end || c.start || ""
+      });
+    });
+    return out.sort((a, b) =>
+      String(a.start || "9999-99-99").localeCompare(String(b.start || "9999-99-99")) ||
+      String(a.name || "").localeCompare(String(b.name || ""))
+    );
+  }
+
   function getCardAssigneesList(a) {
     if (!a) return [];
     const out = [];
     const seen = new Set();
-    const push = (nm, tr, tm = "") => {
+    const push = (nm, tr, tm = "", ts = "", te = "") => {
       const clean = String(nm || "").trim();
       if (!clean) return;
       const k = clean.toLowerCase();
       const mode = sanitizeTravelMode(tm);
+      const tStart = sanitizeTravelDateTime(ts);
+      const tEnd = sanitizeTravelDateTime(te);
       if (seen.has(k)) {
         const ex = out.find(e => e.name.toLowerCase() === k);
         if (ex) {
           if (tr) ex.travels = true;
           if (!ex.travelMode && mode) ex.travelMode = mode;
+          if (!ex.travelStart && tStart) ex.travelStart = tStart;
+          if (!ex.travelEnd && tEnd) ex.travelEnd = tEnd;
         }
         return;
       }
       seen.add(k);
-      out.push({ name: clean, travels: Boolean(tr), travelMode: mode });
+      out.push({ name: clean, travels: Boolean(tr), travelMode: mode, travelStart: tStart, travelEnd: tEnd });
     };
     if (Array.isArray(a.assigneesList) && a.assigneesList.length) {
       a.assigneesList.forEach(it => {
-        if (it && typeof it === "object") push(it.name, it.travels, it.travelMode);
-        else if (typeof it === "string") push(it, false, "");
+        if (it && typeof it === "object") push(it.name, it.travels, it.travelMode, it.travelStart, it.travelEnd);
+        else if (typeof it === "string") push(it, false, "", "", "");
       });
     }
-    if (a.assignee) push(a.assignee, a.assigneeTravels, a.assigneeTravelMode || "");
+    if (a.assignee) push(a.assignee, a.assigneeTravels, a.assigneeTravelMode || "", a.assigneeTravelStart || "", a.assigneeTravelEnd || "");
     return out;
   }
 
@@ -958,11 +1094,18 @@
       if ((a.finDirection || "none") === "none") return false;
       if ((a.finStatus || "Previsto") !== cfg.finStatus) return false;
     }
-    if (cfg.dateFrom) {
-      if (!a.start || (a.end || a.start) < cfg.dateFrom) return false;
-    }
-    if (cfg.dateTo) {
-      if (!a.start || a.start > cfg.dateTo) return false;
+    if (cfg.tripsOnly) {
+      const rng = getCardTravelDateRange(a, cfg.assignee);
+      if (!rng) return false;
+      if (cfg.dateFrom && (!rng.start || (rng.end || rng.start) < cfg.dateFrom)) return false;
+      if (cfg.dateTo && (!rng.start || rng.start > cfg.dateTo)) return false;
+    } else {
+      if (cfg.dateFrom) {
+        if (!a.start || (a.end || a.start) < cfg.dateFrom) return false;
+      }
+      if (cfg.dateTo) {
+        if (!a.start || a.start > cfg.dateTo) return false;
+      }
     }
     if (cfg.q) {
       const subTxt = Array.isArray(a.subtasks) ? a.subtasks.map(s => s.text).join(" ") : "";
@@ -1008,7 +1151,8 @@
       finDir: $("#proBoardFinDirFilter")?.value || "",
       finStatus: $("#proBoardFinStatusFilter")?.value || "",
       dateFrom: $("#proBoardDateFrom")?.value || "",
-      dateTo: $("#proBoardDateTo")?.value || ""
+      dateTo: $("#proBoardDateTo")?.value || "",
+      tripsOnly: Boolean($("#proBoardTripsOnlyFilter")?.checked)
     };
   }
 
@@ -1028,7 +1172,8 @@
       + (cfg.done ? 1 : 0)
       + (cfg.finDir ? 1 : 0)
       + (cfg.finStatus ? 1 : 0)
-      + ((cfg.dateFrom || cfg.dateTo) ? 1 : 0);
+      + ((cfg.dateFrom || cfg.dateTo) ? 1 : 0)
+      + (cfg.tripsOnly ? 1 : 0);
     const fBtn = $("#btnProBoardFilterPop");
     const fCnt = $("#proBoardFilterCount");
     const clearBtn = $("#btnProBoardClearFilters");
@@ -1050,6 +1195,7 @@
       "#proBoardClientFilter", "#proBoardLocationFilter", "#proBoardDoneFilter",
       "#proBoardFinDirFilter", "#proBoardFinStatusFilter", "#proBoardDateFrom", "#proBoardDateTo"
     ].forEach(sel => { if ($(sel)) $(sel).value = ""; });
+    if ($("#proBoardTripsOnlyFilter")) $("#proBoardTripsOnlyFilter").checked = false;
     if (proBoardColMsel) proBoardColMsel.setSelected([]);
     if (proBoardTypeMsel) proBoardTypeMsel.setSelected([...proBoardTypeSet]);
     if (proBoardLabelMsel) proBoardLabelMsel.setSelected([]);
@@ -1084,7 +1230,11 @@
     const today = core.fmtISO(new Date());
     const soon = core.fmtISO(new Date(Date.now() + 3 * core.DAY));
 
-    const allCards = getProSortedActivities().filter(a => matchProCardFilters(a, cfg, cols));
+    const allCards = projectCardsForTravelDates(
+      getProSortedActivities().filter(a => matchProCardFilters(a, cfg, cols)),
+      cfg.tripsOnly,
+      cfg.assignee
+    );
     const visibleCols = proBoardColSet.size > 0 ? cols.filter(c => proBoardColSet.has(c.id)) : cols;
 
     board.innerHTML = visibleCols.map(col => {
@@ -1347,7 +1497,8 @@
       finDir: proFilterFinDir,
       finStatus: proFilterFinStatus,
       dateFrom: proDateFrom,
-      dateTo: proDateTo
+      dateTo: proDateTo,
+      tripsOnly: proFilterTripsOnly
     };
   }
 
@@ -1366,7 +1517,8 @@
       + (proFilterDone ? 1 : 0)
       + (proFilterFinDir ? 1 : 0)
       + (proFilterFinStatus ? 1 : 0)
-      + ((proDateFrom || proDateTo) ? 1 : 0);
+      + ((proDateFrom || proDateTo) ? 1 : 0)
+      + (proFilterTripsOnly ? 1 : 0);
   }
 
   function hasActiveProFilters() {
@@ -1376,7 +1528,8 @@
   function applyProUnifiedFilters(allCards) {
     const cols = getMergedColumns();
     const cfg = getProUnifiedFilterCfg();
-    return (allCards || []).filter(a => matchProCardFilters(a, cfg, cols));
+    const matched = (allCards || []).filter(a => matchProCardFilters(a, cfg, cols));
+    return projectCardsForTravelDates(matched, cfg.tripsOnly, cfg.assignee);
   }
 
   function syncProFilterUIs() {
@@ -1400,6 +1553,9 @@
     syncInps(["#proGanttFinStatusFilter", "#proMapFinStatusFilter", "#proTravelsFinStatusFilter", "#proControlFinStatusFilter", "#proDashFinStatusFilter", "#proFinFinStatusFilter"], proFilterFinStatus);
     syncInps(["#proGanttDateFrom", "#proMapDateFrom", "#proTravelsDateFrom", "#proControlDateFrom", "#proDashDateFrom", "#proFinDateFrom"], proDateFrom);
     syncInps(["#proGanttDateTo", "#proMapDateTo", "#proTravelsDateTo", "#proControlDateTo", "#proDashDateTo", "#proFinDateTo"], proDateTo);
+    ["#proGanttTripsOnlyFilter", "#proMapTripsOnlyFilter", "#proTravelsTripsOnlyFilter", "#proControlTripsOnlyFilter", "#proDashTripsOnlyFilter", "#proFinTripsOnlyFilter"].forEach(s => {
+      if ($(s) && $(s).checked !== proFilterTripsOnly) $(s).checked = proFilterTripsOnly;
+    });
 
     const activeCount = countActiveProUnifiedFilters();
     const dirty = activeCount > 0;
@@ -1454,6 +1610,7 @@
     proFilterDone = "";
     proFilterFinDir = "";
     proFilterFinStatus = "";
+    proFilterTripsOnly = false;
     applyAndRenderProFilteredViews();
   }
 
@@ -1489,6 +1646,20 @@
       }
       return true;
     });
+    if (proFilterTripsOnly) {
+      const projected = [];
+      filtered.forEach(it => {
+        const meta = core.unifiedMetaMap?.get(it);
+        if (meta?.mode === "professional") {
+          const rng = getCardTravelDateRange(it, proFilterAssignee);
+          if (!rng) return;
+          const p = { ...it, start: rng.start, end: rng.end, startTime: rng.startTime || it.startTime, endTime: rng.endTime || it.endTime, _isTravelProjected: true };
+          if (core.unifiedMetaMap) core.unifiedMetaMap.set(p, meta);
+          projected.push(p);
+        }
+      });
+      return { allUnified: all, filtered: projected.sort((a, b) => String(a.start || "").localeCompare(String(b.start || ""))) };
+    }
     return { allUnified: all, filtered };
   }
 
@@ -1927,6 +2098,7 @@
         tip.remove();
         const dd = dCols * unitDays;
         if (!dd) return openTarget();
+        if (proFilterTripsOnly) return core.toast("✈️ Modo 'Apenas viagens' ativo — clique na barra para editar as datas de Ida/Volta do responsável.");
         if (ctx.trip?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
         a.start = core.fmtISO(new Date(core.parseD(a.start).getTime() + dd * core.DAY + 3600e3));
         a.end = core.fmtISO(new Date(core.parseD(a.end || a.start).getTime() + dd * core.DAY + 3600e3));
@@ -1962,6 +2134,10 @@
         handle.onpointermove = handle.onpointerup = null;
         const newLen = Math.max(1, origLen + dd);
         if (newLen === origLen) return;
+        if (proFilterTripsOnly) {
+          core.toast("✈️ Modo 'Apenas viagens' ativo — clique na barra para editar as datas de Ida/Volta do responsável.");
+          return renderProGantt();
+        }
         if (ctx.trip?.role === "viewer") {
           return renderProGantt();
         }
@@ -4594,10 +4770,40 @@
     return cfg.ranks.find(r => r.id === rankId) || null;
   }
 
+  const RANK_ABBREV_MAP = {
+    alm_esq: "AE / Gen Ex",
+    vice_alm: "VA / Gen Div",
+    contra_alm: "CA / Gen Bda",
+    cmg_cel: "CMG / Cel",
+    cf_tencel: "CF / TC",
+    cc_maj: "CC / Maj",
+    ct_cap: "CT / Cap",
+    "1ten": "1º Ten",
+    "2ten": "2º Ten",
+    gm_asp: "GM / Asp",
+    so_st: "SO / ST",
+    "1sgt": "1º Sgt",
+    "2sgt": "2º Sgt",
+    "3sgt": "3º Sgt",
+    cb_tm: "Cb / TM",
+    sd1_mn: "Sd 1ª / MN",
+    sd2: "Sd 2ª",
+    recruta: "Recruta"
+  };
+
+  function shortRankAbbrev(rank) {
+    if (!rank) return "";
+    if (RANK_ABBREV_MAP[rank.id]) return RANK_ABBREV_MAP[rank.id];
+    const clean = String(rank.name || "").trim();
+    if (clean.length <= 12) return clean;
+    return `Círc. ${rank.circle || ""}`.trim();
+  }
+
   function computePersonTravelFinance(card, personName, personEntry = null, cfgOpt = null) {
     const cfg = cfgOpt || getTravelFinanceConfig();
-    const start = String(card?.start || "").trim();
-    const end = String(card?.end || card?.start || "").trim();
+    const td = getEffectivePersonTravelDates(card, personEntry);
+    const start = td.idaIso;
+    const end = td.voltaIso;
     let diffDays = 0;
     if (start && end) {
       const d1 = core.parseD(start);
@@ -4631,13 +4837,19 @@
     const effectiveTotal = Math.round((effectiveDiaria + effectiveGratLiquida) * 100) / 100;
 
     return {
+      eventStart: String(card?._origStart || card?.start || "").trim(),
+      eventEnd: String(card?._origEnd || card?.end || card?._origStart || card?.start || "").trim(),
       start,
       end,
+      idaDt: td.idaDt,
+      voltaDt: td.voltaDt,
+      hasExplicitTravelDates: td.hasExplicitStart || td.hasExplicitEnd,
       diffDays,
       diasFora,
       diariasQty,
       tierInfo,
       rank,
+      rankAbbrev: shortRankAbbrev(rank),
       diariaBase,
       freeLodging,
       diariaTotal,
@@ -4665,13 +4877,17 @@
     const updatedList = list.map(e => ({
       name: e.name,
       travels: Boolean(e.travels),
-      travelMode: e.name.toLowerCase() === targetLow ? mode : sanitizeTravelMode(e.travelMode)
+      travelMode: e.name.toLowerCase() === targetLow ? mode : sanitizeTravelMode(e.travelMode),
+      travelStart: sanitizeTravelDateTime(e.travelStart),
+      travelEnd: sanitizeTravelDateTime(e.travelEnd)
     }));
     card.assigneesList = updatedList;
     if (updatedList[0]) {
       card.assignee = updatedList[0].name;
       card.assigneeTravels = Boolean(updatedList[0].travels);
       card.assigneeTravelMode = updatedList[0].travelMode || "";
+      card.assigneeTravelStart = updatedList[0].travelStart || "";
+      card.assigneeTravelEnd = updatedList[0].travelEnd || "";
     }
     const travelers = updatedList.filter(e => e.travels);
     if (travelers.length <= 1 || updatedList.length <= 1) {
@@ -4912,10 +5128,12 @@
 
   /* ---------- ABA CONTROLE (CONTROLE DE VIAGENS & FINANCEIRO) ---------- */
   let proControlQuickMode = "";
+  let proControlQuickYear = "";
   let proControlQuickMonth = "";
   let proControlScope = "travels";
   let proControlSummaryTab = "all";
   let proControlTableSort = { col: "start", dir: "asc" };
+  let proControlLastReport = null;
 
   function renderProControl(filteredCardsOpt) {
     const viewEl = $("#view-pro-control");
@@ -4933,10 +5151,10 @@
       $("#proControlQuickMode").value = proControlQuickMode;
     }
 
-    // Construir lista base de registros (antes do filtro de mês/modalidade para popular o dropdown de meses)
+    // Construir lista base de registros (antes do filtro de ano/mês/modalidade para popular Anos e Meses dinamicamente)
     const rawRows = [];
     let fallbackLocCount = 0;
-    const allMonthsSet = new Set();
+    const allYearsSet = new Set();
 
     cards.forEach(c => {
       const asgList = getCardAssigneesList(c);
@@ -4952,11 +5170,11 @@
       }
       if (!matched.length) return;
 
-      const ym = String(c.start || c.end || "").slice(0, 7);
-      if (ym.length === 7) allMonthsSet.add(ym);
-
       matched.forEach(entry => {
         const calcFin = computePersonTravelFinance(c, entry.name, entry, cfg);
+        const ym = String(calcFin.start || calcFin.eventStart || "").slice(0, 7);
+        const yr = ym.length === 7 ? ym.slice(0, 4) : "";
+        if (yr) allYearsSet.add(yr);
         rawRows.push({
           card: c,
           personName: entry.name,
@@ -4965,33 +5183,56 @@
           travelsFlag: Boolean(entry.travels),
           city: rawLoc ? shortLocationCityName(rawLoc) : "Sem local",
           rawLocation: rawLoc,
+          yr,
           ym: ym.length === 7 ? ym : "",
           fin: calcFin
         });
       });
     });
 
-    // Popular seletor rápido de Mês/Ano
-    const monthSel = $("#proControlQuickMonth");
-    if (monthSel) {
-      const sortedYms = [...allMonthsSet].sort();
-      const prev = proControlQuickMonth;
-      monthSel.innerHTML = `<option value="">📅 Todos os meses</option>` + sortedYms.map(ym => {
-        const [yr, mo] = ym.split("-");
-        const lbl = `${core.MON[parseInt(mo, 10) - 1]}/${yr}`;
-        return `<option value="${ym}" ${ym === prev ? "selected" : ""}>📅 ${lbl}</option>`;
-      }).join("");
-      if (prev && !sortedYms.includes(prev)) {
-        proControlQuickMonth = "";
-        monthSel.value = "";
+    // Popular seletor dinâmico de Anos com base em todas as viagens planejadas
+    const yearSel = $("#proControlQuickYear");
+    if (yearSel) {
+      const sortedYears = [...allYearsSet].sort();
+      const prevY = proControlQuickYear;
+      yearSel.innerHTML = `<option value="">🗓️ Todos os anos</option>`
+        + sortedYears.map(y => `<option value="${y}" ${y === prevY ? "selected" : ""}>🗓️ ${y}</option>`).join("");
+      if (prevY && !sortedYears.includes(prevY)) {
+        proControlQuickYear = "";
+        yearSel.value = "";
       } else {
-        monthSel.value = prev;
+        yearSel.value = prevY;
       }
     }
 
-    // Aplicar filtros rápidos de Modalidade e Mês
+    // Popular seletor dinâmico de Meses filtrados pelo Ano selecionado (com opção "Todos os meses")
+    const monthsForYearSet = new Set();
+    rawRows.forEach(r => {
+      if (!r.ym) return;
+      if (proControlQuickYear && r.yr !== proControlQuickYear) return;
+      monthsForYearSet.add(r.ym);
+    });
+    const monthSel = $("#proControlQuickMonth");
+    if (monthSel) {
+      const sortedYms = [...monthsForYearSet].sort();
+      const prevM = proControlQuickMonth;
+      monthSel.innerHTML = `<option value="">📅 Todos os meses</option>` + sortedYms.map(ym => {
+        const [yr, mo] = ym.split("-");
+        const lbl = `${core.MON[parseInt(mo, 10) - 1]}/${yr}`;
+        return `<option value="${ym}" ${ym === prevM ? "selected" : ""}>📅 ${lbl}</option>`;
+      }).join("");
+      if (prevM && !sortedYms.includes(prevM)) {
+        proControlQuickMonth = "";
+        monthSel.value = "";
+      } else {
+        monthSel.value = prevM;
+      }
+    }
+
+    // Aplicar filtros rápidos de Ano, Mês e Modalidade
     const rows = rawRows.filter(r => {
       if (proControlQuickMode && r.fin.activeMode !== proControlQuickMode) return false;
+      if (proControlQuickYear && r.yr !== proControlQuickYear) return false;
       if (proControlQuickMonth && r.ym !== proControlQuickMonth) return false;
       return true;
     });
@@ -5093,6 +5334,7 @@
       if (col === "person") return dir * a.personName.localeCompare(b.personName);
       if (col === "name") return dir * String(a.card.name || "").localeCompare(String(b.card.name || ""));
       if (col === "city") return dir * a.city.localeCompare(b.city);
+      if (col === "evstart") return dir * String(a.fin.eventStart || "9999-99-99").localeCompare(String(b.fin.eventStart || "9999-99-99"));
       if (col === "end") return dir * String(a.fin.end || "9999-99-99").localeCompare(String(b.fin.end || "9999-99-99"));
       if (col === "days") return dir * (a.fin.diasFora - b.fin.diasFora);
       if (col === "diaria") return dir * (a.fin.diariaTotal - b.fin.diariaTotal);
@@ -5104,22 +5346,22 @@
       $("#proControlTableCountBadge").textContent = `${rows.length} ${rows.length === 1 ? "lançamento" : "lançamentos"}`;
     }
 
-    // 4.3 Tabela Principal de Controle Financeiro (Desktop)
+    // 4.3 Tabela Principal de Controle Financeiro (Desktop — Layout Compacto Horizontalmente)
     const tblEl = $("#proControlTable");
     if (tblEl) {
       const arrow = col => proControlTableSort.col === col ? (proControlTableSort.dir === "asc" ? " ▲" : " ▼") : "";
       tblEl.innerHTML = `
         <thead>
           <tr>
-            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="person">Pessoa / Posto${arrow("person")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="person">Pessoa${arrow("person")}</button></th>
             <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="name">Viagem / Evento${arrow("name")}</button></th>
             <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="city">Localidade${arrow("city")}</button></th>
-            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="start">Ida${arrow("start")}</button></th>
-            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="end">Volta${arrow("end")}</button></th>
-            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="days">Dias Fora${arrow("days")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="evstart">Data Evento${arrow("evstart")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="start">Ida e Volta${arrow("start")}</button></th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="days">Dias${arrow("days")}</button></th>
             <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="diaria">Diária (R$)${arrow("diaria")}</button></th>
-            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="grat">Grat. Representação (R$)${arrow("grat")}</button></th>
-            <th style="text-align:center">Comissionamento</th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="grat">Grat. Rep. (R$)${arrow("grat")}</button></th>
+            <th style="text-align:center">Comiss.</th>
           </tr>
         </thead>
         <tbody>
@@ -5130,37 +5372,51 @@
             const isGrat = f.activeMode === "grat_rep";
             const isComiss = f.activeMode === "comissionamento";
             const rankSub = f.rank
-              ? `<span class="pro-ctrl-rank-sub">${core.esc(f.rank.name)} <small>(Círc. ${core.esc(f.rank.circle)})</small></span>`
-              : `<button type="button" class="pro-ctrl-no-rank-btn" data-ctrl-go-params="1" title="Vincular Posto/Graduação em Parâmetros">⚠️ Definir Posto</button>`;
+              ? `<span class="pro-ctrl-rank-sub" title="${core.esc(f.rank.name)} — Círculo ${core.esc(f.rank.circle)}">${core.esc(f.rankAbbrev)} · Círc. ${core.esc(f.rank.circle)}</span>`
+              : `<button type="button" class="pro-ctrl-no-rank-btn" data-ctrl-go-params="1" title="Vincular Posto/Graduação em Parâmetros">⚠️ Posto</button>`;
             const tierCls = `tier-${f.tierInfo.tier}`;
+            const evStartShort = f.eventStart ? core.fmtBR(f.eventStart).slice(0, 5) + "/" + f.eventStart.slice(2, 4) : "—";
+            const evEndShort = f.eventEnd ? core.fmtBR(f.eventEnd).slice(0, 5) + "/" + f.eventEnd.slice(2, 4) : "—";
+            const idaLine = formatDateTimeShortBR(f.idaDt, f.start);
+            const voltaLine = formatDateTimeShortBR(f.voltaDt, f.end);
             return `<tr class="pro-map-trip-row pro-ctrl-row${isComiss ? " is-comiss" : ""}" data-ctrl-open-card="${core.esc(r.card.id)}">
-              <td>
+              <td class="pro-ctrl-col-person">
                 <div class="pro-ctrl-person-cell">
-                  <span class="pro-assignee-badge" style="--asg-bg:${r.personColor.bg};--asg-fg:${r.personColor.fg};--asg-bd:${r.personColor.bd}">👤 ${core.esc(r.personName)}</span>
+                  <span class="pro-assignee-badge pro-ctrl-asg-compact" style="--asg-bg:${r.personColor.bg};--asg-fg:${r.personColor.fg};--asg-bd:${r.personColor.bd}" title="${core.esc(r.personName)}">${core.esc(r.personName)}</span>
                   ${rankSub}
                 </div>
               </td>
-              <td>
-                <div class="pro-ctrl-trip-cell">
-                  <span class="chip ${info.cls}"${info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : ""}>${info.icon} ${core.esc(info.short)}</span>
+              <td class="pro-ctrl-col-event">
+                <div class="pro-ctrl-trip-stack">
+                  <span class="chip ${info.cls} pro-ctrl-chip-mini"${info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : ""}>${info.icon} ${core.esc(info.short)}</span>
                   <strong class="pro-ctrl-trip-link">${core.esc(r.card.name)}</strong>
                 </div>
               </td>
-              <td>
+              <td class="pro-ctrl-col-loc">
                 <div class="pro-ctrl-loc-cell">
-                  <span>📍 ${core.esc(r.city)}</span>
+                  <span class="pro-ctrl-loc-txt" title="${core.esc(r.rawLocation || r.city)}">📍 ${core.esc(r.city)}</span>
                   <span class="pro-ctrl-tier-badge ${tierCls}" title="${core.esc(f.tierInfo.desc)}">${core.esc(f.tierInfo.label)}</span>
                 </div>
               </td>
-              <td class="nowrap">${f.start ? core.fmtBR(f.start) : "—"}</td>
-              <td class="nowrap">${f.end ? core.fmtBR(f.end) : "—"}</td>
-              <td class="num">
-                <div class="pro-ctrl-days-cell">
-                  <b>${f.diasFora} ${f.diasFora === 1 ? "dia" : "dias"}</b>
-                  <small class="muted">${core.num(f.diariasQty, 1)} diárias${f.freeLodging ? " · 🏠50%" : ""}</small>
+              <td class="pro-ctrl-col-dates nowrap">
+                <div class="pro-ctrl-date-stack">
+                  <span>${core.esc(evStartShort)}</span>
+                  <small class="muted">${core.esc(evEndShort)}</small>
                 </div>
               </td>
-              <td class="num">
+              <td class="pro-ctrl-col-travel-dates nowrap">
+                <div class="pro-ctrl-date-stack" title="Base do cálculo financeiro (Ida e Regresso do responsável)">
+                  <span>🛫 ${core.esc(idaLine)}</span>
+                  <small>🛬 ${core.esc(voltaLine)}</small>
+                </div>
+              </td>
+              <td class="num pro-ctrl-col-days">
+                <div class="pro-ctrl-days-cell">
+                  <b>${f.diasFora}d</b>
+                  <small class="muted">${core.num(f.diariasQty, 1)} diár.${f.freeLodging ? " · 🏠" : ""}</small>
+                </div>
+              </td>
+              <td class="num pro-ctrl-col-fin">
                 <button type="button" class="pro-ctrl-mode-box mode-diaria${isDiaria ? " is-selected" : (isComiss ? " is-neutral" : "")}" data-ctrl-set-mode="diaria" data-ctrl-card="${core.esc(r.card.id)}" data-ctrl-person="${core.esc(r.personName)}" aria-pressed="${isDiaria}" title="Clique para selecionar Diária">
                   <span class="pro-ctrl-box-top">
                     <span class="pro-ctrl-chk">${isDiaria ? "✓" : ""}</span>
@@ -5169,7 +5425,7 @@
                   <small>${f.rank ? `${core.num(f.diariasQty, 1)}× ${core.money(f.diariaBase)}` : "Sem posto"}</small>
                 </button>
               </td>
-              <td class="num">
+              <td class="num pro-ctrl-col-fin">
                 <button type="button" class="pro-ctrl-mode-box mode-grat${isGrat ? " is-selected" : (isComiss ? " is-neutral" : "")}" data-ctrl-set-mode="grat_rep" data-ctrl-card="${core.esc(r.card.id)}" data-ctrl-person="${core.esc(r.personName)}" aria-pressed="${isGrat}" title="Clique para selecionar Gratificação de Representação">
                   <span class="pro-ctrl-box-top">
                     <span class="pro-ctrl-chk">${isGrat ? "✓" : ""}</span>
@@ -5178,7 +5434,7 @@
                   <small>Bruto: ${core.money(f.gratBruta)}</small>
                 </button>
               </td>
-              <td style="text-align:center">
+              <td class="pro-ctrl-col-comiss" style="text-align:center">
                 <label class="pro-ctrl-comiss-lbl${isComiss ? " is-checked" : ""}" title="Marcar viagem como Comissionamento (R$ 0,00)">
                   <input type="checkbox" data-ctrl-comiss-chk="1" data-ctrl-card="${core.esc(r.card.id)}" data-ctrl-person="${core.esc(r.personName)}" ${isComiss ? "checked" : ""}>
                   <span>${isComiss ? "Sim" : "Não"}</span>
@@ -5190,8 +5446,8 @@
         ${rows.length ? `
         <tfoot>
           <tr class="pro-ctrl-tfoot-row">
-            <td colspan="5"><strong>TOTAIS EFETIVAMENTE RECEBIDOS</strong> <span class="muted small">(apenas itens marcados em Diária ou Grat. Representação)</span></td>
-            <td class="num"><strong>${sumDiasFora} dias</strong></td>
+            <td colspan="5"><strong>TOTAIS EFETIVAMENTE RECEBIDOS</strong> <span class="muted small">(apenas itens marcados em Diária ou Grat. Rep.)</span></td>
+            <td class="num"><strong>${sumDiasFora}d</strong></td>
             <td class="num"><strong style="color:var(--ok)">${core.money(sumDiariasVal)}</strong><small class="muted" style="display:block">${countDiariaRows} Diária(s)</small></td>
             <td class="num"><strong style="color:#c084fc">${core.money(sumGratLiq)}</strong><small class="muted" style="display:block">Bruto: ${core.money(sumGratBruta)}</small></td>
             <td class="num">
@@ -5569,6 +5825,337 @@
           }).join("") || `<tr><td colspan="6" class="muted" style="text-align:center;padding:14px">Sem dados datados.</td></tr>`}
         </tbody>`;
     }
+
+    // Cachear dados filtrados atuais para os 3 botões de Impressão/Exportação (Planilha Paisagem, Excel .xlsx, Relatório PDF Retrato)
+    proControlLastReport = {
+      title: st.title || "Projeto Profissional",
+      sortedRows,
+      personList,
+      locList,
+      monthList,
+      totals: {
+        uniqueTrips: uniqueCardIds.size,
+        launches: rows.length,
+        sumDiasFora,
+        sumDiariasQty,
+        sumDiariasVal,
+        sumGratLiq,
+        sumGratBruta,
+        sumTotalGeral,
+        countDiariaRows,
+        countGratRows,
+        countComissRows
+      }
+    };
+  }
+
+  function describeProControlActiveFilters() {
+    const parts = [];
+    if (proFilterAssignee) parts.push(`Pessoa: ${proFilterAssignee}`);
+    if (proControlQuickYear) parts.push(`Ano: ${proControlQuickYear}`);
+    if (proControlQuickMonth) {
+      const [yr, mo] = proControlQuickMonth.split("-");
+      parts.push(`Mês: ${core.MON[parseInt(mo, 10) - 1]}/${yr}`);
+    }
+    if (proControlQuickMode) {
+      const mMap = { diaria: "Diária", grat_rep: "Grat. Representação", comissionamento: "Comissionamento" };
+      parts.push(`Modalidade: ${mMap[proControlQuickMode] || proControlQuickMode}`);
+    }
+    if (proFilterLocation) parts.push(`Local: ${proFilterLocation}`);
+    if (proDateFrom || proDateTo) parts.push(`Período: ${proDateFrom ? core.fmtBR(proDateFrom) : "..."} a ${proDateTo ? core.fmtBR(proDateTo) : "..."}`);
+    if (proFilterSearch) parts.push(`Busca: "${proFilterSearch}"`);
+    return parts.length ? parts.join(" · ") : "Todos os registros do escopo selecionado";
+  }
+
+  function buildControlPrintableTableHTML(rep) {
+    const t = rep.totals;
+    const rowsHtml = rep.sortedRows.map(r => {
+      const f = r.fin;
+      const info = getProTypeInfo(r.card.type);
+      const isD = f.activeMode === "diaria";
+      const isG = f.activeMode === "grat_rep";
+      const isC = f.activeMode === "comissionamento";
+      const evS = f.eventStart ? core.fmtBR(f.eventStart) : "—";
+      const evE = f.eventEnd ? core.fmtBR(f.eventEnd) : "—";
+      const idaS = formatDateTimeShortBR(f.idaDt, f.start);
+      const volS = formatDateTimeShortBR(f.voltaDt, f.end);
+      return `<tr class="${isC ? "is-comiss" : ""}">
+        <td><strong>${core.esc(r.personName)}</strong><br><small class="muted">${f.rank ? `${core.esc(f.rankAbbrev)} · Círc. ${core.esc(f.rank.circle)}` : "Sem posto"}</small></td>
+        <td><span class="tag">${core.esc(info.short)}</span><br><strong>${core.esc(r.card.name)}</strong></td>
+        <td>${core.esc(r.city)}<br><span class="tier t${f.tierInfo.tier}">${core.esc(f.tierInfo.label)}</span></td>
+        <td class="nowrap">${core.esc(evS)}<br><small class="muted">${core.esc(evE)}</small></td>
+        <td class="nowrap">🛫 ${core.esc(idaS)}<br><small>🛬 ${core.esc(volS)}</small></td>
+        <td class="num"><strong>${f.diasFora}d</strong><br><small class="muted">${core.num(f.diariasQty, 1)} diár.${f.freeLodging ? " · 50%" : ""}</small></td>
+        <td class="num"><div class="mbox ${isD ? "m-diaria" : (isC ? "m-neut" : "")}"><b>${isD ? "✓ " : ""}${core.money(f.diariaTotal)}</b><small>${f.rank ? `${core.num(f.diariasQty, 1)}× ${core.money(f.diariaBase)}` : "—"}</small></div></td>
+        <td class="num"><div class="mbox ${isG ? "m-grat" : (isC ? "m-neut" : "")}"><b>${isG ? "✓ " : ""}${core.money(f.gratLiquida)}</b><small>Bruto: ${core.money(f.gratBruta)}</small></div></td>
+        <td class="ctr">${isC ? '<span class="com-yes">✓ Sim</span>' : '<span class="muted">Não</span>'}</td>
+      </tr>`;
+    }).join("");
+
+    return `<table class="ctrl-tbl">
+      <thead>
+        <tr>
+          <th>Pessoa / Posto</th>
+          <th>Viagem / Evento</th>
+          <th>Localidade</th>
+          <th>Data Evento</th>
+          <th>Ida e Volta</th>
+          <th class="num">Dias</th>
+          <th class="num">Diária (R$)</th>
+          <th class="num">Grat. Rep. (R$)</th>
+          <th class="ctr">Comiss.</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot>
+        <tr class="tfoot-row">
+          <td colspan="5"><strong>TOTAIS EFETIVAMENTE RECEBIDOS</strong> <small class="muted">(apenas marcados em Diária ou Grat. Rep.)</small></td>
+          <td class="num"><strong>${t.sumDiasFora}d</strong></td>
+          <td class="num"><strong class="c-ok">${core.money(t.sumDiariasVal)}</strong><br><small>${t.countDiariaRows} Diária(s)</small></td>
+          <td class="num"><strong class="c-purp">${core.money(t.sumGratLiq)}</strong><br><small>Bruto: ${core.money(t.sumGratBruta)}</small></td>
+          <td class="num"><div class="gtot"><small>TOTAL GERAL</small><strong>${core.money(t.sumTotalGeral)}</strong></div></td>
+        </tr>
+      </tfoot>
+    </table>`;
+  }
+
+  function printProControlSheetLandscape() {
+    if (!proControlLastReport) renderProControl();
+    const rep = proControlLastReport;
+    if (!rep || !rep.sortedRows.length) return core.toast("📋 Não há viagens neste filtro para imprimir a planilha.");
+    const filtersTxt = describeProControlActiveFilters();
+    const genAt = new Date().toLocaleString("pt-BR");
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+      <title>Planilha de Controle Financeiro — ${core.esc(rep.title)}</title>
+      <style>
+        @page { size: landscape; margin: 10mm; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body { font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color: #0f172a; margin: 0; font-size: 11px; line-height: 1.35; }
+        .hdr { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #0284c7; padding-bottom: 6px; margin-bottom: 10px; }
+        .hdr h1 { margin: 0; font-size: 16px; }
+        .hdr .meta { color: #475569; font-size: 10.5px; }
+        .ctrl-tbl { width: 100%; border-collapse: collapse; }
+        .ctrl-tbl th, .ctrl-tbl td { border: 1px solid #cbd5e1; padding: 5px 6px; vertical-align: middle; text-align: left; }
+        .ctrl-tbl th { background: #f1f5f9; font-weight: 700; font-size: 10.5px; color: #334155; }
+        .ctrl-tbl .num { text-align: right; }
+        .ctrl-tbl .ctr { text-align: center; }
+        .nowrap { white-space: nowrap; }
+        .muted { color: #64748b; }
+        .tag { display: inline-block; padding: 1px 6px; border-radius: 999px; background: #e0f2fe; color: #0369a1; font-size: 9.5px; font-weight: 700; margin-bottom: 2px; }
+        .tier { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 9px; font-weight: 700; margin-top: 2px; }
+        .tier.t1 { background: #cffafe; color: #0e7490; }
+        .tier.t2 { background: #ede9fe; color: #6d28d9; }
+        .tier.t3 { background: #f1f5f9; color: #475569; }
+        .mbox { display: inline-flex; flex-direction: column; align-items: flex-end; padding: 4px 7px; border-radius: 7px; border: 1px solid #cbd5e1; background: #f8fafc; min-width: 96px; }
+        .mbox small { font-size: 9px; color: #64748b; }
+        .mbox.m-diaria { background: #d1fae5; border: 2px solid #059669; color: #065f46; }
+        .mbox.m-grat { background: #f3e8ff; border: 2px solid #9333ea; color: #581c87; }
+        .mbox.m-neut { opacity: 0.45; border-style: dashed; }
+        .com-yes { display: inline-block; padding: 2px 6px; border-radius: 6px; background: #fef3c7; color: #b45309; font-weight: 700; font-size: 10px; }
+        .tfoot-row td { background: #f1f5f9; border-top: 2px solid #64748b; padding: 7px 6px; }
+        .c-ok { color: #047857; }
+        .c-purp { color: #7e22ce; }
+        .gtot { display: inline-flex; flex-direction: column; align-items: flex-end; background: #e0f2fe; border: 1.5px solid #0284c7; border-radius: 7px; padding: 3px 8px; }
+        .gtot small { font-size: 8.5px; color: #0369a1; font-weight: 800; }
+        .gtot strong { font-size: 12.5px; color: #0f172a; }
+      </style></head><body>
+      <div class="hdr">
+        <div>
+          <h1>📋 Planilha de Controle de Viagens e Financeiro — ${core.esc(rep.title)}</h1>
+          <div class="meta">Filtros: ${core.esc(filtersTxt)}</div>
+        </div>
+        <div class="meta">Gerado em ${core.esc(genAt)}</div>
+      </div>
+      ${buildControlPrintableTableHTML(rep)}
+      <script>window.onload=function(){window.print();};</script>
+      </body></html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) return core.toast("⚠️ Permita pop-ups para imprimir a planilha.");
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  }
+
+  function exportProControlXlsx() {
+    if (!window.XLSX) return core.toast("Biblioteca Excel não carregou (verifique sua conexão).");
+    if (!proControlLastReport) renderProControl();
+    const rep = proControlLastReport;
+    if (!rep || !rep.sortedRows.length) return core.toast("📊 Não há viagens neste filtro para exportar.");
+
+    const modeLabels = { diaria: "Diária", grat_rep: "Gratificação de Representação", comissionamento: "Comissionamento" };
+    const cleanRows = rep.sortedRows.map(r => {
+      const f = r.fin;
+      const info = getProTypeInfo(r.card.type);
+      const td = r.card.travelDetails || {};
+      const obsParts = [];
+      if (td.notes) obsParts.push(td.notes);
+      if (td.hasCost && Number(td.costAmount) > 0) obsParts.push(`Custo passagem: ${core.money(td.costAmount)}`);
+      if (f.freeLodging) obsParts.push("Pousada/alojamento gratuito (50% diária)");
+      return {
+        "Pessoa": r.personName,
+        "Posto": f.rank ? f.rank.name : "",
+        "Evento": r.card.name || "",
+        "Etiqueta": info.short || r.card.type || "",
+        "Localidade": r.rawLocation || r.city || "",
+        "Faixa": f.tierInfo.label,
+        "Início Evento": f.eventStart ? core.fmtBR(f.eventStart) : "",
+        "Fim Evento": f.eventEnd ? core.fmtBR(f.eventEnd) : "",
+        "Ida (Data/Hora)": formatDateTimeFullBR(f.idaDt, f.start),
+        "Volta (Data/Hora)": formatDateTimeFullBR(f.voltaDt, f.end),
+        "Dias Fora": f.diasFora,
+        "Modalidade Selecionada": modeLabels[f.activeMode] || "Diária",
+        "Valor Diária": Number(f.diariaTotal.toFixed(2)),
+        "Valor Grat. Rep. Bruta": Number(f.gratBruta.toFixed(2)),
+        "Valor Grat. Rep. Líquida": Number(f.gratLiquida.toFixed(2)),
+        "Valor Efetivo a Receber": Number(f.effectiveTotal.toFixed(2)),
+        "Transporte": td.transport || "",
+        "Observações": obsParts.join(" | ")
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    const san = core.sanitizeSheetRows || (x => x);
+    const ws = XLSX.utils.json_to_sheet(san(cleanRows));
+    XLSX.utils.book_append_sheet(wb, ws, "Controle Viagens");
+    const safeTitle = (rep.title || "Controle_Viagens").replace(/[^\w\-]+/g, "_");
+    XLSX.writeFile(wb, `Controle_Viagens_${safeTitle}.xlsx`);
+    core.toast(`📊 Excel exportado (${cleanRows.length} registros)!`);
+  }
+
+  function printProControlFullReportPortrait() {
+    if (!proControlLastReport) renderProControl();
+    const rep = proControlLastReport;
+    if (!rep || !rep.sortedRows.length) return core.toast("📄 Não há viagens neste filtro para gerar o relatório.");
+    const t = rep.totals;
+    const filtersTxt = describeProControlActiveFilters();
+    const genAt = new Date().toLocaleString("pt-BR");
+
+    const maxPRev = Math.max(1, ...rep.personList.map(p => p.total));
+    const maxLRev = Math.max(1, ...rep.locList.map(l => l.total));
+    const maxPDays = Math.max(1, ...rep.personList.map(p => p.days));
+    const maxMRev = Math.max(1, ...rep.monthList.map(m => m.total));
+
+    const chartRevPersonHtml = rep.personList.map(p => {
+      const w = p.total > 0 ? Math.max(4, Math.round((p.total / maxPRev) * 100)) : 0;
+      const dW = p.total > 0 ? (p.diaria / p.total) * 100 : 0;
+      const gW = p.total > 0 ? (p.gratLiq / p.total) * 100 : 0;
+      return `<div class="bar-row"><div class="bar-top"><span>${core.esc(p.name)}</span><b>${core.money(p.total)}</b></div>
+        <div class="bar-trk"><div class="bar-stk" style="width:${w}%"><span style="width:${dW.toFixed(1)}%;background:#10b981"></span><span style="width:${gW.toFixed(1)}%;background:#a855f7"></span></div></div></div>`;
+    }).join("");
+
+    const chartRevLocHtml = rep.locList.slice(0, 8).map(l => {
+      const w = l.total > 0 ? Math.max(4, Math.round((l.total / maxLRev) * 100)) : 0;
+      return `<div class="bar-row"><div class="bar-top"><span>${core.esc(l.city)} (${core.esc(l.tierInfo.short)})</span><b>${core.money(l.total)}</b></div>
+        <div class="bar-trk"><div class="bar-fill" style="width:${w}%;background:#0284c7"></div></div></div>`;
+    }).join("");
+
+    const chartMonthHtml = rep.monthList.map(m => {
+      const [yr, mo] = m.ym.split("-");
+      const lbl = `${core.MON[parseInt(mo, 10) - 1]}/${yr.slice(2)}`;
+      const w = m.total > 0 ? Math.max(4, Math.round((m.total / maxMRev) * 100)) : 0;
+      return `<div class="bar-row"><div class="bar-top"><span>${lbl} (${m.trips}v · ${m.days}d)</span><b>${core.money(m.total)}</b></div>
+        <div class="bar-trk"><div class="bar-fill" style="width:${w}%;background:#6366f1"></div></div></div>`;
+    }).join("");
+
+    const chartDaysHtml = rep.personList.slice().sort((a, b) => b.days - a.days).map(p => {
+      const w = Math.max(4, Math.round((p.days / maxPDays) * 100));
+      return `<div class="bar-row"><div class="bar-top"><span>${core.esc(p.name)}</span><b>${p.days}d (${p.trips}v)</b></div>
+        <div class="bar-trk"><div class="bar-fill" style="width:${w}%;background:${core.esc(p.color.hex)}"></div></div></div>`;
+    }).join("");
+
+    const sumPersonTbl = `<table class="sum-tbl"><thead><tr><th>Pessoa</th><th>Posto</th><th class="num">Viagens</th><th class="num">Dias</th><th class="num">Diárias</th><th class="num">Grat. Rep. Líq.</th><th class="num">Total Geral</th></tr></thead><tbody>${rep.personList.map(p => `<tr><td><strong>${core.esc(p.name)}</strong></td><td>${core.esc(p.rankName)}</td><td class="num">${p.trips}</td><td class="num">${p.days}d</td><td class="num">${core.money(p.diaria)}</td><td class="num">${core.money(p.gratLiq)}</td><td class="num"><strong>${core.money(p.total)}</strong></td></tr>`).join("")}</tbody></table>`;
+
+    const sumLocTbl = `<table class="sum-tbl"><thead><tr><th>Localidade</th><th>Faixa</th><th class="num">Viagens</th><th class="num">Dias</th><th class="num">Total Financeiro</th></tr></thead><tbody>${rep.locList.map(l => `<tr><td><strong>${core.esc(l.city)}</strong></td><td>${core.esc(l.tierInfo.label)}</td><td class="num">${l.trips}</td><td class="num">${l.days}d</td><td class="num"><strong>${core.money(l.total)}</strong></td></tr>`).join("")}</tbody></table>`;
+
+    const sumMonthTbl = `<table class="sum-tbl"><thead><tr><th>Mês / Ano</th><th class="num">Viagens</th><th class="num">Dias</th><th class="num">Diárias</th><th class="num">Grat. Rep. Líq.</th><th class="num">Total Geral</th></tr></thead><tbody>${rep.monthList.map(m => {
+      const [yr, mo] = m.ym.split("-");
+      return `<tr><td><strong>${core.MON[parseInt(mo, 10) - 1]}/${yr}</strong></td><td class="num">${m.trips}</td><td class="num">${m.days}d</td><td class="num">${core.money(m.diaria)}</td><td class="num">${core.money(m.gratLiq)}</td><td class="num"><strong>${core.money(m.total)}</strong></td></tr>`;
+    }).join("")}</tbody></table>`;
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+      <title>Relatório Completo de Controle Financeiro — ${core.esc(rep.title)}</title>
+      <style>
+        @page { size: portrait; margin: 12mm; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        body { font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color: #0f172a; margin: 0; font-size: 10.5px; line-height: 1.38; }
+        .hdr { border-bottom: 2px solid #0284c7; padding-bottom: 8px; margin-bottom: 12px; }
+        .hdr h1 { margin: 0 0 3px; font-size: 17px; }
+        .meta { color: #475569; font-size: 10px; }
+        .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 14px; break-inside: avoid; }
+        .kpi { border: 1px solid #cbd5e1; border-top: 3px solid var(--c,#0284c7); border-radius: 8px; padding: 7px 9px; background: #f8fafc; }
+        .kpi small { display: block; font-size: 8.5px; text-transform: uppercase; font-weight: 700; color: #64748b; }
+        .kpi strong { font-size: 13px; color: #0f172a; display: block; margin-top: 2px; }
+        .kpi span { font-size: 8.5px; color: #475569; }
+        .sec { margin-bottom: 14px; break-inside: avoid; }
+        .sec-open { margin-bottom: 14px; }
+        h2 { font-size: 12.5px; margin: 0 0 6px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px; }
+        .ctrl-tbl, .sum-tbl { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+        .ctrl-tbl th, .ctrl-tbl td, .sum-tbl th, .sum-tbl td { border: 1px solid #cbd5e1; padding: 4px 5px; vertical-align: middle; text-align: left; }
+        .ctrl-tbl th, .sum-tbl th { background: #f1f5f9; font-weight: 700; color: #334155; }
+        .num { text-align: right !important; }
+        .ctr { text-align: center !important; }
+        .nowrap { white-space: nowrap; }
+        .muted { color: #64748b; }
+        .tag { display: inline-block; padding: 1px 5px; border-radius: 999px; background: #e0f2fe; color: #0369a1; font-size: 8.5px; font-weight: 700; }
+        .tier { display: inline-block; padding: 1px 5px; border-radius: 999px; font-size: 8px; font-weight: 700; }
+        .tier.t1 { background: #cffafe; color: #0e7490; }
+        .tier.t2 { background: #ede9fe; color: #6d28d9; }
+        .tier.t3 { background: #f1f5f9; color: #475569; }
+        .mbox { display: inline-flex; flex-direction: column; align-items: flex-end; padding: 3px 5px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; min-width: 78px; }
+        .mbox small { font-size: 8px; color: #64748b; }
+        .mbox.m-diaria { background: #d1fae5; border: 1.5px solid #059669; color: #065f46; }
+        .mbox.m-grat { background: #f3e8ff; border: 1.5px solid #9333ea; color: #581c87; }
+        .mbox.m-neut { opacity: 0.45; border-style: dashed; }
+        .com-yes { background: #fef3c7; color: #b45309; padding: 1px 5px; border-radius: 5px; font-weight: 700; font-size: 8.5px; }
+        .tfoot-row td { background: #f1f5f9; border-top: 2px solid #64748b; }
+        .c-ok { color: #047857; }
+        .c-purp { color: #7e22ce; }
+        .gtot { background: #e0f2fe; border: 1px solid #0284c7; border-radius: 6px; padding: 2px 6px; text-align: right; }
+        .gtot small { display: block; font-size: 7.5px; color: #0369a1; font-weight: 800; }
+        .charts-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+        .ch-card { border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; background: #fff; break-inside: avoid; }
+        .ch-card h3 { margin: 0 0 6px; font-size: 11px; color: #0f172a; }
+        .bar-row { margin-bottom: 5px; }
+        .bar-top { display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px; }
+        .bar-trk { height: 7px; border-radius: 999px; background: #e2e8f0; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 999px; }
+        .bar-stk { height: 100%; display: flex; border-radius: 999px; overflow: hidden; }
+        .bar-stk span { display: block; height: 100%; }
+      </style></head><body>
+      <div class="hdr">
+        <h1>📄 Relatório Completo de Controle de Viagens &amp; Financeiro — ${core.esc(rep.title)}</h1>
+        <div class="meta">Filtros aplicados: ${core.esc(filtersTxt)} · Gerado em ${core.esc(genAt)}</div>
+      </div>
+      <div class="kpis">
+        <div class="kpi" style="--c:#38bdf8"><small>Total Viagens</small><strong>${t.uniqueTrips}</strong><span>${t.launches} lançamentos</span></div>
+        <div class="kpi" style="--c:#f59e0b"><small>Dias Fora</small><strong>${t.sumDiasFora}d</strong><span>${core.num(t.sumDiariasQty, 1)} diárias</span></div>
+        <div class="kpi" style="--c:#10b981"><small>Total Diárias</small><strong>${core.money(t.sumDiariasVal)}</strong><span>${t.countDiariaRows} lanç.</span></div>
+        <div class="kpi" style="--c:#a855f7"><small>Grat. Rep. Líq.</small><strong>${core.money(t.sumGratLiq)}</strong><span>Bruto: ${core.money(t.sumGratBruta)}</span></div>
+        <div class="kpi" style="--c:#0284c7"><small>Total Geral</small><strong>${core.money(t.sumTotalGeral)}</strong><span>Diárias + Grat. Líq.</span></div>
+      </div>
+      <div class="sec-open">
+        <h2>📋 Planilha de Controle de Viagens e Financeiro</h2>
+        ${buildControlPrintableTableHTML(rep)}
+      </div>
+      <div class="charts-2">
+        <div class="ch-card"><h3>💰 Recebimentos por Pessoa (Diária vs Grat. Rep.)</h3>${chartRevPersonHtml || '<span class="muted">Sem dados</span>'}</div>
+        <div class="ch-card"><h3>📍 Recebimentos por Localidade</h3>${chartRevLocHtml || '<span class="muted">Sem dados</span>'}</div>
+        <div class="ch-card"><h3>📈 Evolução Mensal Financeira</h3>${chartMonthHtml || '<span class="muted">Sem dados</span>'}</div>
+        <div class="ch-card"><h3>🗓️ Total de Dias Fora por Pessoa</h3>${chartDaysHtml || '<span class="muted">Sem dados</span>'}</div>
+      </div>
+      <div class="sec"><h2>👤 Resumo Financeiro por Pessoa</h2>${sumPersonTbl}</div>
+      <div class="sec"><h2>📍 Resumo Financeiro por Localidade</h2>${sumLocTbl}</div>
+      <div class="sec"><h2>📅 Resumo Financeiro por Período (Mês/Ano)</h2>${sumMonthTbl}</div>
+      <script>window.onload=function(){window.print();};</script>
+      </body></html>`;
+
+    const win = window.open("", "_blank");
+    if (!win) return core.toast("⚠️ Permita pop-ups para imprimir o relatório completo.");
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
   }
 
   /* ---------- 3. DASHBOARD EXECUTIVO ---------- */
@@ -5934,7 +6521,8 @@
       finDir: $("#proFilterFinDir")?.value || "",
       finStatus: $("#proFilterFinStatus")?.value || "",
       dateFrom: $("#proFilterDateFrom")?.value || "",
-      dateTo: $("#proFilterDateTo")?.value || ""
+      dateTo: $("#proFilterDateTo")?.value || "",
+      tripsOnly: Boolean($("#proFilterTripsOnly")?.checked)
     };
   }
 
@@ -5954,7 +6542,8 @@
       + (cfg.done ? 1 : 0)
       + (cfg.finDir ? 1 : 0)
       + (cfg.finStatus ? 1 : 0)
-      + ((cfg.dateFrom || cfg.dateTo) ? 1 : 0);
+      + ((cfg.dateFrom || cfg.dateTo) ? 1 : 0)
+      + (cfg.tripsOnly ? 1 : 0);
     const fBtn = $("#btnProTableFilterPop");
     const fCnt = $("#proTableFilterCount");
     const clearBtn = $("#btnProTableClearFilters");
@@ -5976,6 +6565,7 @@
       "#proFilterLocation", "#proFilterDone", "#proFilterFinDir",
       "#proFilterFinStatus", "#proFilterDateFrom", "#proFilterDateTo"
     ].forEach(sel => { if ($(sel)) $(sel).value = ""; });
+    if ($("#proFilterTripsOnly")) $("#proFilterTripsOnly").checked = false;
     if (proTableColMsel) proTableColMsel.setSelected([]);
     if (proTableTypeMsel) proTableTypeMsel.setSelected([...proTableTypeSet]);
     if (proTableLabelMsel) proTableLabelMsel.setSelected([]);
@@ -5987,7 +6577,11 @@
     const cols = getMergedColumns();
     const cfg = getProTableFilterCfg();
     const cards = allCardsOpt || getProSortedActivities();
-    return cards.filter(a => matchProCardFilters(a, cfg, cols));
+    return projectCardsForTravelDates(
+      cards.filter(a => matchProCardFilters(a, cfg, cols)),
+      cfg.tripsOnly,
+      cfg.assignee
+    );
   }
 
   function renderProTable(allCardsOpt) {
@@ -6709,8 +7303,146 @@
     sel.innerHTML = allTypes.map(t => `<option value="${core.esc(t.id)}">${core.esc(t.short)}</option>`).join("");
   }
 
+  function renderProModalTicketPreview() {
+    const box = $("#pc-ticketFilePreview");
+    if (!box) return;
+    if (!proModalTicketFile) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    const f = proModalTicketFile;
+    const href = f.url ? core.esc(f.url) : "#";
+    box.hidden = false;
+    box.innerHTML = `
+      <span class="pro-ticket-chip">
+        <span>🎫</span>
+        ${f.url ? `<a href="${href}" target="_blank" rel="noopener">${core.esc(f.fileName || "Bilhete")} ↗</a>` : `<strong>${core.esc(f.fileName || "Bilhete")}</strong>`}
+        <button type="button" class="icon-btn" id="btnProTicketRemove" title="Remover bilhete">✕</button>
+      </span>`;
+    if ($("#btnProTicketRemove", box)) {
+      $("#btnProTicketRemove", box).onclick = () => {
+        proModalTicketFile = null;
+        renderProModalTicketPreview();
+      };
+    }
+  }
+
+  function setProTicketStatus(busy, msg = "", kind = "") {
+    const el = $("#pc-ticketStatus");
+    const btn = $("#btnProTicketUpload");
+    if (btn) btn.disabled = busy;
+    if (!el) return;
+    if (!msg) { el.hidden = true; el.innerHTML = ""; return; }
+    el.hidden = false;
+    el.className = `modal-ai-status is-${kind || (busy ? "loading" : "ok")}`;
+    el.innerHTML = `${busy ? `<span class="ai-spinner" aria-hidden="true"></span>` : ""}<span>${core.esc(msg)}</span>`;
+  }
+
+  async function handleProTicketUploadAndAi(file) {
+    if (!file) return;
+    const tTripId = (!$("#pc-targetTripWrap")?.hidden && $("#pc-targetTrip")?.value)
+      ? $("#pc-targetTrip").value
+      : (editingProTripRef?.id || core.getActiveTrip()?.id || "local");
+    setProTicketStatus(true, `Enviando "${file.name}" e lendo bilhete com IA...`, "loading");
+    try {
+      let uploaded = null;
+      if (window.FeriasApi?.uploadAttachment) {
+        try {
+          uploaded = await window.FeriasApi.uploadAttachment(tTripId, proModalDraftId, file);
+          proModalTicketFile = { id: uploaded.id, fileName: uploaded.fileName || file.name, url: uploaded.url || "", mimeType: file.type || "" };
+          if (!proModalAttachments.some(a => a.id === uploaded.id)) {
+            proModalAttachments.push(uploaded);
+            renderProModalAttachments();
+          }
+        } catch {
+          proModalTicketFile = { id: core.uid(), fileName: file.name, url: "", mimeType: file.type || "" };
+        }
+      } else {
+        proModalTicketFile = { id: core.uid(), fileName: file.name, url: "", mimeType: file.type || "" };
+      }
+      renderProModalTicketPreview();
+
+      // Extração automática por IA (Gemini)
+      if (window.FeriasApi?.aiAnalyzeActivity && core.fileToBase64Obj) {
+        try {
+          const mediaObj = await core.fileToBase64Obj(file);
+          const act = await window.FeriasApi.aiAnalyzeActivity({
+            mode: "professional",
+            prompt: "Este arquivo é um BILHETE / TICKET DE VIAGEM (aéreo, rodoviário ou reserva). Extraia com máxima precisão: data e hora de IDA (start + startTime), data e hora de VOLTA/REGRESSO (end + endTime), modalidade de transporte (mencione explicitamente Avião, Ônibus ou Carro no campo type ou notes), valor total pago (amount, se constar), cidade destino (location), e no campo notes inclua localizador, companhia, número do voo/ônibus, assento e observações.",
+            baseDate: core.fmtISO(new Date()),
+            media: [mediaObj]
+          });
+          if (act && typeof act === "object") {
+            let filled = 0;
+            const blobTxt = `${act.type || ""} ${act.name || ""} ${act.notes || ""}`.toLowerCase();
+            const trSel = $("#pc-travelTransport");
+            if (trSel) {
+              if (/avi[aã]o|voo|a[eé]re|latam|gol|azul|aeroporto|boarding|flight/.test(blobTxt)) { trSel.value = "Avião"; filled++; }
+              else if (/[oô]nibus|rodovi[aá]ri|bus/.test(blobTxt)) { trSel.value = "Ônibus"; filled++; }
+              else if (/carro|ve[ií]culo|aluguel|localiza|movida|unidas/.test(blobTxt)) { trSel.value = "Carro"; filled++; }
+              else if (!trSel.value) { trSel.value = "Outro"; }
+            }
+            if (act.start && /^\d{4}-\d{2}-\d{2}$/.test(act.start)) {
+              const sTime = (act.startTime && /^\d{2}:\d{2}/.test(act.startTime)) ? act.startTime.slice(0, 5) : "08:00";
+              const idaDt = `${act.start}T${sTime}`;
+              if ($("#pc-assigneeTravels") && !$("#pc-assigneeTravels").checked && !proModalExtraAssignees.some(r => r.travels)) {
+                $("#pc-assigneeTravels").checked = true;
+              }
+              if ($("#pc-primaryTravelStart") && $("#pc-assigneeTravels")?.checked) {
+                $("#pc-primaryTravelStart").value = idaDt;
+                filled++;
+              }
+              proModalExtraAssignees.forEach(r => { if (r.travels && !r.travelStart) r.travelStart = idaDt; });
+            }
+            if (act.end && /^\d{4}-\d{2}-\d{2}$/.test(act.end)) {
+              const eTime = (act.endTime && /^\d{2}:\d{2}/.test(act.endTime)) ? act.endTime.slice(0, 5) : "18:00";
+              const volDt = `${act.end}T${eTime}`;
+              if ($("#pc-assigneeTravels") && !$("#pc-assigneeTravels").checked && !proModalExtraAssignees.some(r => r.travels)) {
+                $("#pc-assigneeTravels").checked = true;
+              }
+              if ($("#pc-primaryTravelEnd") && $("#pc-assigneeTravels")?.checked) {
+                $("#pc-primaryTravelEnd").value = volDt;
+                filled++;
+              }
+              proModalExtraAssignees.forEach(r => { if (r.travels && !r.travelEnd) r.travelEnd = volDt; });
+            }
+            if (Number(act.amount) > 0) {
+              if ($("#pc-travelHasCost")) $("#pc-travelHasCost").value = "yes";
+              if ($("#pc-travelCostWrap")) $("#pc-travelCostWrap").hidden = false;
+              if ($("#pc-travelCostAmount")) $("#pc-travelCostAmount").value = String(Number(act.amount));
+              filled++;
+            }
+            if (act.notes) {
+              const tn = $("#pc-travelNotes");
+              if (tn) {
+                tn.value = tn.value.trim() ? `${tn.value.trim()}\n${act.notes}` : String(act.notes);
+                filled++;
+              }
+            }
+            if (act.location && $("#pc-location") && !$("#pc-location").value.trim()) {
+              $("#pc-location").value = String(act.location);
+            }
+            renderProModalExtraAssignees();
+            updateProModalTravelFinancePreview();
+            setProTicketStatus(false, filled ? `✅ Bilhete lido pela IA (${filled} campo(s) preenchidos)! Revise se desejar.` : "🎫 Bilhete anexado! Revise ou preencha os campos manualmente.", "ok");
+            return;
+          }
+        } catch (aiErr) {
+          setProTicketStatus(false, `🎫 Bilhete anexado! (Leitura IA indisponível: ${aiErr?.message || "preencha manualmente"})`, "ok");
+          return;
+        }
+      }
+      setProTicketStatus(false, "🎫 Bilhete anexado! Preencha ou ajuste os detalhes abaixo.", "ok");
+    } catch (err) {
+      setProTicketStatus(false, "❌ " + (err.message || err), "error");
+    }
+  }
+
   function updateProModalTravelFinancePreview() {
     const box = $("#pc-travelFinanceBox");
+    const detailsBox = $("#pc-travelDetailsBox");
+    const primaryDatesRow = $("#pc-primaryTravelDatesRow");
     if (!box) return;
     const primaryName = ($("#pc-assignee")?.value || "").trim();
     const primaryTravels = Boolean($("#pc-assigneeTravels")?.checked);
@@ -6719,19 +7451,34 @@
     const hasAnyTraveler = primaryTravels || proModalExtraAssignees.some(r => r.travels);
     const totalTravelersCount = (primaryName && primaryTravels ? 1 : 0) + extraTravelers.length;
 
-    if (primaryModeSel) {
-      primaryModeSel.hidden = !(primaryTravels && totalTravelersCount > 1);
-    }
-
-    box.hidden = !hasAnyTraveler;
-    if (!hasAnyTraveler) return;
-
-    const cfg = getTravelFinanceConfig(editingProTripRef?.data || null);
     let startVal = $("#pc-start")?.value || "";
     let endVal = $("#pc-end")?.value || "";
     if (!startVal && endVal) startVal = endVal;
     if (startVal && !endVal) endVal = startVal;
     if (startVal && endVal < startVal) endVal = startVal;
+
+    if (primaryDatesRow) {
+      primaryDatesRow.hidden = !primaryTravels;
+      if (primaryTravels) {
+        const defs = computeDefaultTravelDates(startVal, endVal);
+        if ($("#pc-primaryTravelStart") && !$("#pc-primaryTravelStart").value && defs.travelStart) {
+          $("#pc-primaryTravelStart").value = defs.travelStart;
+        }
+        if ($("#pc-primaryTravelEnd") && !$("#pc-primaryTravelEnd").value && defs.travelEnd) {
+          $("#pc-primaryTravelEnd").value = defs.travelEnd;
+        }
+      }
+    }
+
+    if (primaryModeSel) {
+      primaryModeSel.hidden = !(primaryTravels && totalTravelersCount > 1);
+    }
+
+    box.hidden = !hasAnyTraveler;
+    if (detailsBox) detailsBox.hidden = false;
+    if (!hasAnyTraveler) return;
+
+    const cfg = getTravelFinanceConfig(editingProTripRef?.data || null);
 
     const draftCard = {
       start: startVal,
@@ -6754,11 +7501,23 @@
 
     const participants = [];
     if (primaryName && primaryTravels) {
-      participants.push({ name: primaryName, travels: true, travelMode: sanitizeTravelMode(primaryModeSel?.value) });
+      participants.push({
+        name: primaryName,
+        travels: true,
+        travelMode: sanitizeTravelMode(primaryModeSel?.value),
+        travelStart: sanitizeTravelDateTime($("#pc-primaryTravelStart")?.value),
+        travelEnd: sanitizeTravelDateTime($("#pc-primaryTravelEnd")?.value)
+      });
     }
     proModalExtraAssignees.forEach(r => {
       if (r.name && r.travels && !participants.some(p => p.name.toLowerCase() === r.name.toLowerCase())) {
-        participants.push({ name: r.name, travels: true, travelMode: sanitizeTravelMode(r.travelMode) });
+        participants.push({
+          name: r.name,
+          travels: true,
+          travelMode: sanitizeTravelMode(r.travelMode),
+          travelStart: sanitizeTravelDateTime(r.travelStart),
+          travelEnd: sanitizeTravelDateTime(r.travelEnd)
+        });
       }
     });
 
@@ -6772,7 +7531,8 @@
     const rowsHtml = participants.map(pt => {
       const f = computePersonTravelFinance(draftCard, pt.name, pt, cfg);
       grandSum += f.effectiveTotal;
-      const rankTxt = f.rank ? `${core.esc(f.rank.name)} (Círc. ${core.esc(f.rank.circle)})` : `<span style="color:var(--event)">⚠️ Posto não vinculado em Parâmetros</span>`;
+      const rankTxt = f.rank ? `${core.esc(f.rankAbbrev)} (Círc. ${core.esc(f.rank.circle)})` : `<span style="color:var(--event)">⚠️ Posto não vinculado em Parâmetros</span>`;
+      const dtSpanTxt = (f.idaDt || f.start) ? ` · 🛫 ${formatDateTimeShortBR(f.idaDt, f.start)} ➔ 🛬 ${formatDateTimeShortBR(f.voltaDt, f.end)}` : "";
       let valHtml = "";
       if (f.activeMode === "diaria") {
         valHtml = `<strong style="color:var(--ok)">${core.money(f.diariaTotal)}</strong> <small class="muted">(${core.num(f.diariasQty, 1)} diár.${f.freeLodging ? " · 50%" : ""})</small>`;
@@ -6784,7 +7544,7 @@
       return `<div class="pro-tf-prev-row">
         <div style="min-width:0">
           <b>${core.esc(pt.name)}</b> <span class="pill" style="font-size:0.65rem;padding:1px 6px">${modeLabels[f.activeMode]}</span>
-          <div class="muted small">${rankTxt}</div>
+          <div class="muted small">${rankTxt}${core.esc(dtSpanTxt)}</div>
         </div>
         <div style="text-align:right;white-space:nowrap">${valHtml}</div>
       </div>`;
@@ -6804,25 +7564,44 @@
       updateProModalTravelFinancePreview();
       return;
     }
+    const defs = computeDefaultTravelDates($("#pc-start")?.value, $("#pc-end")?.value);
     box.innerHTML = proModalExtraAssignees.map((row, idx) => {
       const items = [...allList];
       if (row.name && !items.some(x => x.toLowerCase() === row.name.toLowerCase())) items.push(row.name);
       const opts = `<option value="">— Selecionar responsável —</option>`
         + items.map(a => `<option value="${core.esc(a)}" ${a.toLowerCase() === String(row.name || "").toLowerCase() ? "selected" : ""}>${core.esc(a)}</option>`).join("");
       const modeVal = sanitizeTravelMode(row.travelMode);
-      return `<div class="pro-extra-assignee-row" data-ex-asg-idx="${idx}">
-        <select data-ex-asg-sel="${idx}" aria-label="Responsável adicional">${opts}</select>
-        <label class="pro-travel-chk-label" title="Marque se este responsável viaja nesta tarefa">
-          <input type="checkbox" data-ex-asg-trv="${idx}" ${row.travels ? "checked" : ""}>
-          <span>✈️ Viaja</span>
-        </label>
-        <select class="pro-asg-mode-sel" data-ex-asg-mode="${idx}" aria-label="Modalidade individual" title="Modalidade individual (opcional)" ${row.travels ? "" : "hidden"}>
-          <option value="" ${!modeVal ? "selected" : ""}>Padrão</option>
-          <option value="diaria" ${modeVal === "diaria" ? "selected" : ""}>💵 Diária</option>
-          <option value="grat_rep" ${modeVal === "grat_rep" ? "selected" : ""}>🎖️ Grat. Rep.</option>
-          <option value="comissionamento" ${modeVal === "comissionamento" ? "selected" : ""}>📋 Comiss.</option>
-        </select>
-        <button type="button" class="icon-btn" data-ex-asg-del="${idx}" title="Remover responsável deste cartão">✕</button>
+      if (row.travels) {
+        if (!row.travelStart && defs.travelStart) row.travelStart = defs.travelStart;
+        if (!row.travelEnd && defs.travelEnd) row.travelEnd = defs.travelEnd;
+      }
+      const tsVal = sanitizeTravelDateTime(row.travelStart);
+      const teVal = sanitizeTravelDateTime(row.travelEnd);
+      return `<div class="pro-extra-assignee-block" data-ex-asg-idx="${idx}">
+        <div class="pro-extra-assignee-row">
+          <select data-ex-asg-sel="${idx}" aria-label="Responsável adicional">${opts}</select>
+          <label class="pro-travel-chk-label" title="Marque se este responsável viaja nesta tarefa">
+            <input type="checkbox" data-ex-asg-trv="${idx}" ${row.travels ? "checked" : ""}>
+            <span>✈️ Viaja</span>
+          </label>
+          <select class="pro-asg-mode-sel" data-ex-asg-mode="${idx}" aria-label="Modalidade individual" title="Modalidade individual (opcional)" ${row.travels ? "" : "hidden"}>
+            <option value="" ${!modeVal ? "selected" : ""}>Padrão</option>
+            <option value="diaria" ${modeVal === "diaria" ? "selected" : ""}>💵 Diária</option>
+            <option value="grat_rep" ${modeVal === "grat_rep" ? "selected" : ""}>🎖️ Grat. Rep.</option>
+            <option value="comissionamento" ${modeVal === "comissionamento" ? "selected" : ""}>📋 Comiss.</option>
+          </select>
+          <button type="button" class="icon-btn" data-ex-asg-del="${idx}" title="Remover responsável deste cartão">✕</button>
+        </div>
+        ${row.travels ? `<div class="pro-asg-travel-dates">
+          <label>
+            <span>🛫 Saída (Ida)</span>
+            <input type="datetime-local" data-ex-asg-tstart="${idx}" value="${core.esc(tsVal)}" aria-label="Saída do responsável adicional">
+          </label>
+          <label>
+            <span>🛬 Regresso (Volta)</span>
+            <input type="datetime-local" data-ex-asg-tend="${idx}" value="${core.esc(teVal)}" aria-label="Regresso do responsável adicional">
+          </label>
+        </div>` : ""}
       </div>`;
     }).join("");
 
@@ -6836,7 +7615,14 @@
     box.querySelectorAll("[data-ex-asg-trv]").forEach(chk => {
       chk.onchange = () => {
         const i = parseInt(chk.dataset.exAsgTrv, 10);
-        if (proModalExtraAssignees[i]) proModalExtraAssignees[i].travels = chk.checked;
+        if (proModalExtraAssignees[i]) {
+          proModalExtraAssignees[i].travels = chk.checked;
+          if (chk.checked) {
+            const d = computeDefaultTravelDates($("#pc-start")?.value, $("#pc-end")?.value);
+            if (!proModalExtraAssignees[i].travelStart && d.travelStart) proModalExtraAssignees[i].travelStart = d.travelStart;
+            if (!proModalExtraAssignees[i].travelEnd && d.travelEnd) proModalExtraAssignees[i].travelEnd = d.travelEnd;
+          }
+        }
         renderProModalExtraAssignees();
       };
     });
@@ -6844,6 +7630,20 @@
       sel.onchange = () => {
         const i = parseInt(sel.dataset.exAsgMode, 10);
         if (proModalExtraAssignees[i]) proModalExtraAssignees[i].travelMode = sanitizeTravelMode(sel.value);
+        updateProModalTravelFinancePreview();
+      };
+    });
+    box.querySelectorAll("[data-ex-asg-tstart]").forEach(inp => {
+      inp.onchange = () => {
+        const i = parseInt(inp.dataset.exAsgTstart, 10);
+        if (proModalExtraAssignees[i]) proModalExtraAssignees[i].travelStart = sanitizeTravelDateTime(inp.value);
+        updateProModalTravelFinancePreview();
+      };
+    });
+    box.querySelectorAll("[data-ex-asg-tend]").forEach(inp => {
+      inp.onchange = () => {
+        const i = parseInt(inp.dataset.exAsgTend, 10);
+        if (proModalExtraAssignees[i]) proModalExtraAssignees[i].travelEnd = sanitizeTravelDateTime(inp.value);
         updateProModalTravelFinancePreview();
       };
     });
@@ -6955,13 +7755,41 @@
     updateProModalDoneBtn();
     $("#pc-client").value = a ? (a.client || "") : (core.getState().params?.clientDefault || "");
     const existingAsgList = a ? getCardAssigneesList(a) : [];
-    const primaryAsg = existingAsgList[0] || { name: a?.assignee || "", travels: Boolean(a?.assigneeTravels), travelMode: sanitizeTravelMode(a?.assigneeTravelMode) };
+    const primaryAsg = existingAsgList[0] || {
+      name: a?.assignee || "",
+      travels: Boolean(a?.assigneeTravels),
+      travelMode: sanitizeTravelMode(a?.assigneeTravelMode),
+      travelStart: sanitizeTravelDateTime(a?.assigneeTravelStart),
+      travelEnd: sanitizeTravelDateTime(a?.assigneeTravelEnd)
+    };
     populateProAssigneeSelect(primaryAsg.name, editingProTripRef?.data || null);
     if ($("#pc-assigneeTravels")) $("#pc-assigneeTravels").checked = Boolean(primaryAsg.travels);
     if ($("#pc-primaryTravelMode")) $("#pc-primaryTravelMode").value = sanitizeTravelMode(primaryAsg.travelMode);
+    if ($("#pc-primaryTravelStart")) $("#pc-primaryTravelStart").value = sanitizeTravelDateTime(primaryAsg.travelStart);
+    if ($("#pc-primaryTravelEnd")) $("#pc-primaryTravelEnd").value = sanitizeTravelDateTime(primaryAsg.travelEnd);
     if ($("#pc-travelFinanceMode")) $("#pc-travelFinanceMode").value = sanitizeTravelMode(a?.travelFinanceMode) || "diaria";
     if ($("#pc-travelFreeLodging")) $("#pc-travelFreeLodging").checked = Boolean(a?.travelFreeLodging);
-    proModalExtraAssignees = existingAsgList.slice(1).map(e => ({ name: e.name, travels: Boolean(e.travels), travelMode: sanitizeTravelMode(e.travelMode) }));
+    proModalExtraAssignees = existingAsgList.slice(1).map(e => ({
+      name: e.name,
+      travels: Boolean(e.travels),
+      travelMode: sanitizeTravelMode(e.travelMode),
+      travelStart: sanitizeTravelDateTime(e.travelStart),
+      travelEnd: sanitizeTravelDateTime(e.travelEnd)
+    }));
+
+    // Detalhes da Viagem (opcionais)
+    const td = (a && a.travelDetails && typeof a.travelDetails === "object") ? a.travelDetails : {};
+    proModalTicketFile = td.ticketFile && typeof td.ticketFile === "object" ? { ...td.ticketFile } : null;
+    if ($("#pc-travelTransport")) $("#pc-travelTransport").value = td.transport || "";
+    if ($("#pc-travelHasCost")) $("#pc-travelHasCost").value = td.hasCost ? "yes" : "no";
+    if ($("#pc-travelCostWrap")) $("#pc-travelCostWrap").hidden = !td.hasCost;
+    if ($("#pc-travelCostAmount")) $("#pc-travelCostAmount").value = Number(td.costAmount) > 0 ? String(td.costAmount) : "";
+    if ($("#pc-travelNotes")) $("#pc-travelNotes").value = td.notes || "";
+    setProTicketStatus(false, "");
+    renderProModalTicketPreview();
+    if ($("#pc-travelDetailsBox")) {
+      $("#pc-travelDetailsBox").open = Boolean(proModalTicketFile || td.transport || td.hasCost || td.notes);
+    }
 
     $("#pc-location").value = a ? (a.location || "") : "";
     if ($("#pc-meetingLink")) $("#pc-meetingLink").value = a ? (a.meetingLink || "") : "";
@@ -7019,30 +7847,44 @@
 
     const assigneesList = [];
     const seenAsg = new Set();
-    const pushAsg = (nm, tr, tm = "") => {
+    const pushAsg = (nm, tr, tm = "", ts = "", te = "") => {
       const clean = String(nm || "").trim();
       if (!clean) return;
       const k = clean.toLowerCase();
       const mode = sanitizeTravelMode(tm);
+      const tStart = tr ? sanitizeTravelDateTime(ts) : "";
+      const tEnd = tr ? sanitizeTravelDateTime(te) : "";
       if (seenAsg.has(k)) {
         const ex = assigneesList.find(e => e.name.toLowerCase() === k);
         if (ex) {
           if (tr) ex.travels = true;
           if (!ex.travelMode && mode) ex.travelMode = mode;
+          if (!ex.travelStart && tStart) ex.travelStart = tStart;
+          if (!ex.travelEnd && tEnd) ex.travelEnd = tEnd;
         }
         return;
       }
       seenAsg.add(k);
-      assigneesList.push({ name: clean, travels: Boolean(tr), travelMode: mode });
+      assigneesList.push({ name: clean, travels: Boolean(tr), travelMode: mode, travelStart: tStart, travelEnd: tEnd });
     };
     const primaryName = ($("#pc-assignee")?.value || "").trim();
     const primaryTravels = Boolean($("#pc-assigneeTravels")?.checked);
     const primaryMode = sanitizeTravelMode($("#pc-primaryTravelMode")?.value);
-    if (primaryName) pushAsg(primaryName, primaryTravels, primaryMode);
-    proModalExtraAssignees.forEach(r => pushAsg(r.name, r.travels, r.travelMode));
+    const primaryTStart = sanitizeTravelDateTime($("#pc-primaryTravelStart")?.value);
+    const primaryTEnd = sanitizeTravelDateTime($("#pc-primaryTravelEnd")?.value);
+    if (primaryName) pushAsg(primaryName, primaryTravels, primaryMode, primaryTStart, primaryTEnd);
+    proModalExtraAssignees.forEach(r => pushAsg(r.name, r.travels, r.travelMode, r.travelStart, r.travelEnd));
 
     const travelFinanceMode = sanitizeTravelMode($("#pc-travelFinanceMode")?.value) || "diaria";
     const travelFreeLodging = Boolean($("#pc-travelFreeLodging")?.checked);
+    const travelHasCost = ($("#pc-travelHasCost")?.value || "no") === "yes";
+    const travelDetails = {
+      ticketFile: proModalTicketFile ? { ...proModalTicketFile } : null,
+      transport: $("#pc-travelTransport")?.value || "",
+      hasCost: travelHasCost,
+      costAmount: travelHasCost ? Math.max(0, parseFloat($("#pc-travelCostAmount")?.value) || 0) : 0,
+      notes: ($("#pc-travelNotes")?.value || "").trim()
+    };
 
     return {
       type: $("#pc-type").value || "Desenvolvimento",
@@ -7058,9 +7900,12 @@
       assignee: assigneesList[0]?.name || "",
       assigneeTravels: Boolean(assigneesList[0]?.travels),
       assigneeTravelMode: assigneesList[0]?.travelMode || "",
+      assigneeTravelStart: assigneesList[0]?.travelStart || "",
+      assigneeTravelEnd: assigneesList[0]?.travelEnd || "",
       assigneesList,
       travelFinanceMode,
       travelFreeLodging,
+      travelDetails,
       location: $("#pc-location").value.trim(),
       locationLat: proModalLocationLat,
       locationLng: proModalLocationLng,
@@ -7300,7 +8145,8 @@
       "#proBoardFinDirFilter",
       "#proBoardFinStatusFilter",
       "#proBoardDateFrom",
-      "#proBoardDateTo"
+      "#proBoardDateTo",
+      "#proBoardTripsOnlyFilter"
     ].forEach(sel => {
       if ($(sel)) $(sel).onchange = () => renderProBoard();
     });
@@ -7397,12 +8243,22 @@
         renderProControl();
       };
     }
+    if ($("#proControlQuickYear")) {
+      $("#proControlQuickYear").onchange = e => {
+        proControlQuickYear = e.target.value || "";
+        proControlQuickMonth = "";
+        renderProControl();
+      };
+    }
     if ($("#proControlQuickMonth")) {
       $("#proControlQuickMonth").onchange = e => {
         proControlQuickMonth = e.target.value || "";
         renderProControl();
       };
     }
+    if ($("#btnProControlPrintSheet")) $("#btnProControlPrintSheet").onclick = printProControlSheetLandscape;
+    if ($("#btnProControlExportXlsx")) $("#btnProControlExportXlsx").onclick = exportProControlXlsx;
+    if ($("#btnProControlPrintReport")) $("#btnProControlPrintReport").onclick = printProControlFullReportPortrait;
     if ($("#proControlScopeSel")) {
       $("#proControlScopeSel").onchange = e => {
         proControlScope = e.target.value || "travels";
@@ -7465,13 +8321,35 @@
     bindCitiesTextarea("#proTfCitiesF1", "citiesF1", "Faixa 1");
     bindCitiesTextarea("#proTfCitiesF2", "citiesF2", "Faixa 2");
 
-    // Modal Cartão: preview reativo da Modalidade Financeira da Viagem
-    ["#pc-start", "#pc-end", "#pc-location", "#pc-assignee", "#pc-assigneeTravels", "#pc-primaryTravelMode", "#pc-travelFinanceMode", "#pc-travelFreeLodging"].forEach(sel => {
+    // Modal Cartão: preview reativo da Modalidade Financeira da Viagem, datas individuais e Detalhes da Viagem
+    ["#pc-start", "#pc-end", "#pc-location", "#pc-assignee", "#pc-assigneeTravels", "#pc-primaryTravelMode", "#pc-primaryTravelStart", "#pc-primaryTravelEnd", "#pc-travelFinanceMode", "#pc-travelFreeLodging"].forEach(sel => {
       const el = $(sel);
       if (!el) return;
-      el.addEventListener("change", updateProModalTravelFinancePreview);
+      el.addEventListener("change", () => {
+        if ((sel === "#pc-start" || sel === "#pc-end") && proModalExtraAssignees.some(r => r.travels && (!r.travelStart || !r.travelEnd))) {
+          renderProModalExtraAssignees();
+        } else {
+          updateProModalTravelFinancePreview();
+        }
+      });
       if (sel === "#pc-location") el.addEventListener("input", updateProModalTravelFinancePreview);
     });
+    if ($("#pc-travelHasCost")) {
+      $("#pc-travelHasCost").onchange = e => {
+        if ($("#pc-travelCostWrap")) $("#pc-travelCostWrap").hidden = e.target.value !== "yes";
+      };
+    }
+    if ($("#btnProTicketUpload")) {
+      $("#btnProTicketUpload").onclick = () => $("#pc-ticketInput")?.click();
+    }
+    if ($("#pc-ticketInput")) {
+      $("#pc-ticketInput").onchange = async e => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        await handleProTicketUploadAndAi(f);
+        e.target.value = "";
+      };
+    }
 
     // Gantt controls
     if ($("#btnProAddCardGantt")) $("#btnProAddCardGantt").onclick = () => openProCardModal();
@@ -7545,6 +8423,13 @@
         toEl.onchange = () => {
           proDateTo = toEl.value || "";
           if (proDateFrom && proDateTo && proDateTo < proDateFrom) proDateFrom = proDateTo;
+          applyAndRenderProFilteredViews();
+        };
+      }
+      const tripsOnlyEl = $(`#${prefix}TripsOnlyFilter`);
+      if (tripsOnlyEl) {
+        tripsOnlyEl.onchange = () => {
+          proFilterTripsOnly = Boolean(tripsOnlyEl.checked);
           applyAndRenderProFilteredViews();
         };
       }
@@ -7626,7 +8511,8 @@
       "#proFilterFinDir",
       "#proFilterFinStatus",
       "#proFilterDateFrom",
-      "#proFilterDateTo"
+      "#proFilterDateTo",
+      "#proFilterTripsOnly"
     ].forEach(sel => {
       if ($(sel)) $(sel).onchange = () => renderProTable();
     });
