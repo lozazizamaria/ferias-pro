@@ -7,6 +7,7 @@ const zlib = require("node:zlib");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
+const { buildDocxBuffer, buildPptxBuffer } = require("./ooxml");
 
 function loadDotEnv() {
   if (process.env.SKIP_DOTENV === "1") return;
@@ -3853,6 +3854,122 @@ Regras importantes:
         return sendJson(res, 200, { ok: true, result: result || {} });
       } catch (err) {
         return sendJson(res, 502, { ok: false, error: err.message || "Erro ao analisar bilhetes com IA." });
+      }
+    }
+
+    /* ---------- IA: MELHORAR ATA DE REUNIÃO & GERAR APRESENTAÇÃO CLEAN ---------- */
+    if (pathname === "/api/ai/improve-minutes" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.geminiKey) {
+        return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key em Parâmetros ou na Central de Integrações para melhorar textos com IA." });
+      }
+      const body = await readBody(req);
+      const style = ["clarity", "executive", "bullets"].includes(body.style) ? body.style : "executive";
+      const htmlIn = String(body.html || "").slice(0, 60000);
+      const plainIn = String(body.plainText || "").slice(0, 40000);
+      if (!plainIn.trim() && !htmlIn.trim()) {
+        return sendJson(res, 400, { ok: false, error: "Escreva algum conteúdo na ata antes de melhorar com IA." });
+      }
+      const stylePrompt = style === "clarity"
+        ? "Melhore clareza, ortografia, fluidez e tom profissional em português, MANTENDO a estrutura, seções, tabelas e todos os fatos originais."
+        : (style === "bullets"
+          ? "Resuma e organize o conteúdo em tópicos objetivos, curtos e diretos (<ul><li>), destacando decisões, responsáveis e prazos."
+          : "Formate como uma Ata Executiva Profissional completa em português, estruturada em seções claras com <h2>: Pauta, Principais Discussões, Decisões / Deliberações e Próximos Passos / Ações (com responsáveis e prazos quando mencionados).");
+      const sysPrompt = `Você é um redator executivo sênior. ${stylePrompt}
+Retorne EXCLUSIVAMENTE um JSON válido no formato:
+{
+  "html": "HTML semântico limpo usando apenas <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <u>, <blockquote>, <table>, <thead>, <tbody>, <tr>, <th>, <td>, <hr> (NUNCA use <script>, <style> ou classes inventadas).",
+  "summary": "Resumo em 1 frase do que foi melhorado."
+}`;
+      try {
+        const result = await callGeminiJSON(creds.geminiKey, [{
+          text: `Cartão: ${String(body.cardName || "")}\nTítulo da Ata: ${String(body.title || "")}\n\nConteúdo atual:\n${plainIn || htmlIn}`
+        }], sysPrompt);
+        return sendJson(res, 200, { ok: true, html: String(result?.html || htmlIn), summary: String(result?.summary || "Texto aprimorado com IA.") });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: err.message || "Falha ao melhorar ata com IA." });
+      }
+    }
+
+    if (pathname === "/api/ai/generate-slides" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      const body = await readBody(req);
+      const cardName = String(body.cardName || "Apresentação").trim();
+      const title = String(body.title || `Ata - ${cardName}`).trim();
+      const meetingDate = String(body.meetingDate || "").trim();
+      const participants = Array.isArray(body.participants) ? body.participants.filter(Boolean) : [];
+      const plainIn = String(body.plainText || "").slice(0, 40000);
+      const actions = Array.isArray(body.actions) ? body.actions.slice(0, 20) : [];
+
+      if (!creds.geminiKey) {
+        return sendJson(res, 200, { ok: true, usedAi: false, slides: null });
+      }
+      const sysSlides = `Você é especialista em apresentações executivas ultra clean (fundo branco, texto preto, tópicos claros e fáceis de ler em projetor).
+A partir da ata abaixo, gere um JSON válido com slides estruturados seguindo OBRIGATORIAMENTE esta ordem:
+1. Slide 1 (kind: "cover"): title = título do cartão ("${cardName}"), subtitle = título da ata, metaLines = [data da reunião, participantes].
+2. Slide 2 (kind: "agenda"): title = "Roteiro", bullets = lista curta e clara dos títulos dos slides seguintes.
+3. Slides 3..N (kind: "topic"): um slide por grande assunto/tema discutido na ata, com 3 a 5 bullets curtos, explicativos e diretos (sem parágrafos longos).
+4. Último slide (kind: "actions", se houver decisões/ações): title = "Decisões e Encaminhamentos", bullets claros com ação + responsável/prazo.
+Retorne EXCLUSIVAMENTE JSON:
+{
+  "slides": [
+    { "kind": "cover", "title": "...", "subtitle": "...", "metaLines": ["...", "..."] },
+    { "kind": "agenda", "title": "Roteiro", "bullets": ["...", "..."] },
+    { "kind": "topic", "title": "...", "bullets": ["...", "..."] },
+    { "kind": "actions", "title": "Decisões e Encaminhamentos", "bullets": ["...", "..."] }
+  ]
+}`;
+      try {
+        const resAi = await callGeminiJSON(creds.geminiKey, [{
+          text: `Cartão: ${cardName}\nAta: ${title}\nData: ${meetingDate}\nParticipantes: ${participants.join(", ")}\nAções já convertidas em checklist/cartões: ${JSON.stringify(actions)}\n\nConteúdo da Ata:\n${plainIn}`
+        }], sysSlides);
+        const slides = Array.isArray(resAi?.slides) && resAi.slides.length ? resAi.slides : null;
+        return sendJson(res, 200, { ok: true, usedAi: Boolean(slides), slides });
+      } catch {
+        return sendJson(res, 200, { ok: true, usedAi: false, slides: null });
+      }
+    }
+
+    /* ---------- EXPORTAÇÃO BINÁRIA DE ATAS: WORD (.docx) E POWERPOINT (.pptx) ---------- */
+    if (pathname === "/api/minutes/export-docx" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const body = await readBody(req);
+      try {
+        const { buffer } = buildDocxBuffer(body, buildZipBuffer);
+        const safeName = String(body.fileName || body.title || "Ata_Reuniao").replace(/[^\w\-]+/g, "_").slice(0, 80) + ".docx";
+        res.writeHead(200, {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "Content-Disposition": `attachment; filename="${safeName}"`,
+          "Content-Length": buffer.length,
+          "Cache-Control": "no-store"
+        });
+        return res.end(buffer);
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: err.message || "Falha ao gerar arquivo Word (.docx)." });
+      }
+    }
+
+    if (pathname === "/api/minutes/export-pptx" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const body = await readBody(req);
+      try {
+        const { buffer } = buildPptxBuffer(body, buildZipBuffer);
+        const safeName = String(body.fileName || body.title || "Apresentacao_Ata").replace(/[^\w\-]+/g, "_").slice(0, 80) + ".pptx";
+        res.writeHead(200, {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "Content-Disposition": `attachment; filename="${safeName}"`,
+          "Content-Length": buffer.length,
+          "Cache-Control": "no-store"
+        });
+        return res.end(buffer);
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: err.message || "Falha ao gerar apresentação PowerPoint (.pptx)." });
       }
     }
 

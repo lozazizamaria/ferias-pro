@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=45">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=45">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=45">
+<link rel="manifest" href="/manifest.webmanifest?v=46">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=46">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=46">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=45">
+<link rel="stylesheet" href="styles.css?v=46">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=45" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=46" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=45" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=46" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -1672,8 +1672,10 @@
           </div>
           <select id="proDocsOriginFilter" class="pro-docs-main-sel" aria-label="Origem do documento">
             <option value="">Origem: Todos</option>
-            <option value="travel">✈️ Viagem</option>
-            <option value="general">📎 Geral</option>
+            <option value="minutes">📝 Somente Atas de Reunião</option>
+            <option value="no_minutes">🚫 Ocultar Atas de Reunião</option>
+            <option value="travel">✈️ Apenas Documentos de Viagem</option>
+            <option value="general">📎 Apenas Anexos Gerais</option>
           </select>
           <select id="proDocsFileTypeFilter" class="pro-docs-main-sel" aria-label="Tipo de arquivo">
             <option value="">Tipo: Todos</option>
@@ -1784,7 +1786,13 @@
 
         <!-- Linha de Resumo, Ordenação e Alternador Lista/Cards -->
         <div class="pro-docs-summary-row">
-          <span class="muted small" id="proDocsSummaryBar">Exibindo 0 documentos (0 de viagem, 0 gerais)</span>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span class="muted small" id="proDocsSummaryBar">Exibindo 0 documentos (0 atas, 0 de viagem, 0 gerais)</span>
+            <label class="pro-docs-hide-min-chk" title="Ocultar rapidamente todas as Atas de Reunião da listagem">
+              <input type="checkbox" id="proDocsHideMinutesChk">
+              <span>Ocultar Atas</span>
+            </label>
+          </div>
           <div class="pro-docs-toolbar-right">
             <select id="proDocsSort" class="pro-map-quick-sel" aria-label="Ordenar documentos">
               <option value="recent">🕒 Mais recentes</option>
@@ -3543,6 +3551,14 @@
           </div>
         </div>
 
+        <div class="pro-side-card" id="pc-minutesCardBox">
+          <div class="route-head-row" style="margin-bottom:6px">
+            <span class="pro-side-title" style="margin:0">📝 Atas de Reunião</span>
+            <button type="button" class="btn primary small" id="btnProCardNewMinute">➕ Nova Ata de Reunião</button>
+          </div>
+          <div id="pc-minutesList" class="pro-card-minutes-list"></div>
+        </div>
+
         <div class="pro-side-card">
           <span class="pro-side-title">💼 Financeiro do Cartão (Fluxo de Caixa)</span>
           <div class="form-grid" style="margin-top:6px">
@@ -3678,19 +3694,263 @@
   </div>
 </dialog>
 
+<!-- MODAL: EDITOR DE ATA DE REUNIÃO EM TELA CHEIA (ESTILO WORD) -->
+<dialog id="proMinuteEditorModal" class="pro-minute-dialog">
+  <div class="pm-topbar">
+    <div class="pm-topbar-left">
+      <strong id="pm-topCardBadge" class="pill" style="font-size:0.72rem">🗂️ Cartão</strong>
+      <span id="pm-saveStatus" class="muted small">Salvo automaticamente</span>
+      <span id="pm-wordCount" class="muted small">0 palavras</span>
+    </div>
+    <div class="pm-topbar-actions">
+      <button type="button" class="btn ghost small" id="btnPmFocusMode" title="Modo Foco (ocultar cabeçalho e distrações)">🎯 Foco</button>
+      <div class="pm-dd-host">
+        <button type="button" class="btn ai-pill small" id="btnPmAiMenu" aria-expanded="false">✨ Melhorar o texto com IA ▾</button>
+        <div class="pm-dd-menu" id="pm-aiMenu" hidden>
+          <button type="button" data-pm-ai-style="clarity">✍️ Melhorar clareza e gramática (manter estrutura)</button>
+          <button type="button" data-pm-ai-style="executive">📋 Formatar como Ata Executiva Profissional</button>
+          <button type="button" data-pm-ai-style="bullets">⚡ Resumir em tópicos objetivos</button>
+        </div>
+      </div>
+      <button type="button" class="btn ghost small" id="btnPmHistory" title="Ver histórico de versões e restaurar">🕘 Histórico <span class="gantt-pop-count" id="pm-historyCount" hidden></span></button>
+      <button type="button" class="btn ghost small" id="btnPmSlides" title="Gerar apresentação clean (fundo branco, letra preta)">📊 Criar Apresentação</button>
+      <div class="pm-dd-host">
+        <button type="button" class="btn primary small" id="btnPmExportMenu" aria-expanded="false">⬇️ Baixar / Exportar ▾</button>
+        <div class="pm-dd-menu pm-export-menu" id="pm-exportMenu" hidden>
+          <div class="pm-dd-sec-title">📄 Ata Simples (somente esta ata)</div>
+          <button type="button" data-pm-exp="simple:docx">📘 Word (.docx) — Editável</button>
+          <button type="button" data-pm-exp="simple:pdf">📕 PDF (.pdf) — Impressão</button>
+          <button type="button" data-pm-exp="simple:pptx">📙 PowerPoint (.pptx) — Clean</button>
+          <hr>
+          <div class="pm-dd-sec-title">📚 Relatório Completo (Cartão + Ata + Anexos)</div>
+          <button type="button" data-pm-exp="full:docx">📘 Word (.docx) — Relatório Completo</button>
+          <button type="button" data-pm-exp="full:pdf">📕 PDF (.pdf) — Relatório Completo</button>
+          <button type="button" data-pm-exp="full:pptx">📙 PowerPoint (.pptx) — Relatório Completo</button>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" id="btnPmClose" aria-label="Fechar editor de ata">✕</button>
+    </div>
+  </div>
+
+  <!-- Cabeçalho Estruturado (Editável e Recolhível) -->
+  <details class="pm-header-box" id="pm-headerBox" open>
+    <summary class="pm-header-sum">
+      <span>📝 Cabeçalho da Reunião &amp; Modelos Rápidos</span>
+      <div class="pm-template-pills" id="pm-templatesBar">
+        <button type="button" class="btn ghost small" data-pm-tpl="blank">📄 Em Branco</button>
+        <button type="button" class="btn ghost small" data-pm-tpl="executive">📋 Ata Executiva</button>
+        <button type="button" class="btn ghost small" data-pm-tpl="briefing">🧭 Briefing Técnico</button>
+      </div>
+    </summary>
+    <div class="pm-header-grid">
+      <label class="pm-hfield span2">
+        <span>Título da Ata</span>
+        <input type="text" id="pm-title" placeholder="Ex: Ata - Reunião de Alinhamento">
+      </label>
+      <label class="pm-hfield">
+        <span>Data e Horário</span>
+        <input type="datetime-local" id="pm-meetingDate">
+      </label>
+      <label class="pm-hfield">
+        <span>Local ou Link da Reunião</span>
+        <input type="text" id="pm-location" placeholder="Sala, cidade ou link Meet/Teams">
+      </label>
+      <div class="pm-hfield span4">
+        <span>Participantes (selecione do projeto ou digite externos e pressione Enter)</span>
+        <div class="pm-participants-bar">
+          <div id="pm-participantsChips" class="pm-participants-chips"></div>
+          <div class="pm-participants-controls">
+            <select id="pm-participantPick" aria-label="Selecionar pessoa cadastrada"><option value="">+ Pessoa do projeto...</option></select>
+            <input type="text" id="pm-participantExt" placeholder="+ Participante externo (Enter)..." autocomplete="off">
+            <button type="button" class="btn ghost small" id="btnPmAddParticipant">➕</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <!-- Barra de Ferramentas Estilo Word -->
+  <div class="pm-toolbar" id="pm-toolbar" role="toolbar" aria-label="Formatação da ata">
+    <div class="pm-tb-group">
+      <button type="button" class="pm-tb-btn" data-cmd="undo" title="Desfazer (Ctrl+Z)">↶</button>
+      <button type="button" class="pm-tb-btn" data-cmd="redo" title="Refazer (Ctrl+Y)">↷</button>
+    </div>
+    <div class="pm-tb-group">
+      <select class="pm-tb-sel" id="pm-blockStyle" title="Estilo do parágrafo">
+        <option value="P">Parágrafo</option>
+        <option value="H1">Título 1 (H1)</option>
+        <option value="H2">Título 2 (H2)</option>
+        <option value="H3">Título 3 (H3)</option>
+      </select>
+      <select class="pm-tb-sel" id="pm-fontFamily" title="Fonte">
+        <option value="Calibri, Arial, sans-serif">Calibri / Sans</option>
+        <option value="Arial, Helvetica, sans-serif">Arial</option>
+        <option value="Georgia, serif">Georgia (Serif)</option>
+        <option value="'Courier New', monospace">Monospace</option>
+      </select>
+      <select class="pm-tb-sel" id="pm-fontSize" title="Tamanho da fonte" style="width:66px">
+        <option value="2">10pt</option>
+        <option value="3" selected>12pt</option>
+        <option value="4">14pt</option>
+        <option value="5">18pt</option>
+        <option value="6">24pt</option>
+      </select>
+    </div>
+    <div class="pm-tb-group">
+      <button type="button" class="pm-tb-btn" data-cmd="bold" title="Negrito (Ctrl+B)"><b>B</b></button>
+      <button type="button" class="pm-tb-btn" data-cmd="italic" title="Itálico (Ctrl+I)"><i>I</i></button>
+      <button type="button" class="pm-tb-btn" data-cmd="underline" title="Sublinhado (Ctrl+U)"><u>U</u></button>
+      <button type="button" class="pm-tb-btn" data-cmd="strikeThrough" title="Tachado"><s>S</s></button>
+      <label class="pm-tb-color" title="Cor do texto"><span>A</span><input type="color" id="pm-foreColor" value="#111111"></label>
+      <label class="pm-tb-color" title="Marca-texto"><span>🖍</span><input type="color" id="pm-hiliteColor" value="#fef08a"></label>
+    </div>
+    <div class="pm-tb-group">
+      <button type="button" class="pm-tb-btn" data-cmd="justifyLeft" title="Alinhar à esquerda">⯇</button>
+      <button type="button" class="pm-tb-btn" data-cmd="justifyCenter" title="Centralizar">≡</button>
+      <button type="button" class="pm-tb-btn" data-cmd="justifyRight" title="Alinhar à direita">⯈</button>
+      <button type="button" class="pm-tb-btn" data-cmd="justifyFull" title="Justificar">▤</button>
+    </div>
+    <div class="pm-tb-group">
+      <button type="button" class="pm-tb-btn" data-cmd="insertUnorderedList" title="Lista com marcadores">• Lista</button>
+      <button type="button" class="pm-tb-btn" data-cmd="insertOrderedList" title="Lista numerada">1. Lista</button>
+      <button type="button" class="pm-tb-btn" id="btnPmInsertTask" title="Inserir item de tarefa (checkbox)">☑ Tarefa</button>
+    </div>
+    <div class="pm-tb-group">
+      <button type="button" class="pm-tb-btn" id="btnPmInsertTable" title="Inserir tabela">⊞ Tabela</button>
+      <button type="button" class="pm-tb-btn" id="btnPmTableAddRow" title="Adicionar linha à tabela selecionada">+Linha</button>
+      <button type="button" class="pm-tb-btn" id="btnPmTableAddCol" title="Adicionar coluna à tabela selecionada">+Col</button>
+      <button type="button" class="pm-tb-btn" id="btnPmInsertQuote" title="Citação">❝</button>
+      <button type="button" class="pm-tb-btn" data-cmd="insertHorizontalRule" title="Linha divisória">—</button>
+      <button type="button" class="pm-tb-btn" id="btnPmInsertLink" title="Inserir link">🔗</button>
+      <button type="button" class="pm-tb-btn" id="btnPmInsertImg" title="Inserir imagem no texto (ou arraste / Ctrl+V)">🖼️ Imagem</button>
+      <input type="file" id="pm-imgInput" accept="image/*" hidden>
+    </div>
+  </div>
+
+  <!-- Área de Escrita (Folha Estilo Word + Bubble Menu + Ação na Margem) -->
+  <div class="pm-workspace">
+    <div class="pm-paper-wrap" id="pm-paperWrap">
+      <!-- Bubble Menu Flutuante ao Selecionar Texto -->
+      <div class="pm-bubble-menu" id="pm-bubbleMenu" hidden>
+        <span class="pm-bm-lbl">Transformar em:</span>
+        <button type="button" data-pm-act="card-check" title="Enviar para Checklist deste Cartão">✓ Checklist Cartão</button>
+        <button type="button" data-pm-act="sys-check" title="Enviar para Checklist Geral do Sistema">📋 Checklist Geral</button>
+        <button type="button" data-pm-act="new-card" title="Transformar em Novo Cartão vinculado">🗂️ Novo Cartão</button>
+      </div>
+      <!-- Botão + na Margem Esquerda do Parágrafo -->
+      <button type="button" class="pm-margin-plus" id="pm-marginPlusBtn" hidden title="Transformar este parágrafo em Checklist ou Novo Cartão">+</button>
+
+      <div id="pm-editor" class="pm-editor-surface" contenteditable="true" spellcheck="true" data-placeholder="Comece a digitar a ata aqui... Dica: selecione qualquer parágrafo ou clique no botão + à esquerda para transformar em Checklist ou Novo Cartão. Cole imagens com Ctrl+V."></div>
+
+      <!-- Anexos dedicados da Ata -->
+      <div class="pm-attachments-box" id="pm-attachmentsBox">
+        <div class="route-head-row">
+          <strong>📎 Documentos Anexados nesta Ata</strong>
+          <button type="button" class="btn ghost small" id="btnPmAttachFile">📎 Anexar Documento</button>
+          <input type="file" id="pm-attachInput" multiple hidden>
+        </div>
+        <div id="pm-attachmentsList" class="pm-attachments-list"></div>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<!-- MODAL: HISTÓRICO DE VERSÕES DA ATA -->
+<dialog id="proMinuteHistoryModal" class="pro-minute-subdialog">
+  <div class="modal-head">
+    <h3>🕘 Histórico de Versões da Ata</h3>
+    <button type="button" class="icon-btn" id="btnPmHistClose" aria-label="Fechar">✕</button>
+  </div>
+  <div class="pm-history-layout">
+    <div class="pm-history-list" id="pm-historyList"></div>
+    <div class="pm-history-preview-wrap">
+      <div class="pm-history-prev-head">
+        <strong id="pm-histPrevTitle">Selecione uma versão</strong>
+        <button type="button" class="btn primary small" id="btnPmHistRestore" hidden>↺ Restaurar esta versão</button>
+      </div>
+      <div id="pm-histPrevBody" class="pm-history-prev-body"></div>
+    </div>
+  </div>
+</dialog>
+
+<!-- MODAL: PREVIEW INTERATIVO DA APRESENTAÇÃO (CLEAN — FUNDO BRANCO / LETRA PRETA) -->
+<dialog id="proMinuteSlidesModal" class="pro-minute-slides-dialog">
+  <div class="modal-head">
+    <div>
+      <h3 style="margin:0">📊 Apresentação Clean — Preview Editável</h3>
+      <div class="muted small" id="pm-slidesSubtitle">Fundo branco, texto preto, tópicos diretos prontos para projetor</div>
+    </div>
+    <button type="button" class="icon-btn" id="btnPmSlidesClose" aria-label="Fechar">✕</button>
+  </div>
+  <div class="pm-slides-layout">
+    <div class="pm-slides-rail" id="pm-slidesRail"></div>
+    <div class="pm-slides-stage-wrap">
+      <div class="pm-slide-canvas" id="pm-slideCanvas"></div>
+      <div class="pm-slide-editor-bar" id="pm-slideEditorBar"></div>
+    </div>
+  </div>
+  <div class="modal-actions">
+    <button type="button" class="btn ghost" id="btnPmSlidesPrintPdf">📕 Baixar / Imprimir PDF</button>
+    <span class="spacer"></span>
+    <button type="button" class="btn ghost" id="btnPmSlidesCancel">Fechar</button>
+    <button type="button" class="btn primary" id="btnPmSlidesDownloadPptx">📙 Baixar PowerPoint (.pptx)</button>
+  </div>
+</dialog>
+
+<!-- MODAL RÁPIDO: TRANSFORMAR PARÁGRAFO DA ATA EM NOVO CARTÃO -->
+<dialog id="proMinuteQuickCardModal" class="pro-minute-subdialog">
+  <form id="proMinuteQuickCardForm" method="dialog">
+    <div class="modal-head">
+      <h3>🗂️ Transformar Parágrafo em Novo Cartão</h3>
+      <button type="button" class="icon-btn" id="btnPmQcClose" aria-label="Fechar">✕</button>
+    </div>
+    <div class="form-grid">
+      <label class="span2">Título do Novo Cartão *
+        <input type="text" id="pmqc-title" required>
+      </label>
+      <label>Lista / Etapa
+        <select id="pmqc-col"></select>
+      </label>
+      <label>Responsável
+        <select id="pmqc-assignee"></select>
+      </label>
+      <label>Prazo / Data Final
+        <input type="date" id="pmqc-due">
+      </label>
+      <label>Prioridade
+        <select id="pmqc-prio">
+          <option value="Média">🔵 Média</option>
+          <option value="Alta">🟠 Alta</option>
+          <option value="Crítica">🔴 Crítica</option>
+          <option value="Baixa">🟢 Baixa</option>
+        </select>
+      </label>
+      <label class="span2">Descrição / Contexto
+        <textarea id="pmqc-notes" rows="3"></textarea>
+      </label>
+    </div>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnPmQcCancel">Cancelar</button>
+      <button type="submit" class="btn primary">🗂️ Criar Cartão Vinculado</button>
+    </div>
+  </form>
+</dialog>
+
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=45"></script>
-<script src="vehicles.js?v=45"></script>
-<script src="countries.js?v=45"></script>
-<script src="data.js?v=45"></script>
-<script src="maps.js?v=45"></script>
-<script src="calendar.js?v=45"></script>
-<script src="report.js?v=45"></script>
-<script src="api.js?v=45"></script>
-<script src="pro.js?v=45"></script>
-<script src="app.js?v=45"></script>
+<script src="config.example.js?v=46"></script>
+<script src="vehicles.js?v=46"></script>
+<script src="countries.js?v=46"></script>
+<script src="data.js?v=46"></script>
+<script src="maps.js?v=46"></script>
+<script src="calendar.js?v=46"></script>
+<script src="report.js?v=46"></script>
+<script src="api.js?v=46"></script>
+<script src="minutes.js?v=46"></script>
+<script src="pro.js?v=46"></script>
+<script src="app.js?v=46"></script>
 </body>
 </html>

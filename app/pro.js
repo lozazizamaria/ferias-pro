@@ -418,6 +418,9 @@
       a.labels = Array.isArray(a.labels) ? [...new Set(a.labels.map(String).filter(Boolean))] : [];
       a.tags = Array.isArray(a.tags) ? [...new Set(a.tags.map(t => String(t || "").trim()).filter(Boolean))] : [];
       a.attachments = Array.isArray(a.attachments) ? a.attachments : [];
+      a.minutes = Array.isArray(a.minutes)
+        ? a.minutes.map(m => (window.MyPlanMinutes?.normalizeMinute ? window.MyPlanMinutes.normalizeMinute(m, a.name) : m))
+        : [];
       a.subtasks = Array.isArray(a.subtasks)
         ? a.subtasks.map(st => ({ id: st?.id || core.uid(), text: String(st?.text || "").trim(), done: Boolean(st?.done) })).filter(st => st.text)
         : [];
@@ -6324,6 +6327,59 @@
         if (att?.id && seenTravelIds.has(att.id)) return;
         pushDoc(att, "general");
       });
+      (Array.isArray(c.minutes) ? c.minutes : []).forEach(min => {
+        if (!min || typeof min !== "object") return;
+        const mDate = String(min.meetingDate || "").slice(0, 10) || String(c._origStart || c.start || "");
+        const mUpd = String(min.updatedAt || min.createdAt || "");
+        const mUpdIso = /^\d{4}-\d{2}-\d{2}/.test(mUpd) ? mUpd.slice(0, 10) : mDate;
+        const plainSnip = String(min.html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+        out.push({
+          docKey: `minutes:${c.id}:${min.id}`,
+          id: min.id,
+          minuteId: min.id,
+          minuteObj: min,
+          origin: "minutes",
+          originLabel: "📝 Ata de Reunião",
+          originShort: "📝 Ata",
+          legType: "",
+          label: Array.isArray(min.participants) && min.participants.length ? `👥 ${min.participants.slice(0, 2).join(", ")}` : "Ata de Reunião",
+          fileName: min.title || `Ata - ${c.name || "Reunião"}`,
+          url: "",
+          rawUrl: "",
+          isLink: false,
+          mimeType: "text/html",
+          fileCategory: "document",
+          size: 0,
+          uploadedAt: mUpd,
+          uploadIso: mUpdIso,
+          eventIso: mDate,
+          eventEndIso: mDate,
+          card: c,
+          cardId: c.id,
+          cardName: String(c.name || "Sem título"),
+          cardType: String(c.type || "Outro"),
+          columnId: String(c.columnId || ""),
+          columnTitle: colTitle,
+          priority: String(c.priority || "Média"),
+          client: String(c.client || "").trim(),
+          assignees: asgNames,
+          hasTravel,
+          location: rawLoc,
+          city,
+          labels: cardLabels,
+          labelIds: Array.isArray(c.labels) ? c.labels : [],
+          tags: cardTags,
+          travelModes,
+          hasCost: cardTravelHasCost,
+          searchHay: [
+            min.title || "", plainSnip, (min.participants || []).join(" "),
+            c.name || "", c.client || "", rawLoc, asgNames.join(" "), cardTags.join(" ")
+          ].join(" ").toLowerCase()
+        });
+        (Array.isArray(min.attachments) ? min.attachments : []).forEach(matt => {
+          pushDoc({ ...matt, label: `Anexo da Ata: ${min.title || "Ata"}` }, "general");
+        });
+      });
     });
 
     return out;
@@ -6514,6 +6570,11 @@
     if (!ctx) return core.toast("⚠️ Cartão vinculado não encontrado.");
     if (ctx.trip?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
     const a = ctx.activity;
+    if (doc.origin === "minutes" && doc.minuteId) {
+      a.minutes = (Array.isArray(a.minutes) ? a.minutes : []).filter(m => m.id !== doc.minuteId);
+      await core.saveTripRecord(ctx.trip, `🗑️ Ata "${doc.fileName}" removida!`);
+      return;
+    }
     if (doc.origin === "travel") {
       if (a.travelDetails && Array.isArray(a.travelDetails.tickets)) {
         a.travelDetails.tickets = a.travelDetails.tickets.filter(t => !(
@@ -6549,7 +6610,9 @@
 
     const filtered = allDocs.filter(d => {
       if (cfg.search && !d.searchHay.includes(cfg.search)) return false;
-      if (cfg.origin && d.origin !== cfg.origin) return false;
+      if ($("#proDocsHideMinutesChk")?.checked && d.origin === "minutes") return false;
+      if (cfg.origin === "no_minutes" && d.origin === "minutes") return false;
+      else if (cfg.origin && cfg.origin !== "no_minutes" && d.origin !== cfg.origin) return false;
       if (cfg.fileType && d.fileCategory !== cfg.fileType) return false;
       if (cfg.eventId && d.cardId !== cfg.eventId) return false;
       const refIso = cfg.dateMode === "upload" ? d.uploadIso : d.eventIso;
@@ -6596,10 +6659,11 @@
     if ($("#btnProDocsClearFilters")) $("#btnProDocsClearFilters").hidden = activeCnt === 0;
     if ($("#btnProDocsResetInline")) $("#btnProDocsResetInline").hidden = activeCnt === 0;
 
+    const minutesCnt = sorted.filter(d => d.origin === "minutes").length;
     const travelCnt = sorted.filter(d => d.origin === "travel").length;
-    const generalCnt = sorted.length - travelCnt;
+    const generalCnt = sorted.length - travelCnt - minutesCnt;
     if ($("#proDocsSummaryBar")) {
-      $("#proDocsSummaryBar").textContent = `Exibindo ${sorted.length} ${sorted.length === 1 ? "documento" : "documentos"} (${travelCnt} de viagem, ${generalCnt} ${generalCnt === 1 ? "geral" : "gerais"})`;
+      $("#proDocsSummaryBar").textContent = `Exibindo ${sorted.length} ${sorted.length === 1 ? "documento" : "documentos"} (${minutesCnt} ${minutesCnt === 1 ? "ata" : "atas"}, ${travelCnt} de viagem, ${generalCnt} ${generalCnt === 1 ? "geral" : "gerais"})`;
     }
 
     const emptyEl = $("#proDocsEmptyBanner");
@@ -6688,8 +6752,8 @@
               </td>
               <td class="nowrap" style="text-align:right">
                 <div class="pro-doc-actions">
-                  <button type="button" class="icon-btn" data-doc-preview="${core.esc(d.docKey)}" title="Visualizar">👁️</button>
-                  ${d.url ? `<a class="icon-btn" href="${core.esc(d.url)}" ${d.isLink ? 'target="_blank" rel="noopener"' : `download="${core.esc(d.fileName)}" target="_blank" rel="noopener"`} title="${d.isLink ? "Abrir link" : "Baixar"}">${d.isLink ? "↗️" : "⬇️"}</a>` : ""}
+                  <button type="button" class="icon-btn" data-doc-preview="${core.esc(d.docKey)}" title="${d.origin === "minutes" ? "Abrir Editor da Ata" : "Visualizar"}">${d.origin === "minutes" ? "✏️" : "👁️"}</button>
+                  ${d.origin === "minutes" ? `<button type="button" class="icon-btn" data-doc-min-dl="${core.esc(d.docKey)}" title="Baixar Ata (.docx)">⬇️</button>` : (d.url ? `<a class="icon-btn" href="${core.esc(d.url)}" ${d.isLink ? 'target="_blank" rel="noopener"' : `download="${core.esc(d.fileName)}" target="_blank" rel="noopener"`} title="${d.isLink ? "Abrir link" : "Baixar"}">${d.isLink ? "↗️" : "⬇️"}</a>` : "")}
                   <button type="button" class="icon-btn" data-doc-open-card="${core.esc(d.cardId)}" title="Abrir Cartão">🗂️</button>
                   <button type="button" class="icon-btn" data-doc-del="${core.esc(d.docKey)}" title="Excluir documento">🗑️</button>
                 </div>
@@ -6742,7 +6806,20 @@
       activeHost.querySelectorAll("[data-doc-preview]").forEach(el => {
         el.onclick = () => {
           const doc = docByKey.get(el.dataset.docPreview);
-          if (doc) openProDocPreviewModal(doc);
+          if (!doc) return;
+          if (doc.origin === "minutes" && doc.minuteId && window.MyPlanMinutes?.openMinuteEditor) {
+            window.MyPlanMinutes.openMinuteEditor(doc.cardId, doc.minuteId);
+          } else {
+            openProDocPreviewModal(doc);
+          }
+        };
+      });
+      activeHost.querySelectorAll("[data-doc-min-dl]").forEach(el => {
+        el.onclick = () => {
+          const doc = docByKey.get(el.dataset.docMinDl);
+          if (doc?.minuteObj && window.MyPlanMinutes?.exportMinute) {
+            window.MyPlanMinutes.exportMinute(doc.card, doc.minuteObj, "simple", "docx");
+          }
         };
       });
       activeHost.querySelectorAll("[data-doc-open-card]").forEach(el => {
@@ -8892,6 +8969,9 @@
     renderProModalAttachments();
     renderProModalCoverAndLabels();
     refreshProModalTagsSelector(proModalDraftTags);
+    if (window.MyPlanMinutes?.renderCardMinutesList) {
+      window.MyPlanMinutes.renderCardMinutesList(a ? a.id : "", $("#pc-minutesList"));
+    }
 
     if ($("#proCalRemLabel")) $("#proCalRemLabel").textContent = core.getState().params?.calendarReminderTime || "09:00";
     if ($("#btnProCardDelete")) $("#btnProCardDelete").style.visibility = a ? "visible" : "hidden";
@@ -9538,7 +9618,19 @@
         renderProDocs();
       };
     });
-    if ($("#btnProDocsClearFilters")) $("#btnProDocsClearFilters").onclick = resetProDocsFilters;
+    if ($("#btnProDocsClearFilters")) $("#btnProDocsClearFilters").onclick = () => {
+      if ($("#proDocsHideMinutesChk")) $("#proDocsHideMinutesChk").checked = false;
+      resetProDocsFilters();
+    };
+    if ($("#proDocsHideMinutesChk")) $("#proDocsHideMinutesChk").onchange = () => renderProDocs();
+    if ($("#btnProCardNewMinute")) {
+      $("#btnProCardNewMinute").onclick = () => {
+        if (!editingProCardId) {
+          return core.toast("⚠️ Salve o cartão primeiro para criar Atas de Reunião vinculadas.");
+        }
+        window.MyPlanMinutes?.createNewMinuteForCard(editingProCardId);
+      };
+    }
     if ($("#btnProDocsResetInline")) $("#btnProDocsResetInline").onclick = resetProDocsFilters;
 
     // Modal Preview de Documento & Confirmação de Exclusão
@@ -10336,7 +10428,21 @@
   }
 
   window.MyPlanPro = {
-    init(c) { core = c; bindProEvents(); },
+    init(c) {
+      core = c;
+      bindProEvents();
+      if (window.MyPlanMinutes?.init) {
+        window.MyPlanMinutes.init({
+          core,
+          findCardContext: findProCardContext,
+          getMergedColumns,
+          getAllAssignees: getAllProAssignees,
+          openCardModal: openProCardModal,
+          openDocPreview: openProDocPreviewModal,
+          resolveDocHref
+        });
+      }
+    },
     migrateProState,
     getAllProTypes,
     getProTypeInfo,

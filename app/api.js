@@ -488,6 +488,51 @@
     return r.data.result || {};
   }
 
+  async function aiImproveMinutes(payload) {
+    if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
+    const r = await req("/api/ai/improve-minutes", { method: "POST", body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error(r.data?.message || r.data?.error || "Falha ao melhorar ata com IA.");
+    return r.data;
+  }
+
+  async function aiGenerateSlides(payload) {
+    if (!serverAvailable) return { ok: true, usedAi: false, slides: null };
+    const r = await req("/api/ai/generate-slides", { method: "POST", body: JSON.stringify(payload) });
+    return r.ok ? r.data : { ok: true, usedAi: false, slides: null };
+  }
+
+  async function downloadBinaryExport(endpoint, payload, fallbackFileName) {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      let msg = "Falha ao exportar arquivo.";
+      try { const j = await res.json(); msg = j.error || msg; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fallbackFileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return blob.size;
+  }
+
+  async function exportMinutesDocx(payload, fileName = "Ata_Reuniao.docx") {
+    return downloadBinaryExport("/api/minutes/export-docx", payload, fileName);
+  }
+
+  async function exportMinutesPptx(payload, fileName = "Apresentacao_Ata.pptx") {
+    return downloadBinaryExport("/api/minutes/export-pptx", payload, fileName);
+  }
+
   async function generateWalletSegmentLink(segment, card, tripName) {
     if (!serverAvailable) return { ok: true, configured: false };
     const r = await req("/api/wallet/generate-link", { method: "POST", body: JSON.stringify({ segment, card, tripName }) });
@@ -631,6 +676,10 @@
     aiVehicleSpecs,
     aiAnalyzeActivity,
     aiAnalyzeTickets,
+    aiImproveMinutes,
+    aiGenerateSlides,
+    exportMinutesDocx,
+    exportMinutesPptx,
     generateWalletSegmentLink,
     signWalletPass,
     createPkpassUrl,
