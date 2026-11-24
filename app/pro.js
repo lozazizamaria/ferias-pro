@@ -102,6 +102,8 @@
   let proModalAttachments = [];
   let proModalTempUploadIds = [];
   let proModalSaved = false;
+  let proModalInitialSnapshot = "";
+  let proModalForceClose = false;
   let proModalSubtasks = [];
   let proModalLabels = [];
   let proModalCoverColor = "";
@@ -439,7 +441,9 @@
     return merged;
   }
 
-  function getProSortedActivities() {
+  function getProSortedActivities(opts = {}) {
+    const includeArchived = Boolean(opts && opts.includeArchived);
+    const onlyArchived = Boolean(opts && opts.onlyArchived);
     const trips = core.getSelectedTrips();
     const all = [];
     trips.forEach((tr, idx) => {
@@ -448,6 +452,9 @@
       const cols = Array.isArray(data?.columns) ? data.columns : [];
       const colMap = new Map(cols.map(c => [c.id, c.title]));
       acts.forEach(a => {
+        const isArch = Boolean(a && a.archived);
+        if (onlyArchived && !isArch) return;
+        if (!onlyArchived && !includeArchived && isArch) return;
         a.columnTitle = colMap.get(a.columnId) || "";
         proOriginMap.set(a, {
           tripId: tr?.id || "",
@@ -1737,7 +1744,6 @@
       ? `<span class="g-summary-tags">${actTags.slice(0, 2).map(tg => `<span class="tag-mini">${core.esc(tg)}</span>`).join("")}</span>`
       : "";
     const metaParts = [];
-    if (a.columnTitle && meta?.mode !== "personal") metaParts.push(a.columnTitle);
     if (a.client) metaParts.push(a.client);
     if (a.startTime) metaParts.push(a.startTime);
     if (subs.length) metaParts.push(`☑ ${subsDone}/${subs.length}`);
@@ -2037,7 +2043,7 @@
           const insideTxt = isMilestone
             ? (info.icon || "◆")
             : (scale.isWeekOnly
-              ? `${barW >= 14 ? info.icon : ""}${DW >= 52 ? ` ${core.esc(a.name.slice(0, 12))}` : ""}`
+              ? `${barW >= 14 ? info.icon : ""}`
               : (DW <= 20 && len === 1 ? info.icon : (len > 1 ? `${info.icon} ${len}d` : info.icon)));
           const progBar = (umode === "professional" && !isMilestone && a.progress > 0) ? `<span class="g-bar-prog" style="width:${a.progress}%"></span>` : "";
           const resizeHandle = !isMilestone && barW >= 18 ? `<span class="g-resize" data-resize="${core.esc(a.id)}" title="Arraste para ajustar duração"></span>` : "";
@@ -9184,6 +9190,14 @@
 
     if ($("#proCalRemLabel")) $("#proCalRemLabel").textContent = core.getState().params?.calendarReminderTime || "09:00";
     if ($("#btnProCardDelete")) $("#btnProCardDelete").style.visibility = a ? "visible" : "hidden";
+    const archBtn = $("#btnProCardArchive");
+    if (archBtn) {
+      archBtn.hidden = !a;
+      if (a) {
+        archBtn.textContent = a.archived ? "📤 Desarquivar Cartão" : "📦 Arquivar Cartão";
+        archBtn.title = a.archived ? "Restaurar este cartão para as visualizações normais" : "Arquivar cartão sem excluir seus dados";
+      }
+    }
     if ($("#btnProCardDuplicate")) $("#btnProCardDuplicate").hidden = !a;
     if ($("#btnProHeadCal")) $("#btnProHeadCal").hidden = !a;
     if ($("#btnProHeadWallet")) $("#btnProHeadWallet").hidden = !a;
@@ -9196,6 +9210,8 @@
     if ($("#proCardAiTextInput")) $("#proCardAiTextInput").value = "";
     updateProModalCalLink();
 
+    proModalForceClose = false;
+    proModalInitialSnapshot = JSON.stringify(readProCardForm());
     $("#proCardModal").showModal();
   }
 
@@ -10199,10 +10215,163 @@
     if ($("#proFilterChecklist")) $("#proFilterChecklist").onchange = e => { proCheckFilter = e.target.value; renderProChecklist(); };
     if ($("#btnProAddCheck")) $("#btnProAddCheck").onclick = () => core.openCheckModal();
 
-    // Modal Cartão Trello
-    if ($("#btnProCardCloseX")) $("#btnProCardCloseX").onclick = () => $("#proCardModal").close();
-    if ($("#btnProCardCancel")) $("#btnProCardCancel").onclick = () => $("#proCardModal").close();
-    if ($("#proCardModal")) $("#proCardModal").addEventListener("close", () => stopProAiRecording(true));
+    // Modal Cartão Trello (com detecção de alterações não salvas ao sair)
+    function isProCardDirty() {
+      if (proModalSaved || proModalForceClose) return false;
+      try {
+        return JSON.stringify(readProCardForm()) !== proModalInitialSnapshot;
+      } catch {
+        return false;
+      }
+    }
+    function requestCloseProCardModal() {
+      const dlg = $("#proCardModal");
+      if (!dlg || !dlg.open) return;
+      if (!isProCardDirty()) {
+        proModalForceClose = true;
+        dlg.close();
+        return;
+      }
+      const unsavedDlg = $("#proCardUnsavedModal");
+      if (unsavedDlg && !unsavedDlg.open) {
+        unsavedDlg.showModal();
+      } else {
+        proModalForceClose = true;
+        dlg.close();
+      }
+    }
+    if ($("#btnProCardCloseX")) $("#btnProCardCloseX").onclick = () => requestCloseProCardModal();
+    if ($("#btnProCardCancel")) $("#btnProCardCancel").onclick = () => requestCloseProCardModal();
+    if ($("#proCardModal")) {
+      $("#proCardModal").addEventListener("cancel", e => {
+        if (!proModalSaved && !proModalForceClose && isProCardDirty()) {
+          e.preventDefault();
+          requestCloseProCardModal();
+        }
+      });
+      $("#proCardModal").addEventListener("close", () => stopProAiRecording(true));
+    }
+    if ($("#btnProUnsavedDiscard")) {
+      $("#btnProUnsavedDiscard").onclick = () => {
+        $("#proCardUnsavedModal")?.close();
+        proModalForceClose = true;
+        $("#proCardModal")?.close();
+      };
+    }
+    if ($("#btnProUnsavedCancel")) {
+      $("#btnProUnsavedCancel").onclick = () => $("#proCardUnsavedModal")?.close();
+    }
+    if ($("#btnProUnsavedSaveExit")) {
+      $("#btnProUnsavedSaveExit").onclick = () => {
+        $("#proCardUnsavedModal")?.close();
+        $("#proCardForm")?.requestSubmit();
+      };
+    }
+
+    // Arquivar / Desarquivar Cartão
+    if ($("#btnProCardArchive")) {
+      $("#btnProCardArchive").onclick = async () => {
+        const id = editingProCardId;
+        if (!id) return;
+        const ctx = findProCardContext(id);
+        if (!ctx?.activity) return;
+        if (ctx.trip?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+        const nextArch = !Boolean(ctx.activity.archived);
+        ctx.activity.archived = nextArch;
+        ctx.activity.archivedAt = nextArch ? new Date().toISOString() : "";
+        proModalForceClose = true;
+        proModalSaved = true;
+        $("#proCardModal")?.close();
+        await core.saveTripRecord(ctx.trip, nextArch ? `📦 Cartão "${ctx.activity.name || "Sem título"}" arquivado!` : `📤 Cartão "${ctx.activity.name || "Sem título"}" desarquivado!`);
+        if ($("#proArchivedCardsModal")?.open) renderArchivedCardsModal();
+        if ($("#proAllCardsModal")?.open) renderAllCardsModal();
+      };
+    }
+
+    // Busca Global no Topo do Site
+    (function bindGlobalCardSearch() {
+      const inp = $("#globalCardSearchInput");
+      const dd = $("#globalCardSearchDropdown");
+      const wrap = $("#globalCardSearchWrap");
+      if (!inp || !dd || inp.dataset.gsBound) return;
+      inp.dataset.gsBound = "1";
+
+      const closeDd = () => { dd.hidden = true; dd.innerHTML = ""; };
+      const renderResults = () => {
+        const q = (inp.value || "").trim().toLowerCase();
+        if (!q) { closeDd(); return; }
+        const allCards = getProSortedActivities({ includeArchived: true });
+        const matches = allCards.filter(c => {
+          const hay = [c.name || "", c.notes || "", c.client || "", c.location || "", (c.assignee || ""), (c.columnTitle || "")].join(" ").toLowerCase();
+          return hay.includes(q);
+        }).slice(0, 20);
+
+        if (!matches.length) {
+          dd.innerHTML = `<div class="global-search-empty">Nenhum cartão encontrado para "${core.esc(inp.value.trim())}".</div>`;
+          dd.hidden = false;
+          return;
+        }
+        dd.innerHTML = matches.map(c => {
+          const hasList = Boolean(c.columnId && c.columnTitle);
+          const hasDate = Boolean(c.start || c.end);
+          const dtStr = hasDate
+            ? `${c.start ? core.fmtBR(c.start) : ""}${c.end && c.end !== c.start ? ` → ${core.fmtBR(c.end)}` : ""}`
+            : "Sem data";
+          const badges = [];
+          if (c.archived) badges.push(`<span class="global-search-badge is-archived">Arquivado</span>`);
+          if (!hasList) badges.push(`<span class="global-search-badge is-nolist">Sem lista</span>`);
+          return `<button type="button" class="global-search-item" data-gs-card="${core.esc(c.id)}">
+            <div class="global-search-item-top">
+              <span class="global-search-item-title">${core.esc(c.name || "Sem título")}</span>
+              <span class="global-search-badges">${badges.join("")}</span>
+            </div>
+            <div class="global-search-item-meta">
+              <span>${hasList ? `🗂️ ${core.esc(c.columnTitle)}` : "🗂️ Sem lista"}</span>
+              <span>📅 ${core.esc(dtStr)}</span>
+              ${c.assignee ? `<span>👤 ${core.esc(c.assignee)}</span>` : ""}
+            </div>
+          </button>`;
+        }).join("");
+        dd.hidden = false;
+        dd.querySelectorAll("[data-gs-card]").forEach(btn => {
+          btn.onclick = () => {
+            const cid = btn.dataset.gsCard;
+            closeDd();
+            inp.value = "";
+            openProCardModal(cid);
+          };
+        });
+      };
+
+      inp.addEventListener("input", renderResults);
+      inp.addEventListener("focus", () => { if (inp.value.trim()) renderResults(); });
+      inp.addEventListener("keydown", e => {
+        if (e.key === "Escape") { closeDd(); inp.blur(); }
+        else if (e.key === "Enter") {
+          const first = dd.querySelector("[data-gs-card]");
+          if (first) { e.preventDefault(); first.click(); }
+        }
+      });
+      document.addEventListener("click", e => {
+        if (wrap && !wrap.contains(e.target)) closeDd();
+      });
+    })();
+
+    // Modais: Mostrar todos os cartões & Mostrar cartões arquivados
+    if ($("#btnProAllCardsClose")) $("#btnProAllCardsClose").onclick = () => $("#proAllCardsModal")?.close();
+    if ($("#btnProAllCardsFooterClose")) $("#btnProAllCardsFooterClose").onclick = () => $("#proAllCardsModal")?.close();
+    if ($("#proAllCardsSearch")) $("#proAllCardsSearch").oninput = () => renderAllCardsModal();
+    if ($("#proAllCardsFilterSeg")) {
+      $("#proAllCardsFilterSeg").querySelectorAll("button").forEach(b => {
+        b.onclick = () => {
+          $("#proAllCardsFilterSeg").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+          renderAllCardsModal();
+        };
+      });
+    }
+    if ($("#btnProArchivedClose")) $("#btnProArchivedClose").onclick = () => $("#proArchivedCardsModal")?.close();
+    if ($("#btnProArchivedFooterClose")) $("#btnProArchivedFooterClose").onclick = () => $("#proArchivedCardsModal")?.close();
+    if ($("#proArchivedCardsSearch")) $("#proArchivedCardsSearch").oninput = () => renderArchivedCardsModal();
     if ($("#pc-progress")) {
       $("#pc-progress").oninput = e => {
         const val = parseInt(e.target.value, 10) || 0;
@@ -10939,6 +11108,8 @@
     renderProTable(cards);
     renderProParams();
     renderProChecklist();
+    if ($("#proAllCardsModal")?.open) renderAllCardsModal();
+    if ($("#proArchivedCardsModal")?.open) renderArchivedCardsModal();
   }
 
   /* ---------- INTEGRAÇÃO & SINCRONIZAÇÃO COM GOOGLE DRIVE ---------- */
@@ -11093,6 +11264,171 @@
     }
   }
 
+  /* ---------- MOSTRAR TODOS OS CARTÕES & CARTÕES ARQUIVADOS ---------- */
+  function renderAllCardsModal() {
+    const tbl = $("#proAllCardsTable");
+    const emptyEl = $("#proAllCardsEmpty");
+    const countEl = $("#proAllCardsCount");
+    if (!tbl) return;
+    const q = ($("#proAllCardsSearch")?.value || "").trim().toLowerCase();
+    const filterMode = $("#proAllCardsFilterSeg")?.querySelector("button.active")?.dataset?.allFilter || "all";
+    const labelsMap = new Map(getMergedLabels().map(l => [l.id, l]));
+
+    const allActive = getProSortedActivities({ includeArchived: false });
+    const filtered = allActive.filter(c => {
+      const hasList = Boolean(c.columnId && c.columnTitle);
+      const hasDate = Boolean(c.start || c.end);
+      if (filterMode === "no_list" && hasList) return false;
+      if (filterMode === "no_date" && hasDate) return false;
+      if (filterMode === "orphan" && (hasList || hasDate)) return false;
+      if (q) {
+        const asgNames = getCardAssigneesList(c).map(e => e.name).join(" ");
+        const lblNames = (Array.isArray(c.labels) ? c.labels : []).map(id => labelsMap.get(id)?.name || "").join(" ");
+        const hay = [c.name || "", c.notes || "", c.columnTitle || "", asgNames, lblNames, c.client || ""].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    if (countEl) countEl.textContent = `${filtered.length} ${filtered.length === 1 ? "cartão" : "cartões"}`;
+    if (!filtered.length) {
+      tbl.innerHTML = "";
+      if (emptyEl) emptyEl.hidden = false;
+      return;
+    }
+    if (emptyEl) emptyEl.hidden = true;
+
+    tbl.innerHTML = `
+      <thead>
+        <tr>
+          <th>Título do Cartão</th>
+          <th>Lista</th>
+          <th>Datas</th>
+          <th>Responsável(is)</th>
+          <th>Etiquetas</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.map(c => {
+          const hasList = Boolean(c.columnId && c.columnTitle);
+          const hasDate = Boolean(c.start || c.end);
+          const dtTxt = hasDate
+            ? `${c.start ? core.fmtBR(c.start) : ""}${c.end && c.end !== c.start ? ` → ${core.fmtBR(c.end)}` : ""}`
+            : "";
+          const asgs = getCardAssigneesList(c).map(e => e.name).filter(Boolean);
+          const asgHtml = asgs.length
+            ? asgs.slice(0, 3).map(nm => {
+                const col = colorForAssignee(nm);
+                return `<span class="pro-assignee-badge pro-ctrl-asg-compact" style="--asg-bg:${col.bg};--asg-fg:${col.fg};--asg-bd:${col.bd}">${core.esc(nm)}</span>`;
+              }).join(" ")
+            : `<span class="muted small">—</span>`;
+          const lbls = (Array.isArray(c.labels) ? c.labels : []).map(id => labelsMap.get(id)).filter(Boolean);
+          const lblHtml = lbls.length
+            ? lbls.slice(0, 3).map(l => `<span class="pro-doc-lbl-pill" style="--lc:${core.esc(l.color || "#2563eb")}">${core.esc(l.name)}</span>`).join(" ")
+            : `<span class="muted small">—</span>`;
+          return `<tr data-all-card="${core.esc(c.id)}">
+            <td><strong>${core.esc(c.name || "Sem título")}</strong>${c.client ? `<div class="muted small">${core.esc(c.client)}</div>` : ""}</td>
+            <td>${hasList ? `<span class="pill">${core.esc(c.columnTitle)}</span>` : `<span class="global-search-badge is-nolist">Sem lista</span>`}</td>
+            <td class="nowrap">${hasDate ? core.esc(dtTxt) : `<span class="global-search-badge">Sem data</span>`}</td>
+            <td>${asgHtml}</td>
+            <td>${lblHtml}</td>
+          </tr>`;
+        }).join("")}
+      </tbody>`;
+
+    tbl.querySelectorAll("[data-all-card]").forEach(tr => {
+      tr.onclick = () => openProCardModal(tr.dataset.allCard);
+    });
+  }
+
+  function openAllCardsModal() {
+    const dlg = $("#proAllCardsModal");
+    if (!dlg) return;
+    if ($("#proAllCardsSearch")) $("#proAllCardsSearch").value = "";
+    $("#proAllCardsFilterSeg")?.querySelectorAll("button").forEach(b => {
+      b.classList.toggle("active", b.dataset.allFilter === "all");
+    });
+    renderAllCardsModal();
+    dlg.showModal();
+  }
+
+  function renderArchivedCardsModal() {
+    const listEl = $("#proArchivedCardsList");
+    const emptyEl = $("#proArchivedCardsEmpty");
+    const countEl = $("#proArchivedCardsCount");
+    if (!listEl) return;
+    const q = ($("#proArchivedCardsSearch")?.value || "").trim().toLowerCase();
+    const archived = getProSortedActivities({ onlyArchived: true }).filter(c => {
+      if (!q) return true;
+      const hay = [c.name || "", c.notes || "", c.columnTitle || "", c.assignee || "", c.client || ""].join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+
+    if (countEl) countEl.textContent = `${archived.length} ${archived.length === 1 ? "arquivado" : "arquivados"}`;
+    if (!archived.length) {
+      listEl.innerHTML = "";
+      if (emptyEl) emptyEl.hidden = false;
+      return;
+    }
+    if (emptyEl) emptyEl.hidden = true;
+
+    listEl.innerHTML = archived.map(c => {
+      const archDate = c.archivedAt ? new Date(c.archivedAt).toLocaleDateString("pt-BR") : "";
+      const hasList = Boolean(c.columnId && c.columnTitle);
+      const dtStr = (c.start || c.end)
+        ? `${c.start ? core.fmtBR(c.start) : ""}${c.end && c.end !== c.start ? ` → ${core.fmtBR(c.end)}` : ""}`
+        : "Sem data";
+      return `<div class="pro-archived-row">
+        <div class="pro-archived-main" data-arch-open="${core.esc(c.id)}" title="Clique para visualizar ou editar">
+          <strong>${core.esc(c.name || "Sem título")}</strong>
+          <div class="muted small">
+            ${hasList ? `🗂️ ${core.esc(c.columnTitle)}` : "🗂️ Sem lista"} · 📅 ${core.esc(dtStr)}${archDate ? ` · Arquivado em ${core.esc(archDate)}` : ""}
+          </div>
+        </div>
+        <div class="pro-archived-actions">
+          <button type="button" class="btn ghost small" data-arch-open="${core.esc(c.id)}">👁️ Abrir</button>
+          <button type="button" class="btn primary small" data-arch-restore="${core.esc(c.id)}">📤 Desarquivar</button>
+          <button type="button" class="btn danger-ghost small" data-arch-del="${core.esc(c.id)}">🗑️ Excluir</button>
+        </div>
+      </div>`;
+    }).join("");
+
+    listEl.querySelectorAll("[data-arch-open]").forEach(el => {
+      el.onclick = () => openProCardModal(el.dataset.archOpen);
+    });
+    listEl.querySelectorAll("[data-arch-restore]").forEach(btn => {
+      btn.onclick = async () => {
+        const ctx = findProCardContext(btn.dataset.archRestore);
+        if (!ctx?.activity) return;
+        if (ctx.trip?.role === "viewer") return core.toast("👁️ Somente visualização.");
+        ctx.activity.archived = false;
+        ctx.activity.archivedAt = "";
+        await core.saveTripRecord(ctx.trip, `📤 Cartão "${ctx.activity.name || "Sem título"}" desarquivado!`);
+        renderArchivedCardsModal();
+      };
+    });
+    listEl.querySelectorAll("[data-arch-del]").forEach(btn => {
+      btn.onclick = async () => {
+        const id = btn.dataset.archDel;
+        const ctx = findProCardContext(id);
+        if (!ctx?.activity) return;
+        if (ctx.trip?.role === "viewer") return core.toast("👁️ Somente visualização.");
+        if (!confirm(`Excluir definitivamente o cartão arquivado "${ctx.activity.name || "Sem título"}"? Esta ação não pode ser desfeita.`)) return;
+        ctx.data.activities = (ctx.data.activities || []).filter(x => x.id !== id);
+        await core.saveTripRecord(ctx.trip, "🗑️ Cartão arquivado excluído definitivamente.");
+        renderArchivedCardsModal();
+      };
+    });
+  }
+
+  function openArchivedCardsModal() {
+    const dlg = $("#proArchivedCardsModal");
+    if (!dlg) return;
+    if ($("#proArchivedCardsSearch")) $("#proArchivedCardsSearch").value = "";
+    renderArchivedCardsModal();
+    dlg.showModal();
+  }
+
   window.MyPlanPro = {
     init(c) {
       core = c;
@@ -11129,6 +11465,8 @@
     openProCardModal,
     exportProXlsx,
     buildProWhatsAppText,
-    syncGoogleDrive
+    syncGoogleDrive,
+    openAllCardsModal,
+    openArchivedCardsModal
   };
 })();

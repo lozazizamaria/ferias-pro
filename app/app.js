@@ -2265,7 +2265,7 @@ function renderGantt(allSorted) {
       if (i === pos.off) {
         const lenDays = days(a);
         const insideTxt = (scale.isWeekOnly || (DW <= 20 && lenDays === 1))
-          ? `${info.icon}${scale.isWeekOnly && DW >= 52 ? ` ${esc(a.name.slice(0, 12))}` : ""}`
+          ? `${info.icon}`
           : (lenDays > 1 ? `${info.icon} ${lenDays}d` : info.icon);
         const resizeHandle = (!scale.isWeekOnly && (lenDays > 1 || a.type === "Período" || a.type === "Hospedagem" || isProRow)) || scale.isWeekOnly
           ? `<span class="g-resize" data-resize="${esc(a.id)}" title="Arraste para alterar duração"></span>` : "";
@@ -5750,6 +5750,7 @@ function switchProView(viewId) {
   if (viewId === "pro-docs" && window.MyPlanPro?.renderProDocs) window.MyPlanPro.renderProDocs();
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();
+  window.scrollTo(0, 0);
 }
 
 async function setAppMode(nextMode, opts = {}) {
@@ -6559,6 +6560,18 @@ if ($("#btnMenuAdmin")) {
   $("#btnMenuAdmin").onclick = () => {
     $("#menu")?.classList.remove("open");
     switchAppView("admin");
+  };
+}
+if ($("#btnMenuAllCards")) {
+  $("#btnMenuAllCards").onclick = () => {
+    $("#menu")?.classList.remove("open");
+    if (window.MyPlanPro?.openAllCardsModal) window.MyPlanPro.openAllCardsModal();
+  };
+}
+if ($("#btnMenuArchivedCards")) {
+  $("#btnMenuArchivedCards").onclick = () => {
+    $("#menu")?.classList.remove("open");
+    if (window.MyPlanPro?.openArchivedCardsModal) window.MyPlanPro.openArchivedCardsModal();
   };
 }
 if ($("#btnMenuSyncDrive")) {

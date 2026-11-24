@@ -8513,3 +8513,248 @@ dialog.drive-picker-dialog {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ===== BUSCA GLOBAL NO TOPO, ARQUIVAMENTO, TODOS OS CARTÕES & CONFIRMAÇÃO SEM SALVAR (v49) ===== */
+.global-search-wrap {
+  position: relative;
+  flex: 1 1 200px;
+  max-width: 320px;
+  min-width: 140px;
+  display: flex;
+  align-items: center;
+}
+.global-search-ico {
+  position: absolute;
+  left: 10px;
+  font-size: 0.85rem;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.global-search-wrap input[type="search"] {
+  width: 100%;
+  padding: 6px 10px 6px 32px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft, rgba(148, 163, 184, 0.1));
+  color: var(--text);
+  font-size: 0.84rem;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.global-search-wrap input[type="search"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--card);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+.global-search-dd {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  min-width: 320px;
+  max-height: 400px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 14px;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.28);
+  z-index: 2500;
+  padding: 6px;
+}
+:root[data-theme="dark"] .global-search-dd,
+body.dark .global-search-dd {
+  background: #161b23;
+}
+.global-search-dd[hidden] { display: none !important; }
+.global-search-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.global-search-item:hover,
+.global-search-item:focus-visible {
+  background: var(--bg-soft, rgba(37, 99, 235, 0.1));
+  outline: none;
+}
+.global-search-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.global-search-item-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.global-search-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.global-search-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--muted);
+}
+.global-search-badge.is-archived {
+  background: rgba(245, 158, 11, 0.18);
+  color: #d97706;
+}
+.global-search-badge.is-nolist {
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+}
+.global-search-item-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.global-search-empty {
+  padding: 14px 12px;
+  text-align: center;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+dialog.pro-cards-dir-dialog {
+  width: min(980px, 96vw);
+  max-height: 88vh;
+  border-radius: 18px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+}
+dialog.pro-cards-dir-dialog:not([open]) { display: none; }
+.pro-cards-dir-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.pro-cards-dir-toolbar input[type="search"] {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-size: 0.9rem;
+}
+.pro-cards-dir-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 160px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+.pro-cards-dir-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.pro-cards-dir-table th {
+  position: sticky;
+  top: 0;
+  background: var(--card);
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  z-index: 1;
+}
+.pro-cards-dir-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.pro-cards-dir-table tbody tr {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.pro-cards-dir-table tbody tr:hover {
+  background: var(--bg-soft, rgba(37, 99, 235, 0.07));
+}
+.pro-archived-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+.pro-archived-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  flex-wrap: wrap;
+}
+.pro-archived-main {
+  flex: 1 1 260px;
+  min-width: 0;
+  cursor: pointer;
+}
+.pro-archived-main strong {
+  display: block;
+  font-size: 0.92rem;
+  margin-bottom: 3px;
+}
+.pro-archived-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+dialog.pro-unsaved-dialog {
+  width: min(460px, 94vw);
+  border-radius: 16px;
+  padding: 20px 22px;
+}
+.pro-unsaved-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .global-search-wrap {
+    order: 3;
+    flex: 1 1 100%;
+    max-width: 100%;
+    margin-top: 6px;
+  }
+  .global-search-wrap input[type="search"] {
+    font-size: 16px;
+  }
+  .global-search-dd {
+    min-width: 0;
+    left: 0;
+    right: 0;
+  }
+  .pro-cards-dir-toolbar input[type="search"] {
+    font-size: 16px;
+  }
+}
