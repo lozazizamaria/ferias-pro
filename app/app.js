@@ -7135,7 +7135,6 @@ function setupGanttPopovers() {
     ["#btnProMapFilterPop", "#proMapFilterPopPanel"],
     ["#btnProTravelsFilterPop", "#proTravelsFilterPopPanel"],
     ["#btnProControlFilterPop", "#proControlFilterPopPanel"],
-    ["#btnProDocsFilterPop", "#proDocsFilterPopPanel"],
     ["#btnProDashFilterPop", "#proDashFilterPopPanel"],
     ["#btnProFinFilterPop", "#proFinFilterPopPanel"],
     ["#btnProTableFilterPop", "#proTableFilterPopPanel"]

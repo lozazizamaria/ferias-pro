@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=44">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=44">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=44">
+<link rel="manifest" href="/manifest.webmanifest?v=45">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=45">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=45">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=44">
+<link rel="stylesheet" href="styles.css?v=45">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=44" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=45" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=44" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=45" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -1664,140 +1664,127 @@
 
     <!-- MODO PROFISSIONAL: CENTRAL DE DOCUMENTOS -->
     <section class="view" id="view-pro-docs">
-      <div class="card pro-board-toolbar-card pro-docs-toolbar-card">
+      <div class="card pro-docs-toolbar-card">
+        <!-- Barra Principal (sempre visível, altura uniforme 40px) -->
         <div class="pro-docs-toolbar-top">
           <div class="pro-docs-search-wrap">
             <input type="search" id="proDocsSearch" placeholder="🔎 Buscar por arquivo, cartão, assunto, localizador ou observação..." autocomplete="off">
           </div>
-          <div class="seg pro-docs-origin-seg" id="proDocsOriginSeg" role="group" aria-label="Filtrar origem dos documentos">
-            <button type="button" class="active" data-doc-origin="">Todos</button>
-            <button type="button" data-doc-origin="travel">✈️ Viagem</button>
-            <button type="button" data-doc-origin="general">📎 Outros</button>
+          <select id="proDocsOriginFilter" class="pro-docs-main-sel" aria-label="Origem do documento">
+            <option value="">Origem: Todos</option>
+            <option value="travel">✈️ Viagem</option>
+            <option value="general">📎 Geral</option>
+          </select>
+          <select id="proDocsFileTypeFilter" class="pro-docs-main-sel" aria-label="Tipo de arquivo">
+            <option value="">Tipo: Todos</option>
+            <option value="pdf">📄 PDF</option>
+            <option value="image">🖼️ Imagem</option>
+            <option value="spreadsheet">📊 Excel / Planilha</option>
+            <option value="document">📝 Word / Texto</option>
+            <option value="link">🔗 Link externo</option>
+            <option value="other">📦 Outros</option>
+          </select>
+          <button type="button" class="btn ghost pro-docs-main-btn" id="btnProDocsFilterPop" aria-expanded="false" aria-controls="proDocsFilterPopPanel" title="Mostrar ou ocultar filtros avançados">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Mais Filtros</span>
+            <span class="gantt-pop-count" id="proDocsFilterCount" hidden></span>
+          </button>
+          <button type="button" class="btn ghost pro-docs-main-btn pro-docs-clear-btn" id="btnProDocsClearFilters" hidden>✕ Limpar</button>
+        </div>
+
+        <!-- Painel Expansível ("Mais Filtros") em Grid Uniforme 1/2/3/4 Colunas -->
+        <div class="pro-docs-more-panel" id="proDocsFilterPopPanel" hidden>
+          <div class="pro-docs-filter-grid">
+            <label class="pro-docs-field">
+              <span>Assunto / Evento</span>
+              <select id="proDocsEventFilter" aria-label="Assunto ou evento"><option value="">Todos os eventos</option></select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Base de Data</span>
+              <select id="proDocsDateMode" aria-label="Base de data para filtro">
+                <option value="event">📅 Data do Evento / Viagem</option>
+                <option value="upload">⬆️ Data de Upload</option>
+              </select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Ano</span>
+              <select id="proDocsYearFilter" aria-label="Filtrar por ano"><option value="">Todos os anos</option></select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Mês</span>
+              <select id="proDocsMonthFilter" aria-label="Filtrar por mês"><option value="">Todos os meses</option></select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Data Inicial (De)</span>
+              <input type="date" id="proDocsDateFrom" aria-label="Data inicial">
+            </label>
+            <label class="pro-docs-field">
+              <span>Data Final (Até)</span>
+              <input type="date" id="proDocsDateTo" aria-label="Data final">
+            </label>
+            <label class="pro-docs-field">
+              <span>Lista / Status do Cartão</span>
+              <select id="proDocsColFilter" aria-label="Lista do cartão"><option value="">Todas as listas</option></select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Tipo de Cartão</span>
+              <select id="proDocsCardTypeFilter" aria-label="Tipo de cartão"><option value="">Todos os tipos</option></select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Prioridade</span>
+              <select id="proDocsPrioFilter" aria-label="Prioridade">
+                <option value="">Todas as prioridades</option>
+                <option value="Crítica">🔴 Crítica</option>
+                <option value="Alta">🟠 Alta</option>
+                <option value="Média">🔵 Média</option>
+                <option value="Baixa">🟢 Baixa</option>
+              </select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Responsável(is)</span>
+              <select id="proDocsAssigneeFilter" aria-label="Responsável"><option value="">Todos os responsáveis</option></select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Cliente</span>
+              <select id="proDocsClientFilter" aria-label="Cliente"><option value="">Todos os clientes</option></select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Cartão possui Viagem?</span>
+              <select id="proDocsHasTravelFilter" aria-label="Cartão possui viagem">
+                <option value="">Todos</option>
+                <option value="yes">✈️ Com viagem</option>
+                <option value="no">🏢 Sem viagem</option>
+              </select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Localidade / Destino</span>
+              <select id="proDocsLocationFilter" aria-label="Localidade"><option value="">Todas as localidades</option></select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Etiqueta</span>
+              <select id="proDocsLabelFilter" aria-label="Etiqueta"><option value="">Todas as etiquetas</option></select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Tag</span>
+              <select id="proDocsTagFilter" aria-label="Tag"><option value="">Todas as tags</option></select>
+            </label>
+            <label class="pro-docs-field">
+              <span>Financeiro / Modalidade</span>
+              <select id="proDocsFinModeFilter" aria-label="Modalidade financeira">
+                <option value="">Todas as modalidades</option>
+                <option value="diaria">💵 Diária</option>
+                <option value="grat_rep">🎖️ Gratificação de Representação</option>
+                <option value="comissionamento">📋 Comissionamento</option>
+                <option value="has_cost">💸 Com custo financeiro</option>
+                <option value="no_cost">✅ Sem custo financeiro</option>
+              </select>
+            </label>
           </div>
-          <div class="gantt-pop-host">
-            <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProDocsFilterPop" aria-expanded="false" aria-controls="proDocsFilterPopPanel" title="Filtros avançados de documentos">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-              <span>Filtros</span>
-              <span class="gantt-pop-count" id="proDocsFilterCount" hidden></span>
-            </button>
-            <div class="gantt-pop-panel pro-docs-filter-panel" id="proDocsFilterPopPanel" hidden>
-              <div class="gantt-pop-head">
-                <strong>Filtros Avançados de Documentos</strong>
-                <button type="button" class="btn ghost small" id="btnProDocsClearFilters" hidden>✕ Limpar Filtros</button>
-              </div>
-              <div class="gantt-pop-body pro-docs-filter-grid">
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Origem do documento</span>
-                  <select id="proDocsOriginFilter" aria-label="Origem do documento">
-                    <option value="">Todos os documentos</option>
-                    <option value="travel">✈️ Apenas Documentos de Viagem</option>
-                    <option value="general">📎 Outros Documentos (Anexos Gerais)</option>
-                  </select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Tipo de arquivo</span>
-                  <select id="proDocsFileTypeFilter" aria-label="Tipo de arquivo">
-                    <option value="">Todos os formatos</option>
-                    <option value="pdf">📄 PDF</option>
-                    <option value="image">🖼️ Imagem (JPG / PNG / WebP)</option>
-                    <option value="spreadsheet">📊 Excel / Planilha</option>
-                    <option value="document">📝 Word / Texto</option>
-                    <option value="link">🔗 Link externo</option>
-                    <option value="other">📦 Outros</option>
-                  </select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Assunto / Evento</span>
-                  <select id="proDocsEventFilter" aria-label="Assunto ou evento"><option value="">Todos os eventos</option></select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Base de data</span>
-                  <select id="proDocsDateMode" aria-label="Base de data para filtro">
-                    <option value="event">📅 Data do Evento / Viagem</option>
-                    <option value="upload">⬆️ Data de Upload</option>
-                  </select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Ano</span>
-                  <select id="proDocsYearFilter" aria-label="Filtrar por ano"><option value="">Todos os anos</option></select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Mês</span>
-                  <select id="proDocsMonthFilter" aria-label="Filtrar por mês"><option value="">Todos os meses</option></select>
-                </div>
-                <div class="gantt-pop-group span2">
-                  <span class="gantt-pop-lbl">Intervalo de datas</span>
-                  <div class="gantt-pop-dates">
-                    <label class="date-filter-chip" title="Data inicial">
-                      <span>De</span>
-                      <input type="date" id="proDocsDateFrom" aria-label="Data inicial">
-                    </label>
-                    <label class="date-filter-chip" title="Data final">
-                      <span>Até</span>
-                      <input type="date" id="proDocsDateTo" aria-label="Data final">
-                    </label>
-                  </div>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Lista / Status do Cartão</span>
-                  <select id="proDocsColFilter" aria-label="Lista do cartão"><option value="">Todas as listas</option></select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Tipo de Cartão</span>
-                  <select id="proDocsCardTypeFilter" aria-label="Tipo de cartão"><option value="">Todos os tipos</option></select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Prioridade</span>
-                  <select id="proDocsPrioFilter" aria-label="Prioridade">
-                    <option value="">Todas as prioridades</option>
-                    <option value="Crítica">🔴 Crítica</option>
-                    <option value="Alta">🟠 Alta</option>
-                    <option value="Média">🔵 Média</option>
-                    <option value="Baixa">🟢 Baixa</option>
-                  </select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Responsável(is)</span>
-                  <select id="proDocsAssigneeFilter" aria-label="Responsável"><option value="">Todos os responsáveis</option></select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Cliente</span>
-                  <select id="proDocsClientFilter" aria-label="Cliente"><option value="">Todos os clientes</option></select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Cartão possui Viagem?</span>
-                  <select id="proDocsHasTravelFilter" aria-label="Cartão possui viagem">
-                    <option value="">Todos</option>
-                    <option value="yes">✈️ Com viagem</option>
-                    <option value="no">🏢 Sem viagem</option>
-                  </select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Localidade / Destino</span>
-                  <select id="proDocsLocationFilter" aria-label="Localidade"><option value="">Todas as localidades</option></select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Etiqueta</span>
-                  <select id="proDocsLabelFilter" aria-label="Etiqueta"><option value="">Todas as etiquetas</option></select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Tag</span>
-                  <select id="proDocsTagFilter" aria-label="Tag"><option value="">Todas as tags</option></select>
-                </div>
-                <div class="gantt-pop-group">
-                  <span class="gantt-pop-lbl">Financeiro / Modalidade</span>
-                  <select id="proDocsFinModeFilter" aria-label="Modalidade financeira">
-                    <option value="">Todas as modalidades</option>
-                    <option value="diaria">💵 Diária</option>
-                    <option value="grat_rep">🎖️ Gratificação de Representação</option>
-                    <option value="comissionamento">📋 Comissionamento</option>
-                    <option value="has_cost">💸 Com custo financeiro</option>
-                    <option value="no_cost">✅ Sem custo financeiro</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
+        </div>
+
+        <!-- Linha de Resumo, Ordenação e Alternador Lista/Cards -->
+        <div class="pro-docs-summary-row">
+          <span class="muted small" id="proDocsSummaryBar">Exibindo 0 documentos (0 de viagem, 0 gerais)</span>
           <div class="pro-docs-toolbar-right">
             <select id="proDocsSort" class="pro-map-quick-sel" aria-label="Ordenar documentos">
               <option value="recent">🕒 Mais recentes</option>
@@ -1810,10 +1797,6 @@
               <button type="button" data-doc-view="grid" title="Visualização em Grade de Cards">🗂️ Cards</button>
             </div>
           </div>
-        </div>
-        <div class="pro-docs-summary-row">
-          <span class="muted small" id="proDocsSummaryBar">Exibindo 0 documentos (0 de viagem, 0 gerais)</span>
-          <button type="button" class="btn ghost small" id="btnProDocsResetInline" hidden>✕ Limpar filtros</button>
         </div>
       </div>
 
@@ -3699,15 +3682,15 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=44"></script>
-<script src="vehicles.js?v=44"></script>
-<script src="countries.js?v=44"></script>
-<script src="data.js?v=44"></script>
-<script src="maps.js?v=44"></script>
-<script src="calendar.js?v=44"></script>
-<script src="report.js?v=44"></script>
-<script src="api.js?v=44"></script>
-<script src="pro.js?v=44"></script>
-<script src="app.js?v=44"></script>
+<script src="config.example.js?v=45"></script>
+<script src="vehicles.js?v=45"></script>
+<script src="countries.js?v=45"></script>
+<script src="data.js?v=45"></script>
+<script src="maps.js?v=45"></script>
+<script src="calendar.js?v=45"></script>
+<script src="report.js?v=45"></script>
+<script src="api.js?v=45"></script>
+<script src="pro.js?v=45"></script>
+<script src="app.js?v=45"></script>
 </body>
 </html>

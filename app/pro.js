@@ -9496,13 +9496,15 @@
 
     // Central de Documentos controls
     if ($("#proDocsSearch")) $("#proDocsSearch").oninput = () => renderProDocs();
-    $("#proDocsOriginSeg")?.querySelectorAll("button").forEach(b => {
-      b.onclick = () => {
-        proDocsOrigin = b.dataset.docOrigin || "";
-        if ($("#proDocsOriginFilter")) $("#proDocsOriginFilter").value = proDocsOrigin;
-        renderProDocs();
+    if ($("#btnProDocsFilterPop") && $("#proDocsFilterPopPanel")) {
+      $("#btnProDocsFilterPop").onclick = () => {
+        const panel = $("#proDocsFilterPopPanel");
+        const willOpen = panel.hidden;
+        panel.hidden = !willOpen;
+        $("#btnProDocsFilterPop").setAttribute("aria-expanded", String(willOpen));
+        $("#btnProDocsFilterPop").classList.toggle("is-open", willOpen);
       };
-    });
+    }
     if ($("#proDocsOriginFilter")) {
       $("#proDocsOriginFilter").onchange = e => {
         proDocsOrigin = e.target.value || "";
