@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=41">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=41">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=41">
+<link rel="manifest" href="/manifest.webmanifest?v=42">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=42">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=42">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=41">
+<link rel="stylesheet" href="styles.css?v=42">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=41" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=42" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=41" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=42" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -217,6 +217,7 @@
       <button class="tab" data-pro-view="pro-gantt" id="tab-pro-gantt" type="button">📅 Gantt &amp; Timeline</button>
       <button class="tab" data-pro-view="pro-map" id="tab-pro-map" type="button">🗺️ Mapa</button>
       <button class="tab" data-pro-view="pro-travels" id="tab-pro-travels" type="button">✈️ Deslocamentos</button>
+      <button class="tab" data-pro-view="pro-control" id="tab-pro-control" type="button">📋 Controle</button>
       <button class="tab" data-pro-view="pro-dashboard" id="tab-pro-dashboard" type="button">📊 Dashboard</button>
       <button class="tab" data-pro-view="pro-finance" id="tab-pro-finance" type="button">💼 Financeiro</button>
       <button class="tab" data-pro-view="pro-table" id="tab-pro-table" type="button">🧾 Tabela</button>
@@ -1398,6 +1399,240 @@
       </div>
     </section>
 
+    <!-- MODO PROFISSIONAL: CONTROLE DE VIAGENS E CONTROLE FINANCEIRO (DIÁRIAS, GRAT. REP., COMISSIONAMENTO) -->
+    <section class="view" id="view-pro-control">
+      <div class="card pro-board-toolbar-card pro-control-toolbar-card">
+        <div class="gantt-controls gantt-toolbar-row pro-compact-toolbar pro-control-header-bar">
+          <div class="gantt-pop-host pro-control-hdr-filter">
+            <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProControlFilterPop" aria-expanded="false" aria-controls="proControlFilterPopPanel" title="Filtros do Controle">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              <span>Filtros</span>
+              <span class="gantt-pop-count" id="proControlFilterCount" hidden></span>
+            </button>
+            <div class="gantt-pop-panel" id="proControlFilterPopPanel" hidden>
+              <div class="gantt-pop-head">
+                <strong>Filtros de Controle</strong>
+                <button type="button" class="btn ghost small" id="btnProControlClearFilters" hidden>✕ Limpar</button>
+              </div>
+              <div class="gantt-pop-grid">
+                <div class="gantt-pop-field span2">
+                  <span class="gantt-pop-lbl">Buscar (Título, Notas, Local)</span>
+                  <input type="search" id="proControlSearch" placeholder="🔎 Buscar viagem, cliente, local ou nota...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Lista</span>
+                  <div id="proControlColFilter" class="msel-host msel-compact" aria-label="Filtrar listas no controle"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Tipo</span>
+                  <div id="proControlTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no controle"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Etiqueta</span>
+                  <div id="proControlLabelFilter" class="msel-host msel-compact" aria-label="Filtrar etiquetas no controle"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Tags</span>
+                  <div id="proControlTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no controle"></div>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Prioridade</span>
+                  <select id="proControlPrioFilter" aria-label="Filtrar prioridade no controle">
+                    <option value="">Todas prioridades</option>
+                    <option value="Crítica">Crítica</option>
+                    <option value="Alta">Alta</option>
+                    <option value="Média">Média</option>
+                    <option value="Baixa">Baixa</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Responsável</span>
+                  <select id="proControlAssigneeFilter" aria-label="Filtrar responsável no controle">
+                    <option value="">Todos</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Deslocamento / Viagem</span>
+                  <select id="proControlTravelFilter" aria-label="Filtrar viagem no controle">
+                    <option value="">Todos</option>
+                    <option value="travels">✈️ Com responsável que viaja</option>
+                    <option value="local">🏢 Sem viagem</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Cliente / Conta</span>
+                  <input type="search" id="proControlClientFilter" placeholder="Filtrar cliente...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Local</span>
+                  <input type="search" id="proControlLocationFilter" placeholder="Filtrar cidade ou local...">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Progresso / Conclusão</span>
+                  <select id="proControlDoneFilter" aria-label="Filtrar conclusão no controle">
+                    <option value="">Todos</option>
+                    <option value="pending">Pendentes (&lt; 100%)</option>
+                    <option value="done">Concluídos (100%)</option>
+                    <option value="nodate">Sem data / Sem prazo</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Movimento Fin.</span>
+                  <select id="proControlFinDirFilter" aria-label="Filtrar movimento financeiro no controle">
+                    <option value="">Todos</option>
+                    <option value="income">💵 Recebimento (+)</option>
+                    <option value="expense">💳 Despesa (−)</option>
+                    <option value="none">Sem lançamento</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Status Financeiro</span>
+                  <select id="proControlFinStatusFilter" aria-label="Filtrar status financeiro no controle">
+                    <option value="">Todos</option>
+                    <option value="Previsto">⏳ Previsto</option>
+                    <option value="Liquidado">✅ Liquidado</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">De</span>
+                  <input type="date" id="proControlDateFrom" aria-label="Data inicial no controle">
+                </div>
+                <div class="gantt-pop-field">
+                  <span class="gantt-pop-lbl">Até</span>
+                  <input type="date" id="proControlDateTo" aria-label="Data final no controle">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="pro-control-quick-filters">
+            <select id="proControlQuickAssignee" class="pro-map-quick-sel" aria-label="Filtrar pessoa no controle financeiro">
+              <option value="">👤 Todas as pessoas</option>
+            </select>
+            <select id="proControlQuickMode" class="pro-map-quick-sel" aria-label="Filtrar modalidade financeira">
+              <option value="">💼 Todas modalidades</option>
+              <option value="diaria">💵 Diária</option>
+              <option value="grat_rep">🎖️ Grat. Representação</option>
+              <option value="comissionamento">📋 Comissionamento</option>
+            </select>
+            <select id="proControlQuickMonth" class="pro-map-quick-sel" aria-label="Filtrar mês/ano">
+              <option value="">📅 Todos os meses</option>
+            </select>
+            <select id="proControlScopeSel" class="pro-map-quick-sel" aria-label="Escopo das viagens no controle">
+              <option value="travels">✈️ Apenas marcados "Viaja"</option>
+              <option value="with_location">📍 Todos com Local</option>
+            </select>
+          </div>
+
+          <div class="gantt-toolbar-right pro-control-hdr-right">
+            <span class="pill pro-control-count-pill" id="proControlCountBadge">0 viagens · R$ 0,00</span>
+            <button type="button" class="btn ghost small pro-control-params-btn" id="btnProControlGoParams" title="Configurar Postos, Soldos e Diárias em Parâmetros">⚙️ <span class="hide-xs">Tabelas</span></button>
+            <button type="button" class="btn primary small pro-control-add-btn" id="btnProControlAddCard">➕ Novo Cartão</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="proControlEmptyBanner" class="card pro-travels-empty" hidden></div>
+
+      <!-- 1. CARDS DE KPIS DO CONTROLE FINANCEIRO -->
+      <div class="pro-control-kpis" id="proControlKpis"></div>
+
+      <!-- 2. TABELA PRINCIPAL DE CONTROLE FINANCEIRO (CLIQUE DIRETO NAS MODALIDADES) -->
+      <div class="card pro-map-table-card pro-control-main-card">
+        <div class="card-head">
+          <div>
+            <h2>📋 Controle de Viagens &amp; Financeiro</h2>
+            <span class="muted small">Clique diretamente em <b>Diária</b>, <b>Grat. Representação</b> ou <b>Comissionamento</b> para definir o recebimento — ou clique na viagem para editar o cartão</span>
+          </div>
+          <span class="pill" id="proControlTableCountBadge">0 lançamentos</span>
+        </div>
+        <div class="table-wrap desktop-table-wrap">
+          <table id="proControlTable" class="pro-map-trips-table pro-control-table"></table>
+        </div>
+        <div id="proControlMobileCards" class="mobile-cards pro-map-mobile-list"></div>
+      </div>
+
+      <!-- 3. GRÁFICOS FINANCEIROS COMPLEMENTARES (2 COLUNAS DESKTOP / 1 COLUNA MOBILE) -->
+      <div class="pro-travels-charts-grid" id="proControlChartsGrid">
+        <div class="card pro-travels-chart-card">
+          <div class="card-head">
+            <div>
+              <h2>💰 Recebimentos por Pessoa (R$)</h2>
+              <span class="muted small">Diária vs. Gratificação de Representação Líquida</span>
+            </div>
+          </div>
+          <div id="proControlChartRevByPerson" class="pro-map-chart-body"></div>
+        </div>
+
+        <div class="card pro-travels-chart-card">
+          <div class="card-head">
+            <div>
+              <h2>📍 Recebimentos por Localidade (R$)</h2>
+              <span class="muted small">Total recebido por destino e faixa</span>
+            </div>
+          </div>
+          <div id="proControlChartRevByLoc" class="pro-map-chart-body"></div>
+        </div>
+
+        <div class="card pro-travels-chart-card">
+          <div class="card-head">
+            <div>
+              <h2>📈 Evolução Mensal Financeira (R$)</h2>
+              <span class="muted small">Total recebido mês a mês (Diária + Grat. Rep. Líq.)</span>
+            </div>
+          </div>
+          <div id="proControlChartMonthlyRev" class="pro-map-chart-body"></div>
+        </div>
+
+        <div class="card pro-travels-chart-card">
+          <div class="card-head">
+            <div>
+              <h2>🗓️ Total de Dias Fora por Pessoa</h2>
+              <span class="muted small">Dias corridos acumulados no período filtrado</span>
+            </div>
+          </div>
+          <div id="proControlChartDaysByPerson" class="pro-map-chart-body"></div>
+        </div>
+      </div>
+
+      <!-- 4. TABELAS RESUMIDAS FINANCEIRAS -->
+      <div class="pro-travels-section-head">
+        <div>
+          <h2>📊 Resumos Financeiros Consolidados</h2>
+          <span class="muted small">Totais agrupados por Pessoa, Localidade e Período (Mês/Ano)</span>
+        </div>
+        <div class="seg" id="proControlSummarySeg" role="group" aria-label="Filtrar tabelas de resumo">
+          <button type="button" class="active" data-ctrl-sum="all">Todos</button>
+          <button type="button" data-ctrl-sum="person">Por Pessoa</button>
+          <button type="button" data-ctrl-sum="location">Por Local</button>
+          <button type="button" data-ctrl-sum="period">Por Período</button>
+        </div>
+      </div>
+
+      <div class="pro-control-summaries-grid" id="proControlSummariesGrid">
+        <div class="card pro-map-table-card" id="proControlSummaryPersonCard">
+          <div class="card-head">
+            <h2>👤 Resumo por Pessoa</h2>
+          </div>
+          <div class="table-wrap"><table id="proControlSummaryPersonTable" class="pro-map-trips-table"></table></div>
+        </div>
+
+        <div class="card pro-map-table-card" id="proControlSummaryLocCard">
+          <div class="card-head">
+            <h2>📍 Resumo por Localidade</h2>
+          </div>
+          <div class="table-wrap"><table id="proControlSummaryLocTable" class="pro-map-trips-table"></table></div>
+        </div>
+
+        <div class="card pro-map-table-card" id="proControlSummaryPeriodCard">
+          <div class="card-head">
+            <h2>📅 Resumo por Período (Mês/Ano)</h2>
+          </div>
+          <div class="table-wrap"><table id="proControlSummaryPeriodTable" class="pro-map-trips-table"></table></div>
+        </div>
+      </div>
+    </section>
+
     <!-- MODO PROFISSIONAL: DASHBOARD EXECUTIVO -->
     <section class="view" id="view-pro-dashboard">
       <div class="view-filter-bar pro-compact-filter-bar" aria-label="Filtros do dashboard profissional">
@@ -1962,6 +2197,79 @@
               <button type="button" class="btn primary small" id="btnProSyncAllCalendar">📅 Sincronizar / Assinar Agenda</button>
               <button type="button" class="btn ghost small" id="btnProDownloadAllIcs">📆 Baixar .ics</button>
               <button type="button" class="btn ghost small" id="btnProParamProfile">💬 WhatsApp &amp; Perfil</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PARÂMETROS FINANCEIROS DE VIAGENS (FORÇAS ARMADAS — 2026) -->
+      <div class="card pro-tf-params-card" id="proTravelFinanceParamsCard" style="margin-top:14px">
+        <div class="card-head">
+          <div>
+            <h2>🎖️ Parâmetros Financeiros de Viagens (Forças Armadas)</h2>
+            <span class="muted small">Valores vigentes de 2026 pré-carregados e 100% editáveis — usados automaticamente nos Cartões e na aba Controle</span>
+          </div>
+          <button type="button" class="btn ghost small" id="btnProTfResetDefaults" title="Restaurar tabelas padrão de 2026">↺ Restaurar padrão 2026</button>
+        </div>
+
+        <!-- 1.1 Vínculo Pessoas -> Posto/Graduação -->
+        <div class="pro-tf-subblock">
+          <div class="pro-tf-subhead">
+            <h3>1. Posto / Graduação por Pessoa</h3>
+            <span class="muted small">Vincule cada responsável cadastrado ao seu Posto/Graduação para cálculo automático de Diárias e Grat. de Representação</span>
+          </div>
+          <div id="proTfPeopleRanksWrap"></div>
+        </div>
+
+        <!-- 1.2 Tabela de Soldos e Gratificação de Representação -->
+        <div class="pro-tf-subblock">
+          <div class="pro-tf-subhead">
+            <div>
+              <h3>2. Tabela de Soldos e Gratificação de Representação</h3>
+              <span class="muted small">Cálculo automático: Grat. Bruta = Soldo × Percentual · Líquida = Bruta × (1 − IR%)</span>
+            </div>
+            <div class="pro-tf-head-actions">
+              <label class="pro-tf-inline-pct">
+                <span>% Grat. Rep./dia:</span>
+                <input type="number" id="proTfGratPct" step="0.1" min="0" max="100" value="2">
+                <span>%</span>
+              </label>
+              <button type="button" class="btn primary small" id="btnProTfAddRank">➕ Novo Posto</button>
+            </div>
+          </div>
+          <div class="table-wrap"><table id="proTfRanksTable" class="pro-tf-edit-table"></table></div>
+        </div>
+
+        <!-- 1.3 Tabela de Diárias no País (Decreto 12.324/2024) -->
+        <div class="pro-tf-subblock">
+          <div class="pro-tf-subhead">
+            <div>
+              <h3>3. Tabela de Diárias no País (Decreto nº 12.324/2024 — Isenta de IR)</h3>
+              <span class="muted small">Sem pernoite = 0,5 diária · Com pernoite = (Dias de pernoite + 0,5) × Valor da Faixa</span>
+            </div>
+          </div>
+          <div class="table-wrap"><table id="proTfDiariasTable" class="pro-tf-edit-table"></table></div>
+        </div>
+
+        <!-- 1.4 Classificação de Localidades por Faixa -->
+        <div class="pro-tf-subblock">
+          <div class="pro-tf-subhead">
+            <div>
+              <h3>4. Classificação de Localidades por Faixa</h3>
+              <span class="muted small">Separe os nomes das cidades por vírgula. Qualquer localidade não listada nas Faixas 1 ou 2 cai automaticamente na Faixa 3.</span>
+            </div>
+          </div>
+          <div class="pro-tf-cities-grid">
+            <label class="pro-field-stack">
+              <span><strong>Faixa 1 (Mais Alta)</strong> — BSB / MAO / RJ / SP</span>
+              <textarea id="proTfCitiesF1" rows="2" placeholder="Brasília, Manaus, Rio de Janeiro, São Paulo"></textarea>
+            </label>
+            <label class="pro-field-stack">
+              <span><strong>Faixa 2 (Demais Capitais)</strong></span>
+              <textarea id="proTfCitiesF2" rows="3" placeholder="Aracaju, Belém, Belo Horizonte..."></textarea>
+            </label>
+            <div class="pro-tf-f3-note">
+              <strong>Faixa 3 (Interior / Demais Localidades):</strong> Automática para qualquer cidade não listada na Faixa 1 ou Faixa 2 (ex: Canoas, Anápolis, Santa Maria, Pirassununga, Navegantes, etc.).
             </div>
           </div>
         </div>
@@ -2894,9 +3202,35 @@
                   <input type="checkbox" id="pc-assigneeTravels">
                   <span>✈️ Este responsável viaja nesta tarefa</span>
                 </label>
+                <select id="pc-primaryTravelMode" class="pro-asg-mode-sel" aria-label="Modalidade individual do responsável principal" title="Modalidade individual (opcional)" hidden>
+                  <option value="">Padrão do cartão</option>
+                  <option value="diaria">💵 Diária</option>
+                  <option value="grat_rep">🎖️ Grat. Rep.</option>
+                  <option value="comissionamento">📋 Comissionamento</option>
+                </select>
                 <button type="button" class="btn ghost small" id="btnProAddCardAssigneeRow" title="Adicionar mais um responsável neste cartão">➕ Outro responsável</button>
               </div>
               <div id="pc-extraAssigneesList" class="pro-extra-assignees-list"></div>
+            </div>
+            <div class="span2 pro-travel-fin-box" id="pc-travelFinanceBox" hidden>
+              <div class="pro-travel-fin-head">
+                <strong>🎖️ Modalidade Financeira da Viagem</strong>
+                <span class="muted small" id="pc-travelFinanceTierBadge"></span>
+              </div>
+              <div class="form-grid" style="margin-top:6px">
+                <label class="span2">Modalidade padrão do cartão
+                  <select id="pc-travelFinanceMode" aria-label="Modalidade financeira da viagem">
+                    <option value="diaria">💵 Diária (Isenta de IR)</option>
+                    <option value="grat_rep">🎖️ Gratificação de Representação</option>
+                    <option value="comissionamento">📋 Comissionamento (R$ 0,00)</option>
+                  </select>
+                </label>
+                <label class="span2 pro-travel-chk-label" title="Aplica 50% sobre o valor total da diária quando houver pousada ou alojamento gratuito">
+                  <input type="checkbox" id="pc-travelFreeLodging">
+                  <span>🏠 Com pousada / alojamento gratuito (50% da diária)</span>
+                </label>
+              </div>
+              <div id="pc-travelFinancePreview" class="pro-travel-fin-preview"></div>
             </div>
             <label class="span2 ac-wrap">Local (Padronizado Google Maps)
               <input type="text" id="pc-location" placeholder="Digite cidade, aeroporto ou endereço (busca Google Maps)..." autocomplete="off">
@@ -3035,15 +3369,15 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=41"></script>
-<script src="vehicles.js?v=41"></script>
-<script src="countries.js?v=41"></script>
-<script src="data.js?v=41"></script>
-<script src="maps.js?v=41"></script>
-<script src="calendar.js?v=41"></script>
-<script src="report.js?v=41"></script>
-<script src="api.js?v=41"></script>
-<script src="pro.js?v=41"></script>
-<script src="app.js?v=41"></script>
+<script src="config.example.js?v=42"></script>
+<script src="vehicles.js?v=42"></script>
+<script src="countries.js?v=42"></script>
+<script src="data.js?v=42"></script>
+<script src="maps.js?v=42"></script>
+<script src="calendar.js?v=42"></script>
+<script src="report.js?v=42"></script>
+<script src="api.js?v=42"></script>
+<script src="pro.js?v=42"></script>
+<script src="app.js?v=42"></script>
 </body>
 </html>

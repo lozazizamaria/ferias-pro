@@ -5741,6 +5741,7 @@ function switchProView(viewId) {
   if (viewId === "admin") loadAndRenderAdmin();
   if (viewId === "pro-map" && window.MyPlanPro?.renderProMap) window.MyPlanPro.renderProMap();
   if (viewId === "pro-travels" && window.MyPlanPro?.renderProTravels) window.MyPlanPro.renderProTravels();
+  if (viewId === "pro-control" && window.MyPlanPro?.renderProControl) window.MyPlanPro.renderProControl();
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();
 }
@@ -7130,6 +7131,9 @@ function setupGanttPopovers() {
     ["#btnProBoardFilterPop", "#proBoardFilterPopPanel"],
     ["#btnProGanttFilterPop", "#proGanttFilterPopPanel"],
     ["#btnProGanttViewPop", "#proGanttViewPopPanel"],
+    ["#btnProMapFilterPop", "#proMapFilterPopPanel"],
+    ["#btnProTravelsFilterPop", "#proTravelsFilterPopPanel"],
+    ["#btnProControlFilterPop", "#proControlFilterPopPanel"],
     ["#btnProDashFilterPop", "#proDashFilterPopPanel"],
     ["#btnProFinFilterPop", "#proFinFilterPopPanel"],
     ["#btnProTableFilterPop", "#proTableFilterPopPanel"]

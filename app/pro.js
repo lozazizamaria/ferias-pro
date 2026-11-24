@@ -56,6 +56,10 @@
   let proTravelsTypeMsel = null;
   let proTravelsLabelMsel = null;
   let proTravelsTagMsel = null;
+  let proControlColMsel = null;
+  let proControlTypeMsel = null;
+  let proControlLabelMsel = null;
+  let proControlTagMsel = null;
   let proDashColMsel = null;
   let proDashTypeMsel = null;
   let proDashLabelMsel = null;
@@ -294,31 +298,38 @@
       a.assigneeTravels = Boolean(a.assigneeTravels);
       const normEntries = [];
       const seenEntry = new Set();
-      const pushEntry = (rawName, travelsFlag) => {
+      const pushEntry = (rawName, travelsFlag, travelModeRaw = "") => {
         const nm = String(rawName || "").trim();
         if (!nm) return;
         const k = nm.toLowerCase();
+        const tm = sanitizeTravelMode(travelModeRaw);
         if (seenEntry.has(k)) {
           const ex = normEntries.find(e => e.name.toLowerCase() === k);
-          if (ex && travelsFlag) ex.travels = true;
+          if (ex) {
+            if (travelsFlag) ex.travels = true;
+            if (!ex.travelMode && tm) ex.travelMode = tm;
+          }
           return;
         }
         seenEntry.add(k);
-        normEntries.push({ name: nm, travels: Boolean(travelsFlag) });
+        normEntries.push({ name: nm, travels: Boolean(travelsFlag), travelMode: tm });
         if (!merged.assignees.some(x => x.toLowerCase() === k)) {
           merged.assignees.push(nm);
         }
       };
-      if (a.assignee) pushEntry(a.assignee, a.assigneeTravels);
       if (Array.isArray(a.assigneesList)) {
         a.assigneesList.forEach(item => {
-          if (item && typeof item === "object") pushEntry(item.name, item.travels);
-          else if (typeof item === "string") pushEntry(item, false);
+          if (item && typeof item === "object") pushEntry(item.name, item.travels, item.travelMode);
+          else if (typeof item === "string") pushEntry(item, false, "");
         });
       }
+      if (a.assignee) pushEntry(a.assignee, a.assigneeTravels, a.assigneeTravelMode || "");
       a.assigneesList = normEntries;
       a.assignee = normEntries[0]?.name || "";
       a.assigneeTravels = Boolean(normEntries[0]?.travels);
+      a.assigneeTravelMode = normEntries[0]?.travelMode || "";
+      a.travelFinanceMode = sanitizeTravelMode(a.travelFinanceMode) || "diaria";
+      a.travelFreeLodging = Boolean(a.travelFreeLodging);
       a.location = String(a.location || "");
       a.meetingLink = String(a.meetingLink || "");
       if (!a.meetingLink && /^https?:\/\//i.test(a.location.trim())) {
@@ -413,29 +424,39 @@
     return Array.isArray(st.labels) && st.labels.length ? st.labels : window.PRO_DEFAULT_LABELS;
   }
 
+  function sanitizeTravelMode(v) {
+    const clean = String(v || "").trim().toLowerCase();
+    if (clean === "diaria" || clean === "grat_rep" || clean === "comissionamento") return clean;
+    return "";
+  }
+
   function getCardAssigneesList(a) {
     if (!a) return [];
     const out = [];
     const seen = new Set();
-    const push = (nm, tr) => {
+    const push = (nm, tr, tm = "") => {
       const clean = String(nm || "").trim();
       if (!clean) return;
       const k = clean.toLowerCase();
+      const mode = sanitizeTravelMode(tm);
       if (seen.has(k)) {
         const ex = out.find(e => e.name.toLowerCase() === k);
-        if (ex && tr) ex.travels = true;
+        if (ex) {
+          if (tr) ex.travels = true;
+          if (!ex.travelMode && mode) ex.travelMode = mode;
+        }
         return;
       }
       seen.add(k);
-      out.push({ name: clean, travels: Boolean(tr) });
+      out.push({ name: clean, travels: Boolean(tr), travelMode: mode });
     };
     if (Array.isArray(a.assigneesList) && a.assigneesList.length) {
       a.assigneesList.forEach(it => {
-        if (it && typeof it === "object") push(it.name, it.travels);
-        else if (typeof it === "string") push(it, false);
+        if (it && typeof it === "object") push(it.name, it.travels, it.travelMode);
+        else if (typeof it === "string") push(it, false, "");
       });
     }
-    if (a.assignee) push(a.assignee, a.assigneeTravels);
+    if (a.assignee) push(a.assignee, a.assigneeTravels, a.assigneeTravelMode || "");
     return out;
   }
 
@@ -554,6 +575,7 @@
       "#proGanttAssigneeFilter",
       "#proMapAssigneeFilter",
       "#proTravelsAssigneeFilter",
+      "#proControlAssigneeFilter",
       "#proDashAssigneeFilter",
       "#proFinAssigneeFilter",
       "#proFilterAssignee"
@@ -566,7 +588,7 @@
         + list.map(a => `<option value="${core.esc(a)}">${core.esc(a)}</option>`).join("");
       if ([...el.options].some(o => o.value === prev)) el.value = prev;
     });
-    ["#proMapQuickAssignee", "#proTravelsQuickAssignee"].forEach(qSel => {
+    ["#proMapQuickAssignee", "#proTravelsQuickAssignee", "#proControlQuickAssignee"].forEach(qSel => {
       const el = $(qSel);
       if (!el) return;
       const prev = el.value;
@@ -807,28 +829,32 @@
     if (!proGanttColMsel && $("#proGanttColFilter")) proGanttColMsel = core.createMultiSelect($("#proGanttColFilter"), colOptCfg);
     if (!proMapColMsel && $("#proMapColFilter")) proMapColMsel = core.createMultiSelect($("#proMapColFilter"), colOptCfg);
     if (!proTravelsColMsel && $("#proTravelsColFilter")) proTravelsColMsel = core.createMultiSelect($("#proTravelsColFilter"), colOptCfg);
+    if (!proControlColMsel && $("#proControlColFilter")) proControlColMsel = core.createMultiSelect($("#proControlColFilter"), colOptCfg);
     if (!proDashColMsel && $("#proDashColFilter")) proDashColMsel = core.createMultiSelect($("#proDashColFilter"), colOptCfg);
     if (!proFinColMsel && $("#proFinColFilter")) proFinColMsel = core.createMultiSelect($("#proFinColFilter"), colOptCfg);
     if (!proGanttTypeMsel && $("#proGanttTypeFilter")) proGanttTypeMsel = core.createMultiSelect($("#proGanttTypeFilter"), typeOptCfg);
     if (!proMapTypeMsel && $("#proMapTypeFilter")) proMapTypeMsel = core.createMultiSelect($("#proMapTypeFilter"), typeOptCfg);
     if (!proTravelsTypeMsel && $("#proTravelsTypeFilter")) proTravelsTypeMsel = core.createMultiSelect($("#proTravelsTypeFilter"), typeOptCfg);
+    if (!proControlTypeMsel && $("#proControlTypeFilter")) proControlTypeMsel = core.createMultiSelect($("#proControlTypeFilter"), typeOptCfg);
     if (!proDashTypeMsel && $("#proDashTypeFilter")) proDashTypeMsel = core.createMultiSelect($("#proDashTypeFilter"), typeOptCfg);
     if (!proFinTypeMsel && $("#proFinTypeFilter")) proFinTypeMsel = core.createMultiSelect($("#proFinTypeFilter"), typeOptCfg);
     if (!proGanttLabelMsel && $("#proGanttLabelFilter")) proGanttLabelMsel = core.createMultiSelect($("#proGanttLabelFilter"), labelOptCfg);
     if (!proMapLabelMsel && $("#proMapLabelFilter")) proMapLabelMsel = core.createMultiSelect($("#proMapLabelFilter"), labelOptCfg);
     if (!proTravelsLabelMsel && $("#proTravelsLabelFilter")) proTravelsLabelMsel = core.createMultiSelect($("#proTravelsLabelFilter"), labelOptCfg);
+    if (!proControlLabelMsel && $("#proControlLabelFilter")) proControlLabelMsel = core.createMultiSelect($("#proControlLabelFilter"), labelOptCfg);
     if (!proDashLabelMsel && $("#proDashLabelFilter")) proDashLabelMsel = core.createMultiSelect($("#proDashLabelFilter"), labelOptCfg);
     if (!proFinLabelMsel && $("#proFinLabelFilter")) proFinLabelMsel = core.createMultiSelect($("#proFinLabelFilter"), labelOptCfg);
     if (!proGanttTagMsel && $("#proGanttTagFilter")) proGanttTagMsel = core.createMultiSelect($("#proGanttTagFilter"), tagOptCfg);
     if (!proMapTagMsel && $("#proMapTagFilter")) proMapTagMsel = core.createMultiSelect($("#proMapTagFilter"), tagOptCfg);
     if (!proTravelsTagMsel && $("#proTravelsTagFilter")) proTravelsTagMsel = core.createMultiSelect($("#proTravelsTagFilter"), tagOptCfg);
+    if (!proControlTagMsel && $("#proControlTagFilter")) proControlTagMsel = core.createMultiSelect($("#proControlTagFilter"), tagOptCfg);
     if (!proDashTagMsel && $("#proDashTagFilter")) proDashTagMsel = core.createMultiSelect($("#proDashTagFilter"), tagOptCfg);
     if (!proFinTagMsel && $("#proFinTagFilter")) proFinTagMsel = core.createMultiSelect($("#proFinTagFilter"), tagOptCfg);
 
-    [proGanttColMsel, proMapColMsel, proTravelsColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setOptions(colItems, [...proGanttColSet]); });
-    [proGanttTypeMsel, proMapTypeMsel, proTravelsTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setOptions(typeItems, [...proGanttTypeSet]); });
-    [proGanttLabelMsel, proMapLabelMsel, proTravelsLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setOptions(labelItems, [...proGanttLabelSet]); });
-    [proGanttTagMsel, proMapTagMsel, proTravelsTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setOptions(tagItems, [...proGanttTagSet]); });
+    [proGanttColMsel, proMapColMsel, proTravelsColMsel, proControlColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setOptions(colItems, [...proGanttColSet]); });
+    [proGanttTypeMsel, proMapTypeMsel, proTravelsTypeMsel, proControlTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setOptions(typeItems, [...proGanttTypeSet]); });
+    [proGanttLabelMsel, proMapLabelMsel, proTravelsLabelMsel, proControlLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setOptions(labelItems, [...proGanttLabelSet]); });
+    [proGanttTagMsel, proMapTagMsel, proTravelsTagMsel, proControlTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setOptions(tagItems, [...proGanttTagSet]); });
     syncProFilterUIs();
 
     // Tabela filtros
@@ -1358,32 +1384,33 @@
     const typesArr = [...proGanttTypeSet];
     const labelsArr = [...proGanttLabelSet];
     const tagsArr = [...proGanttTagSet];
-    [proGanttColMsel, proMapColMsel, proTravelsColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setSelected(colsArr); });
-    [proGanttTypeMsel, proMapTypeMsel, proTravelsTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setSelected(typesArr); });
-    [proGanttLabelMsel, proMapLabelMsel, proTravelsLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setSelected(labelsArr); });
-    [proGanttTagMsel, proMapTagMsel, proTravelsTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setSelected(tagsArr); });
+    [proGanttColMsel, proMapColMsel, proTravelsColMsel, proControlColMsel, proDashColMsel, proFinColMsel].forEach(m => { if (m) m.setSelected(colsArr); });
+    [proGanttTypeMsel, proMapTypeMsel, proTravelsTypeMsel, proControlTypeMsel, proDashTypeMsel, proFinTypeMsel].forEach(m => { if (m) m.setSelected(typesArr); });
+    [proGanttLabelMsel, proMapLabelMsel, proTravelsLabelMsel, proControlLabelMsel, proDashLabelMsel, proFinLabelMsel].forEach(m => { if (m) m.setSelected(labelsArr); });
+    [proGanttTagMsel, proMapTagMsel, proTravelsTagMsel, proControlTagMsel, proDashTagMsel, proFinTagMsel].forEach(m => { if (m) m.setSelected(tagsArr); });
     const syncInps = (sels, val) => sels.forEach(s => { if ($(s) && $(s).value !== val) $(s).value = val; });
-    syncInps(["#proGanttSearch", "#proMapSearch", "#proTravelsSearch", "#proDashSearch", "#proFinSearch"], proFilterSearch);
-    syncInps(["#proGanttPrioFilter", "#proMapPrioFilter", "#proTravelsPrioFilter", "#proDashPrioFilter", "#proFinPrioFilter"], proFilterPrio);
-    syncInps(["#proGanttAssigneeFilter", "#proMapAssigneeFilter", "#proMapQuickAssignee", "#proTravelsAssigneeFilter", "#proTravelsQuickAssignee", "#proDashAssigneeFilter", "#proFinAssigneeFilter"], proFilterAssignee);
-    syncInps(["#proGanttTravelFilter", "#proMapTravelFilter", "#proMapQuickTravel", "#proTravelsTravelFilter", "#proDashTravelFilter", "#proFinTravelFilter"], proFilterTravel);
-    syncInps(["#proGanttClientFilter", "#proMapClientFilter", "#proTravelsClientFilter", "#proDashClientFilter", "#proFinClientFilter"], proFilterClient);
-    syncInps(["#proGanttLocationFilter", "#proMapLocationFilter", "#proTravelsLocationFilter", "#proDashLocationFilter", "#proFinLocationFilter"], proFilterLocation);
-    syncInps(["#proGanttDoneFilter", "#proMapDoneFilter", "#proTravelsDoneFilter", "#proDashDoneFilter", "#proFinDoneFilter"], proFilterDone);
-    syncInps(["#proGanttFinDirFilter", "#proMapFinDirFilter", "#proTravelsFinDirFilter", "#proDashFinDirFilter", "#proFinFinDirFilter"], proFilterFinDir);
-    syncInps(["#proGanttFinStatusFilter", "#proMapFinStatusFilter", "#proTravelsFinStatusFilter", "#proDashFinStatusFilter", "#proFinFinStatusFilter"], proFilterFinStatus);
-    syncInps(["#proGanttDateFrom", "#proMapDateFrom", "#proTravelsDateFrom", "#proDashDateFrom", "#proFinDateFrom"], proDateFrom);
-    syncInps(["#proGanttDateTo", "#proMapDateTo", "#proTravelsDateTo", "#proDashDateTo", "#proFinDateTo"], proDateTo);
+    syncInps(["#proGanttSearch", "#proMapSearch", "#proTravelsSearch", "#proControlSearch", "#proDashSearch", "#proFinSearch"], proFilterSearch);
+    syncInps(["#proGanttPrioFilter", "#proMapPrioFilter", "#proTravelsPrioFilter", "#proControlPrioFilter", "#proDashPrioFilter", "#proFinPrioFilter"], proFilterPrio);
+    syncInps(["#proGanttAssigneeFilter", "#proMapAssigneeFilter", "#proMapQuickAssignee", "#proTravelsAssigneeFilter", "#proTravelsQuickAssignee", "#proControlAssigneeFilter", "#proControlQuickAssignee", "#proDashAssigneeFilter", "#proFinAssigneeFilter"], proFilterAssignee);
+    syncInps(["#proGanttTravelFilter", "#proMapTravelFilter", "#proMapQuickTravel", "#proTravelsTravelFilter", "#proControlTravelFilter", "#proDashTravelFilter", "#proFinTravelFilter"], proFilterTravel);
+    syncInps(["#proGanttClientFilter", "#proMapClientFilter", "#proTravelsClientFilter", "#proControlClientFilter", "#proDashClientFilter", "#proFinClientFilter"], proFilterClient);
+    syncInps(["#proGanttLocationFilter", "#proMapLocationFilter", "#proTravelsLocationFilter", "#proControlLocationFilter", "#proDashLocationFilter", "#proFinLocationFilter"], proFilterLocation);
+    syncInps(["#proGanttDoneFilter", "#proMapDoneFilter", "#proTravelsDoneFilter", "#proControlDoneFilter", "#proDashDoneFilter", "#proFinDoneFilter"], proFilterDone);
+    syncInps(["#proGanttFinDirFilter", "#proMapFinDirFilter", "#proTravelsFinDirFilter", "#proControlFinDirFilter", "#proDashFinDirFilter", "#proFinFinDirFilter"], proFilterFinDir);
+    syncInps(["#proGanttFinStatusFilter", "#proMapFinStatusFilter", "#proTravelsFinStatusFilter", "#proControlFinStatusFilter", "#proDashFinStatusFilter", "#proFinFinStatusFilter"], proFilterFinStatus);
+    syncInps(["#proGanttDateFrom", "#proMapDateFrom", "#proTravelsDateFrom", "#proControlDateFrom", "#proDashDateFrom", "#proFinDateFrom"], proDateFrom);
+    syncInps(["#proGanttDateTo", "#proMapDateTo", "#proTravelsDateTo", "#proControlDateTo", "#proDashDateTo", "#proFinDateTo"], proDateTo);
 
     const activeCount = countActiveProUnifiedFilters();
     const dirty = activeCount > 0;
-    ["#btnProGanttClearFilters", "#btnProMapClearFilters", "#btnProTravelsClearFilters", "#btnProDashClearFilters", "#btnProFinClearFilters"].forEach(sel => {
+    ["#btnProGanttClearFilters", "#btnProMapClearFilters", "#btnProTravelsClearFilters", "#btnProControlClearFilters", "#btnProDashClearFilters", "#btnProFinClearFilters"].forEach(sel => {
       if ($(sel)) $(sel).hidden = !dirty;
     });
     [
       ["#btnProGanttFilterPop", "#proGanttFilterCount", activeCount],
       ["#btnProMapFilterPop", "#proMapFilterCount", activeCount],
       ["#btnProTravelsFilterPop", "#proTravelsFilterCount", activeCount],
+      ["#btnProControlFilterPop", "#proControlFilterCount", activeCount],
       ["#btnProDashFilterPop", "#proDashFilterCount", activeCount],
       ["#btnProFinFilterPop", "#proFinFilterCount", activeCount]
     ].forEach(([btnSel, cntSel, cnt]) => {
@@ -1406,6 +1433,7 @@
     renderProTimeline(cards);
     renderProMap(filteredCards);
     renderProTravels(filteredCards);
+    renderProControl(filteredCards);
     renderProDashboard(filteredCards, t);
     renderProFinance(filteredCards, t);
   }
@@ -2015,6 +2043,7 @@
     { id: "pro-gantt",     tabId: "tab-pro-gantt",     label: "📅 Gantt & Timeline" },
     { id: "pro-map",       tabId: "tab-pro-map",       label: "🗺️ Mapa" },
     { id: "pro-travels",   tabId: "tab-pro-travels",   label: "✈️ Deslocamentos" },
+    { id: "pro-control",   tabId: "tab-pro-control",   label: "📋 Controle" },
     { id: "pro-dashboard", tabId: "tab-pro-dashboard", label: "📊 Dashboard" },
     { id: "pro-finance",   tabId: "tab-pro-finance",   label: "💼 Financeiro" },
     { id: "pro-table",     tabId: "tab-pro-table",     label: "🧾 Tabela" },
@@ -4419,6 +4448,1129 @@
     }
   }
 
+  /* ---------- 2D. MOTOR FINANCEIRO DE VIAGENS (FORÇAS ARMADAS 2026) + ABA CONTROLE ---------- */
+  const DEFAULT_TRAVEL_FINANCE_RANKS = [
+    { id: "alm_esq",   name: "Almirante de Esquadra / Gen Ex / Ten-Brig", circle: "B", soldo: 14711, irPct: 27.5 },
+    { id: "vice_alm",  name: "Vice-Almirante / Gen Div / Maj-Brig",       circle: "B", soldo: 14100, irPct: 27.5 },
+    { id: "contra_alm",name: "Contra-Almirante / Gen Bda / Brig",         circle: "B", soldo: 13639, irPct: 27.5 },
+    { id: "cmg_cel",   name: "Capitão de Mar e Guerra / Coronel",         circle: "C", soldo: 12505, irPct: 27.5 },
+    { id: "cf_tencel", name: "Capitão de Fragata / Tenente-Coronel",      circle: "C", soldo: 12285, irPct: 27.5 },
+    { id: "cc_maj",    name: "Capitão de Corveta / Major",                circle: "C", soldo: 12108, irPct: 27.5 },
+    { id: "ct_cap",    name: "Capitão-Tenente / Capitão",                 circle: "D", soldo: 9976,  irPct: 27.5 },
+    { id: "1ten",      name: "Primeiro-Tenente",                          circle: "D", soldo: 9004,  irPct: 27.5 },
+    { id: "2ten",      name: "Segundo-Tenente",                           circle: "D", soldo: 8179,  irPct: 27.5 },
+    { id: "gm_asp",    name: "Guarda-Marinha / Aspirante a Oficial",      circle: "D", soldo: 7988,  irPct: 27.5 },
+    { id: "so_st",     name: "Suboficial / Subtenente",                   circle: "E", soldo: 6737,  irPct: 27.5 },
+    { id: "1sgt",      name: "Primeiro-Sargento",                         circle: "E", soldo: 5988,  irPct: 27.5 },
+    { id: "2sgt",      name: "Segundo-Sargento",                          circle: "E", soldo: 5209,  irPct: 27.5 },
+    { id: "3sgt",      name: "Terceiro-Sargento",                         circle: "E", soldo: 4177,  irPct: 27.5 },
+    { id: "cb_tm",     name: "Cabo (engajado) / Taifeiro-Mor",            circle: "G", soldo: 2869,  irPct: 0 },
+    { id: "sd1_mn",    name: "Soldado 1ª Cl (esp/eng) / Marinheiro",      circle: "G", soldo: 2103,  irPct: 0 },
+    { id: "sd2",       name: "Soldado 2ª Cl (eng) / Soldado Exército",    circle: "G", soldo: 1927,  irPct: 0 },
+    { id: "recruta",   name: "Recruta / Soldado não engajado",            circle: "G", soldo: 1177,  irPct: 0 }
+  ];
+
+  const DEFAULT_TRAVEL_FINANCE_DIARIAS = [
+    { circle: "A", desc: "Comandantes das Forças e Natureza Especial",                 f1: 800, f2: 700, f3: 650 },
+    { circle: "B", desc: "Oficiais-Generais",                                          f1: 600, f2: 515, f3: 455 },
+    { circle: "C", desc: "Oficiais-Superiores (Cel/CMG, Ten Cel/CF, Maj/CC)",          f1: 510, f2: 450, f3: 395 },
+    { circle: "D", desc: "Oficiais-Intermediários, Subalternos, GM e Asp Of",          f1: 425, f2: 380, f3: 335 },
+    { circle: "E", desc: "Suboficiais, Subtenentes, Sargentos, Aspirantes e Cadetes",  f1: 425, f2: 380, f3: 335 },
+    { circle: "F", desc: "Alunos CFOAv, CPOR/NPOR, Colégio Naval e Esc. Prep.",        f1: 355, f2: 315, f3: 280 },
+    { circle: "G", desc: "Demais Praças e Praças Especiais",                           f1: 355, f2: 315, f3: 280 }
+  ];
+
+  const DEFAULT_TRAVEL_FINANCE_CITIES_F1 = [
+    "Brasília", "Manaus", "Rio de Janeiro", "São Paulo"
+  ];
+
+  const DEFAULT_TRAVEL_FINANCE_CITIES_F2 = [
+    "Aracaju", "Belém", "Belo Horizonte", "Boa Vista", "Campo Grande", "Cuiabá",
+    "Curitiba", "Florianópolis", "Fortaleza", "Goiânia", "João Pessoa", "Macapá",
+    "Maceió", "Natal", "Palmas", "Porto Alegre", "Porto Velho", "Recife",
+    "Rio Branco", "Salvador", "São Luís", "Teresina", "Vitória"
+  ];
+
+  function createDefaultTravelFinanceConfig() {
+    return {
+      gratRepPct: 2,
+      ranks: DEFAULT_TRAVEL_FINANCE_RANKS.map(r => ({ ...r })),
+      diarias: DEFAULT_TRAVEL_FINANCE_DIARIAS.map(d => ({ ...d })),
+      citiesF1: [...DEFAULT_TRAVEL_FINANCE_CITIES_F1],
+      citiesF2: [...DEFAULT_TRAVEL_FINANCE_CITIES_F2],
+      assigneeRanks: {}
+    };
+  }
+
+  function getTravelFinanceConfig(stOpt = null) {
+    const st = stOpt || core?.getState?.() || {};
+    const raw = st.params?.travelFinance;
+    const def = createDefaultTravelFinanceConfig();
+    if (!raw || typeof raw !== "object") return def;
+    return {
+      gratRepPct: (raw.gratRepPct != null && isFinite(Number(raw.gratRepPct))) ? Math.max(0, Number(raw.gratRepPct)) : def.gratRepPct,
+      ranks: Array.isArray(raw.ranks) && raw.ranks.length
+        ? raw.ranks.map((r, i) => ({
+            id: String(r?.id || `rank_${i}`),
+            name: String(r?.name || "Posto").trim() || "Posto",
+            circle: ["A", "B", "C", "D", "E", "F", "G"].includes(String(r?.circle || "").toUpperCase()) ? String(r.circle).toUpperCase() : "D",
+            soldo: Math.max(0, Number(r?.soldo) || 0),
+            irPct: Math.max(0, Math.min(100, Number(r?.irPct) || 0))
+          }))
+        : def.ranks,
+      diarias: Array.isArray(raw.diarias) && raw.diarias.length
+        ? raw.diarias.map(d => ({
+            circle: String(d?.circle || "G").toUpperCase(),
+            desc: String(d?.desc || ""),
+            f1: Math.max(0, Number(d?.f1) || 0),
+            f2: Math.max(0, Number(d?.f2) || 0),
+            f3: Math.max(0, Number(d?.f3) || 0)
+          }))
+        : def.diarias,
+      citiesF1: Array.isArray(raw.citiesF1)
+        ? raw.citiesF1.map(c => String(c || "").trim()).filter(Boolean)
+        : def.citiesF1,
+      citiesF2: Array.isArray(raw.citiesF2)
+        ? raw.citiesF2.map(c => String(c || "").trim()).filter(Boolean)
+        : def.citiesF2,
+      assigneeRanks: raw.assigneeRanks && typeof raw.assigneeRanks === "object" ? { ...raw.assigneeRanks } : {}
+    };
+  }
+
+  function ensureWritableTravelFinanceConfig(stOpt = null) {
+    const st = stOpt || core.getState();
+    if (!st.params || typeof st.params !== "object") st.params = {};
+    if (!st.params.travelFinance || typeof st.params.travelFinance !== "object") {
+      st.params.travelFinance = createDefaultTravelFinanceConfig();
+    } else {
+      const normalized = getTravelFinanceConfig(st);
+      st.params.travelFinance = normalized;
+    }
+    return st.params.travelFinance;
+  }
+
+  function normalizeCityToken(str) {
+    return String(str || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function classifyLocationTier(rawLocation, cfgOpt = null) {
+    const cfg = cfgOpt || getTravelFinanceConfig();
+    const clean = String(rawLocation || "").trim();
+    if (!clean) return { tier: 3, label: "Faixa 3", short: "F3", desc: "Demais Localidades" };
+
+    // Usa o primeiro segmento (cidade) antes da vírgula ou " - " para evitar confundir cidade do interior com estado (ex: Pirassununga, São Paulo)
+    const primarySegment = clean.split(",")[0].split(" - ")[0].trim();
+    const segNorm = normalizeCityToken(primarySegment);
+
+    const matchesList = (list) => list.some(city => {
+      const cn = normalizeCityToken(city);
+      if (!cn) return false;
+      if (segNorm === cn) return true;
+      const re = new RegExp(`(^|\\s)${cn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`);
+      return re.test(segNorm);
+    });
+
+    if (matchesList(cfg.citiesF1) || /\b(bsb|mao)\b/.test(segNorm)) {
+      return { tier: 1, label: "Faixa 1", short: "F1", desc: "BSB / MAO / RJ / SP" };
+    }
+    if (matchesList(cfg.citiesF2)) {
+      return { tier: 2, label: "Faixa 2", short: "F2", desc: "Demais Capitais" };
+    }
+    return { tier: 3, label: "Faixa 3", short: "F3", desc: "Demais Localidades" };
+  }
+
+  function getPersonRankRecord(personName, cfgOpt = null) {
+    const cfg = cfgOpt || getTravelFinanceConfig();
+    const key = String(personName || "").trim().toLowerCase();
+    if (!key) return null;
+    const rankId = cfg.assigneeRanks?.[key] || "";
+    if (!rankId) return null;
+    return cfg.ranks.find(r => r.id === rankId) || null;
+  }
+
+  function computePersonTravelFinance(card, personName, personEntry = null, cfgOpt = null) {
+    const cfg = cfgOpt || getTravelFinanceConfig();
+    const start = String(card?.start || "").trim();
+    const end = String(card?.end || card?.start || "").trim();
+    let diffDays = 0;
+    if (start && end) {
+      const d1 = core.parseD(start);
+      const d2 = core.parseD(end);
+      if (isFinite(d1) && isFinite(d2)) {
+        diffDays = Math.max(0, Math.round((d2 - d1) / 86400000));
+      }
+    }
+    const diasFora = diffDays + 1;
+    const diariasQty = diffDays === 0 ? 0.5 : (diffDays + 0.5);
+    const tierInfo = classifyLocationTier(card?.location || "", cfg);
+    const rank = getPersonRankRecord(personName, cfg);
+    const diariaRow = rank ? cfg.diarias.find(d => d.circle === rank.circle) : null;
+    const diariaBase = diariaRow
+      ? (tierInfo.tier === 1 ? diariaRow.f1 : (tierInfo.tier === 2 ? diariaRow.f2 : diariaRow.f3))
+      : 0;
+    const freeLodging = Boolean(card?.travelFreeLodging);
+    const diariaTotal = Math.round(diariasQty * diariaBase * (freeLodging ? 0.5 : 1) * 100) / 100;
+
+    const gratPct = Number(cfg.gratRepPct) >= 0 ? Number(cfg.gratRepPct) : 2;
+    const soldo = rank ? (Number(rank.soldo) || 0) : 0;
+    const irPct = rank ? (Number(rank.irPct) || 0) : 0;
+    const gratBrutaDia = soldo * (gratPct / 100);
+    const gratBruta = Math.round(diasFora * gratBrutaDia * 100) / 100;
+    const gratLiquida = Math.round(gratBruta * (1 - irPct / 100) * 100) / 100;
+
+    const activeMode = sanitizeTravelMode(personEntry?.travelMode) || sanitizeTravelMode(card?.travelFinanceMode) || "diaria";
+    const effectiveDiaria = activeMode === "diaria" ? diariaTotal : 0;
+    const effectiveGratBruta = activeMode === "grat_rep" ? gratBruta : 0;
+    const effectiveGratLiquida = activeMode === "grat_rep" ? gratLiquida : 0;
+    const effectiveTotal = Math.round((effectiveDiaria + effectiveGratLiquida) * 100) / 100;
+
+    return {
+      start,
+      end,
+      diffDays,
+      diasFora,
+      diariasQty,
+      tierInfo,
+      rank,
+      diariaBase,
+      freeLodging,
+      diariaTotal,
+      gratPct,
+      soldo,
+      irPct,
+      gratBruta,
+      gratLiquida,
+      activeMode,
+      effectiveDiaria,
+      effectiveGratBruta,
+      effectiveGratLiquida,
+      effectiveTotal
+    };
+  }
+
+  function setCardPersonTravelMode(cardId, personName, nextMode) {
+    const mode = sanitizeTravelMode(nextMode) || "diaria";
+    const ctx = findProCardContext(cardId);
+    if (!ctx) return;
+    if (ctx.trip?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+    const card = ctx.activity;
+    const list = getCardAssigneesList(card);
+    const targetLow = String(personName || "").trim().toLowerCase();
+    const updatedList = list.map(e => ({
+      name: e.name,
+      travels: Boolean(e.travels),
+      travelMode: e.name.toLowerCase() === targetLow ? mode : sanitizeTravelMode(e.travelMode)
+    }));
+    card.assigneesList = updatedList;
+    if (updatedList[0]) {
+      card.assignee = updatedList[0].name;
+      card.assigneeTravels = Boolean(updatedList[0].travels);
+      card.assigneeTravelMode = updatedList[0].travelMode || "";
+    }
+    const travelers = updatedList.filter(e => e.travels);
+    if (travelers.length <= 1 || updatedList.length <= 1) {
+      card.travelFinanceMode = mode;
+    }
+    const modeNames = { diaria: "💵 Diária", grat_rep: "🎖️ Grat. Representação", comissionamento: "📋 Comissionamento" };
+    core.saveTripRecord(ctx.trip, `${modeNames[mode]} aplicada para ${personName}`);
+  }
+
+  /* ---------- TOOLTIP FLUTUANTE EM PRIMEIRO PLANO (Z-INDEX 9999) ---------- */
+  let proTooltipInitDone = false;
+  function initProFloatingTooltips() {
+    if (proTooltipInitDone) return;
+    proTooltipInitDone = true;
+    let tipEl = $("#proFloatingTooltip");
+    if (!tipEl) {
+      tipEl = document.createElement("div");
+      tipEl.id = "proFloatingTooltip";
+      tipEl.className = "pro-float-tooltip";
+      tipEl.setAttribute("role", "tooltip");
+      tipEl.hidden = true;
+      document.body.appendChild(tipEl);
+    }
+
+    let activeTarget = null;
+    const hideTip = () => {
+      activeTarget = null;
+      tipEl.hidden = true;
+    };
+    const placeTip = (clientX, clientY, anchorRect = null) => {
+      tipEl.hidden = false;
+      const w = tipEl.offsetWidth || 220;
+      const h = tipEl.offsetHeight || 34;
+      const pad = 10;
+      let left = anchorRect ? (anchorRect.left + anchorRect.width / 2 - w / 2) : (clientX - w / 2);
+      let top = anchorRect ? (anchorRect.top - h - 10) : (clientY - h - 14);
+      left = Math.max(pad, Math.min(window.innerWidth - w - pad, left));
+      if (top < pad) {
+        top = anchorRect ? (anchorRect.bottom + 10) : (clientY + 18);
+      }
+      if (top + h > window.innerHeight - pad) {
+        top = Math.max(pad, window.innerHeight - h - pad);
+      }
+      tipEl.style.left = `${Math.round(left)}px`;
+      tipEl.style.top = `${Math.round(top)}px`;
+    };
+    const showFor = (el, ev = null) => {
+      const txt = el?.getAttribute("data-tooltip") || "";
+      if (!txt) return hideTip();
+      // Remove title nativo duplicado no primeiro hover preservando texto no data-tooltip
+      if (el.hasAttribute("title")) el.removeAttribute("title");
+      activeTarget = el;
+      tipEl.textContent = txt;
+      const rect = el.getBoundingClientRect();
+      if (ev && typeof ev.clientX === "number" && (ev.clientX || ev.clientY)) {
+        placeTip(ev.clientX, ev.clientY, null);
+      } else {
+        placeTip(0, 0, rect);
+      }
+    };
+
+    document.addEventListener("mouseover", ev => {
+      const host = ev.target?.closest?.("[data-tooltip]");
+      if (host) showFor(host, ev);
+      else if (activeTarget) hideTip();
+    });
+    document.addEventListener("mousemove", ev => {
+      if (!activeTarget || tipEl.hidden) return;
+      if (!ev.target?.closest?.("[data-tooltip]")) return hideTip();
+      placeTip(ev.clientX, ev.clientY, null);
+    });
+    document.addEventListener("mouseout", ev => {
+      if (!activeTarget) return;
+      const toHost = ev.relatedTarget?.closest?.("[data-tooltip]");
+      if (!toHost || toHost !== activeTarget) hideTip();
+    });
+    document.addEventListener("focusin", ev => {
+      const host = ev.target?.closest?.("[data-tooltip]");
+      if (host) showFor(host, null);
+    });
+    document.addEventListener("focusout", () => hideTip());
+    window.addEventListener("scroll", hideTip, true);
+  }
+
+  /* ---------- RENDERIZAÇÃO EM PARÂMETROS: PARÂMETROS FINANCEIROS DE VIAGENS (FA 2026) ---------- */
+  function renderProTravelFinanceParams(stOpt = null) {
+    const card = $("#proTravelFinanceParamsCard");
+    if (!card) return;
+    const st = stOpt || core.getState();
+    const cfg = getTravelFinanceConfig(st);
+    const assignees = getAllProAssignees(st.activities);
+    const gratPct = Number(cfg.gratRepPct) >= 0 ? Number(cfg.gratRepPct) : 2;
+
+    if ($("#proTfGratPct")) $("#proTfGratPct").value = String(gratPct);
+
+    // 1.1 Pessoas -> Posto / Graduação
+    const pplWrap = $("#proTfPeopleRanksWrap");
+    if (pplWrap) {
+      if (!assignees.length) {
+        pplWrap.innerHTML = `<p class="muted small" style="margin:4px 0">Adicione responsáveis na seção <b>"👤 Responsáveis do Projeto"</b> acima para vincular o Posto/Graduação de cada pessoa.</p>`;
+      } else {
+        const rankOpts = (selId) => `<option value="">— Selecionar Posto / Graduação —</option>`
+          + cfg.ranks.map(r => `<option value="${core.esc(r.id)}" ${r.id === selId ? "selected" : ""}>${core.esc(r.name)} (Círc. ${core.esc(r.circle)})</option>`).join("");
+        pplWrap.innerHTML = `<div class="pro-tf-people-grid">${assignees.map(name => {
+          const key = name.toLowerCase();
+          const col = colorForAssignee(name);
+          const selRankId = cfg.assigneeRanks?.[key] || "";
+          const rank = cfg.ranks.find(r => r.id === selRankId) || null;
+          const dRow = rank ? cfg.diarias.find(d => d.circle === rank.circle) : null;
+          const gLiq = rank ? (rank.soldo * (gratPct / 100) * (1 - rank.irPct / 100)) : 0;
+          const preview = rank
+            ? `Círculo <b>${core.esc(rank.circle)}</b> · Diária F1: <b>${core.money(dRow?.f1 || 0)}</b> · Grat. Rep. Líq./dia: <b>${core.money(gLiq)}</b>`
+            : `<span class="muted">Sem posto vinculado (cálculo financeiro zerado)</span>`;
+          return `<div class="pro-tf-person-row">
+            <span class="pro-assignee-badge" style="--asg-bg:${col.bg};--asg-fg:${col.fg};--asg-bd:${col.bd}">👤 ${core.esc(name)}</span>
+            <select data-tf-person-rank="${core.esc(key)}" aria-label="Posto ou graduação de ${core.esc(name)}">${rankOpts(selRankId)}</select>
+            <span class="pro-tf-person-prev">${preview}</span>
+          </div>`;
+        }).join("")}</div>`;
+
+        pplWrap.querySelectorAll("[data-tf-person-rank]").forEach(sel => {
+          sel.onchange = () => {
+            const tf = ensureWritableTravelFinanceConfig(st);
+            if (!tf.assigneeRanks) tf.assigneeRanks = {};
+            const pk = sel.dataset.tfPersonRank;
+            if (sel.value) tf.assigneeRanks[pk] = sel.value;
+            else delete tf.assigneeRanks[pk];
+            core.save("🎖️ Posto/Graduação vinculado com sucesso");
+          };
+        });
+      }
+    }
+
+    // 1.2 Tabela de Soldos e Gratificação de Representação
+    const ranksTbl = $("#proTfRanksTable");
+    if (ranksTbl) {
+      const circleOpts = cur => ["A", "B", "C", "D", "E", "F", "G"]
+        .map(c => `<option value="${c}" ${c === cur ? "selected" : ""}>${c}</option>`).join("");
+      ranksTbl.innerHTML = `
+        <thead>
+          <tr>
+            <th>Posto ou Graduação</th>
+            <th style="width:76px;text-align:center">Círculo</th>
+            <th style="width:125px" class="num">Soldo (R$)</th>
+            <th style="width:115px" class="num">Grat. Bruta (${core.num(gratPct, 1)}%)</th>
+            <th style="width:92px" class="num">IR (%)</th>
+            <th style="width:115px" class="num">Grat. Líquida</th>
+            <th style="width:42px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${cfg.ranks.map((r, idx) => {
+            const bruta = r.soldo * (gratPct / 100);
+            const liq = bruta * (1 - r.irPct / 100);
+            return `<tr data-tf-rank-idx="${idx}">
+              <td><input type="text" class="pro-tf-inp" data-tf-rfield="name" value="${core.esc(r.name)}"></td>
+              <td style="text-align:center"><select class="pro-tf-sel" data-tf-rfield="circle">${circleOpts(r.circle)}</select></td>
+              <td class="num"><input type="number" step="0.01" min="0" class="pro-tf-inp num" data-tf-rfield="soldo" value="${r.soldo}"></td>
+              <td class="num muted">${core.money(bruta)}</td>
+              <td class="num"><input type="number" step="0.5" min="0" max="100" class="pro-tf-inp num" data-tf-rfield="irPct" value="${r.irPct}"></td>
+              <td class="num"><strong style="color:var(--ok)">${core.money(liq)}</strong></td>
+              <td><button type="button" class="icon-btn" data-tf-rank-del="${idx}" title="Remover posto">✕</button></td>
+            </tr>`;
+          }).join("")}
+        </tbody>`;
+
+      ranksTbl.querySelectorAll("[data-tf-rfield]").forEach(el => {
+        el.onchange = () => {
+          const tr = el.closest("tr[data-tf-rank-idx]");
+          const idx = parseInt(tr?.dataset.tfRankIdx, 10);
+          if (!isFinite(idx)) return;
+          const tf = ensureWritableTravelFinanceConfig(st);
+          const rec = tf.ranks[idx];
+          if (!rec) return;
+          const field = el.dataset.tfRfield;
+          if (field === "name") rec.name = el.value.trim() || rec.name;
+          else if (field === "circle") rec.circle = el.value;
+          else if (field === "soldo") rec.soldo = Math.max(0, parseFloat(el.value) || 0);
+          else if (field === "irPct") rec.irPct = Math.max(0, Math.min(100, parseFloat(el.value) || 0));
+          core.save("🎖️ Tabela de soldos atualizada");
+        };
+      });
+      ranksTbl.querySelectorAll("[data-tf-rank-del]").forEach(btn => {
+        btn.onclick = () => {
+          const idx = parseInt(btn.dataset.tfRankDel, 10);
+          const tf = ensureWritableTravelFinanceConfig(st);
+          if (tf.ranks.length <= 1) return core.toast("Mantenha ao menos 1 posto/graduação na tabela.");
+          tf.ranks.splice(idx, 1);
+          core.save("🗑️ Posto/Graduação removido da tabela");
+        };
+      });
+    }
+
+    // 1.3 Tabela de Diárias no País (Decreto 12.324/2024)
+    const diariasTbl = $("#proTfDiariasTable");
+    if (diariasTbl) {
+      diariasTbl.innerHTML = `
+        <thead>
+          <tr>
+            <th style="width:68px;text-align:center">Círculo</th>
+            <th>Descrição</th>
+            <th style="width:130px" class="num">Faixa 1 (BSB/MAO/RJ/SP)</th>
+            <th style="width:130px" class="num">Faixa 2 (Demais Capitais)</th>
+            <th style="width:130px" class="num">Faixa 3 (Demais Locais)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${cfg.diarias.map((d, idx) => `
+            <tr data-tf-diaria-idx="${idx}">
+              <td style="text-align:center"><span class="pill"><b>${core.esc(d.circle)}</b></span></td>
+              <td><input type="text" class="pro-tf-inp" data-tf-dfield="desc" value="${core.esc(d.desc)}"></td>
+              <td class="num"><input type="number" step="1" min="0" class="pro-tf-inp num" data-tf-dfield="f1" value="${d.f1}"></td>
+              <td class="num"><input type="number" step="1" min="0" class="pro-tf-inp num" data-tf-dfield="f2" value="${d.f2}"></td>
+              <td class="num"><input type="number" step="1" min="0" class="pro-tf-inp num" data-tf-dfield="f3" value="${d.f3}"></td>
+            </tr>`).join("")}
+        </tbody>`;
+
+      diariasTbl.querySelectorAll("[data-tf-dfield]").forEach(el => {
+        el.onchange = () => {
+          const tr = el.closest("tr[data-tf-diaria-idx]");
+          const idx = parseInt(tr?.dataset.tfDiariaIdx, 10);
+          if (!isFinite(idx)) return;
+          const tf = ensureWritableTravelFinanceConfig(st);
+          const rec = tf.diarias[idx];
+          if (!rec) return;
+          const field = el.dataset.tfDfield;
+          if (field === "desc") rec.desc = el.value.trim();
+          else rec[field] = Math.max(0, parseFloat(el.value) || 0);
+          core.save("💵 Tabela de diárias atualizada");
+        };
+      });
+    }
+
+    // 1.4 Classificação de Localidades (Faixa 1 e Faixa 2)
+    if ($("#proTfCitiesF1")) $("#proTfCitiesF1").value = cfg.citiesF1.join(", ");
+    if ($("#proTfCitiesF2")) $("#proTfCitiesF2").value = cfg.citiesF2.join(", ");
+  }
+
+  /* ---------- ABA CONTROLE (CONTROLE DE VIAGENS & FINANCEIRO) ---------- */
+  let proControlQuickMode = "";
+  let proControlQuickMonth = "";
+  let proControlScope = "travels";
+  let proControlSummaryTab = "all";
+  let proControlTableSort = { col: "start", dir: "asc" };
+
+  function renderProControl(filteredCardsOpt) {
+    const viewEl = $("#view-pro-control");
+    if (!viewEl) return;
+
+    const st = core.getState();
+    const cfg = getTravelFinanceConfig(st);
+    const cards = filteredCardsOpt || applyProUnifiedFilters(getProSortedActivities());
+    const filterAsgLow = (proFilterAssignee && proFilterAssignee !== "__none__") ? proFilterAssignee.toLowerCase() : "";
+
+    if ($("#proControlScopeSel") && $("#proControlScopeSel").value !== proControlScope) {
+      $("#proControlScopeSel").value = proControlScope;
+    }
+    if ($("#proControlQuickMode") && $("#proControlQuickMode").value !== proControlQuickMode) {
+      $("#proControlQuickMode").value = proControlQuickMode;
+    }
+
+    // Construir lista base de registros (antes do filtro de mês/modalidade para popular o dropdown de meses)
+    const rawRows = [];
+    let fallbackLocCount = 0;
+    const allMonthsSet = new Set();
+
+    cards.forEach(c => {
+      const asgList = getCardAssigneesList(c);
+      const rawLoc = String(c.location || "").trim();
+      if (rawLoc && asgList.length) fallbackLocCount++;
+
+      let matched = proControlScope === "travels"
+        ? asgList.filter(e => e.travels)
+        : (rawLoc ? asgList : []);
+
+      if (filterAsgLow) {
+        matched = matched.filter(e => e.name.toLowerCase() === filterAsgLow);
+      }
+      if (!matched.length) return;
+
+      const ym = String(c.start || c.end || "").slice(0, 7);
+      if (ym.length === 7) allMonthsSet.add(ym);
+
+      matched.forEach(entry => {
+        const calcFin = computePersonTravelFinance(c, entry.name, entry, cfg);
+        rawRows.push({
+          card: c,
+          personName: entry.name,
+          personKey: entry.name.toLowerCase(),
+          personColor: colorForAssignee(entry.name),
+          travelsFlag: Boolean(entry.travels),
+          city: rawLoc ? shortLocationCityName(rawLoc) : "Sem local",
+          rawLocation: rawLoc,
+          ym: ym.length === 7 ? ym : "",
+          fin: calcFin
+        });
+      });
+    });
+
+    // Popular seletor rápido de Mês/Ano
+    const monthSel = $("#proControlQuickMonth");
+    if (monthSel) {
+      const sortedYms = [...allMonthsSet].sort();
+      const prev = proControlQuickMonth;
+      monthSel.innerHTML = `<option value="">📅 Todos os meses</option>` + sortedYms.map(ym => {
+        const [yr, mo] = ym.split("-");
+        const lbl = `${core.MON[parseInt(mo, 10) - 1]}/${yr}`;
+        return `<option value="${ym}" ${ym === prev ? "selected" : ""}>📅 ${lbl}</option>`;
+      }).join("");
+      if (prev && !sortedYms.includes(prev)) {
+        proControlQuickMonth = "";
+        monthSel.value = "";
+      } else {
+        monthSel.value = prev;
+      }
+    }
+
+    // Aplicar filtros rápidos de Modalidade e Mês
+    const rows = rawRows.filter(r => {
+      if (proControlQuickMode && r.fin.activeMode !== proControlQuickMode) return false;
+      if (proControlQuickMonth && r.ym !== proControlQuickMonth) return false;
+      return true;
+    });
+
+    // Totais efetivos (apenas modalidades selecionadas; Comissionamento = R$ 0,00)
+    const uniqueCardIds = new Set(rows.map(r => r.card.id));
+    let sumDiasFora = 0;
+    let sumDiariasQty = 0;
+    let sumDiariasVal = 0;
+    let sumGratLiq = 0;
+    let sumGratBruta = 0;
+    let sumTotalGeral = 0;
+    let countDiariaRows = 0;
+    let countGratRows = 0;
+    let countComissRows = 0;
+
+    rows.forEach(r => {
+      sumDiasFora += r.fin.diasFora;
+      if (r.fin.activeMode === "diaria") {
+        countDiariaRows++;
+        sumDiariasQty += r.fin.diariasQty;
+        sumDiariasVal += r.fin.effectiveDiaria;
+      } else if (r.fin.activeMode === "grat_rep") {
+        countGratRows++;
+        sumGratLiq += r.fin.effectiveGratLiquida;
+        sumGratBruta += r.fin.effectiveGratBruta;
+      } else {
+        countComissRows++;
+      }
+      sumTotalGeral += r.fin.effectiveTotal;
+    });
+
+    if ($("#proControlCountBadge")) {
+      $("#proControlCountBadge").textContent = `${uniqueCardIds.size} ${uniqueCardIds.size === 1 ? "viagem" : "viagens"} · ${core.money(sumTotalGeral)}`;
+    }
+
+    // Empty state contextual
+    const emptyEl = $("#proControlEmptyBanner");
+    if (emptyEl) {
+      if (!rows.length) {
+        emptyEl.hidden = false;
+        const canSwitchLoc = proControlScope === "travels" && fallbackLocCount > 0;
+        emptyEl.innerHTML = `
+          <div class="pro-travels-empty-inner">
+            <div style="font-size:2rem">📋</div>
+            <h3>Nenhuma viagem encontrada para o controle financeiro</h3>
+            <p class="muted small">
+              ${proControlScope === "travels"
+                ? 'Marque <b>"✈️ Viaja"</b> no responsável dos cartões e vincule o <b>Posto/Graduação</b> em Parâmetros para calcular Diárias e Gratificação de Representação.'
+                : "Adicione responsáveis e locais aos cartões para iniciar o controle financeiro."}
+            </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:4px">
+              ${canSwitchLoc ? `<button type="button" class="btn primary small" id="btnProControlSwitchLoc">📍 Ver todos com Local (${fallbackLocCount})</button>` : ""}
+              <button type="button" class="btn ghost small" id="btnProControlEmptyParams">⚙️ Configurar Postos &amp; Soldos</button>
+              <button type="button" class="btn ghost small" id="btnProControlEmptyAdd">➕ Novo Cartão</button>
+            </div>
+          </div>`;
+        if ($("#btnProControlSwitchLoc", emptyEl)) {
+          $("#btnProControlSwitchLoc", emptyEl).onclick = () => { proControlScope = "with_location"; renderProControl(); };
+        }
+        if ($("#btnProControlEmptyParams", emptyEl)) {
+          $("#btnProControlEmptyParams", emptyEl).onclick = () => {
+            core?.switchProView?.("pro-params");
+            setTimeout(() => $("#proTravelFinanceParamsCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+          };
+        }
+        if ($("#btnProControlEmptyAdd", emptyEl)) {
+          $("#btnProControlEmptyAdd", emptyEl).onclick = () => openProCardModal();
+        }
+      } else {
+        emptyEl.hidden = true;
+        emptyEl.innerHTML = "";
+      }
+    }
+
+    // 4.2 Cards de KPIs (5 KPIs)
+    const kpisEl = $("#proControlKpis");
+    if (kpisEl) {
+      const kpis = [
+        ["Total de Viagens", String(uniqueCardIds.size), `${rows.length} lançamento(s) · ${countComissRows} comiss.`, "#38bdf8"],
+        ["Total de Dias Fora", `${sumDiasFora}d`, `${core.num(sumDiariasQty, 1)} diárias em ${countDiariaRows} lanç.`, "#f59e0b"],
+        ["Total em Diárias", core.money(sumDiariasVal), `${countDiariaRows} ${countDiariaRows === 1 ? "lançamento" : "lançamentos"} (isento IR)`, "#10b981"],
+        ["Grat. Representação", core.money(sumGratLiq), `Líquido · Bruto: ${core.money(sumGratBruta)} (${countGratRows})`, "#a855f7"],
+        ["Total Geral Recebido", core.money(sumTotalGeral), "Diárias + Grat. Rep. Líquida", "#22d3ee"]
+      ];
+      kpisEl.innerHTML = kpis.map(([lbl, val, sub, col]) => `
+        <div class="kpi pro-map-kpi-card pro-travels-kpi" style="--c:${core.esc(col)}">
+          <div class="lbl">${core.esc(lbl)}</div>
+          <div class="val" title="${core.esc(val)}">${core.esc(val)}</div>
+          <div class="sub" title="${core.esc(sub)}">${core.esc(sub)}</div>
+        </div>
+      `).join("");
+    }
+
+    // Ordenação da tabela principal
+    const sortedRows = rows.slice().sort((a, b) => {
+      const dir = proControlTableSort.dir === "desc" ? -1 : 1;
+      const col = proControlTableSort.col;
+      if (col === "person") return dir * a.personName.localeCompare(b.personName);
+      if (col === "name") return dir * String(a.card.name || "").localeCompare(String(b.card.name || ""));
+      if (col === "city") return dir * a.city.localeCompare(b.city);
+      if (col === "end") return dir * String(a.fin.end || "9999-99-99").localeCompare(String(b.fin.end || "9999-99-99"));
+      if (col === "days") return dir * (a.fin.diasFora - b.fin.diasFora);
+      if (col === "diaria") return dir * (a.fin.diariaTotal - b.fin.diariaTotal);
+      if (col === "grat") return dir * (a.fin.gratLiquida - b.fin.gratLiquida);
+      return dir * String(a.fin.start || "9999-99-99").localeCompare(String(b.fin.start || "9999-99-99"));
+    });
+
+    if ($("#proControlTableCountBadge")) {
+      $("#proControlTableCountBadge").textContent = `${rows.length} ${rows.length === 1 ? "lançamento" : "lançamentos"}`;
+    }
+
+    // 4.3 Tabela Principal de Controle Financeiro (Desktop)
+    const tblEl = $("#proControlTable");
+    if (tblEl) {
+      const arrow = col => proControlTableSort.col === col ? (proControlTableSort.dir === "asc" ? " ▲" : " ▼") : "";
+      tblEl.innerHTML = `
+        <thead>
+          <tr>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="person">Pessoa / Posto${arrow("person")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="name">Viagem / Evento${arrow("name")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="city">Localidade${arrow("city")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="start">Ida${arrow("start")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="end">Volta${arrow("end")}</button></th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="days">Dias Fora${arrow("days")}</button></th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="diaria">Diária (R$)${arrow("diaria")}</button></th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="grat">Grat. Representação (R$)${arrow("grat")}</button></th>
+            <th style="text-align:center">Comissionamento</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sortedRows.map(r => {
+            const f = r.fin;
+            const info = getProTypeInfo(r.card.type);
+            const isDiaria = f.activeMode === "diaria";
+            const isGrat = f.activeMode === "grat_rep";
+            const isComiss = f.activeMode === "comissionamento";
+            const rankSub = f.rank
+              ? `<span class="pro-ctrl-rank-sub">${core.esc(f.rank.name)} <small>(Círc. ${core.esc(f.rank.circle)})</small></span>`
+              : `<button type="button" class="pro-ctrl-no-rank-btn" data-ctrl-go-params="1" title="Vincular Posto/Graduação em Parâmetros">⚠️ Definir Posto</button>`;
+            const tierCls = `tier-${f.tierInfo.tier}`;
+            return `<tr class="pro-map-trip-row pro-ctrl-row${isComiss ? " is-comiss" : ""}" data-ctrl-open-card="${core.esc(r.card.id)}">
+              <td>
+                <div class="pro-ctrl-person-cell">
+                  <span class="pro-assignee-badge" style="--asg-bg:${r.personColor.bg};--asg-fg:${r.personColor.fg};--asg-bd:${r.personColor.bd}">👤 ${core.esc(r.personName)}</span>
+                  ${rankSub}
+                </div>
+              </td>
+              <td>
+                <div class="pro-ctrl-trip-cell">
+                  <span class="chip ${info.cls}"${info.isCustom && info.color ? ` style="--t-color:${core.esc(info.color)}"` : ""}>${info.icon} ${core.esc(info.short)}</span>
+                  <strong class="pro-ctrl-trip-link">${core.esc(r.card.name)}</strong>
+                </div>
+              </td>
+              <td>
+                <div class="pro-ctrl-loc-cell">
+                  <span>📍 ${core.esc(r.city)}</span>
+                  <span class="pro-ctrl-tier-badge ${tierCls}" title="${core.esc(f.tierInfo.desc)}">${core.esc(f.tierInfo.label)}</span>
+                </div>
+              </td>
+              <td class="nowrap">${f.start ? core.fmtBR(f.start) : "—"}</td>
+              <td class="nowrap">${f.end ? core.fmtBR(f.end) : "—"}</td>
+              <td class="num">
+                <div class="pro-ctrl-days-cell">
+                  <b>${f.diasFora} ${f.diasFora === 1 ? "dia" : "dias"}</b>
+                  <small class="muted">${core.num(f.diariasQty, 1)} diárias${f.freeLodging ? " · 🏠50%" : ""}</small>
+                </div>
+              </td>
+              <td class="num">
+                <button type="button" class="pro-ctrl-mode-box mode-diaria${isDiaria ? " is-selected" : (isComiss ? " is-neutral" : "")}" data-ctrl-set-mode="diaria" data-ctrl-card="${core.esc(r.card.id)}" data-ctrl-person="${core.esc(r.personName)}" aria-pressed="${isDiaria}" title="Clique para selecionar Diária">
+                  <span class="pro-ctrl-box-top">
+                    <span class="pro-ctrl-chk">${isDiaria ? "✓" : ""}</span>
+                    <strong>${core.money(f.diariaTotal)}</strong>
+                  </span>
+                  <small>${f.rank ? `${core.num(f.diariasQty, 1)}× ${core.money(f.diariaBase)}` : "Sem posto"}</small>
+                </button>
+              </td>
+              <td class="num">
+                <button type="button" class="pro-ctrl-mode-box mode-grat${isGrat ? " is-selected" : (isComiss ? " is-neutral" : "")}" data-ctrl-set-mode="grat_rep" data-ctrl-card="${core.esc(r.card.id)}" data-ctrl-person="${core.esc(r.personName)}" aria-pressed="${isGrat}" title="Clique para selecionar Gratificação de Representação">
+                  <span class="pro-ctrl-box-top">
+                    <span class="pro-ctrl-chk">${isGrat ? "✓" : ""}</span>
+                    <strong>${core.money(f.gratLiquida)}</strong>
+                  </span>
+                  <small>Bruto: ${core.money(f.gratBruta)}</small>
+                </button>
+              </td>
+              <td style="text-align:center">
+                <label class="pro-ctrl-comiss-lbl${isComiss ? " is-checked" : ""}" title="Marcar viagem como Comissionamento (R$ 0,00)">
+                  <input type="checkbox" data-ctrl-comiss-chk="1" data-ctrl-card="${core.esc(r.card.id)}" data-ctrl-person="${core.esc(r.personName)}" ${isComiss ? "checked" : ""}>
+                  <span>${isComiss ? "Sim" : "Não"}</span>
+                </label>
+              </td>
+            </tr>`;
+          }).join("") || `<tr><td colspan="9" class="muted" style="text-align:center;padding:20px">Nenhum lançamento de viagem para os filtros atuais.</td></tr>`}
+        </tbody>
+        ${rows.length ? `
+        <tfoot>
+          <tr class="pro-ctrl-tfoot-row">
+            <td colspan="5"><strong>TOTAIS EFETIVAMENTE RECEBIDOS</strong> <span class="muted small">(apenas itens marcados em Diária ou Grat. Representação)</span></td>
+            <td class="num"><strong>${sumDiasFora} dias</strong></td>
+            <td class="num"><strong style="color:var(--ok)">${core.money(sumDiariasVal)}</strong><small class="muted" style="display:block">${countDiariaRows} Diária(s)</small></td>
+            <td class="num"><strong style="color:#c084fc">${core.money(sumGratLiq)}</strong><small class="muted" style="display:block">Bruto: ${core.money(sumGratBruta)}</small></td>
+            <td class="num">
+              <div class="pro-ctrl-grand-total">
+                <small>TOTAL GERAL</small>
+                <strong>${core.money(sumTotalGeral)}</strong>
+              </div>
+            </td>
+          </tr>
+        </tfoot>` : ""}`;
+
+      tblEl.querySelectorAll("[data-ctrl-sort]").forEach(btn => {
+        btn.onclick = () => {
+          const col = btn.dataset.ctrlSort;
+          if (proControlTableSort.col === col) {
+            proControlTableSort.dir = proControlTableSort.dir === "asc" ? "desc" : "asc";
+          } else {
+            proControlTableSort.col = col;
+            proControlTableSort.dir = ["days", "diaria", "grat"].includes(col) ? "desc" : "asc";
+          }
+          renderProControl(cards);
+        };
+      });
+      tblEl.querySelectorAll("tr[data-ctrl-open-card]").forEach(tr => {
+        tr.onclick = (ev) => {
+          if (ev.target.closest("button, label, input")) return;
+          openProCardModal(tr.dataset.ctrlOpenCard);
+        };
+      });
+      tblEl.querySelectorAll("[data-ctrl-set-mode]").forEach(btn => {
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          setCardPersonTravelMode(btn.dataset.ctrlCard, btn.dataset.ctrlPerson, btn.dataset.ctrlSetMode);
+        };
+      });
+      tblEl.querySelectorAll("[data-ctrl-comiss-chk]").forEach(chk => {
+        chk.onclick = (ev) => ev.stopPropagation();
+        chk.onchange = () => {
+          setCardPersonTravelMode(chk.dataset.ctrlCard, chk.dataset.ctrlPerson, chk.checked ? "comissionamento" : "diaria");
+        };
+      });
+      tblEl.querySelectorAll("[data-ctrl-go-params]").forEach(btn => {
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          core?.switchProView?.("pro-params");
+          setTimeout(() => $("#proTravelFinanceParamsCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+        };
+      });
+    }
+
+    // 4.3B Cards Mobile do Controle Financeiro
+    const mobEl = $("#proControlMobileCards");
+    if (mobEl) {
+      const cardsHtml = sortedRows.map(r => {
+        const f = r.fin;
+        const info = getProTypeInfo(r.card.type);
+        const isDiaria = f.activeMode === "diaria";
+        const isGrat = f.activeMode === "grat_rep";
+        const isComiss = f.activeMode === "comissionamento";
+        const dtStr = f.start ? `${core.fmtShortBR(f.start)}${f.end && f.end !== f.start ? ` – ${core.fmtShortBR(f.end)}` : ""}` : "Sem data";
+        return `<div class="m-card pro-ctrl-mcard${isComiss ? " is-comiss" : ""}" data-ctrl-open-card="${core.esc(r.card.id)}">
+          <div class="m-card-head">
+            <div style="min-width:0">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:3px">
+                <span class="pro-assignee-badge" style="--asg-bg:${r.personColor.bg};--asg-fg:${r.personColor.fg};--asg-bd:${r.personColor.bd}">👤 ${core.esc(r.personName)}</span>
+                <span class="pro-ctrl-tier-badge tier-${f.tierInfo.tier}">${core.esc(f.tierInfo.label)}</span>
+                <span class="pro-map-dur-pill">${f.diasFora}d · ${core.num(f.diariasQty, 1)} diár.</span>
+              </div>
+              <b style="display:block;font-size:0.9rem;color:var(--text-strong)">${info.icon} ${core.esc(r.card.name)}</b>
+              <div class="muted small">📍 ${core.esc(r.city)} · 📅 ${core.esc(dtStr)}${f.rank ? ` · ${core.esc(f.rank.name)}` : ""}</div>
+            </div>
+            <button type="button" class="icon-btn" data-ctrl-edit-btn="${core.esc(r.card.id)}" title="Editar cartão">✏️</button>
+          </div>
+          <div class="pro-ctrl-mob-modes">
+            <button type="button" class="pro-ctrl-mode-box mode-diaria${isDiaria ? " is-selected" : (isComiss ? " is-neutral" : "")}" data-ctrl-set-mode="diaria" data-ctrl-card="${core.esc(r.card.id)}" data-ctrl-person="${core.esc(r.personName)}">
+              <span class="pro-ctrl-box-top"><span class="pro-ctrl-chk">${isDiaria ? "✓" : ""}</span><span>Diária</span></span>
+              <strong>${core.money(f.diariaTotal)}</strong>
+            </button>
+            <button type="button" class="pro-ctrl-mode-box mode-grat${isGrat ? " is-selected" : (isComiss ? " is-neutral" : "")}" data-ctrl-set-mode="grat_rep" data-ctrl-card="${core.esc(r.card.id)}" data-ctrl-person="${core.esc(r.personName)}">
+              <span class="pro-ctrl-box-top"><span class="pro-ctrl-chk">${isGrat ? "✓" : ""}</span><span>Grat. Rep.</span></span>
+              <strong>${core.money(f.gratLiquida)}</strong>
+              <small>Bruto: ${core.money(f.gratBruta)}</small>
+            </button>
+          </div>
+          <label class="pro-ctrl-comiss-mob${isComiss ? " is-checked" : ""}">
+            <input type="checkbox" data-ctrl-comiss-chk="1" data-ctrl-card="${core.esc(r.card.id)}" data-ctrl-person="${core.esc(r.personName)}" ${isComiss ? "checked" : ""}>
+            <span>Comissionamento (R$ 0,00 — não soma no total)</span>
+          </label>
+        </div>`;
+      }).join("");
+
+      const mobTotalFooter = rows.length ? `
+        <div class="pro-ctrl-mob-total-card">
+          <div class="pro-ctrl-mob-total-row"><span>Dias Fora</span><b>${sumDiasFora} dias</b></div>
+          <div class="pro-ctrl-mob-total-row"><span>Diárias (${countDiariaRows})</span><b style="color:var(--ok)">${core.money(sumDiariasVal)}</b></div>
+          <div class="pro-ctrl-mob-total-row"><span>Grat. Rep. Líq. (${countGratRows})</span><b style="color:#c084fc">${core.money(sumGratLiq)}</b></div>
+          <div class="pro-ctrl-mob-total-row is-grand"><span>TOTAL GERAL RECEBIDO</span><strong>${core.money(sumTotalGeral)}</strong></div>
+        </div>` : "";
+
+      mobEl.innerHTML = (cardsHtml || `<p class="muted small" style="text-align:center;padding:14px">Nenhum lançamento para os filtros atuais.</p>`) + mobTotalFooter;
+
+      mobEl.querySelectorAll("[data-ctrl-open-card]").forEach(el => {
+        el.onclick = (ev) => {
+          if (ev.target.closest("button, label, input")) return;
+          openProCardModal(el.dataset.ctrlOpenCard);
+        };
+      });
+      mobEl.querySelectorAll("[data-ctrl-edit-btn]").forEach(b => {
+        b.onclick = (ev) => { ev.stopPropagation(); openProCardModal(b.dataset.ctrlEditBtn); };
+      });
+      mobEl.querySelectorAll("[data-ctrl-set-mode]").forEach(btn => {
+        btn.onclick = (ev) => {
+          ev.stopPropagation();
+          setCardPersonTravelMode(btn.dataset.ctrlCard, btn.dataset.ctrlPerson, btn.dataset.ctrlSetMode);
+        };
+      });
+      mobEl.querySelectorAll("[data-ctrl-comiss-chk]").forEach(chk => {
+        chk.onclick = (ev) => ev.stopPropagation();
+        chk.onchange = () => {
+          setCardPersonTravelMode(chk.dataset.ctrlCard, chk.dataset.ctrlPerson, chk.checked ? "comissionamento" : "diaria");
+        };
+      });
+    }
+
+    // Agregações para os 4 Gráficos + 3 Tabelas Resumidas
+    const byPerson = new Map();
+    const byLoc = new Map();
+    const byMonth = new Map();
+
+    rows.forEach(r => {
+      const f = r.fin;
+      if (!byPerson.has(r.personKey)) {
+        byPerson.set(r.personKey, {
+          name: r.personName,
+          key: r.personKey,
+          color: r.personColor,
+          rankName: f.rank ? f.rank.name : "Sem posto",
+          trips: 0,
+          days: 0,
+          diaria: 0,
+          gratLiq: 0,
+          gratBruta: 0,
+          total: 0
+        });
+      }
+      const p = byPerson.get(r.personKey);
+      p.trips++;
+      p.days += f.diasFora;
+      p.diaria += f.effectiveDiaria;
+      p.gratLiq += f.effectiveGratLiquida;
+      p.gratBruta += f.effectiveGratBruta;
+      p.total += f.effectiveTotal;
+
+      const locKey = r.city.toLowerCase();
+      if (!byLoc.has(locKey)) {
+        byLoc.set(locKey, {
+          city: r.city,
+          tierInfo: f.tierInfo,
+          trips: 0,
+          days: 0,
+          diaria: 0,
+          gratLiq: 0,
+          total: 0
+        });
+      }
+      const l = byLoc.get(locKey);
+      l.trips++;
+      l.days += f.diasFora;
+      l.diaria += f.effectiveDiaria;
+      l.gratLiq += f.effectiveGratLiquida;
+      l.total += f.effectiveTotal;
+
+      if (r.ym) {
+        if (!byMonth.has(r.ym)) {
+          byMonth.set(r.ym, { ym: r.ym, trips: 0, days: 0, diaria: 0, gratLiq: 0, total: 0 });
+        }
+        const m = byMonth.get(r.ym);
+        m.trips++;
+        m.days += f.diasFora;
+        m.diaria += f.effectiveDiaria;
+        m.gratLiq += f.effectiveGratLiquida;
+        m.total += f.effectiveTotal;
+      }
+    });
+
+    const personList = [...byPerson.values()].sort((a, b) => b.total - a.total || b.days - a.days || a.name.localeCompare(b.name));
+    const locList = [...byLoc.values()].sort((a, b) => b.total - a.total || b.trips - a.trips || a.city.localeCompare(b.city));
+    const monthList = [...byMonth.values()].sort((a, b) => a.ym.localeCompare(b.ym));
+    const emptyChart = `<p class="muted small" style="padding:18px 0;text-align:center">Sem dados financeiros para exibir neste filtro.</p>`;
+
+    // 4.4.1 Gráfico: Recebimentos por Pessoa (Barras Empilhadas Diária vs Grat. Rep.)
+    const cRevPerson = $("#proControlChartRevByPerson");
+    if (cRevPerson) {
+      if (!personList.length) {
+        cRevPerson.innerHTML = emptyChart;
+      } else {
+        const maxVal = Math.max(1, ...personList.map(p => p.total));
+        cRevPerson.innerHTML = `
+          <div class="fin-legend" style="margin-bottom:8px">
+            <span><i style="background:#10b981"></i> Diária</span>
+            <span><i style="background:#a855f7"></i> Grat. Rep. (Líq.)</span>
+          </div>
+          <div class="pro-map-hbars">${personList.map(p => {
+            const totalW = p.total > 0 ? Math.max(8, Math.round((p.total / maxVal) * 100)) : 0;
+            const dPct = p.total > 0 ? (p.diaria / p.total) * 100 : 0;
+            const gPct = p.total > 0 ? (p.gratLiq / p.total) * 100 : 0;
+            const tip = `${p.name} (${p.rankName}): Total ${core.money(p.total)} — Diárias: ${core.money(p.diaria)} · Grat. Rep. Líq.: ${core.money(p.gratLiq)}`;
+            return `<button type="button" class="pro-map-hbar-row" data-ctrl-pick-person="${core.esc(p.name)}" data-tooltip="${core.esc(tip)}">
+              <div class="pro-map-hbar-top">
+                <span class="pro-map-hbar-lbl"><span class="pro-map-hbar-dot" style="background:${core.esc(p.color.hex)}"></span>${core.esc(p.name)}</span>
+                <b class="pro-map-hbar-val">${core.money(p.total)}</b>
+              </div>
+              <div class="pro-map-hbar-track">
+                <div class="pro-travels-stacked-fill" style="width:${totalW}%">
+                  ${p.diaria > 0 ? `<span class="pro-travels-seg" style="width:${dPct.toFixed(2)}%;background:#10b981"></span>` : ""}
+                  ${p.gratLiq > 0 ? `<span class="pro-travels-seg" style="width:${gPct.toFixed(2)}%;background:#a855f7"></span>` : ""}
+                </div>
+              </div>
+            </button>`;
+          }).join("")}</div>`;
+        cRevPerson.querySelectorAll("[data-ctrl-pick-person]").forEach(b => {
+          b.onclick = () => {
+            const nm = b.dataset.ctrlPickPerson;
+            proFilterAssignee = proFilterAssignee.toLowerCase() === nm.toLowerCase() ? "" : nm;
+            applyAndRenderProFilteredViews();
+          };
+        });
+      }
+    }
+
+    // 4.4.2 Gráfico: Recebimentos por Localidade (R$)
+    const cRevLoc = $("#proControlChartRevByLoc");
+    if (cRevLoc) {
+      if (!locList.length) {
+        cRevLoc.innerHTML = emptyChart;
+      } else {
+        const topLocs = locList.slice(0, 10);
+        const maxLoc = Math.max(1, ...topLocs.map(l => l.total));
+        cRevLoc.innerHTML = `<div class="pro-map-hbars">${topLocs.map(l => {
+          const wPct = l.total > 0 ? Math.max(8, Math.round((l.total / maxLoc) * 100)) : 0;
+          const tip = `${l.city} (${l.tierInfo.label}): ${core.money(l.total)} em ${l.trips} viagem(ns) · ${l.days} dias (Diárias: ${core.money(l.diaria)} | Grat. Rep.: ${core.money(l.gratLiq)})`;
+          return `<div class="pro-map-hbar-row" data-tooltip="${core.esc(tip)}" tabindex="0">
+            <div class="pro-map-hbar-top">
+              <span class="pro-map-hbar-lbl">📍 ${core.esc(l.city)} <span class="pro-ctrl-tier-badge tier-${l.tierInfo.tier}">${core.esc(l.tierInfo.short)}</span></span>
+              <b class="pro-map-hbar-val">${core.money(l.total)}</b>
+            </div>
+            <div class="pro-map-hbar-track">
+              <div class="pro-map-hbar-fill" style="width:${wPct}%;background:linear-gradient(90deg,#0284c7,#22d3ee)"></div>
+            </div>
+          </div>`;
+        }).join("")}</div>`;
+      }
+    }
+
+    // 4.4.3 Gráfico: Evolução Mensal Financeira (R$)
+    const cMonRev = $("#proControlChartMonthlyRev");
+    if (cMonRev) {
+      if (!monthList.length) {
+        cMonRev.innerHTML = emptyChart;
+      } else {
+        const maxM = Math.max(1, ...monthList.map(m => m.total));
+        cMonRev.innerHTML = `
+          <div class="fin-legend" style="margin-bottom:6px">
+            <span><i style="background:#10b981"></i> Diária</span>
+            <span><i style="background:#a855f7"></i> Grat. Rep. (Líq.)</span>
+          </div>
+          <div class="pro-vbars-chart pro-travels-monthly-chart">${monthList.map(m => {
+            const [yr, mo] = m.ym.split("-");
+            const lbl = `${core.MON[parseInt(mo, 10) - 1]}/${yr.slice(2)}`;
+            const hTotal = m.total > 0 ? Math.max(12, Math.round((m.total / maxM) * 100)) : 4;
+            const dPct = m.total > 0 ? (m.diaria / m.total) * 100 : 0;
+            const gPct = m.total > 0 ? (m.gratLiq / m.total) * 100 : 0;
+            const tip = `${lbl}: Total ${core.money(m.total)} (${m.trips} viagens · ${m.days}d) — Diárias: ${core.money(m.diaria)} · Grat. Rep.: ${core.money(m.gratLiq)}`;
+            return `<div class="pro-vbar-col pro-travels-mcol" data-tooltip="${core.esc(tip)}" tabindex="0">
+              <span class="pro-vbar-val">${m.total >= 1000 ? `${core.num(m.total / 1000, 1)}k` : core.num(m.total, 0)}</span>
+              <div class="pro-travels-vcol-track">
+                <div class="pro-travels-vcol-stack" style="height:${hTotal}%">
+                  ${m.diaria > 0 ? `<div class="pro-travels-vseg" style="height:${dPct.toFixed(2)}%;background:#10b981"></div>` : ""}
+                  ${m.gratLiq > 0 ? `<div class="pro-travels-vseg" style="height:${gPct.toFixed(2)}%;background:#a855f7"></div>` : ""}
+                </div>
+              </div>
+              <span class="pro-vbar-lbl">${lbl}</span>
+            </div>`;
+          }).join("")}</div>`;
+      }
+    }
+
+    // 4.4.4 Gráfico: Total de Dias Fora por Pessoa
+    const cDaysP = $("#proControlChartDaysByPerson");
+    if (cDaysP) {
+      if (!personList.length) {
+        cDaysP.innerHTML = emptyChart;
+      } else {
+        const sortedDays = personList.slice().sort((a, b) => b.days - a.days || a.name.localeCompare(b.name));
+        const maxD = Math.max(1, ...sortedDays.map(p => p.days));
+        cDaysP.innerHTML = `<div class="pro-map-hbars">${sortedDays.map(p => {
+          const wPct = Math.max(8, Math.round((p.days / maxD) * 100));
+          const tip = `${p.name}: ${p.days} dia(s) fora em ${p.trips} viagem(ns) · Recebido: ${core.money(p.total)}`;
+          return `<button type="button" class="pro-map-hbar-row" data-ctrl-pick-person="${core.esc(p.name)}" data-tooltip="${core.esc(tip)}">
+            <div class="pro-map-hbar-top">
+              <span class="pro-map-hbar-lbl"><span class="pro-map-hbar-dot" style="background:${core.esc(p.color.hex)}"></span>${core.esc(p.name)}</span>
+              <b class="pro-map-hbar-val">${p.days} ${p.days === 1 ? "dia" : "dias"} <span class="muted">(${p.trips}v)</span></b>
+            </div>
+            <div class="pro-map-hbar-track">
+              <div class="pro-map-hbar-fill" style="width:${wPct}%;background:${core.esc(p.color.hex)}"></div>
+            </div>
+          </button>`;
+        }).join("")}</div>`;
+        cDaysP.querySelectorAll("[data-ctrl-pick-person]").forEach(b => {
+          b.onclick = () => {
+            const nm = b.dataset.ctrlPickPerson;
+            proFilterAssignee = proFilterAssignee.toLowerCase() === nm.toLowerCase() ? "" : nm;
+            applyAndRenderProFilteredViews();
+          };
+        });
+      }
+    }
+
+    // 4.4.5 3 Tabelas Resumidas Financeiras
+    const applySummaryVis = () => {
+      if ($("#proControlSummaryPersonCard")) $("#proControlSummaryPersonCard").hidden = !(proControlSummaryTab === "all" || proControlSummaryTab === "person");
+      if ($("#proControlSummaryLocCard")) $("#proControlSummaryLocCard").hidden = !(proControlSummaryTab === "all" || proControlSummaryTab === "location");
+      if ($("#proControlSummaryPeriodCard")) $("#proControlSummaryPeriodCard").hidden = !(proControlSummaryTab === "all" || proControlSummaryTab === "period");
+    };
+    applySummaryVis();
+
+    const spTbl = $("#proControlSummaryPersonTable");
+    if (spTbl) {
+      spTbl.innerHTML = `
+        <thead><tr><th>Pessoa</th><th>Posto</th><th class="num">Viagens</th><th class="num">Dias Fora</th><th class="num">Total Diárias</th><th class="num">Grat. Rep. (Líq.)</th><th class="num">Total Geral</th></tr></thead>
+        <tbody>
+          ${personList.map(p => `<tr>
+            <td><span class="pro-assignee-badge" style="--asg-bg:${p.color.bg};--asg-fg:${p.color.fg};--asg-bd:${p.color.bd}">👤 ${core.esc(p.name)}</span></td>
+            <td class="muted small">${core.esc(p.rankName)}</td>
+            <td class="num">${p.trips}</td>
+            <td class="num">${p.days}d</td>
+            <td class="num">${core.money(p.diaria)}</td>
+            <td class="num">${core.money(p.gratLiq)}</td>
+            <td class="num"><strong>${core.money(p.total)}</strong></td>
+          </tr>`).join("") || `<tr><td colspan="7" class="muted" style="text-align:center;padding:14px">Sem dados.</td></tr>`}
+        </tbody>`;
+    }
+
+    const slTbl = $("#proControlSummaryLocTable");
+    if (slTbl) {
+      slTbl.innerHTML = `
+        <thead><tr><th>Localidade</th><th>Faixa</th><th class="num">Viagens</th><th class="num">Dias Fora</th><th class="num">Total Financeiro</th></tr></thead>
+        <tbody>
+          ${locList.map(l => `<tr>
+            <td><strong>📍 ${core.esc(l.city)}</strong></td>
+            <td><span class="pro-ctrl-tier-badge tier-${l.tierInfo.tier}">${core.esc(l.tierInfo.label)}</span></td>
+            <td class="num">${l.trips}</td>
+            <td class="num">${l.days}d</td>
+            <td class="num"><strong>${core.money(l.total)}</strong></td>
+          </tr>`).join("") || `<tr><td colspan="5" class="muted" style="text-align:center;padding:14px">Sem dados.</td></tr>`}
+        </tbody>`;
+    }
+
+    const smTbl = $("#proControlSummaryPeriodTable");
+    if (smTbl) {
+      smTbl.innerHTML = `
+        <thead><tr><th>Mês / Ano</th><th class="num">Viagens</th><th class="num">Dias Fora</th><th class="num">Total Diárias</th><th class="num">Grat. Rep. (Líq.)</th><th class="num">Total Geral</th></tr></thead>
+        <tbody>
+          ${monthList.map(m => {
+            const [yr, mo] = m.ym.split("-");
+            const lbl = `${core.MON[parseInt(mo, 10) - 1]}/${yr}`;
+            return `<tr>
+              <td><strong>${lbl}</strong></td>
+              <td class="num">${m.trips}</td>
+              <td class="num">${m.days}d</td>
+              <td class="num">${core.money(m.diaria)}</td>
+              <td class="num">${core.money(m.gratLiq)}</td>
+              <td class="num"><strong>${core.money(m.total)}</strong></td>
+            </tr>`;
+          }).join("") || `<tr><td colspan="6" class="muted" style="text-align:center;padding:14px">Sem dados datados.</td></tr>`}
+        </tbody>`;
+    }
+  }
+
   /* ---------- 3. DASHBOARD EXECUTIVO ---------- */
   function renderProDashboard(allCardsOpt, tOpt) {
     const cards = allCardsOpt || getProSortedActivities();
@@ -5150,6 +6302,7 @@
       });
     }
     applyProVisibleMenusUI();
+    renderProTravelFinanceParams(st);
   }
 
   /* ---------- 7. CHECKLIST EXECUTIVO ---------- */
@@ -5556,12 +6709,99 @@
     sel.innerHTML = allTypes.map(t => `<option value="${core.esc(t.id)}">${core.esc(t.short)}</option>`).join("");
   }
 
+  function updateProModalTravelFinancePreview() {
+    const box = $("#pc-travelFinanceBox");
+    if (!box) return;
+    const primaryName = ($("#pc-assignee")?.value || "").trim();
+    const primaryTravels = Boolean($("#pc-assigneeTravels")?.checked);
+    const primaryModeSel = $("#pc-primaryTravelMode");
+    const extraTravelers = proModalExtraAssignees.filter(r => r.name && r.travels);
+    const hasAnyTraveler = primaryTravels || proModalExtraAssignees.some(r => r.travels);
+    const totalTravelersCount = (primaryName && primaryTravels ? 1 : 0) + extraTravelers.length;
+
+    if (primaryModeSel) {
+      primaryModeSel.hidden = !(primaryTravels && totalTravelersCount > 1);
+    }
+
+    box.hidden = !hasAnyTraveler;
+    if (!hasAnyTraveler) return;
+
+    const cfg = getTravelFinanceConfig(editingProTripRef?.data || null);
+    let startVal = $("#pc-start")?.value || "";
+    let endVal = $("#pc-end")?.value || "";
+    if (!startVal && endVal) startVal = endVal;
+    if (startVal && !endVal) endVal = startVal;
+    if (startVal && endVal < startVal) endVal = startVal;
+
+    const draftCard = {
+      start: startVal,
+      end: endVal,
+      location: ($("#pc-location")?.value || "").trim(),
+      travelFinanceMode: sanitizeTravelMode($("#pc-travelFinanceMode")?.value) || "diaria",
+      travelFreeLodging: Boolean($("#pc-travelFreeLodging")?.checked)
+    };
+
+    const tierInfo = classifyLocationTier(draftCard.location, cfg);
+    const tierBadge = $("#pc-travelFinanceTierBadge");
+    if (tierBadge) {
+      tierBadge.textContent = draftCard.location
+        ? `${tierInfo.label} (${tierInfo.desc})`
+        : "Informe o Local para classificar a Faixa";
+    }
+
+    const previewEl = $("#pc-travelFinancePreview");
+    if (!previewEl) return;
+
+    const participants = [];
+    if (primaryName && primaryTravels) {
+      participants.push({ name: primaryName, travels: true, travelMode: sanitizeTravelMode(primaryModeSel?.value) });
+    }
+    proModalExtraAssignees.forEach(r => {
+      if (r.name && r.travels && !participants.some(p => p.name.toLowerCase() === r.name.toLowerCase())) {
+        participants.push({ name: r.name, travels: true, travelMode: sanitizeTravelMode(r.travelMode) });
+      }
+    });
+
+    if (!participants.length) {
+      previewEl.innerHTML = `<span class="muted small">Selecione ao menos um responsável para calcular a estimativa financeira.</span>`;
+      return;
+    }
+
+    const modeLabels = { diaria: "💵 Diária", grat_rep: "🎖️ Grat. Rep.", comissionamento: "📋 Comissionamento" };
+    let grandSum = 0;
+    const rowsHtml = participants.map(pt => {
+      const f = computePersonTravelFinance(draftCard, pt.name, pt, cfg);
+      grandSum += f.effectiveTotal;
+      const rankTxt = f.rank ? `${core.esc(f.rank.name)} (Círc. ${core.esc(f.rank.circle)})` : `<span style="color:var(--event)">⚠️ Posto não vinculado em Parâmetros</span>`;
+      let valHtml = "";
+      if (f.activeMode === "diaria") {
+        valHtml = `<strong style="color:var(--ok)">${core.money(f.diariaTotal)}</strong> <small class="muted">(${core.num(f.diariasQty, 1)} diár.${f.freeLodging ? " · 50%" : ""})</small>`;
+      } else if (f.activeMode === "grat_rep") {
+        valHtml = `<strong style="color:#c084fc">${core.money(f.gratLiquida)}</strong> <small class="muted">(Líq. · Bruto ${core.money(f.gratBruta)} · ${f.diasFora}d)</small>`;
+      } else {
+        valHtml = `<strong class="muted">R$ 0,00</strong> <small class="muted">(Comissionamento)</small>`;
+      }
+      return `<div class="pro-tf-prev-row">
+        <div style="min-width:0">
+          <b>${core.esc(pt.name)}</b> <span class="pill" style="font-size:0.65rem;padding:1px 6px">${modeLabels[f.activeMode]}</span>
+          <div class="muted small">${rankTxt}</div>
+        </div>
+        <div style="text-align:right;white-space:nowrap">${valHtml}</div>
+      </div>`;
+    }).join("");
+
+    previewEl.innerHTML = `
+      ${rowsHtml}
+      ${participants.length > 1 ? `<div class="pro-tf-prev-total"><span>Total estimado do cartão</span><strong>${core.money(grandSum)}</strong></div>` : ""}`;
+  }
+
   function renderProModalExtraAssignees() {
     const box = $("#pc-extraAssigneesList");
     if (!box) return;
     const allList = getAllProAssignees();
     if (!proModalExtraAssignees.length) {
       box.innerHTML = "";
+      updateProModalTravelFinancePreview();
       return;
     }
     box.innerHTML = proModalExtraAssignees.map((row, idx) => {
@@ -5569,12 +6809,19 @@
       if (row.name && !items.some(x => x.toLowerCase() === row.name.toLowerCase())) items.push(row.name);
       const opts = `<option value="">— Selecionar responsável —</option>`
         + items.map(a => `<option value="${core.esc(a)}" ${a.toLowerCase() === String(row.name || "").toLowerCase() ? "selected" : ""}>${core.esc(a)}</option>`).join("");
+      const modeVal = sanitizeTravelMode(row.travelMode);
       return `<div class="pro-extra-assignee-row" data-ex-asg-idx="${idx}">
         <select data-ex-asg-sel="${idx}" aria-label="Responsável adicional">${opts}</select>
         <label class="pro-travel-chk-label" title="Marque se este responsável viaja nesta tarefa">
           <input type="checkbox" data-ex-asg-trv="${idx}" ${row.travels ? "checked" : ""}>
           <span>✈️ Viaja</span>
         </label>
+        <select class="pro-asg-mode-sel" data-ex-asg-mode="${idx}" aria-label="Modalidade individual" title="Modalidade individual (opcional)" ${row.travels ? "" : "hidden"}>
+          <option value="" ${!modeVal ? "selected" : ""}>Padrão</option>
+          <option value="diaria" ${modeVal === "diaria" ? "selected" : ""}>💵 Diária</option>
+          <option value="grat_rep" ${modeVal === "grat_rep" ? "selected" : ""}>🎖️ Grat. Rep.</option>
+          <option value="comissionamento" ${modeVal === "comissionamento" ? "selected" : ""}>📋 Comiss.</option>
+        </select>
         <button type="button" class="icon-btn" data-ex-asg-del="${idx}" title="Remover responsável deste cartão">✕</button>
       </div>`;
     }).join("");
@@ -5583,12 +6830,21 @@
       sel.onchange = () => {
         const i = parseInt(sel.dataset.exAsgSel, 10);
         if (proModalExtraAssignees[i]) proModalExtraAssignees[i].name = sel.value;
+        updateProModalTravelFinancePreview();
       };
     });
     box.querySelectorAll("[data-ex-asg-trv]").forEach(chk => {
       chk.onchange = () => {
         const i = parseInt(chk.dataset.exAsgTrv, 10);
         if (proModalExtraAssignees[i]) proModalExtraAssignees[i].travels = chk.checked;
+        renderProModalExtraAssignees();
+      };
+    });
+    box.querySelectorAll("[data-ex-asg-mode]").forEach(sel => {
+      sel.onchange = () => {
+        const i = parseInt(sel.dataset.exAsgMode, 10);
+        if (proModalExtraAssignees[i]) proModalExtraAssignees[i].travelMode = sanitizeTravelMode(sel.value);
+        updateProModalTravelFinancePreview();
       };
     });
     box.querySelectorAll("[data-ex-asg-del]").forEach(btn => {
@@ -5598,6 +6854,7 @@
         renderProModalExtraAssignees();
       };
     });
+    updateProModalTravelFinancePreview();
   }
 
   function ensureProLocationAutocomplete() {
@@ -5698,16 +6955,19 @@
     updateProModalDoneBtn();
     $("#pc-client").value = a ? (a.client || "") : (core.getState().params?.clientDefault || "");
     const existingAsgList = a ? getCardAssigneesList(a) : [];
-    const primaryAsg = existingAsgList[0] || { name: a?.assignee || "", travels: Boolean(a?.assigneeTravels) };
+    const primaryAsg = existingAsgList[0] || { name: a?.assignee || "", travels: Boolean(a?.assigneeTravels), travelMode: sanitizeTravelMode(a?.assigneeTravelMode) };
     populateProAssigneeSelect(primaryAsg.name, editingProTripRef?.data || null);
     if ($("#pc-assigneeTravels")) $("#pc-assigneeTravels").checked = Boolean(primaryAsg.travels);
-    proModalExtraAssignees = existingAsgList.slice(1).map(e => ({ name: e.name, travels: Boolean(e.travels) }));
-    renderProModalExtraAssignees();
+    if ($("#pc-primaryTravelMode")) $("#pc-primaryTravelMode").value = sanitizeTravelMode(primaryAsg.travelMode);
+    if ($("#pc-travelFinanceMode")) $("#pc-travelFinanceMode").value = sanitizeTravelMode(a?.travelFinanceMode) || "diaria";
+    if ($("#pc-travelFreeLodging")) $("#pc-travelFreeLodging").checked = Boolean(a?.travelFreeLodging);
+    proModalExtraAssignees = existingAsgList.slice(1).map(e => ({ name: e.name, travels: Boolean(e.travels), travelMode: sanitizeTravelMode(e.travelMode) }));
 
     $("#pc-location").value = a ? (a.location || "") : "";
     if ($("#pc-meetingLink")) $("#pc-meetingLink").value = a ? (a.meetingLink || "") : "";
     proModalLocationLat = (a && a.locationLat != null && isFinite(Number(a.locationLat))) ? Number(a.locationLat) : null;
     proModalLocationLng = (a && a.locationLng != null && isFinite(Number(a.locationLng))) ? Number(a.locationLng) : null;
+    renderProModalExtraAssignees();
     if (proLocationAcCtrl) proLocationAcCtrl.clearSelected();
     if ($("#pc-attachLoading")) $("#pc-attachLoading").hidden = true;
 
@@ -5759,22 +7019,30 @@
 
     const assigneesList = [];
     const seenAsg = new Set();
-    const pushAsg = (nm, tr) => {
+    const pushAsg = (nm, tr, tm = "") => {
       const clean = String(nm || "").trim();
       if (!clean) return;
       const k = clean.toLowerCase();
+      const mode = sanitizeTravelMode(tm);
       if (seenAsg.has(k)) {
         const ex = assigneesList.find(e => e.name.toLowerCase() === k);
-        if (ex && tr) ex.travels = true;
+        if (ex) {
+          if (tr) ex.travels = true;
+          if (!ex.travelMode && mode) ex.travelMode = mode;
+        }
         return;
       }
       seenAsg.add(k);
-      assigneesList.push({ name: clean, travels: Boolean(tr) });
+      assigneesList.push({ name: clean, travels: Boolean(tr), travelMode: mode });
     };
     const primaryName = ($("#pc-assignee")?.value || "").trim();
     const primaryTravels = Boolean($("#pc-assigneeTravels")?.checked);
-    if (primaryName) pushAsg(primaryName, primaryTravels);
-    proModalExtraAssignees.forEach(r => pushAsg(r.name, r.travels));
+    const primaryMode = sanitizeTravelMode($("#pc-primaryTravelMode")?.value);
+    if (primaryName) pushAsg(primaryName, primaryTravels, primaryMode);
+    proModalExtraAssignees.forEach(r => pushAsg(r.name, r.travels, r.travelMode));
+
+    const travelFinanceMode = sanitizeTravelMode($("#pc-travelFinanceMode")?.value) || "diaria";
+    const travelFreeLodging = Boolean($("#pc-travelFreeLodging")?.checked);
 
     return {
       type: $("#pc-type").value || "Desenvolvimento",
@@ -5789,7 +7057,10 @@
       client: $("#pc-client").value.trim(),
       assignee: assigneesList[0]?.name || "",
       assigneeTravels: Boolean(assigneesList[0]?.travels),
+      assigneeTravelMode: assigneesList[0]?.travelMode || "",
       assigneesList,
+      travelFinanceMode,
+      travelFreeLodging,
       location: $("#pc-location").value.trim(),
       locationLat: proModalLocationLat,
       locationLng: proModalLocationLng,
@@ -6090,6 +7361,7 @@
     }
 
     // Deslocamentos controls
+    initProFloatingTooltips();
     if ($("#btnProTravelsAddCard")) $("#btnProTravelsAddCard").onclick = () => openProCardModal();
     if ($("#btnProTravelsPrint")) $("#btnProTravelsPrint").onclick = printProTravelsReport;
     if ($("#proTravelsQuickAssignee")) {
@@ -6104,6 +7376,102 @@
         renderProTravels();
       };
     }
+
+    // Controle Financeiro de Viagens controls
+    if ($("#btnProControlAddCard")) $("#btnProControlAddCard").onclick = () => openProCardModal();
+    if ($("#btnProControlGoParams")) {
+      $("#btnProControlGoParams").onclick = () => {
+        core?.switchProView?.("pro-params");
+        setTimeout(() => $("#proTravelFinanceParamsCard")?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+      };
+    }
+    if ($("#proControlQuickAssignee")) {
+      $("#proControlQuickAssignee").onchange = e => {
+        proFilterAssignee = e.target.value || "";
+        applyAndRenderProFilteredViews();
+      };
+    }
+    if ($("#proControlQuickMode")) {
+      $("#proControlQuickMode").onchange = e => {
+        proControlQuickMode = e.target.value || "";
+        renderProControl();
+      };
+    }
+    if ($("#proControlQuickMonth")) {
+      $("#proControlQuickMonth").onchange = e => {
+        proControlQuickMonth = e.target.value || "";
+        renderProControl();
+      };
+    }
+    if ($("#proControlScopeSel")) {
+      $("#proControlScopeSel").onchange = e => {
+        proControlScope = e.target.value || "travels";
+        renderProControl();
+      };
+    }
+    $("#proControlSummarySeg")?.querySelectorAll("button").forEach(b => {
+      b.onclick = () => {
+        proControlSummaryTab = b.dataset.ctrlSum || "all";
+        $("#proControlSummarySeg").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+        renderProControl();
+      };
+    });
+
+    // Parâmetros Financeiros de Viagens (Forças Armadas) controls
+    if ($("#proTfGratPct")) {
+      $("#proTfGratPct").onchange = e => {
+        const st = core.getState();
+        const tf = ensureWritableTravelFinanceConfig(st);
+        tf.gratRepPct = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0));
+        core.save("🎖️ Percentual da Gratificação de Representação atualizado");
+      };
+    }
+    if ($("#btnProTfAddRank")) {
+      $("#btnProTfAddRank").onclick = () => {
+        const st = core.getState();
+        const tf = ensureWritableTravelFinanceConfig(st);
+        tf.ranks.push({
+          id: `rank_${Date.now().toString(36)}`,
+          name: "Novo Posto / Graduação",
+          circle: "D",
+          soldo: 5000,
+          irPct: 27.5
+        });
+        core.save("➕ Novo posto/graduação adicionado à tabela");
+      };
+    }
+    if ($("#btnProTfResetDefaults")) {
+      $("#btnProTfResetDefaults").onclick = () => {
+        if (!confirm("Restaurar as tabelas padrão 2026 de Soldos, Diárias (Decreto 12.324/2024) e Localidades? Os vínculos de Posto/Graduação das pessoas serão mantidos.")) return;
+        const st = core.getState();
+        const prevMap = getTravelFinanceConfig(st).assigneeRanks || {};
+        const def = createDefaultTravelFinanceConfig();
+        def.assigneeRanks = { ...prevMap };
+        if (!st.params || typeof st.params !== "object") st.params = {};
+        st.params.travelFinance = def;
+        core.save("↺ Tabelas padrão 2026 de Soldos e Diárias restauradas");
+      };
+    }
+    const bindCitiesTextarea = (sel, key, label) => {
+      const el = $(sel);
+      if (!el) return;
+      el.onchange = () => {
+        const st = core.getState();
+        const tf = ensureWritableTravelFinanceConfig(st);
+        tf[key] = el.value.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+        core.save(`📍 Cidades da ${label} atualizadas`);
+      };
+    };
+    bindCitiesTextarea("#proTfCitiesF1", "citiesF1", "Faixa 1");
+    bindCitiesTextarea("#proTfCitiesF2", "citiesF2", "Faixa 2");
+
+    // Modal Cartão: preview reativo da Modalidade Financeira da Viagem
+    ["#pc-start", "#pc-end", "#pc-location", "#pc-assignee", "#pc-assigneeTravels", "#pc-primaryTravelMode", "#pc-travelFinanceMode", "#pc-travelFreeLodging"].forEach(sel => {
+      const el = $(sel);
+      if (!el) return;
+      el.addEventListener("change", updateProModalTravelFinancePreview);
+      if (sel === "#pc-location") el.addEventListener("input", updateProModalTravelFinancePreview);
+    });
 
     // Gantt controls
     if ($("#btnProAddCardGantt")) $("#btnProAddCardGantt").onclick = () => openProCardModal();
@@ -6135,13 +7503,13 @@
         core.save("↺ Ordem automática por Tipo de Cartão restaurada");
       };
     }
-    // Filtros unificados (Gantt / Mapa / Deslocamentos / Dashboard / Financeiro)
+    // Filtros unificados (Gantt / Mapa / Deslocamentos / Controle / Dashboard / Financeiro)
     const bindUnifiedFilterGroup = (prefix, clearSel) => {
       const searchEl = $(`#${prefix}Search`);
       if (searchEl) {
         searchEl.oninput = () => {
           proFilterSearch = searchEl.value || "";
-          ["#proGanttSearch", "#proMapSearch", "#proTravelsSearch", "#proDashSearch", "#proFinSearch"].forEach(s => {
+          ["#proGanttSearch", "#proMapSearch", "#proTravelsSearch", "#proControlSearch", "#proDashSearch", "#proFinSearch"].forEach(s => {
             if ($(s) && $(s) !== searchEl) $(s).value = proFilterSearch;
           });
           applyAndRenderProFilteredViews();
@@ -6185,6 +7553,7 @@
     bindUnifiedFilterGroup("proGantt", "#btnProGanttClearFilters");
     bindUnifiedFilterGroup("proMap", "#btnProMapClearFilters");
     bindUnifiedFilterGroup("proTravels", "#btnProTravelsClearFilters");
+    bindUnifiedFilterGroup("proControl", "#btnProControlClearFilters");
     bindUnifiedFilterGroup("proDash", "#btnProDashClearFilters");
     bindUnifiedFilterGroup("proFin", "#btnProFinClearFilters");
 
@@ -6862,6 +8231,7 @@
     renderProTimeline(cards);
     renderProMap(filteredCards);
     renderProTravels(filteredCards);
+    renderProControl(filteredCards);
     renderProDashboard(filteredCards, t);
     renderProFinance(filteredCards, t);
     renderProTable(cards);
@@ -6882,6 +8252,7 @@
     renderProTimeline,
     renderProMap,
     renderProTravels,
+    renderProControl,
     renderProBoard,
     buildProSummaryHTML,
     openProCardModal,

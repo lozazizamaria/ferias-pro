@@ -1,6 +1,6 @@
 {
   "name": "my-plan",
-  "version": "41.0.0",
+  "version": "42.0.0",
   "description": "My Plan — Planejador inteligente Pessoal e Profissional com Quadro Kanban Trello, Gantt avançado, Fluxo de Caixa, Google Maps, Google Agenda, IA Gemini multimodal e Super Admin.",
   "private": true,
   "engines": {

@@ -630,9 +630,11 @@ main { padding: 14px 26px 40px; max-width: 1580px; margin: auto; min-width: 0; m
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  z-index: 95;
+  z-index: 115;
   min-width: 280px;
   max-width: min(360px, calc(100vw - 24px));
+  max-height: min(74vh, 640px);
+  overflow-y: auto;
   background: var(--bg2);
   border: 1px solid var(--border-strong);
   border-radius: 13px;
@@ -4067,7 +4069,7 @@ dialog.import-cal-dialog {
 }
 
 /* QUADRO KANBAN ESTILO TRELLO (MODO PROFISSIONAL) */
-.pro-board-toolbar-card { padding: 8px 12px; margin-bottom: 10px; position: relative; z-index: 35; }
+.pro-board-toolbar-card { padding: 8px 12px; margin-bottom: 10px; position: relative; z-index: 60; }
 .pro-compact-filter-bar { padding: 6px 10px; margin-bottom: 10px; flex-wrap: nowrap; position: relative; z-index: 35; }
 .pro-table-head { margin-bottom: 8px; position: relative; z-index: 35; }
 .pro-board-toolbar {
@@ -4812,26 +4814,30 @@ html[data-theme="light"] .pro-map-mission-dt {
   border-color: var(--accent2);
   outline: none;
 }
-.pro-map-hbar-row[data-tooltip]:hover::after,
-.pro-map-hbar-row[data-tooltip]:focus-visible::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
+.pro-float-tooltip {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
   background: #0f172a;
   color: #f8fafc;
-  padding: 5px 10px;
-  border-radius: 7px;
-  font-size: 0.73rem;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  padding: 7px 11px;
+  border-radius: 9px;
+  font-size: 0.76rem;
   font-weight: 600;
-  white-space: nowrap;
-  max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  box-shadow: 0 8px 20px rgba(2, 8, 23, 0.45);
-  pointer-events: none;
-  z-index: 25;
+  line-height: 1.35;
+  max-width: min(340px, calc(100vw - 20px));
+  box-shadow: 0 12px 28px rgba(2, 8, 23, 0.58);
+  white-space: normal;
+  word-break: break-word;
+}
+html[data-theme="light"] .pro-float-tooltip {
+  background: #0f172a;
+  color: #f8fafc;
+  border-color: rgba(37, 99, 235, 0.55);
+}
+.pro-float-tooltip[hidden] {
+  display: none !important;
 }
 .pro-map-hbar-top {
   display: flex;
@@ -4924,13 +4930,22 @@ html[data-theme="light"] .pro-map-mission-dt {
   overflow-x: auto;
   min-width: 0;
 }
-.pro-map-trips-table th.pro-map-sort-th {
+.pro-map-trips-table .pro-map-sort-th {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
-.pro-map-trips-table th.pro-map-sort-th:hover {
-  color: var(--accent);
+.pro-map-trips-table .pro-map-sort-th:hover {
+  color: var(--accent2);
 }
 .pro-map-trip-row {
   cursor: pointer;
@@ -5373,27 +5388,6 @@ html[data-theme="light"] .pro-map-mission-dt {
   position: relative;
   min-width: 58px;
 }
-.pro-travels-mcol[data-tooltip]:hover::after,
-.pro-travels-mcol[data-tooltip]:focus-visible::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: #0f172a;
-  color: #f8fafc;
-  padding: 5px 10px;
-  border-radius: 7px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  white-space: nowrap;
-  max-width: 310px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  box-shadow: 0 8px 20px rgba(2, 8, 23, 0.45);
-  pointer-events: none;
-  z-index: 25;
-}
 .pro-travels-vcol-track {
   width: 28px;
   height: 124px;
@@ -5792,6 +5786,580 @@ html[data-theme="light"] .pro-map-mission-dt {
   .pro-travels-trip-dt {
     grid-column: 1 / -1;
     justify-self: start;
+  }
+}
+
+/* ===== ABA CONTROLE (CONTROLE DE VIAGENS & FINANCEIRO MILITAR) ===== */
+#view-pro-control {
+  gap: 14px;
+}
+#view-pro-control.active {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.pro-control-quick-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.pro-control-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1180px) {
+  .pro-control-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.pro-ctrl-person-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.pro-ctrl-rank-sub {
+  font-size: 0.7rem;
+  color: var(--muted);
+  line-height: 1.25;
+}
+.pro-ctrl-no-rank-btn {
+  background: rgba(245, 181, 68, 0.14);
+  border: 1px solid rgba(245, 181, 68, 0.45);
+  color: var(--event);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 0.69rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pro-ctrl-no-rank-btn:hover {
+  background: rgba(245, 181, 68, 0.24);
+}
+.pro-ctrl-trip-cell {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.pro-ctrl-trip-link {
+  color: var(--text-strong);
+  text-decoration: underline transparent;
+  transition: color 0.14s ease, text-decoration-color 0.14s ease;
+}
+.pro-ctrl-row:hover .pro-ctrl-trip-link {
+  color: var(--accent2);
+  text-decoration-color: var(--accent2);
+}
+.pro-ctrl-loc-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.pro-ctrl-tier-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+.pro-ctrl-tier-badge.tier-1 {
+  background: rgba(34, 211, 238, 0.16);
+  color: var(--accent2);
+  border-color: rgba(34, 211, 238, 0.36);
+}
+.pro-ctrl-tier-badge.tier-2 {
+  background: rgba(124, 92, 255, 0.15);
+  color: #a78bfa;
+  border-color: rgba(124, 92, 255, 0.35);
+}
+.pro-ctrl-tier-badge.tier-3 {
+  background: var(--bg3);
+  color: var(--muted);
+  border-color: var(--border);
+}
+html[data-theme="light"] .pro-ctrl-tier-badge.tier-2 {
+  color: #6d28d9;
+}
+.pro-ctrl-days-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
+}
+.nowrap {
+  white-space: nowrap;
+}
+
+/* BOXES SELECIONÁVEIS DE MODALIDADE NA TABELA CONTROLE */
+.pro-ctrl-mode-box {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 122px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: var(--bg3);
+  border: 1.5px solid var(--border);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
+}
+.pro-ctrl-mode-box:hover {
+  border-color: var(--border-strong);
+  color: var(--text-strong);
+  transform: translateY(-1px);
+}
+.pro-ctrl-box-top {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pro-ctrl-chk {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 900;
+  color: transparent;
+  flex-shrink: 0;
+}
+.pro-ctrl-mode-box strong {
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.pro-ctrl-mode-box small {
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.pro-ctrl-mode-box.mode-diaria.is-selected {
+  background: rgba(16, 185, 129, 0.16);
+  border: 2px solid #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
+  color: var(--text-strong);
+}
+.pro-ctrl-mode-box.mode-diaria.is-selected strong {
+  color: #34d399;
+}
+html[data-theme="light"] .pro-ctrl-mode-box.mode-diaria.is-selected strong {
+  color: #047857;
+}
+.pro-ctrl-mode-box.mode-diaria.is-selected .pro-ctrl-chk {
+  background: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+}
+.pro-ctrl-mode-box.mode-grat.is-selected {
+  background: rgba(168, 85, 247, 0.17);
+  border: 2px solid #a855f7;
+  box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.16);
+  color: var(--text-strong);
+}
+.pro-ctrl-mode-box.mode-grat.is-selected strong {
+  color: #c084fc;
+}
+html[data-theme="light"] .pro-ctrl-mode-box.mode-grat.is-selected strong {
+  color: #7e22ce;
+}
+.pro-ctrl-mode-box.mode-grat.is-selected .pro-ctrl-chk {
+  background: #a855f7;
+  border-color: #a855f7;
+  color: #ffffff;
+}
+.pro-ctrl-mode-box.is-neutral {
+  opacity: 0.48;
+  border-style: dashed;
+}
+.pro-ctrl-row.is-comiss {
+  background: rgba(148, 163, 184, 0.04);
+}
+.pro-ctrl-comiss-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pro-ctrl-comiss-lbl.is-checked {
+  border-color: rgba(245, 181, 68, 0.65);
+  background: rgba(245, 181, 68, 0.15);
+  color: var(--event);
+}
+.pro-ctrl-comiss-lbl input {
+  width: 15px;
+  height: 15px;
+  accent-color: #f59e0b;
+  margin: 0;
+}
+.pro-ctrl-tfoot-row td {
+  background: var(--bg3);
+  border-top: 2px solid var(--border-strong);
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.pro-ctrl-grand-total {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 6px 11px;
+  border-radius: 10px;
+  background: rgba(34, 211, 238, 0.14);
+  border: 1.5px solid rgba(34, 211, 238, 0.45);
+}
+.pro-ctrl-grand-total small {
+  font-size: 0.64rem;
+  font-weight: 800;
+  color: var(--accent2);
+  letter-spacing: 0.04em;
+}
+.pro-ctrl-grand-total strong {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text-strong);
+}
+
+/* Mobile Controle Cards */
+.pro-ctrl-mob-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.pro-ctrl-mob-modes .pro-ctrl-mode-box {
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+}
+.pro-ctrl-comiss-mob {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  font-size: 0.77rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.pro-ctrl-comiss-mob.is-checked {
+  border-color: rgba(245, 181, 68, 0.65);
+  background: rgba(245, 181, 68, 0.14);
+  color: var(--event);
+}
+.pro-ctrl-comiss-mob input {
+  width: 16px;
+  height: 16px;
+  accent-color: #f59e0b;
+  margin: 0;
+}
+.pro-ctrl-mob-total-card {
+  margin-top: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg3);
+  border: 1.5px solid var(--border-strong);
+  display: grid;
+  gap: 6px;
+}
+.pro-ctrl-mob-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.pro-ctrl-mob-total-row.is-grand {
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 0.94rem;
+  color: var(--accent2);
+}
+
+.pro-control-summaries-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+/* PARÂMETROS FINANCEIROS DE VIAGENS (FORÇAS ARMADAS) */
+.pro-tf-params-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+.pro-tf-subblock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.pro-tf-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pro-tf-subhead h3 {
+  margin: 0;
+  font-size: 0.94rem;
+  color: var(--text-strong);
+}
+.pro-tf-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pro-tf-inline-pct {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.pro-tf-inline-pct input {
+  width: 60px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text-strong);
+  font-weight: 700;
+  text-align: right;
+}
+.pro-tf-people-grid {
+  display: grid;
+  gap: 8px;
+}
+.pro-tf-person-row {
+  display: grid;
+  grid-template-columns: minmax(140px, auto) minmax(220px, 1fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+.pro-tf-person-row select {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  color: var(--text-strong);
+  font-size: 0.8rem;
+  font-weight: 600;
+  width: 100%;
+  min-width: 0;
+}
+.pro-tf-person-prev {
+  font-size: 0.76rem;
+  color: var(--text);
+}
+.pro-tf-edit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.pro-tf-edit-table th,
+.pro-tf-edit-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.pro-tf-edit-table th {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-align: left;
+}
+.pro-tf-inp,
+.pro-tf-sel {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 5px 8px;
+  color: var(--text-strong);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.pro-tf-inp.num {
+  text-align: right;
+}
+.pro-tf-cities-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.pro-tf-cities-grid textarea {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: var(--text-strong);
+  font-size: 0.8rem;
+  resize: vertical;
+}
+.pro-tf-f3-note {
+  grid-column: 1 / -1;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--bg3);
+  border: 1px dashed var(--border-strong);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* MODAL CARTÃO: MODALIDADE FINANCEIRA DA VIAGEM + PREVIEW */
+.pro-asg-mode-sel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 4px 7px;
+  color: var(--text-strong);
+  font-size: 0.74rem;
+  font-weight: 600;
+  max-width: 138px;
+}
+.pro-travel-fin-box {
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--bg3);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+.pro-travel-fin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--text-strong);
+}
+.pro-travel-fin-preview {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 6px;
+}
+.pro-tf-prev-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.78rem;
+}
+.pro-tf-prev-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-strong);
+  font-size: 0.82rem;
+  color: var(--accent2);
+}
+
+@media (max-width: 767px) {
+  #view-pro-control .pro-control-header-bar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+  }
+  #view-pro-control .pro-control-hdr-right {
+    display: contents;
+  }
+  #view-pro-control .pro-control-hdr-filter {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+  }
+  #view-pro-control .pro-control-params-btn {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+  #view-pro-control .pro-control-add-btn {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+  }
+  #view-pro-control .pro-control-quick-filters {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+  #view-pro-control .pro-control-quick-filters .pro-map-quick-sel {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.82rem;
+    padding: 7px 10px;
+  }
+  #view-pro-control .pro-control-count-pill {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: stretch;
+    text-align: center;
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    padding: 6px 4px 0;
+    font-size: 0.74rem;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .pro-control-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .pro-tf-person-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .pro-tf-cities-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
