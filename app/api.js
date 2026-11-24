@@ -481,6 +481,20 @@
     return r.data.activity;
   }
 
+  async function aiAnalyzeTickets(payload) {
+    if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
+    const r = await req("/api/ai/analyze-tickets", { method: "POST", body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error(r.data?.error || r.data?.message || "Falha ao analisar bilhetes com Gemini.");
+    return r.data.result || {};
+  }
+
+  async function generateWalletSegmentLink(segment, card, tripName) {
+    if (!serverAvailable) return { ok: true, configured: false };
+    const r = await req("/api/wallet/generate-link", { method: "POST", body: JSON.stringify({ segment, card, tripName }) });
+    if (!r.ok) throw new Error(r.data?.error || "Falha ao gerar link da Carteira do Google.");
+    return r.data;
+  }
+
   async function signWalletPass(activity, tripName) {
     if (!serverAvailable) return { ok: true, configured: false };
     const r = await req("/api/wallet/sign", { method: "POST", body: JSON.stringify({ activity, tripName }) });
@@ -616,6 +630,8 @@
     aiImportCalendar,
     aiVehicleSpecs,
     aiAnalyzeActivity,
+    aiAnalyzeTickets,
+    generateWalletSegmentLink,
     signWalletPass,
     createPkpassUrl,
     epaVehicles,

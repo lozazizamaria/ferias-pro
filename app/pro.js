@@ -45,7 +45,14 @@
   let proFilterFinDir = "";
   let proFilterFinStatus = "";
   let proFilterTripsOnly = false;
-  let proModalTicketFile = null;
+  let proModalTickets = [];
+  let proModalSegments = [];
+  let proEditingSegmentIdx = -1;
+  let proDocsView = "list";
+  let proDocsOrigin = "";
+  let proDocsSort = "recent";
+  let proDocsPendingDelete = null;
+  let proDocsPreviewCurrent = null;
   let proGanttTypeMsel = null;
   let proGanttColMsel = null;
   let proGanttLabelMsel = null;
@@ -340,15 +347,64 @@
       a.travelFreeLodging = Boolean(a.travelFreeLodging);
       if (a.travelDetails && typeof a.travelDetails === "object") {
         const td = a.travelDetails;
+        const rawTickets = Array.isArray(td.tickets) ? td.tickets : [];
+        const normTickets = rawTickets
+          .filter(t => t && typeof t === "object" && (t.fileName || t.url || t.id))
+          .map(t => ({
+            id: String(t.id || core.uid()),
+            fileName: String(t.fileName || "Bilhete").trim(),
+            url: String(t.url || ""),
+            mimeType: String(t.mimeType || ""),
+            size: Math.max(0, Number(t.size) || 0),
+            uploadedAt: String(t.uploadedAt || ""),
+            legType: ["ida", "conexao_ida", "volta", "conexao_volta", "outro"].includes(t.legType) ? t.legType : "ida",
+            label: String(t.label || "").trim()
+          }));
+        if (!normTickets.length && td.ticketFile && typeof td.ticketFile === "object" && (td.ticketFile.fileName || td.ticketFile.url)) {
+          normTickets.push({
+            id: String(td.ticketFile.id || core.uid()),
+            fileName: String(td.ticketFile.fileName || "Bilhete").trim(),
+            url: String(td.ticketFile.url || ""),
+            mimeType: String(td.ticketFile.mimeType || ""),
+            size: Math.max(0, Number(td.ticketFile.size) || 0),
+            uploadedAt: String(td.ticketFile.uploadedAt || ""),
+            legType: "ida",
+            label: ""
+          });
+        }
+        const normSegments = (Array.isArray(td.segments) ? td.segments : [])
+          .filter(s => s && typeof s === "object")
+          .map(s => ({
+            id: String(s.id || core.uid()),
+            legType: ["ida", "conexao_ida", "volta", "conexao_volta", "outro"].includes(s.legType) ? s.legType : "ida",
+            origin: String(s.origin || "").trim(),
+            destination: String(s.destination || "").trim(),
+            departAt: sanitizeTravelDateTime(s.departAt),
+            arriveAt: sanitizeTravelDateTime(s.arriveAt),
+            carrier: String(s.carrier || "").trim(),
+            flightNumber: String(s.flightNumber || "").trim(),
+            locator: String(s.locator || "").trim(),
+            seat: String(s.seat || "").trim(),
+            terminal: String(s.terminal || "").trim(),
+            gate: String(s.gate || "").trim(),
+            transport: ["Avião", "Ônibus", "Carro", "Outro"].includes(s.transport) ? s.transport : "",
+            passengerName: String(s.passengerName || "").trim(),
+            barcodeValue: String(s.barcodeValue || "").trim(),
+            barcodeType: String(s.barcodeType || "QR_CODE").trim(),
+            ticketId: String(s.ticketId || ""),
+            notes: String(s.notes || "").trim()
+          }));
         a.travelDetails = {
-          ticketFile: td.ticketFile && typeof td.ticketFile === "object" ? { ...td.ticketFile } : null,
+          tickets: normTickets,
+          segments: normSegments,
+          ticketFile: normTickets[0] ? { ...normTickets[0] } : null,
           transport: ["Avião", "Ônibus", "Carro", "Outro"].includes(td.transport) ? td.transport : "",
           hasCost: Boolean(td.hasCost),
           costAmount: Math.max(0, Number(td.costAmount) || 0),
           notes: String(td.notes || "")
         };
       } else {
-        a.travelDetails = { ticketFile: null, transport: "", hasCost: false, costAmount: 0, notes: "" };
+        a.travelDetails = { tickets: [], segments: [], ticketFile: null, transport: "", hasCost: false, costAmount: 0, notes: "" };
       }
       a.location = String(a.location || "");
       a.meetingLink = String(a.meetingLink || "");
@@ -1590,6 +1646,7 @@
     renderProMap(filteredCards);
     renderProTravels(filteredCards);
     renderProControl(filteredCards);
+    renderProDocs(cards);
     renderProDashboard(filteredCards, t);
     renderProFinance(filteredCards, t);
   }
@@ -2220,6 +2277,7 @@
     { id: "pro-map",       tabId: "tab-pro-map",       label: "🗺️ Mapa" },
     { id: "pro-travels",   tabId: "tab-pro-travels",   label: "✈️ Deslocamentos" },
     { id: "pro-control",   tabId: "tab-pro-control",   label: "📋 Controle" },
+    { id: "pro-docs",      tabId: "tab-pro-docs",      label: "📁 Documentos" },
     { id: "pro-dashboard", tabId: "tab-pro-dashboard", label: "📊 Dashboard" },
     { id: "pro-finance",   tabId: "tab-pro-finance",   label: "💼 Financeiro" },
     { id: "pro-table",     tabId: "tab-pro-table",     label: "🧾 Tabela" },
@@ -5906,8 +5964,8 @@
           <th class="ctr">Comiss.</th>
         </tr>
       </thead>
-      <tbody>${rowsHtml}</tbody>
-      <tfoot>
+      <tbody>
+        ${rowsHtml}
         <tr class="tfoot-row">
           <td colspan="5"><strong>TOTAIS EFETIVAMENTE RECEBIDOS</strong> <small class="muted">(apenas marcados em Diária ou Grat. Rep.)</small></td>
           <td class="num"><strong>${t.sumDiasFora}d</strong></td>
@@ -5915,7 +5973,7 @@
           <td class="num"><strong class="c-purp">${core.money(t.sumGratLiq)}</strong><br><small>Bruto: ${core.money(t.sumGratBruta)}</small></td>
           <td class="num"><div class="gtot"><small>TOTAL GERAL</small><strong>${core.money(t.sumTotalGeral)}</strong></div></td>
         </tr>
-      </tfoot>
+      </tbody>
     </table>`;
   }
 
@@ -5936,6 +5994,9 @@
         .hdr h1 { margin: 0; font-size: 16px; }
         .hdr .meta { color: #475569; font-size: 10.5px; }
         .ctrl-tbl { width: 100%; border-collapse: collapse; }
+        .ctrl-tbl thead { display: table-header-group; }
+        .ctrl-tbl tfoot { display: table-row-group !important; }
+        .ctrl-tbl tr { break-inside: avoid; page-break-inside: avoid; }
         .ctrl-tbl th, .ctrl-tbl td { border: 1px solid #cbd5e1; padding: 5px 6px; vertical-align: middle; text-align: left; }
         .ctrl-tbl th { background: #f1f5f9; font-weight: 700; font-size: 10.5px; color: #334155; }
         .ctrl-tbl .num { text-align: right; }
@@ -6092,6 +6153,9 @@
         .sec-open { margin-bottom: 14px; }
         h2 { font-size: 12.5px; margin: 0 0 6px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 3px; }
         .ctrl-tbl, .sum-tbl { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+        .ctrl-tbl thead, .sum-tbl thead { display: table-header-group; }
+        .ctrl-tbl tfoot, .sum-tbl tfoot { display: table-row-group !important; }
+        .ctrl-tbl tr, .sum-tbl tr { break-inside: avoid; page-break-inside: avoid; }
         .ctrl-tbl th, .ctrl-tbl td, .sum-tbl th, .sum-tbl td { border: 1px solid #cbd5e1; padding: 4px 5px; vertical-align: middle; text-align: left; }
         .ctrl-tbl th, .sum-tbl th { background: #f1f5f9; font-weight: 700; color: #334155; }
         .num { text-align: right !important; }
@@ -6156,6 +6220,541 @@
     win.document.open();
     win.document.write(html);
     win.document.close();
+  }
+
+  /* ---------- 2E. CENTRAL DE DOCUMENTOS (ANEXOS GERAIS + BILHETES DE VIAGEM) ---------- */
+  function collectAllProDocuments(allCardsOpt = null) {
+    const cards = allCardsOpt || getProSortedActivities();
+    const cols = getMergedColumns();
+    const colMap = new Map(cols.map(c => [c.id, c.title]));
+    const labelsMap = new Map(getMergedLabels().map(l => [l.id, l]));
+    const out = [];
+
+    cards.forEach(c => {
+      const asgList = getCardAssigneesList(c);
+      const asgNames = asgList.map(e => e.name);
+      const hasTravel = asgList.some(e => e.travels);
+      const travelModes = new Set();
+      asgList.forEach(e => {
+        if (e.travels) {
+          travelModes.add(sanitizeTravelMode(e.travelMode) || sanitizeTravelMode(c.travelFinanceMode) || "diaria");
+        }
+      });
+      if (!travelModes.size && c.travelFinanceMode) travelModes.add(sanitizeTravelMode(c.travelFinanceMode));
+
+      const rawLoc = String(c.location || "").trim();
+      const city = rawLoc ? shortLocationCityName(rawLoc) : "";
+      const colTitle = colMap.get(c.columnId) || c.columnTitle || "Sem lista";
+      const td = (c.travelDetails && typeof c.travelDetails === "object") ? c.travelDetails : {};
+      const cardLabels = (Array.isArray(c.labels) ? c.labels : []).map(id => labelsMap.get(id)).filter(Boolean);
+      const cardTags = Array.isArray(c.tags) ? c.tags : [];
+      const cardTravelHasCost = Boolean(td.hasCost && Number(td.costAmount) > 0) || (c.finDirection === "expense" && (Number(c.actualAmount) > 0 || Number(c.amount) > 0));
+      const locators = (Array.isArray(td.segments) ? td.segments : []).map(s => s.locator).filter(Boolean).join(" ");
+
+      const pushDoc = (raw, origin) => {
+        if (!raw || typeof raw !== "object") return;
+        const fileName = String(raw.fileName || raw.name || "Documento").trim();
+        const isLink = Boolean(raw.isLink);
+        const mimeType = String(raw.mimeType || "");
+        const fileCategory = detectFileCategory(fileName, mimeType, isLink);
+        const uploadedAt = String(raw.uploadedAt || raw.createdAt || "").trim();
+        const uploadIso = /^\d{4}-\d{2}-\d{2}/.test(uploadedAt) ? uploadedAt.slice(0, 10) : (c.start || "");
+        const eventIso = String(c._origStart || c.start || "").trim();
+        const legType = origin === "travel" ? (raw.legType || "ida") : "";
+        const legMeta = legType ? (LEG_TYPE_META[legType] || LEG_TYPE_META.ida) : null;
+        out.push({
+          docKey: `${origin}:${c.id}:${raw.id || fileName}`,
+          id: String(raw.id || ""),
+          origin,
+          originLabel: origin === "travel" ? `✈️ Viagem${legMeta ? ` · ${legMeta.label}` : ""}` : "📎 Geral",
+          originShort: origin === "travel" ? "✈️ Viagem" : "📎 Geral",
+          legType,
+          label: String(raw.label || ""),
+          fileName,
+          url: resolveDocHref(raw),
+          rawUrl: String(raw.url || ""),
+          isLink,
+          mimeType,
+          fileCategory,
+          size: Math.max(0, Number(raw.size) || 0),
+          uploadedAt,
+          uploadIso,
+          eventIso,
+          eventEndIso: String(c._origEnd || c.end || eventIso),
+          card: c,
+          cardId: c.id,
+          cardName: String(c.name || "Sem título"),
+          cardType: String(c.type || "Outro"),
+          columnId: String(c.columnId || ""),
+          columnTitle: colTitle,
+          priority: String(c.priority || "Média"),
+          client: String(c.client || "").trim(),
+          assignees: asgNames,
+          hasTravel,
+          location: rawLoc,
+          city,
+          labels: cardLabels,
+          labelIds: Array.isArray(c.labels) ? c.labels : [],
+          tags: cardTags,
+          travelModes,
+          hasCost: cardTravelHasCost,
+          searchHay: [
+            fileName,
+            raw.label || "",
+            c.name || "",
+            c.notes || "",
+            td.notes || "",
+            locators,
+            c.client || "",
+            rawLoc,
+            asgNames.join(" "),
+            cardTags.join(" ")
+          ].join(" ").toLowerCase()
+        });
+      };
+
+      const seenTravelIds = new Set();
+      const tickets = Array.isArray(td.tickets) ? td.tickets : (td.ticketFile ? [td.ticketFile] : []);
+      tickets.forEach(tk => {
+        if (tk?.id) seenTravelIds.add(tk.id);
+        pushDoc(tk, "travel");
+      });
+      (Array.isArray(c.attachments) ? c.attachments : []).forEach(att => {
+        // Evita duplicidade visual se um anexo legado também estava em ticketFile
+        if (att?.id && seenTravelIds.has(att.id)) return;
+        pushDoc(att, "general");
+      });
+    });
+
+    return out;
+  }
+
+  function populateSelectPreserve(sel, defaultLabel, optionsArr) {
+    if (!sel) return;
+    const prev = sel.value || "";
+    sel.innerHTML = `<option value="">${defaultLabel}</option>`
+      + optionsArr.map(([val, lbl]) => `<option value="${core.esc(val)}">${core.esc(lbl)}</option>`).join("");
+    if (prev && optionsArr.some(([v]) => v === prev)) sel.value = prev;
+    else sel.value = "";
+  }
+
+  function refreshProDocsFilterOptions(allDocs) {
+    const eventsMap = new Map();
+    const yearsSet = new Set();
+    const monthsSet = new Set();
+    const colsMap = new Map();
+    const typesSet = new Set();
+    const asgSet = new Set();
+    const clientsSet = new Set();
+    const locsSet = new Set();
+    const labelsMap = new Map();
+    const tagsSet = new Set();
+    const dateMode = $("#proDocsDateMode")?.value || "event";
+    const pickedYear = $("#proDocsYearFilter")?.value || "";
+
+    allDocs.forEach(d => {
+      if (d.cardId) eventsMap.set(d.cardId, d.cardName);
+      const refIso = dateMode === "upload" ? d.uploadIso : d.eventIso;
+      if (refIso && refIso.length >= 7) {
+        const y = refIso.slice(0, 4);
+        yearsSet.add(y);
+        if (!pickedYear || y === pickedYear) monthsSet.add(refIso.slice(0, 7));
+      }
+      if (d.columnId) colsMap.set(d.columnId, d.columnTitle);
+      if (d.cardType) typesSet.add(d.cardType);
+      d.assignees.forEach(a => asgSet.add(a));
+      if (d.client) clientsSet.add(d.client);
+      if (d.city || d.location) locsSet.add(d.city || d.location);
+      d.labels.forEach(l => labelsMap.set(l.id, l.name));
+      d.tags.forEach(t => tagsSet.add(t));
+    });
+
+    populateSelectPreserve($("#proDocsEventFilter"), "Todos os eventos", [...eventsMap.entries()].sort((a, b) => a[1].localeCompare(b[1])));
+    populateSelectPreserve($("#proDocsYearFilter"), "Todos os anos", [...yearsSet].sort().map(y => [y, `🗓️ ${y}`]));
+    populateSelectPreserve($("#proDocsMonthFilter"), "Todos os meses", [...monthsSet].sort().map(ym => {
+      const [y, m] = ym.split("-");
+      return [ym, `📅 ${core.MON[parseInt(m, 10) - 1]}/${y}`];
+    }));
+    populateSelectPreserve($("#proDocsColFilter"), "Todas as listas", [...colsMap.entries()]);
+    populateSelectPreserve($("#proDocsCardTypeFilter"), "Todos os tipos", [...typesSet].sort().map(t => [t, getProTypeInfo(t).short]));
+    populateSelectPreserve($("#proDocsAssigneeFilter"), "Todos os responsáveis", [...asgSet].sort().map(a => [a, a]));
+    populateSelectPreserve($("#proDocsClientFilter"), "Todos os clientes", [...clientsSet].sort().map(c => [c, c]));
+    populateSelectPreserve($("#proDocsLocationFilter"), "Todas as localidades", [...locsSet].sort().map(l => [l, l]));
+    populateSelectPreserve($("#proDocsLabelFilter"), "Todas as etiquetas", [...labelsMap.entries()].sort((a, b) => a[1].localeCompare(b[1])));
+    populateSelectPreserve($("#proDocsTagFilter"), "Todas as tags", [...tagsSet].sort().map(t => [t, `#${t}`]));
+  }
+
+  function getProDocsFilterCfg() {
+    return {
+      search: ($("#proDocsSearch")?.value || "").trim().toLowerCase(),
+      origin: proDocsOrigin || $("#proDocsOriginFilter")?.value || "",
+      fileType: $("#proDocsFileTypeFilter")?.value || "",
+      eventId: $("#proDocsEventFilter")?.value || "",
+      dateMode: $("#proDocsDateMode")?.value || "event",
+      year: $("#proDocsYearFilter")?.value || "",
+      month: $("#proDocsMonthFilter")?.value || "",
+      dateFrom: $("#proDocsDateFrom")?.value || "",
+      dateTo: $("#proDocsDateTo")?.value || "",
+      colId: $("#proDocsColFilter")?.value || "",
+      cardType: $("#proDocsCardTypeFilter")?.value || "",
+      prio: $("#proDocsPrioFilter")?.value || "",
+      assignee: $("#proDocsAssigneeFilter")?.value || "",
+      client: $("#proDocsClientFilter")?.value || "",
+      hasTravel: $("#proDocsHasTravelFilter")?.value || "",
+      location: $("#proDocsLocationFilter")?.value || "",
+      labelId: $("#proDocsLabelFilter")?.value || "",
+      tag: $("#proDocsTagFilter")?.value || "",
+      finMode: $("#proDocsFinModeFilter")?.value || ""
+    };
+  }
+
+  function countActiveProDocsFilters(cfg) {
+    return (cfg.search ? 1 : 0)
+      + (cfg.origin ? 1 : 0)
+      + (cfg.fileType ? 1 : 0)
+      + (cfg.eventId ? 1 : 0)
+      + (cfg.year ? 1 : 0)
+      + (cfg.month ? 1 : 0)
+      + ((cfg.dateFrom || cfg.dateTo) ? 1 : 0)
+      + (cfg.colId ? 1 : 0)
+      + (cfg.cardType ? 1 : 0)
+      + (cfg.prio ? 1 : 0)
+      + (cfg.assignee ? 1 : 0)
+      + (cfg.client ? 1 : 0)
+      + (cfg.hasTravel ? 1 : 0)
+      + (cfg.location ? 1 : 0)
+      + (cfg.labelId ? 1 : 0)
+      + (cfg.tag ? 1 : 0)
+      + (cfg.finMode ? 1 : 0);
+  }
+
+  function resetProDocsFilters() {
+    proDocsOrigin = "";
+    [
+      "#proDocsSearch", "#proDocsOriginFilter", "#proDocsFileTypeFilter", "#proDocsEventFilter",
+      "#proDocsYearFilter", "#proDocsMonthFilter", "#proDocsDateFrom", "#proDocsDateTo",
+      "#proDocsColFilter", "#proDocsCardTypeFilter", "#proDocsPrioFilter", "#proDocsAssigneeFilter",
+      "#proDocsClientFilter", "#proDocsHasTravelFilter", "#proDocsLocationFilter",
+      "#proDocsLabelFilter", "#proDocsTagFilter", "#proDocsFinModeFilter"
+    ].forEach(s => { if ($(s)) $(s).value = ""; });
+    if ($("#proDocsDateMode")) $("#proDocsDateMode").value = "event";
+    $("#proDocsOriginSeg")?.querySelectorAll("button").forEach(b => b.classList.toggle("active", (b.dataset.docOrigin || "") === ""));
+    renderProDocs();
+  }
+
+  function openProDocPreviewModal(doc) {
+    const dlg = $("#proDocPreviewModal");
+    if (!dlg || !doc) return;
+    proDocsPreviewCurrent = doc;
+    const cat = doc.fileCategory || detectFileCategory(doc.fileName, doc.mimeType, doc.isLink);
+    const href = doc.url || resolveDocHref(doc);
+    if ($("#proDocPreviewTitle")) $("#proDocPreviewTitle").textContent = `${fileCategoryIcon(cat)} ${doc.fileName || "Documento"}`;
+    const metaBits = [
+      doc.originLabel || "",
+      doc.cardName ? `Cartão: ${doc.cardName}` : "",
+      doc.size ? formatBytesShort(doc.size) : ""
+    ].filter(Boolean);
+    if ($("#proDocPreviewMeta")) $("#proDocPreviewMeta").textContent = metaBits.join(" · ");
+
+    const dlBtn = $("#btnProDocPreviewDownload");
+    if (dlBtn) {
+      if (href) {
+        dlBtn.hidden = false;
+        dlBtn.href = href;
+        if (doc.isLink) {
+          dlBtn.removeAttribute("download");
+          dlBtn.textContent = "↗️ Abrir Link";
+        } else {
+          dlBtn.setAttribute("download", doc.fileName || "documento");
+          dlBtn.textContent = "⬇️ Baixar";
+        }
+      } else {
+        dlBtn.hidden = true;
+      }
+    }
+    const cardBtn = $("#btnProDocPreviewOpenCard");
+    if (cardBtn) cardBtn.hidden = !doc.cardId;
+
+    const body = $("#proDocPreviewBody");
+    if (body) {
+      if (!href) {
+        body.innerHTML = `<div class="pro-doc-preview-fallback"><div style="font-size:2.4rem">${fileCategoryIcon(cat)}</div><strong>Arquivo local sem URL de pré-visualização</strong><p class="muted small">Salve o cartão com servidor ativo para visualizar ou baixar o arquivo.</p></div>`;
+      } else if (cat === "image") {
+        body.innerHTML = `<div class="pro-doc-preview-img-wrap"><img src="${core.esc(href)}" alt="${core.esc(doc.fileName || "Imagem")}"></div>`;
+      } else if (cat === "pdf") {
+        body.innerHTML = `<iframe class="pro-doc-preview-frame" src="${core.esc(href)}" title="${core.esc(doc.fileName || "PDF")}"></iframe>`;
+      } else {
+        body.innerHTML = `<div class="pro-doc-preview-fallback">
+          <div style="font-size:2.6rem">${fileCategoryIcon(cat)}</div>
+          <strong>${core.esc(doc.fileName || "Documento")}</strong>
+          <p class="muted small">${doc.isLink ? "Link externo anexado ao cartão. Clique em Abrir Link abaixo para acessar." : "Pré-visualização nativa indisponível para este formato no navegador. Use o botão Baixar abaixo."}</p>
+        </div>`;
+      }
+    }
+    dlg.showModal();
+  }
+
+  function openProDocDeleteModal(doc) {
+    const dlg = $("#proDocDeleteModal");
+    if (!dlg || !doc) return;
+    proDocsPendingDelete = doc;
+    const msgEl = $("#proDocDelMessage");
+    if (msgEl) {
+      msgEl.innerHTML = `Deseja excluir <strong>${core.esc(doc.fileName)}</strong> (${core.esc(doc.originShort)}) vinculado ao cartão <strong>${core.esc(doc.cardName)}</strong>?`;
+    }
+    dlg.showModal();
+  }
+
+  async function confirmDeleteProDoc() {
+    const doc = proDocsPendingDelete;
+    proDocsPendingDelete = null;
+    $("#proDocDeleteModal")?.close();
+    if (!doc || !doc.cardId) return;
+    const ctx = findProCardContext(doc.cardId);
+    if (!ctx) return core.toast("⚠️ Cartão vinculado não encontrado.");
+    if (ctx.trip?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
+    const a = ctx.activity;
+    if (doc.origin === "travel") {
+      if (a.travelDetails && Array.isArray(a.travelDetails.tickets)) {
+        a.travelDetails.tickets = a.travelDetails.tickets.filter(t => !(
+          (doc.id && t.id === doc.id) || (!doc.id && t.fileName === doc.fileName)
+        ));
+        a.travelDetails.ticketFile = a.travelDetails.tickets[0] ? { ...a.travelDetails.tickets[0] } : null;
+      }
+    }
+    if (Array.isArray(a.attachments)) {
+      a.attachments = a.attachments.filter(att => !(
+        (doc.id && att.id === doc.id) || (!doc.id && att.fileName === doc.fileName)
+      ));
+    }
+    if (doc.id && !doc.isLink && window.FeriasApi?.deleteAttachment) {
+      try { await window.FeriasApi.deleteAttachment(doc.id); } catch {}
+    }
+    await core.saveTripRecord(ctx.trip, `🗑️ Documento "${doc.fileName}" removido!`);
+  }
+
+  function renderProDocs(allCardsOpt = null) {
+    if (!$("#view-pro-docs")) return;
+    const allDocs = collectAllProDocuments(allCardsOpt);
+    refreshProDocsFilterOptions(allDocs);
+    const cfg = getProDocsFilterCfg();
+
+    // Sincronizar segmented e select de origem
+    if ($("#proDocsOriginFilter") && $("#proDocsOriginFilter").value !== cfg.origin) {
+      $("#proDocsOriginFilter").value = cfg.origin;
+    }
+    $("#proDocsOriginSeg")?.querySelectorAll("button").forEach(b => {
+      b.classList.toggle("active", (b.dataset.docOrigin || "") === cfg.origin);
+    });
+
+    const filtered = allDocs.filter(d => {
+      if (cfg.search && !d.searchHay.includes(cfg.search)) return false;
+      if (cfg.origin && d.origin !== cfg.origin) return false;
+      if (cfg.fileType && d.fileCategory !== cfg.fileType) return false;
+      if (cfg.eventId && d.cardId !== cfg.eventId) return false;
+      const refIso = cfg.dateMode === "upload" ? d.uploadIso : d.eventIso;
+      if (cfg.year && (!refIso || !refIso.startsWith(cfg.year))) return false;
+      if (cfg.month && (!refIso || !refIso.startsWith(cfg.month))) return false;
+      if (cfg.dateFrom && (!refIso || refIso < cfg.dateFrom)) return false;
+      if (cfg.dateTo && (!refIso || refIso > cfg.dateTo)) return false;
+      if (cfg.colId && d.columnId !== cfg.colId) return false;
+      if (cfg.cardType && d.cardType !== cfg.cardType) return false;
+      if (cfg.prio && d.priority !== cfg.prio) return false;
+      if (cfg.assignee && !d.assignees.some(a => a.toLowerCase() === cfg.assignee.toLowerCase())) return false;
+      if (cfg.client && d.client.toLowerCase() !== cfg.client.toLowerCase()) return false;
+      if (cfg.hasTravel === "yes" && !d.hasTravel) return false;
+      if (cfg.hasTravel === "no" && d.hasTravel) return false;
+      if (cfg.location && (d.city || d.location).toLowerCase() !== cfg.location.toLowerCase()) return false;
+      if (cfg.labelId && !d.labelIds.includes(cfg.labelId)) return false;
+      if (cfg.tag && !d.tags.some(t => t.toLowerCase() === cfg.tag.toLowerCase())) return false;
+      if (cfg.finMode) {
+        if (cfg.finMode === "has_cost" && !d.hasCost) return false;
+        else if (cfg.finMode === "no_cost" && d.hasCost) return false;
+        else if (["diaria", "grat_rep", "comissionamento"].includes(cfg.finMode) && !d.travelModes.has(cfg.finMode)) return false;
+      }
+      return true;
+    });
+
+    // Ordenação
+    const sorted = filtered.slice().sort((a, b) => {
+      if (proDocsSort === "name") return a.fileName.localeCompare(b.fileName);
+      if (proDocsSort === "event_date") {
+        return String(a.eventIso || "9999-99-99").localeCompare(String(b.eventIso || "9999-99-99")) || a.fileName.localeCompare(b.fileName);
+      }
+      const ta = a.uploadedAt || a.uploadIso || a.eventIso || "";
+      const tb = b.uploadedAt || b.uploadIso || b.eventIso || "";
+      if (proDocsSort === "oldest") return String(ta).localeCompare(String(tb)) || a.fileName.localeCompare(b.fileName);
+      return String(tb).localeCompare(String(ta)) || a.fileName.localeCompare(b.fileName);
+    });
+
+    const activeCnt = countActiveProDocsFilters(cfg);
+    if ($("#btnProDocsFilterPop")) $("#btnProDocsFilterPop").classList.toggle("has-active", activeCnt > 0);
+    if ($("#proDocsFilterCount")) {
+      $("#proDocsFilterCount").textContent = activeCnt ? String(activeCnt) : "";
+      $("#proDocsFilterCount").hidden = !activeCnt;
+    }
+    if ($("#btnProDocsClearFilters")) $("#btnProDocsClearFilters").hidden = activeCnt === 0;
+    if ($("#btnProDocsResetInline")) $("#btnProDocsResetInline").hidden = activeCnt === 0;
+
+    const travelCnt = sorted.filter(d => d.origin === "travel").length;
+    const generalCnt = sorted.length - travelCnt;
+    if ($("#proDocsSummaryBar")) {
+      $("#proDocsSummaryBar").textContent = `Exibindo ${sorted.length} ${sorted.length === 1 ? "documento" : "documentos"} (${travelCnt} de viagem, ${generalCnt} ${generalCnt === 1 ? "geral" : "gerais"})`;
+    }
+
+    const emptyEl = $("#proDocsEmptyBanner");
+    const listCard = $("#proDocsListCard");
+    const gridEl = $("#proDocsCardsGrid");
+
+    if (!sorted.length) {
+      if (emptyEl) {
+        emptyEl.hidden = false;
+        emptyEl.innerHTML = `<div class="pro-travels-empty-inner">
+          <div style="font-size:2rem">📁</div>
+          <h3>${allDocs.length ? "Nenhum documento encontrado com os filtros atuais" : "Nenhum documento anexado ainda"}</h3>
+          <p class="muted small">${allDocs.length
+            ? "Ajuste a busca ou limpe os filtros para visualizar todos os anexos e bilhetes do projeto."
+            : "Anexe arquivos em qualquer cartão (Anexos Gerais ou Bilhetes em Detalhes da Viagem) e eles aparecerão automaticamente centralizados aqui."}</p>
+          ${allDocs.length ? `<button type="button" class="btn primary small" id="btnProDocsEmptyReset">✕ Limpar filtros</button>` : ""}
+        </div>`;
+        if ($("#btnProDocsEmptyReset", emptyEl)) $("#btnProDocsEmptyReset", emptyEl).onclick = resetProDocsFilters;
+      }
+      if (listCard) listCard.hidden = true;
+      if (gridEl) gridEl.hidden = true;
+      return;
+    }
+
+    if (emptyEl) { emptyEl.hidden = true; emptyEl.innerHTML = ""; }
+    const showGrid = proDocsView === "grid";
+    if (listCard) listCard.hidden = showGrid;
+    if (gridEl) gridEl.hidden = !showGrid;
+
+    const docByKey = new Map(sorted.map(d => [d.docKey, d]));
+
+    // Render Lista/Tabela (Desktop padrão)
+    const tbl = $("#proDocsTable");
+    if (tbl && !showGrid) {
+      tbl.innerHTML = `
+        <thead>
+          <tr>
+            <th>Documento</th>
+            <th>Origem</th>
+            <th>Cartão Vinculado</th>
+            <th>Responsável(is)</th>
+            <th>Localidade</th>
+            <th>Etiquetas / Tags</th>
+            <th>Data</th>
+            <th style="text-align:right">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sorted.map(d => {
+            const asgHtml = d.assignees.length
+              ? d.assignees.slice(0, 2).map(nm => {
+                  const c = colorForAssignee(nm);
+                  return `<span class="pro-assignee-badge pro-ctrl-asg-compact" style="--asg-bg:${c.bg};--asg-fg:${c.fg};--asg-bd:${c.bd}">${core.esc(nm)}</span>`;
+                }).join("") + (d.assignees.length > 2 ? `<span class="muted small">+${d.assignees.length - 2}</span>` : "")
+              : `<span class="muted small">—</span>`;
+            const lblTagsHtml = [
+              ...d.labels.slice(0, 2).map(l => `<span class="pro-doc-lbl-pill" style="--lc:${core.esc(l.color || "#2563eb")}">${core.esc(l.name)}</span>`),
+              ...d.tags.slice(0, 2).map(tg => `<span class="pro-doc-tag-pill">#${core.esc(tg)}</span>`)
+            ].join("") || `<span class="muted small">—</span>`;
+            const dtEv = d.eventIso ? core.fmtBR(d.eventIso) : "—";
+            const dtUp = d.uploadIso && d.uploadIso !== d.eventIso ? core.fmtBR(d.uploadIso) : "";
+            const szTxt = formatBytesShort(d.size);
+            return `<tr data-doc-key="${core.esc(d.docKey)}">
+              <td>
+                <div class="pro-doc-name-cell">
+                  <span class="pro-doc-ico">${fileCategoryIcon(d.fileCategory)}</span>
+                  <div style="min-width:0">
+                    <button type="button" class="pro-doc-name-btn" data-doc-preview="${core.esc(d.docKey)}" title="Visualizar ${core.esc(d.fileName)}">${core.esc(d.fileName)}</button>
+                    <div class="muted small">${d.label ? `${core.esc(d.label)}${szTxt ? ` · ${szTxt}` : ""}` : (szTxt || d.fileCategory.toUpperCase())}</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="pro-doc-origin-badge is-${d.origin}">${core.esc(d.originLabel)}</span></td>
+              <td>
+                <button type="button" class="pro-doc-card-link" data-doc-open-card="${core.esc(d.cardId)}" title="Abrir cartão">${core.esc(d.cardName)}</button>
+                <div class="muted small">${core.esc(d.columnTitle)}${d.client ? ` · ${core.esc(d.client)}` : ""}</div>
+              </td>
+              <td><div class="pro-doc-asg-wrap">${asgHtml}</div></td>
+              <td>${d.city ? `<span class="pro-ctrl-loc-txt" title="${core.esc(d.location)}">📍 ${core.esc(d.city)}</span>` : `<span class="muted small">—</span>`}</td>
+              <td><div class="pro-doc-tags-wrap">${lblTagsHtml}</div></td>
+              <td class="nowrap">
+                <div class="pro-ctrl-date-stack">
+                  <span>${core.esc(dtEv)}</span>
+                  ${dtUp ? `<small>⬆️ ${core.esc(dtUp)}</small>` : ""}
+                </div>
+              </td>
+              <td class="nowrap" style="text-align:right">
+                <div class="pro-doc-actions">
+                  <button type="button" class="icon-btn" data-doc-preview="${core.esc(d.docKey)}" title="Visualizar">👁️</button>
+                  ${d.url ? `<a class="icon-btn" href="${core.esc(d.url)}" ${d.isLink ? 'target="_blank" rel="noopener"' : `download="${core.esc(d.fileName)}" target="_blank" rel="noopener"`} title="${d.isLink ? "Abrir link" : "Baixar"}">${d.isLink ? "↗️" : "⬇️"}</a>` : ""}
+                  <button type="button" class="icon-btn" data-doc-open-card="${core.esc(d.cardId)}" title="Abrir Cartão">🗂️</button>
+                  <button type="button" class="icon-btn" data-doc-del="${core.esc(d.docKey)}" title="Excluir documento">🗑️</button>
+                </div>
+              </td>
+            </tr>`;
+          }).join("")}
+        </tbody>`;
+    }
+
+    // Render Grade de Cards (Mobile & Pré-visualização rápida)
+    if (gridEl && showGrid) {
+      gridEl.innerHTML = sorted.map(d => {
+        const dtEv = d.eventIso ? core.fmtBR(d.eventIso) : "Sem data";
+        const szTxt = formatBytesShort(d.size);
+        const thumb = (d.fileCategory === "image" && d.url)
+          ? `<div class="pro-doc-card-thumb" data-doc-preview="${core.esc(d.docKey)}"><img src="${core.esc(d.url)}" alt="${core.esc(d.fileName)}" loading="lazy"></div>`
+          : `<div class="pro-doc-card-thumb is-ico" data-doc-preview="${core.esc(d.docKey)}"><span>${fileCategoryIcon(d.fileCategory)}</span><small>${core.esc(d.fileCategory.toUpperCase())}</small></div>`;
+        const tagsHtml = [
+          ...d.labels.slice(0, 2).map(l => `<span class="pro-doc-lbl-pill" style="--lc:${core.esc(l.color || "#2563eb")}">${core.esc(l.name)}</span>`),
+          ...d.tags.slice(0, 2).map(tg => `<span class="pro-doc-tag-pill">#${core.esc(tg)}</span>`)
+        ].join("");
+        return `<article class="card pro-doc-grid-card">
+          ${thumb}
+          <div class="pro-doc-grid-body">
+            <div class="pro-doc-grid-top">
+              <span class="pro-doc-origin-badge is-${d.origin}">${core.esc(d.originLabel)}</span>
+              <span class="muted small">${core.esc(szTxt || dtEv)}</span>
+            </div>
+            <button type="button" class="pro-doc-name-btn" data-doc-preview="${core.esc(d.docKey)}" title="${core.esc(d.fileName)}">${core.esc(d.fileName)}</button>
+            <button type="button" class="pro-doc-card-link" data-doc-open-card="${core.esc(d.cardId)}">🗂️ ${core.esc(d.cardName)}</button>
+            <div class="pro-doc-grid-meta muted small">
+              ${d.assignees.length ? `<span>👤 ${core.esc(d.assignees.join(", "))}</span>` : ""}
+              ${d.city ? `<span>📍 ${core.esc(d.city)}</span>` : ""}
+              <span>📅 ${core.esc(dtEv)}</span>
+            </div>
+            ${tagsHtml ? `<div class="pro-doc-tags-wrap">${tagsHtml}</div>` : ""}
+            <div class="pro-doc-grid-foot">
+              <button type="button" class="btn ghost small" data-doc-preview="${core.esc(d.docKey)}">👁️ Ver</button>
+              ${d.url ? `<a class="btn ghost small" href="${core.esc(d.url)}" ${d.isLink ? 'target="_blank" rel="noopener"' : `download="${core.esc(d.fileName)}" target="_blank" rel="noopener"`}>${d.isLink ? "↗️ Abrir" : "⬇️ Baixar"}</a>` : ""}
+              <button type="button" class="icon-btn" data-doc-open-card="${core.esc(d.cardId)}" title="Abrir Cartão">🗂️</button>
+              <button type="button" class="icon-btn" data-doc-del="${core.esc(d.docKey)}" title="Excluir">🗑️</button>
+            </div>
+          </div>
+        </article>`;
+      }).join("");
+    }
+
+    const activeHost = showGrid ? gridEl : tbl;
+    if (activeHost) {
+      activeHost.querySelectorAll("[data-doc-preview]").forEach(el => {
+        el.onclick = () => {
+          const doc = docByKey.get(el.dataset.docPreview);
+          if (doc) openProDocPreviewModal(doc);
+        };
+      });
+      activeHost.querySelectorAll("[data-doc-open-card]").forEach(el => {
+        el.onclick = () => openProCardModal(el.dataset.docOpenCard);
+      });
+      activeHost.querySelectorAll("[data-doc-del]").forEach(el => {
+        el.onclick = () => {
+          const doc = docByKey.get(el.dataset.docDel);
+          if (doc) openProDocDeleteModal(doc);
+        };
+      });
+    }
   }
 
   /* ---------- 3. DASHBOARD EXECUTIVO ---------- */
@@ -6719,6 +7318,15 @@
     if (gBadge) {
       gBadge.textContent = caps.hasGemini ? "✅ IA Ativa na conta" : "Não configurada";
       gBadge.className = caps.hasGemini ? "pill ok" : "pill warn";
+    }
+    const wBadge = $("#proWalletStatusBadge");
+    if (wBadge) {
+      wBadge.textContent = caps.hasWallet ? "✅ Carteira do Google Ativa" : "Não configurada";
+      wBadge.className = caps.hasWallet ? "pill ok" : "pill warn";
+    }
+    const usrWalletIssuer = window.FeriasApi?.getUser?.()?.integrations?.walletIssuerId || "";
+    if ($("#proWalletIssuerInput") && !$("#proWalletIssuerInput").value && usrWalletIssuer) {
+      $("#proWalletIssuerInput").value = usrWalletIssuer;
     }
     if ($("#proCalBadge")) {
       $("#proCalBadge").textContent = `Lembrete dia anterior ${st.params?.calendarReminderTime || "09:00"}`;
@@ -7303,35 +7911,319 @@
     sel.innerHTML = allTypes.map(t => `<option value="${core.esc(t.id)}">${core.esc(t.short)}</option>`).join("");
   }
 
-  function renderProModalTicketPreview() {
-    const box = $("#pc-ticketFilePreview");
+  const LEG_TYPE_META = {
+    ida:           { label: "Ida",           icon: "🛫", cls: "leg-ida" },
+    conexao_ida:   { label: "Conexão Ida",   icon: "🔁", cls: "leg-con-ida" },
+    volta:         { label: "Volta",         icon: "🛬", cls: "leg-volta" },
+    conexao_volta: { label: "Conexão Volta", icon: "🔁", cls: "leg-con-volta" },
+    outro:         { label: "Outro",         icon: "🧭", cls: "leg-outro" }
+  };
+
+  const GOOGLE_WALLET_ICON_SVG = `<svg class="gw-ico" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+    <rect x="2" y="4.5" width="20" height="15" rx="3.2" fill="#4285F4"/>
+    <path d="M2 8.2a3.2 3.2 0 0 1 3.2-3.2h13.6A3.2 3.2 0 0 1 22 8.2v2.4H2V8.2z" fill="#34A853"/>
+    <path d="M2 10.2h20v2.4H2z" fill="#FBBC04"/>
+    <path d="M2 12.2h20v4.1a3.2 3.2 0 0 1-3.2 3.2H5.2A3.2 3.2 0 0 1 2 16.3v-4.1z" fill="#EA4335"/>
+    <path d="M2 12.4h6.8c1.1 0 1.9.8 2.4 1.6.4.6 1.1 1 1.9 1h8.9v1.3a3.2 3.2 0 0 1-3.2 3.2H5.2A3.2 3.2 0 0 1 2 16.3v-3.9z" fill="#FFFFFF" fill-opacity="0.92"/>
+  </svg>`;
+
+  function formatBytesShort(bytes) {
+    const n = Number(bytes) || 0;
+    if (!n) return "";
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function detectFileCategory(fileName, mimeType = "", isLink = false) {
+    if (isLink) return "link";
+    const m = String(mimeType || "").toLowerCase();
+    const ext = String(fileName || "").toLowerCase().split(".").pop() || "";
+    if (m.includes("pdf") || ext === "pdf") return "pdf";
+    if (m.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg", "heic"].includes(ext)) return "image";
+    if (["xls", "xlsx", "csv", "ods"].includes(ext) || m.includes("spreadsheet") || m.includes("excel")) return "spreadsheet";
+    if (["doc", "docx", "txt", "rtf", "odt", "md"].includes(ext) || m.includes("word") || m.startsWith("text/")) return "document";
+    return "other";
+  }
+
+  function fileCategoryIcon(cat) {
+    return { pdf: "📄", image: "🖼️", spreadsheet: "📊", document: "📝", link: "🔗", other: "📦" }[cat] || "📎";
+  }
+
+  function resolveDocHref(item) {
+    if (!item) return "";
+    if (item.dataUrl) return item.dataUrl;
+    if (item.url) return item.url;
+    if (item.isLink) return "";
+    if (item.id && window.FeriasApi?.attachmentHref) {
+      return window.FeriasApi.attachmentHref(item);
+    }
+    if (item.id) return `/api/attachments/${encodeURIComponent(item.id)}`;
+    return "";
+  }
+
+  function renderProModalTicketsList() {
+    const box = $("#pc-ticketsList");
     if (!box) return;
-    if (!proModalTicketFile) {
-      box.hidden = true;
-      box.innerHTML = "";
+    if (!proModalTickets.length) {
+      box.innerHTML = `<div class="muted small" style="padding:2px 0">Nenhum bilhete anexado ainda. Você pode anexar ida, conexões e volta juntos ou em momentos diferentes.</div>`;
       return;
     }
-    const f = proModalTicketFile;
-    const href = f.url ? core.esc(f.url) : "#";
-    box.hidden = false;
-    box.innerHTML = `
-      <span class="pro-ticket-chip">
-        <span>🎫</span>
-        ${f.url ? `<a href="${href}" target="_blank" rel="noopener">${core.esc(f.fileName || "Bilhete")} ↗</a>` : `<strong>${core.esc(f.fileName || "Bilhete")}</strong>`}
-        <button type="button" class="icon-btn" id="btnProTicketRemove" title="Remover bilhete">✕</button>
-      </span>`;
-    if ($("#btnProTicketRemove", box)) {
-      $("#btnProTicketRemove", box).onclick = () => {
-        proModalTicketFile = null;
-        renderProModalTicketPreview();
+    const legOpts = cur => Object.entries(LEG_TYPE_META)
+      .map(([k, v]) => `<option value="${k}" ${k === cur ? "selected" : ""}>${v.icon} ${v.label}</option>`)
+      .join("");
+    box.innerHTML = proModalTickets.map((t, idx) => {
+      const cat = detectFileCategory(t.fileName, t.mimeType, false);
+      const href = resolveDocHref(t);
+      const sz = formatBytesShort(t.size);
+      return `<div class="pro-ticket-item" data-tk-idx="${idx}">
+        <div class="pro-ticket-item-main">
+          <span class="pro-ticket-ico">${fileCategoryIcon(cat)}</span>
+          <div class="pro-ticket-item-info">
+            <strong title="${core.esc(t.fileName || "Bilhete")}">${core.esc(t.fileName || "Bilhete")}</strong>
+            <small class="muted">${t.label ? `${core.esc(t.label)}${sz ? ` · ${sz}` : ""}` : (sz || "Bilhete de viagem")}</small>
+          </div>
+        </div>
+        <div class="pro-ticket-item-actions">
+          <select class="pro-tk-leg-sel" data-tk-leg="${idx}" aria-label="Tipo do trecho deste bilhete">${legOpts(t.legType || "ida")}</select>
+          ${href ? `<button type="button" class="icon-btn" data-tk-view="${idx}" title="Visualizar bilhete">👁️</button>` : ""}
+          ${href ? `<a class="icon-btn" href="${core.esc(href)}" download="${core.esc(t.fileName || "bilhete")}" target="_blank" rel="noopener" title="Baixar bilhete">⬇️</a>` : ""}
+          <button type="button" class="icon-btn" data-tk-del="${idx}" title="Remover bilhete">✕</button>
+        </div>
+      </div>`;
+    }).join("");
+
+    box.querySelectorAll("[data-tk-leg]").forEach(sel => {
+      sel.onchange = () => {
+        const i = parseInt(sel.dataset.tkLeg, 10);
+        if (proModalTickets[i]) proModalTickets[i].legType = sel.value || "ida";
       };
+    });
+    box.querySelectorAll("[data-tk-view]").forEach(btn => {
+      btn.onclick = () => {
+        const i = parseInt(btn.dataset.tkView, 10);
+        const t = proModalTickets[i];
+        if (!t) return;
+        openProDocPreviewModal({
+          fileName: t.fileName || "Bilhete",
+          url: resolveDocHref(t),
+          mimeType: t.mimeType || "",
+          originLabel: `✈️ Viagem · ${(LEG_TYPE_META[t.legType] || LEG_TYPE_META.ida).label}`,
+          cardId: editingProCardId || "",
+          cardName: $("#pc-name")?.value || ""
+        });
+      };
+    });
+    box.querySelectorAll("[data-tk-del]").forEach(btn => {
+      btn.onclick = () => {
+        const i = parseInt(btn.dataset.tkDel, 10);
+        proModalTickets.splice(i, 1);
+        renderProModalTicketsList();
+      };
+    });
+  }
+
+  async function openGoogleWalletForSegment(seg, btnEl) {
+    if (!seg) return;
+    const noticeEl = $("#pc-walletSetupNotice");
+    if (noticeEl) { noticeEl.hidden = true; noticeEl.innerHTML = ""; }
+    const origHtml = btnEl ? btnEl.innerHTML : "";
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.innerHTML = `<span class="ai-spinner" aria-hidden="true"></span><span>Carteira</span>`;
     }
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "") || window.innerWidth <= 768;
+    // Em desktop, pré-abre guia em branco para evitar bloqueio de pop-up após await
+    const preWin = !isMobile ? window.open("", "_blank") : null;
+    try {
+      const draftCard = {
+        id: editingProCardId || proModalDraftId || "card",
+        name: ($("#pc-name")?.value || "").trim(),
+        start: $("#pc-start")?.value || "",
+        end: $("#pc-end")?.value || "",
+        location: ($("#pc-location")?.value || "").trim(),
+        assignee: ($("#pc-assignee")?.value || "").trim(),
+        travelDetails: { transport: $("#pc-travelTransport")?.value || "" }
+      };
+      const tripName = editingProTripRef?.data?.title || core.getState()?.title || "My Plan";
+      const res = await window.FeriasApi.generateWalletSegmentLink(seg, draftCard, tripName);
+      if (res && res.configured && res.saveUrl) {
+        if (isMobile) {
+          window.location.href = res.saveUrl;
+        } else if (preWin && !preWin.closed) {
+          preWin.location.href = res.saveUrl;
+        } else {
+          const w = window.open(res.saveUrl, "_blank", "noopener");
+          if (!w) window.location.href = res.saveUrl;
+        }
+        core.toast("💳 Abrindo trecho diretamente na Carteira do Google...");
+        return;
+      }
+      if (preWin && !preWin.closed) preWin.close();
+      if (noticeEl) {
+        noticeEl.hidden = false;
+        noticeEl.innerHTML = `
+          <div>
+            <strong>⚠️ Google Wallet API ainda não configurada no servidor</strong>
+            <div class="muted small">Para abrir trechos diretamente na Carteira do Google (sem baixar arquivos), configure o <b>Issuer ID</b> e a <b>Service Account</b> em <b>Parâmetros</b> ou no <code>.env</code> do servidor (<code>GOOGLE_WALLET_ISSUER_ID</code>, <code>GOOGLE_WALLET_CLIENT_EMAIL</code> e <code>GOOGLE_WALLET_PRIVATE_KEY</code>).</div>
+          </div>
+          <button type="button" class="btn primary small" id="btnProGoWalletParams">⚙️ Configurar em Parâmetros</button>`;
+        if ($("#btnProGoWalletParams", noticeEl)) {
+          $("#btnProGoWalletParams", noticeEl).onclick = () => {
+            $("#proCardModal")?.close();
+            core?.switchProView?.("pro-params");
+            setTimeout(() => $("#proWalletParamsPanel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 140);
+          };
+        }
+      }
+      core.toast("⚠️ Configure a Google Wallet API em Parâmetros para envio direto.");
+    } catch (err) {
+      if (preWin && !preWin.closed) preWin.close();
+      core.toast("❌ " + (err.message || "Falha ao abrir Carteira do Google."));
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = origHtml || `${GOOGLE_WALLET_ICON_SVG}<span>Carteira</span>`;
+      }
+    }
+  }
+
+  function renderProModalSegmentsList() {
+    const box = $("#pc-segmentsList");
+    const badge = $("#proSegmentsCountBadge");
+    if (badge) {
+      const n = proModalSegments.length;
+      badge.textContent = `${n} ${n === 1 ? "trecho" : "trechos"}`;
+    }
+    if (!box) return;
+    if (!proModalSegments.length) {
+      box.innerHTML = `<div class="muted small" style="padding:2px 0">Nenhum trecho cadastrado. Envie bilhetes pela IA acima ou clique em <b>+ Adicionar Trecho</b>.</div>`;
+      return;
+    }
+    const legOpts = cur => Object.entries(LEG_TYPE_META)
+      .map(([k, v]) => `<option value="${k}" ${k === cur ? "selected" : ""}>${v.icon} ${v.label}</option>`)
+      .join("");
+    const trOpts = cur => ["", "Avião", "Ônibus", "Carro", "Outro"]
+      .map(v => `<option value="${v}" ${v === cur ? "selected" : ""}>${v || "— Transporte —"}</option>`)
+      .join("");
+
+    box.innerHTML = proModalSegments.map((s, idx) => {
+      const lm = LEG_TYPE_META[s.legType] || LEG_TYPE_META.ida;
+      const isEditing = proEditingSegmentIdx === idx;
+      const routeTxt = `${s.origin || "Origem"} → ${s.destination || "Destino"}`;
+      const depTxt = s.departAt ? formatDateTimeShortBR(s.departAt, "") : "Sem horário";
+      const arrTxt = s.arriveAt ? formatDateTimeShortBR(s.arriveAt, "") : "";
+      const carrierTxt = [s.transport || "", s.carrier || "", s.flightNumber || ""].filter(Boolean).join(" · ");
+      const metaBits = [
+        `🛫 ${depTxt}${arrTxt ? ` → 🛬 ${arrTxt}` : ""}`,
+        carrierTxt,
+        s.locator ? `Loc: ${s.locator}` : "",
+        s.seat ? `Assento: ${s.seat}` : "",
+        s.passengerName ? `👤 ${s.passengerName}` : ""
+      ].filter(Boolean);
+
+      return `<div class="pro-seg-card${isEditing ? " is-editing" : ""}" data-seg-idx="${idx}">
+        <div class="pro-seg-head">
+          <div class="pro-seg-title-wrap">
+            <span class="pro-seg-badge ${lm.cls}">${lm.icon} Trecho ${idx + 1} · ${core.esc(lm.label)}</span>
+            <strong class="pro-seg-route">${core.esc(routeTxt)}</strong>
+          </div>
+          <div class="pro-seg-actions">
+            <button type="button" class="btn pro-gwallet-btn small" data-seg-wallet="${idx}" title="Abrir diretamente este trecho na Carteira do Google">
+              ${GOOGLE_WALLET_ICON_SVG}<span>Carteira</span>
+            </button>
+            <button type="button" class="icon-btn" data-seg-edit="${idx}" title="${isEditing ? "Concluir edição" : "Editar trecho"}">${isEditing ? "✓" : "✏️"}</button>
+            <button type="button" class="icon-btn" data-seg-del="${idx}" title="Remover trecho">✕</button>
+          </div>
+        </div>
+        <div class="pro-seg-meta">${metaBits.map(b => `<span>${core.esc(b)}</span>`).join("")}</div>
+        ${isEditing ? `
+        <div class="pro-seg-editor">
+          <div class="form-grid">
+            <label>Tipo do Trecho
+              <select data-seg-f="legType" data-seg-i="${idx}">${legOpts(s.legType || "ida")}</select>
+            </label>
+            <label>Transporte
+              <select data-seg-f="transport" data-seg-i="${idx}">${trOpts(s.transport || "")}</select>
+            </label>
+            <label>Origem (ex: BSB - Brasília)
+              <input type="text" data-seg-f="origin" data-seg-i="${idx}" value="${core.esc(s.origin || "")}" placeholder="Ex: BSB - Brasília">
+            </label>
+            <label>Destino (ex: GRU - São Paulo)
+              <input type="text" data-seg-f="destination" data-seg-i="${idx}" value="${core.esc(s.destination || "")}" placeholder="Ex: GRU - São Paulo">
+            </label>
+            <label>Partida (Data/Hora)
+              <input type="datetime-local" data-seg-f="departAt" data-seg-i="${idx}" value="${core.esc(s.departAt || "")}">
+            </label>
+            <label>Chegada (Data/Hora)
+              <input type="datetime-local" data-seg-f="arriveAt" data-seg-i="${idx}" value="${core.esc(s.arriveAt || "")}">
+            </label>
+            <label>Companhia / Viação
+              <input type="text" data-seg-f="carrier" data-seg-i="${idx}" value="${core.esc(s.carrier || "")}" placeholder="Ex: LATAM, GOL, Azul">
+            </label>
+            <label>Nº Voo / Linha
+              <input type="text" data-seg-f="flightNumber" data-seg-i="${idx}" value="${core.esc(s.flightNumber || "")}" placeholder="Ex: LA3210">
+            </label>
+            <label>Localizador / PNR
+              <input type="text" data-seg-f="locator" data-seg-i="${idx}" value="${core.esc(s.locator || "")}" placeholder="Ex: X9K4LP">
+            </label>
+            <label>Assento
+              <input type="text" data-seg-f="seat" data-seg-i="${idx}" value="${core.esc(s.seat || "")}" placeholder="Ex: 12A">
+            </label>
+            <label class="span2">Passageiro (para a Carteira do Google)
+              <input type="text" data-seg-f="passengerName" data-seg-i="${idx}" value="${core.esc(s.passengerName || "")}" placeholder="Nome no bilhete">
+            </label>
+          </div>
+        </div>` : ""}
+      </div>`;
+    }).join("");
+
+    box.querySelectorAll("[data-seg-wallet]").forEach(btn => {
+      btn.onclick = () => {
+        const i = parseInt(btn.dataset.segWallet, 10);
+        if (proModalSegments[i]) openGoogleWalletForSegment(proModalSegments[i], btn);
+      };
+    });
+    box.querySelectorAll("[data-seg-edit]").forEach(btn => {
+      btn.onclick = () => {
+        const i = parseInt(btn.dataset.segEdit, 10);
+        proEditingSegmentIdx = (proEditingSegmentIdx === i) ? -1 : i;
+        renderProModalSegmentsList();
+      };
+    });
+    box.querySelectorAll("[data-seg-del]").forEach(btn => {
+      btn.onclick = () => {
+        const i = parseInt(btn.dataset.segDel, 10);
+        proModalSegments.splice(i, 1);
+        if (proEditingSegmentIdx === i) proEditingSegmentIdx = -1;
+        else if (proEditingSegmentIdx > i) proEditingSegmentIdx--;
+        renderProModalSegmentsList();
+      };
+    });
+    box.querySelectorAll("[data-seg-f]").forEach(inp => {
+      const syncField = () => {
+        const i = parseInt(inp.dataset.segI, 10);
+        const f = inp.dataset.segF;
+        if (!proModalSegments[i]) return;
+        proModalSegments[i][f] = (f === "departAt" || f === "arriveAt")
+          ? sanitizeTravelDateTime(inp.value)
+          : inp.value;
+      };
+      inp.oninput = syncField;
+      inp.onchange = () => {
+        syncField();
+        if (inp.dataset.segF === "legType" || inp.dataset.segF === "origin" || inp.dataset.segF === "destination") {
+          renderProModalSegmentsList();
+        }
+      };
+    });
   }
 
   function setProTicketStatus(busy, msg = "", kind = "") {
     const el = $("#pc-ticketStatus");
-    const btn = $("#btnProTicketUpload");
-    if (btn) btn.disabled = busy;
+    ["#btnProTicketsAiUpload", "#btnProTicketsOnlyUpload"].forEach(s => {
+      if ($(s)) $(s).disabled = busy;
+    });
     if (!el) return;
     if (!msg) { el.hidden = true; el.innerHTML = ""; return; }
     el.hidden = false;
@@ -7339,101 +8231,279 @@
     el.innerHTML = `${busy ? `<span class="ai-spinner" aria-hidden="true"></span>` : ""}<span>${core.esc(msg)}</span>`;
   }
 
-  async function handleProTicketUploadAndAi(file) {
-    if (!file) return;
+  function mergeAiTicketExtraction(aiRes, uploadedBatch) {
+    if (!aiRes || typeof aiRes !== "object") return { addedSegments: 0, updatedFields: 0 };
+    let addedSegments = 0;
+    let updatedFields = 0;
+
+    // 1. Classificar apenas os novos bilhetes deste lote (sem alterar bilhetes anteriores)
+    const classList = Array.isArray(aiRes.ticketClassifications) ? aiRes.ticketClassifications : [];
+    classList.forEach(cl => {
+      const fIdx = Number(cl?.fileIndex);
+      const targetTk = isFinite(fIdx) && uploadedBatch[fIdx] ? uploadedBatch[fIdx] : null;
+      if (!targetTk) return;
+      if (["ida", "conexao_ida", "volta", "conexao_volta", "outro"].includes(cl.legType)) {
+        targetTk.legType = cl.legType;
+      }
+      if (cl.label && !targetTk.label) {
+        targetTk.label = String(cl.label).trim().slice(0, 80);
+      }
+    });
+
+    // 2. Mesclar trechos extraídos SEM apagar ou sobrescrever trechos existentes
+    const newSegs = Array.isArray(aiRes.segments) ? aiRes.segments : [];
+    let batchEarliestIda = "";
+    let batchLatestVolta = "";
+    let hasIdaInBatch = false;
+    let hasVoltaInBatch = false;
+
+    const normTok = s => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+    newSegs.forEach(raw => {
+      if (!raw || typeof raw !== "object") return;
+      const legType = ["ida", "conexao_ida", "volta", "conexao_volta", "outro"].includes(raw.legType) ? raw.legType : "ida";
+      const fIdx = Number(raw.fileIndex);
+      const linkedTk = (isFinite(fIdx) && uploadedBatch[fIdx]) ? uploadedBatch[fIdx] : (uploadedBatch[0] || null);
+      const seg = {
+        id: core.uid(),
+        legType,
+        origin: String(raw.origin || "").trim(),
+        destination: String(raw.destination || "").trim(),
+        departAt: sanitizeTravelDateTime(raw.departAt),
+        arriveAt: sanitizeTravelDateTime(raw.arriveAt),
+        carrier: String(raw.carrier || "").trim(),
+        flightNumber: String(raw.flightNumber || "").trim(),
+        locator: String(raw.locator || "").trim().toUpperCase(),
+        seat: String(raw.seat || "").trim().toUpperCase(),
+        terminal: String(raw.terminal || "").trim(),
+        gate: String(raw.gate || "").trim(),
+        transport: ["Avião", "Ônibus", "Carro", "Outro"].includes(raw.transport)
+          ? raw.transport
+          : (["Avião", "Ônibus", "Carro", "Outro"].includes(aiRes.transport) ? aiRes.transport : ""),
+        passengerName: String(raw.passengerName || "").trim(),
+        barcodeValue: String(raw.barcodeValue || "").trim(),
+        barcodeType: String(raw.barcodeType || "QR_CODE").trim(),
+        ticketId: linkedTk?.id || "",
+        notes: String(raw.notes || "").trim()
+      };
+      if (!seg.origin && !seg.destination && !seg.departAt && !seg.flightNumber && !seg.locator) return;
+
+      if (linkedTk && !linkedTk.label && (seg.origin || seg.destination)) {
+        linkedTk.label = `${(LEG_TYPE_META[legType] || LEG_TYPE_META.ida).label}: ${seg.origin || "?"} → ${seg.destination || "?"}`;
+        linkedTk.legType = legType;
+      }
+
+      if (legType === "ida" || legType === "conexao_ida") {
+        hasIdaInBatch = true;
+        if (seg.departAt && (!batchEarliestIda || seg.departAt < batchEarliestIda)) {
+          batchEarliestIda = seg.departAt;
+        }
+      } else if (legType === "volta" || legType === "conexao_volta") {
+        hasVoltaInBatch = true;
+        const endRef = seg.arriveAt || seg.departAt;
+        if (endRef && (!batchLatestVolta || endRef > batchLatestVolta)) {
+          batchLatestVolta = endRef;
+        }
+      }
+
+      // Deduplicação inteligente: se já existe trecho idêntico, apenas preenche lacunas vazias sem sobrescrever
+      const existing = proModalSegments.find(ex =>
+        normTok(ex.origin) === normTok(seg.origin) &&
+        normTok(ex.destination) === normTok(seg.destination) &&
+        (
+          (ex.departAt && seg.departAt && ex.departAt.slice(0, 10) === seg.departAt.slice(0, 10)) ||
+          (ex.flightNumber && seg.flightNumber && normTok(ex.flightNumber) === normTok(seg.flightNumber))
+        )
+      );
+      if (existing) {
+        ["departAt", "arriveAt", "carrier", "flightNumber", "locator", "seat", "terminal", "gate", "transport", "passengerName", "barcodeValue", "notes"].forEach(k => {
+          if (!existing[k] && seg[k]) {
+            existing[k] = seg[k];
+            updatedFields++;
+          }
+        });
+      } else {
+        proModalSegments.push(seg);
+        addedSegments++;
+      }
+    });
+
+    // Ordenar trechos cronologicamente (preservando trechos sem data no fim)
+    proModalSegments.sort((a, b) => String(a.departAt || "9999-99-99").localeCompare(String(b.departAt || "9999-99-99")));
+
+    // 3. Atualizar SOMENTE a ponta correspondente (Ida ou Volta) — NUNCA sobrescrever a ponta oposta!
+    const defs = computeDefaultTravelDates($("#pc-start")?.value, $("#pc-end")?.value);
+    if (hasIdaInBatch && batchEarliestIda) {
+      if ($("#pc-assigneeTravels") && !$("#pc-assigneeTravels").checked && !proModalExtraAssignees.some(r => r.travels)) {
+        $("#pc-assigneeTravels").checked = true;
+      }
+      const startInp = $("#pc-primaryTravelStart");
+      if (startInp && $("#pc-assigneeTravels")?.checked) {
+        const cur = sanitizeTravelDateTime(startInp.value);
+        if (!cur || cur === defs.travelStart || batchEarliestIda < cur) {
+          startInp.value = batchEarliestIda;
+          updatedFields++;
+        }
+      }
+      proModalExtraAssignees.forEach(r => {
+        if (r.travels && (!r.travelStart || r.travelStart === defs.travelStart)) {
+          r.travelStart = batchEarliestIda;
+        }
+      });
+    }
+    if (hasVoltaInBatch && batchLatestVolta) {
+      if ($("#pc-assigneeTravels") && !$("#pc-assigneeTravels").checked && !proModalExtraAssignees.some(r => r.travels)) {
+        $("#pc-assigneeTravels").checked = true;
+      }
+      const endInp = $("#pc-primaryTravelEnd");
+      if (endInp && $("#pc-assigneeTravels")?.checked) {
+        const cur = sanitizeTravelDateTime(endInp.value);
+        if (!cur || cur === defs.travelEnd || batchLatestVolta > cur) {
+          endInp.value = batchLatestVolta;
+          updatedFields++;
+        }
+      }
+      proModalExtraAssignees.forEach(r => {
+        if (r.travels && (!r.travelEnd || r.travelEnd === defs.travelEnd)) {
+          r.travelEnd = batchLatestVolta;
+        }
+      });
+    }
+
+    // 4. Transporte: preenche apenas se ainda vazio
+    const trSel = $("#pc-travelTransport");
+    if (trSel && !trSel.value && ["Avião", "Ônibus", "Carro", "Outro"].includes(aiRes.transport)) {
+      trSel.value = aiRes.transport;
+      updatedFields++;
+    }
+
+    // 5. Custo financeiro: se vazio preenche; se já preenchido preserva o existente e anota o novo valor
+    const newCost = Number(aiRes.costAmount) || 0;
+    if (newCost > 0) {
+      const curHasCost = $("#pc-travelHasCost")?.value === "yes";
+      const curCost = parseFloat($("#pc-travelCostAmount")?.value || "0") || 0;
+      if (!curHasCost || curCost <= 0) {
+        if ($("#pc-travelHasCost")) $("#pc-travelHasCost").value = "yes";
+        if ($("#pc-travelCostWrap")) $("#pc-travelCostWrap").hidden = false;
+        if ($("#pc-travelCostAmount")) $("#pc-travelCostAmount").value = String(newCost);
+        updatedFields++;
+      } else if (Math.abs(newCost - curCost) > 0.01) {
+        const tn = $("#pc-travelNotes");
+        const costNote = `Valor adicional detectado no bilhete: ${core.money(newCost)}`;
+        if (tn && !tn.value.includes(costNote)) {
+          tn.value = tn.value.trim() ? `${tn.value.trim()}\n${costNote}` : costNote;
+        }
+      }
+    }
+
+    // 6. Observações: mescla acrescentando linhas inéditas (jamais apaga o que já estava escrito)
+    if (aiRes.notes && String(aiRes.notes).trim()) {
+      const tn = $("#pc-travelNotes");
+      const cleanNote = String(aiRes.notes).trim();
+      if (tn && !tn.value.toLowerCase().includes(cleanNote.toLowerCase())) {
+        tn.value = tn.value.trim() ? `${tn.value.trim()}\n${cleanNote}` : cleanNote;
+        updatedFields++;
+      }
+    }
+
+    return { addedSegments, updatedFields };
+  }
+
+  async function handleProTicketsUpload(fileList, useAi = true) {
+    const files = [...(fileList || [])].filter(Boolean);
+    if (!files.length) return;
     const tTripId = (!$("#pc-targetTripWrap")?.hidden && $("#pc-targetTrip")?.value)
       ? $("#pc-targetTrip").value
       : (editingProTripRef?.id || core.getActiveTrip()?.id || "local");
-    setProTicketStatus(true, `Enviando "${file.name}" e lendo bilhete com IA...`, "loading");
+    setProTicketStatus(
+      true,
+      useAi
+        ? `Enviando ${files.length} bilhete(s) e analisando trechos com IA (modo incremental)...`
+        : `Enviando ${files.length} bilhete(s)...`,
+      "loading"
+    );
+    const uploadedBatch = [];
+    const nowIso = new Date().toISOString();
     try {
-      let uploaded = null;
-      if (window.FeriasApi?.uploadAttachment) {
-        try {
-          uploaded = await window.FeriasApi.uploadAttachment(tTripId, proModalDraftId, file);
-          proModalTicketFile = { id: uploaded.id, fileName: uploaded.fileName || file.name, url: uploaded.url || "", mimeType: file.type || "" };
-          if (!proModalAttachments.some(a => a.id === uploaded.id)) {
-            proModalAttachments.push(uploaded);
-            renderProModalAttachments();
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        let rec;
+        if (window.FeriasApi?.uploadAttachment) {
+          try {
+            const up = await window.FeriasApi.uploadAttachment(tTripId, proModalDraftId, f);
+            rec = {
+              id: up.id,
+              fileName: up.fileName || f.name,
+              url: up.url || "",
+              mimeType: f.type || up.mimeType || "",
+              size: f.size || up.size || 0,
+              uploadedAt: up.uploadedAt || nowIso,
+              legType: proModalTickets.length ? "volta" : "ida",
+              label: ""
+            };
+          } catch {
+            rec = {
+              id: core.uid(),
+              fileName: f.name,
+              url: "",
+              mimeType: f.type || "",
+              size: f.size || 0,
+              uploadedAt: nowIso,
+              legType: proModalTickets.length ? "volta" : "ida",
+              label: ""
+            };
           }
-        } catch {
-          proModalTicketFile = { id: core.uid(), fileName: file.name, url: "", mimeType: file.type || "" };
+        } else {
+          rec = {
+            id: core.uid(),
+            fileName: f.name,
+            url: "",
+            mimeType: f.type || "",
+            size: f.size || 0,
+            uploadedAt: nowIso,
+            legType: proModalTickets.length ? "volta" : "ida",
+            label: ""
+          };
         }
-      } else {
-        proModalTicketFile = { id: core.uid(), fileName: file.name, url: "", mimeType: file.type || "" };
+        proModalTickets.push(rec);
+        uploadedBatch.push(rec);
       }
-      renderProModalTicketPreview();
+      renderProModalTicketsList();
 
-      // Extração automática por IA (Gemini)
-      if (window.FeriasApi?.aiAnalyzeActivity && core.fileToBase64Obj) {
+      if (useAi && window.FeriasApi?.aiAnalyzeTickets && core.fileToBase64Obj) {
         try {
-          const mediaObj = await core.fileToBase64Obj(file);
-          const act = await window.FeriasApi.aiAnalyzeActivity({
-            mode: "professional",
-            prompt: "Este arquivo é um BILHETE / TICKET DE VIAGEM (aéreo, rodoviário ou reserva). Extraia com máxima precisão: data e hora de IDA (start + startTime), data e hora de VOLTA/REGRESSO (end + endTime), modalidade de transporte (mencione explicitamente Avião, Ônibus ou Carro no campo type ou notes), valor total pago (amount, se constar), cidade destino (location), e no campo notes inclua localizador, companhia, número do voo/ônibus, assento e observações.",
-            baseDate: core.fmtISO(new Date()),
-            media: [mediaObj]
-          });
-          if (act && typeof act === "object") {
-            let filled = 0;
-            const blobTxt = `${act.type || ""} ${act.name || ""} ${act.notes || ""}`.toLowerCase();
-            const trSel = $("#pc-travelTransport");
-            if (trSel) {
-              if (/avi[aã]o|voo|a[eé]re|latam|gol|azul|aeroporto|boarding|flight/.test(blobTxt)) { trSel.value = "Avião"; filled++; }
-              else if (/[oô]nibus|rodovi[aá]ri|bus/.test(blobTxt)) { trSel.value = "Ônibus"; filled++; }
-              else if (/carro|ve[ií]culo|aluguel|localiza|movida|unidas/.test(blobTxt)) { trSel.value = "Carro"; filled++; }
-              else if (!trSel.value) { trSel.value = "Outro"; }
-            }
-            if (act.start && /^\d{4}-\d{2}-\d{2}$/.test(act.start)) {
-              const sTime = (act.startTime && /^\d{2}:\d{2}/.test(act.startTime)) ? act.startTime.slice(0, 5) : "08:00";
-              const idaDt = `${act.start}T${sTime}`;
-              if ($("#pc-assigneeTravels") && !$("#pc-assigneeTravels").checked && !proModalExtraAssignees.some(r => r.travels)) {
-                $("#pc-assigneeTravels").checked = true;
-              }
-              if ($("#pc-primaryTravelStart") && $("#pc-assigneeTravels")?.checked) {
-                $("#pc-primaryTravelStart").value = idaDt;
-                filled++;
-              }
-              proModalExtraAssignees.forEach(r => { if (r.travels && !r.travelStart) r.travelStart = idaDt; });
-            }
-            if (act.end && /^\d{4}-\d{2}-\d{2}$/.test(act.end)) {
-              const eTime = (act.endTime && /^\d{2}:\d{2}/.test(act.endTime)) ? act.endTime.slice(0, 5) : "18:00";
-              const volDt = `${act.end}T${eTime}`;
-              if ($("#pc-assigneeTravels") && !$("#pc-assigneeTravels").checked && !proModalExtraAssignees.some(r => r.travels)) {
-                $("#pc-assigneeTravels").checked = true;
-              }
-              if ($("#pc-primaryTravelEnd") && $("#pc-assigneeTravels")?.checked) {
-                $("#pc-primaryTravelEnd").value = volDt;
-                filled++;
-              }
-              proModalExtraAssignees.forEach(r => { if (r.travels && !r.travelEnd) r.travelEnd = volDt; });
-            }
-            if (Number(act.amount) > 0) {
-              if ($("#pc-travelHasCost")) $("#pc-travelHasCost").value = "yes";
-              if ($("#pc-travelCostWrap")) $("#pc-travelCostWrap").hidden = false;
-              if ($("#pc-travelCostAmount")) $("#pc-travelCostAmount").value = String(Number(act.amount));
-              filled++;
-            }
-            if (act.notes) {
-              const tn = $("#pc-travelNotes");
-              if (tn) {
-                tn.value = tn.value.trim() ? `${tn.value.trim()}\n${act.notes}` : String(act.notes);
-                filled++;
-              }
-            }
-            if (act.location && $("#pc-location") && !$("#pc-location").value.trim()) {
-              $("#pc-location").value = String(act.location);
-            }
-            renderProModalExtraAssignees();
-            updateProModalTravelFinancePreview();
-            setProTicketStatus(false, filled ? `✅ Bilhete lido pela IA (${filled} campo(s) preenchidos)! Revise se desejar.` : "🎫 Bilhete anexado! Revise ou preencha os campos manualmente.", "ok");
-            return;
+          const mediaArr = [];
+          const fileNames = [];
+          for (const f of files.slice(0, 8)) {
+            mediaArr.push(await core.fileToBase64Obj(f));
+            fileNames.push(f.name);
           }
+          const aiRes = await window.FeriasApi.aiAnalyzeTickets({
+            baseDate: core.fmtISO(new Date()),
+            media: mediaArr,
+            fileNames,
+            existingContext: {
+              segments: proModalSegments,
+              eventStart: $("#pc-start")?.value || "",
+              eventEnd: $("#pc-end")?.value || "",
+              location: ($("#pc-location")?.value || "").trim()
+            }
+          });
+          const merged = mergeAiTicketExtraction(aiRes, uploadedBatch);
+          renderProModalTicketsList();
+          renderProModalSegmentsList();
+          renderProModalExtraAssignees();
+          updateProModalTravelFinancePreview();
+          const msg = merged.addedSegments > 0
+            ? `✅ ${files.length} bilhete(s) anexado(s) e ${merged.addedSegments} novo(s) trecho(s) mesclado(s) sem sobrescrever dados anteriores!`
+            : `✅ ${files.length} bilhete(s) anexado(s) e analisado(s) pela IA (dados anteriores preservados)!`;
+          setProTicketStatus(false, msg, "ok");
+          return;
         } catch (aiErr) {
-          setProTicketStatus(false, `🎫 Bilhete anexado! (Leitura IA indisponível: ${aiErr?.message || "preencha manualmente"})`, "ok");
+          setProTicketStatus(false, `🎫 ${files.length} bilhete(s) anexado(s)! (IA indisponível: ${aiErr?.message || "adicione os trechos manualmente"})`, "ok");
           return;
         }
       }
-      setProTicketStatus(false, "🎫 Bilhete anexado! Preencha ou ajuste os detalhes abaixo.", "ok");
+      setProTicketStatus(false, `🎫 ${files.length} bilhete(s) anexado(s) à lista!`, "ok");
     } catch (err) {
       setProTicketStatus(false, "❌ " + (err.message || err), "error");
     }
@@ -7777,18 +8847,24 @@
       travelEnd: sanitizeTravelDateTime(e.travelEnd)
     }));
 
-    // Detalhes da Viagem (opcionais)
+    // Detalhes da Viagem (opcionais — múltiplos bilhetes + trechos + Google Wallet)
     const td = (a && a.travelDetails && typeof a.travelDetails === "object") ? a.travelDetails : {};
-    proModalTicketFile = td.ticketFile && typeof td.ticketFile === "object" ? { ...td.ticketFile } : null;
+    proModalTickets = Array.isArray(td.tickets)
+      ? td.tickets.map(t => ({ ...t }))
+      : (td.ticketFile && typeof td.ticketFile === "object" ? [{ ...td.ticketFile, legType: td.ticketFile.legType || "ida" }] : []);
+    proModalSegments = Array.isArray(td.segments) ? td.segments.map(s => ({ ...s })) : [];
+    proEditingSegmentIdx = -1;
     if ($("#pc-travelTransport")) $("#pc-travelTransport").value = td.transport || "";
     if ($("#pc-travelHasCost")) $("#pc-travelHasCost").value = td.hasCost ? "yes" : "no";
     if ($("#pc-travelCostWrap")) $("#pc-travelCostWrap").hidden = !td.hasCost;
     if ($("#pc-travelCostAmount")) $("#pc-travelCostAmount").value = Number(td.costAmount) > 0 ? String(td.costAmount) : "";
     if ($("#pc-travelNotes")) $("#pc-travelNotes").value = td.notes || "";
+    if ($("#pc-walletSetupNotice")) { $("#pc-walletSetupNotice").hidden = true; $("#pc-walletSetupNotice").innerHTML = ""; }
     setProTicketStatus(false, "");
-    renderProModalTicketPreview();
+    renderProModalTicketsList();
+    renderProModalSegmentsList();
     if ($("#pc-travelDetailsBox")) {
-      $("#pc-travelDetailsBox").open = Boolean(proModalTicketFile || td.transport || td.hasCost || td.notes);
+      $("#pc-travelDetailsBox").open = Boolean(proModalTickets.length || proModalSegments.length || td.transport || td.hasCost || td.notes);
     }
 
     $("#pc-location").value = a ? (a.location || "") : "";
@@ -7879,7 +8955,9 @@
     const travelFreeLodging = Boolean($("#pc-travelFreeLodging")?.checked);
     const travelHasCost = ($("#pc-travelHasCost")?.value || "no") === "yes";
     const travelDetails = {
-      ticketFile: proModalTicketFile ? { ...proModalTicketFile } : null,
+      tickets: proModalTickets.map(t => ({ ...t })),
+      segments: proModalSegments.map(s => ({ ...s })),
+      ticketFile: proModalTickets[0] ? { ...proModalTickets[0] } : null,
       transport: $("#pc-travelTransport")?.value || "",
       hasCost: travelHasCost,
       costAmount: travelHasCost ? Math.max(0, parseFloat($("#pc-travelCostAmount")?.value) || 0) : 0,
@@ -8339,17 +9417,141 @@
         if ($("#pc-travelCostWrap")) $("#pc-travelCostWrap").hidden = e.target.value !== "yes";
       };
     }
-    if ($("#btnProTicketUpload")) {
-      $("#btnProTicketUpload").onclick = () => $("#pc-ticketInput")?.click();
+    if ($("#btnProTicketsAiUpload")) {
+      $("#btnProTicketsAiUpload").onclick = () => $("#pc-ticketsAiInput")?.click();
     }
-    if ($("#pc-ticketInput")) {
-      $("#pc-ticketInput").onchange = async e => {
-        const f = e.target.files?.[0];
-        if (!f) return;
-        await handleProTicketUploadAndAi(f);
+    if ($("#pc-ticketsAiInput")) {
+      $("#pc-ticketsAiInput").onchange = async e => {
+        const files = [...(e.target.files || [])];
         e.target.value = "";
+        if (files.length) await handleProTicketsUpload(files, true);
       };
     }
+    if ($("#btnProTicketsOnlyUpload")) {
+      $("#btnProTicketsOnlyUpload").onclick = () => $("#pc-ticketsOnlyInput")?.click();
+    }
+    if ($("#pc-ticketsOnlyInput")) {
+      $("#pc-ticketsOnlyInput").onchange = async e => {
+        const files = [...(e.target.files || [])];
+        e.target.value = "";
+        if (files.length) await handleProTicketsUpload(files, false);
+      };
+    }
+    if ($("#btnProAddSegment")) {
+      $("#btnProAddSegment").onclick = () => {
+        const nextLeg = proModalSegments.length === 0 ? "ida" : (proModalSegments.some(s => s.legType === "ida") ? "volta" : "conexao_ida");
+        proModalSegments.push({
+          id: core.uid(),
+          legType: nextLeg,
+          origin: "",
+          destination: nextLeg === "ida" ? ($("#pc-location")?.value || "").trim() : "",
+          departAt: nextLeg === "ida" ? ($("#pc-primaryTravelStart")?.value || "") : ($("#pc-primaryTravelEnd")?.value || ""),
+          arriveAt: "",
+          carrier: "",
+          flightNumber: "",
+          locator: "",
+          seat: "",
+          terminal: "",
+          gate: "",
+          transport: $("#pc-travelTransport")?.value || "Avião",
+          passengerName: ($("#pc-assignee")?.value || "").trim(),
+          barcodeValue: "",
+          barcodeType: "QR_CODE",
+          ticketId: "",
+          notes: ""
+        });
+        proEditingSegmentIdx = proModalSegments.length - 1;
+        renderProModalSegmentsList();
+      };
+    }
+
+    // Parâmetros: salvar credenciais Google Wallet (Cofre AES-256-GCM do usuário)
+    if ($("#btnProSaveWalletCreds")) {
+      $("#btnProSaveWalletCreds").onclick = async () => {
+        const issuer = ($("#proWalletIssuerInput")?.value || "").trim();
+        const saJson = ($("#proWalletSaInput")?.value || "").trim();
+        if (!issuer) return core.toast("⚠️ Informe o Google Wallet Issuer ID.");
+        const payload = { walletIssuerId: issuer };
+        if (saJson) {
+          try {
+            const parsed = JSON.parse(saJson);
+            if (!parsed.client_email || !parsed.private_key) {
+              return core.toast("⚠️ O JSON da Service Account precisa conter client_email e private_key.");
+            }
+            payload.walletSaJson = saJson;
+          } catch {
+            return core.toast("⚠️ JSON da Service Account inválido. Cole o conteúdo completo do arquivo .json do Google Cloud.");
+          }
+        }
+        try {
+          await window.FeriasApi.saveIntegrations(payload);
+          if ($("#proWalletSaInput")) $("#proWalletSaInput").value = "";
+          renderProParams();
+          core.toast("💳 Credenciais da Carteira do Google salvas no Cofre AES-256-GCM!");
+        } catch (err) {
+          core.toast("❌ " + (err.message || err));
+        }
+      };
+    }
+
+    // Central de Documentos controls
+    if ($("#proDocsSearch")) $("#proDocsSearch").oninput = () => renderProDocs();
+    $("#proDocsOriginSeg")?.querySelectorAll("button").forEach(b => {
+      b.onclick = () => {
+        proDocsOrigin = b.dataset.docOrigin || "";
+        if ($("#proDocsOriginFilter")) $("#proDocsOriginFilter").value = proDocsOrigin;
+        renderProDocs();
+      };
+    });
+    if ($("#proDocsOriginFilter")) {
+      $("#proDocsOriginFilter").onchange = e => {
+        proDocsOrigin = e.target.value || "";
+        renderProDocs();
+      };
+    }
+    [
+      "#proDocsFileTypeFilter", "#proDocsEventFilter", "#proDocsDateMode",
+      "#proDocsYearFilter", "#proDocsMonthFilter", "#proDocsDateFrom", "#proDocsDateTo",
+      "#proDocsColFilter", "#proDocsCardTypeFilter", "#proDocsPrioFilter",
+      "#proDocsAssigneeFilter", "#proDocsClientFilter", "#proDocsHasTravelFilter",
+      "#proDocsLocationFilter", "#proDocsLabelFilter", "#proDocsTagFilter", "#proDocsFinModeFilter"
+    ].forEach(sel => {
+      if ($(sel)) {
+        $(sel).onchange = () => {
+          if (sel === "#proDocsYearFilter" && $("#proDocsMonthFilter")) $("#proDocsMonthFilter").value = "";
+          renderProDocs();
+        };
+      }
+    });
+    if ($("#proDocsSort")) {
+      $("#proDocsSort").onchange = e => {
+        proDocsSort = e.target.value || "recent";
+        renderProDocs();
+      };
+    }
+    $("#proDocsViewSeg")?.querySelectorAll("button").forEach(b => {
+      b.onclick = () => {
+        proDocsView = b.dataset.docView === "grid" ? "grid" : "list";
+        $("#proDocsViewSeg").querySelectorAll("button").forEach(x => x.classList.toggle("active", x === b));
+        renderProDocs();
+      };
+    });
+    if ($("#btnProDocsClearFilters")) $("#btnProDocsClearFilters").onclick = resetProDocsFilters;
+    if ($("#btnProDocsResetInline")) $("#btnProDocsResetInline").onclick = resetProDocsFilters;
+
+    // Modal Preview de Documento & Confirmação de Exclusão
+    if ($("#btnProDocPreviewClose")) $("#btnProDocPreviewClose").onclick = () => $("#proDocPreviewModal")?.close();
+    if ($("#btnProDocPreviewDone")) $("#btnProDocPreviewDone").onclick = () => $("#proDocPreviewModal")?.close();
+    if ($("#btnProDocPreviewOpenCard")) {
+      $("#btnProDocPreviewOpenCard").onclick = () => {
+        const cid = proDocsPreviewCurrent?.cardId;
+        $("#proDocPreviewModal")?.close();
+        if (cid) openProCardModal(cid);
+      };
+    }
+    if ($("#btnProDocDelClose")) $("#btnProDocDelClose").onclick = () => $("#proDocDeleteModal")?.close();
+    if ($("#btnProDocDelCancel")) $("#btnProDocDelCancel").onclick = () => $("#proDocDeleteModal")?.close();
+    if ($("#btnProDocDelConfirm")) $("#btnProDocDelConfirm").onclick = confirmDeleteProDoc;
 
     // Gantt controls
     if ($("#btnProAddCardGantt")) $("#btnProAddCardGantt").onclick = () => openProCardModal();
@@ -8732,7 +9934,12 @@
             if (loadEl) loadEl.hidden = false;
             if (loadTxt) loadTxt.textContent = `Carregando arquivo "${f.name}" (${i + 1}/${files.length})...`;
             const up = await window.FeriasApi.uploadAttachment(tTripId, proModalDraftId, f);
-            proModalAttachments.push(up);
+            proModalAttachments.push({
+              ...up,
+              size: up.size || f.size || 0,
+              mimeType: up.mimeType || f.type || "",
+              uploadedAt: up.uploadedAt || new Date().toISOString()
+            });
             renderProModalAttachments();
             core.toast(`📎 "${f.name}" anexado`);
           } catch (err) { core.toast("❌ " + (err.message || err)); }
@@ -8749,7 +9956,7 @@
         const cleanUrl = url.trim();
         if (!/^https?:\/\//i.test(cleanUrl)) return core.toast("Informe um link iniciando com http:// ou https://");
         const name = prompt("Nome curto do link (opcional):", cleanUrl.replace(/^https?:\/\//, "").slice(0, 32)) || cleanUrl;
-        proModalAttachments.push({ id: core.uid(), isLink: true, fileName: name, url: cleanUrl });
+        proModalAttachments.push({ id: core.uid(), isLink: true, fileName: name, url: cleanUrl, uploadedAt: new Date().toISOString() });
         renderProModalAttachments();
       };
     }
@@ -9118,6 +10325,7 @@
     renderProMap(filteredCards);
     renderProTravels(filteredCards);
     renderProControl(filteredCards);
+    renderProDocs(cards);
     renderProDashboard(filteredCards, t);
     renderProFinance(filteredCards, t);
     renderProTable(cards);
@@ -9139,6 +10347,7 @@
     renderProMap,
     renderProTravels,
     renderProControl,
+    renderProDocs,
     renderProBoard,
     buildProSummaryHTML,
     openProCardModal,

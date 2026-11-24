@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=43">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=43">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=43">
+<link rel="manifest" href="/manifest.webmanifest?v=44">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=44">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=44">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=43">
+<link rel="stylesheet" href="styles.css?v=44">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=43" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=44" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=43" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=44" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -218,6 +218,7 @@
       <button class="tab" data-pro-view="pro-map" id="tab-pro-map" type="button">🗺️ Mapa</button>
       <button class="tab" data-pro-view="pro-travels" id="tab-pro-travels" type="button">✈️ Deslocamentos</button>
       <button class="tab" data-pro-view="pro-control" id="tab-pro-control" type="button">📋 Controle</button>
+      <button class="tab" data-pro-view="pro-docs" id="tab-pro-docs" type="button">📁 Documentos</button>
       <button class="tab" data-pro-view="pro-dashboard" id="tab-pro-dashboard" type="button">📊 Dashboard</button>
       <button class="tab" data-pro-view="pro-finance" id="tab-pro-finance" type="button">💼 Financeiro</button>
       <button class="tab" data-pro-view="pro-table" id="tab-pro-table" type="button">🧾 Tabela</button>
@@ -1661,6 +1662,172 @@
       </div>
     </section>
 
+    <!-- MODO PROFISSIONAL: CENTRAL DE DOCUMENTOS -->
+    <section class="view" id="view-pro-docs">
+      <div class="card pro-board-toolbar-card pro-docs-toolbar-card">
+        <div class="pro-docs-toolbar-top">
+          <div class="pro-docs-search-wrap">
+            <input type="search" id="proDocsSearch" placeholder="🔎 Buscar por arquivo, cartão, assunto, localizador ou observação..." autocomplete="off">
+          </div>
+          <div class="seg pro-docs-origin-seg" id="proDocsOriginSeg" role="group" aria-label="Filtrar origem dos documentos">
+            <button type="button" class="active" data-doc-origin="">Todos</button>
+            <button type="button" data-doc-origin="travel">✈️ Viagem</button>
+            <button type="button" data-doc-origin="general">📎 Outros</button>
+          </div>
+          <div class="gantt-pop-host">
+            <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProDocsFilterPop" aria-expanded="false" aria-controls="proDocsFilterPopPanel" title="Filtros avançados de documentos">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              <span>Filtros</span>
+              <span class="gantt-pop-count" id="proDocsFilterCount" hidden></span>
+            </button>
+            <div class="gantt-pop-panel pro-docs-filter-panel" id="proDocsFilterPopPanel" hidden>
+              <div class="gantt-pop-head">
+                <strong>Filtros Avançados de Documentos</strong>
+                <button type="button" class="btn ghost small" id="btnProDocsClearFilters" hidden>✕ Limpar Filtros</button>
+              </div>
+              <div class="gantt-pop-body pro-docs-filter-grid">
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Origem do documento</span>
+                  <select id="proDocsOriginFilter" aria-label="Origem do documento">
+                    <option value="">Todos os documentos</option>
+                    <option value="travel">✈️ Apenas Documentos de Viagem</option>
+                    <option value="general">📎 Outros Documentos (Anexos Gerais)</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Tipo de arquivo</span>
+                  <select id="proDocsFileTypeFilter" aria-label="Tipo de arquivo">
+                    <option value="">Todos os formatos</option>
+                    <option value="pdf">📄 PDF</option>
+                    <option value="image">🖼️ Imagem (JPG / PNG / WebP)</option>
+                    <option value="spreadsheet">📊 Excel / Planilha</option>
+                    <option value="document">📝 Word / Texto</option>
+                    <option value="link">🔗 Link externo</option>
+                    <option value="other">📦 Outros</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Assunto / Evento</span>
+                  <select id="proDocsEventFilter" aria-label="Assunto ou evento"><option value="">Todos os eventos</option></select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Base de data</span>
+                  <select id="proDocsDateMode" aria-label="Base de data para filtro">
+                    <option value="event">📅 Data do Evento / Viagem</option>
+                    <option value="upload">⬆️ Data de Upload</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Ano</span>
+                  <select id="proDocsYearFilter" aria-label="Filtrar por ano"><option value="">Todos os anos</option></select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Mês</span>
+                  <select id="proDocsMonthFilter" aria-label="Filtrar por mês"><option value="">Todos os meses</option></select>
+                </div>
+                <div class="gantt-pop-group span2">
+                  <span class="gantt-pop-lbl">Intervalo de datas</span>
+                  <div class="gantt-pop-dates">
+                    <label class="date-filter-chip" title="Data inicial">
+                      <span>De</span>
+                      <input type="date" id="proDocsDateFrom" aria-label="Data inicial">
+                    </label>
+                    <label class="date-filter-chip" title="Data final">
+                      <span>Até</span>
+                      <input type="date" id="proDocsDateTo" aria-label="Data final">
+                    </label>
+                  </div>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Lista / Status do Cartão</span>
+                  <select id="proDocsColFilter" aria-label="Lista do cartão"><option value="">Todas as listas</option></select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Tipo de Cartão</span>
+                  <select id="proDocsCardTypeFilter" aria-label="Tipo de cartão"><option value="">Todos os tipos</option></select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Prioridade</span>
+                  <select id="proDocsPrioFilter" aria-label="Prioridade">
+                    <option value="">Todas as prioridades</option>
+                    <option value="Crítica">🔴 Crítica</option>
+                    <option value="Alta">🟠 Alta</option>
+                    <option value="Média">🔵 Média</option>
+                    <option value="Baixa">🟢 Baixa</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Responsável(is)</span>
+                  <select id="proDocsAssigneeFilter" aria-label="Responsável"><option value="">Todos os responsáveis</option></select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Cliente</span>
+                  <select id="proDocsClientFilter" aria-label="Cliente"><option value="">Todos os clientes</option></select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Cartão possui Viagem?</span>
+                  <select id="proDocsHasTravelFilter" aria-label="Cartão possui viagem">
+                    <option value="">Todos</option>
+                    <option value="yes">✈️ Com viagem</option>
+                    <option value="no">🏢 Sem viagem</option>
+                  </select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Localidade / Destino</span>
+                  <select id="proDocsLocationFilter" aria-label="Localidade"><option value="">Todas as localidades</option></select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Etiqueta</span>
+                  <select id="proDocsLabelFilter" aria-label="Etiqueta"><option value="">Todas as etiquetas</option></select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Tag</span>
+                  <select id="proDocsTagFilter" aria-label="Tag"><option value="">Todas as tags</option></select>
+                </div>
+                <div class="gantt-pop-group">
+                  <span class="gantt-pop-lbl">Financeiro / Modalidade</span>
+                  <select id="proDocsFinModeFilter" aria-label="Modalidade financeira">
+                    <option value="">Todas as modalidades</option>
+                    <option value="diaria">💵 Diária</option>
+                    <option value="grat_rep">🎖️ Gratificação de Representação</option>
+                    <option value="comissionamento">📋 Comissionamento</option>
+                    <option value="has_cost">💸 Com custo financeiro</option>
+                    <option value="no_cost">✅ Sem custo financeiro</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="pro-docs-toolbar-right">
+            <select id="proDocsSort" class="pro-map-quick-sel" aria-label="Ordenar documentos">
+              <option value="recent">🕒 Mais recentes</option>
+              <option value="oldest">🕰️ Mais antigos</option>
+              <option value="name">🔤 Nome (A–Z)</option>
+              <option value="event_date">📅 Data do Evento</option>
+            </select>
+            <div class="seg" id="proDocsViewSeg" role="group" aria-label="Modo de visualização dos documentos">
+              <button type="button" class="active" data-doc-view="list" title="Visualização em Lista/Tabela">📋 Lista</button>
+              <button type="button" data-doc-view="grid" title="Visualização em Grade de Cards">🗂️ Cards</button>
+            </div>
+          </div>
+        </div>
+        <div class="pro-docs-summary-row">
+          <span class="muted small" id="proDocsSummaryBar">Exibindo 0 documentos (0 de viagem, 0 gerais)</span>
+          <button type="button" class="btn ghost small" id="btnProDocsResetInline" hidden>✕ Limpar filtros</button>
+        </div>
+      </div>
+
+      <div id="proDocsEmptyBanner" class="card pro-travels-empty-banner" hidden></div>
+
+      <div class="card pro-map-table-card" id="proDocsListCard">
+        <div class="table-wrap">
+          <table id="proDocsTable" class="pro-map-trips-table pro-docs-table"></table>
+        </div>
+      </div>
+
+      <div id="proDocsCardsGrid" class="pro-docs-cards-grid" hidden></div>
+    </section>
+
     <!-- MODO PROFISSIONAL: DASHBOARD EXECUTIVO -->
     <section class="view" id="view-pro-dashboard">
       <div class="view-filter-bar pro-compact-filter-bar" aria-label="Filtros do dashboard profissional">
@@ -2238,6 +2405,25 @@
               <button type="button" class="btn ghost small" id="btnProDownloadAllIcs">📆 Baixar .ics</button>
               <button type="button" class="btn ghost small" id="btnProParamProfile">💬 WhatsApp &amp; Perfil</button>
             </div>
+          </div>
+        </div>
+
+        <div class="gmaps-key-panel" id="proWalletParamsPanel" style="margin-top:12px">
+          <div class="gmaps-key-head">
+            <strong>💳 Carteira do Google (Google Wallet API — Envio Direto por Trecho)</strong>
+            <span class="pill warn" id="proWalletStatusBadge">Não configurada</span>
+          </div>
+          <p class="muted small">Permite clicar no botão <b>Carteira</b> em cada trecho de viagem para abrir diretamente o cartão de embarque na Google Wallet (sem baixar arquivos). Configure abaixo no seu Cofre AES-256-GCM ou via variáveis de ambiente no servidor (<code>GOOGLE_WALLET_ISSUER_ID</code>, <code>GOOGLE_WALLET_CLIENT_EMAIL</code> e <code>GOOGLE_WALLET_PRIVATE_KEY</code> ou <code>GOOGLE_WALLET_SA_JSON</code>).</p>
+          <div class="form-grid" style="margin-top:8px">
+            <label>Google Wallet Issuer ID
+              <input type="text" id="proWalletIssuerInput" placeholder="Ex: 3388000000022212345" autocomplete="off">
+            </label>
+            <label>Service Account JSON (Google Cloud)
+              <input type="password" id="proWalletSaInput" placeholder='{"type":"service_account","client_email":"...","private_key":"..."}' autocomplete="off">
+            </label>
+          </div>
+          <div class="key-actions-row" style="margin-top:8px">
+            <button type="button" class="btn primary small" id="btnProSaveWalletCreds">💾 Salvar Credenciais Google Wallet</button>
           </div>
         </div>
       </div>
@@ -3282,21 +3468,41 @@
               </div>
               <div id="pc-travelFinancePreview" class="pro-travel-fin-preview"></div>
             </div>
-            <details class="span2 pro-travel-details-box" id="pc-travelDetailsBox" hidden>
+            <details class="span2 pro-travel-details-box" id="pc-travelDetailsBox">
               <summary class="pro-travel-details-sum">
-                <span>🧳 Detalhes da Viagem <small class="muted">(opcional · bilhete IA, transporte e observações)</small></span>
+                <span>🧳 Detalhes da Viagem <small class="muted">(opcional · bilhetes IA, trechos, Carteira Google e custos)</small></span>
               </summary>
               <div class="pro-travel-details-body">
+                <!-- 1. Múltiplos Bilhetes de Viagem -->
                 <div class="pro-ticket-upload-block">
                   <div class="route-head-row">
-                    <span class="route-title">🎫 Bilhete / Ticket de Viagem (PDF ou Imagem)</span>
-                    <button type="button" class="btn ai-pill small" id="btnProTicketUpload">✨ Anexar &amp; Ler com IA</button>
+                    <span class="route-title">🎫 Anexar Bilhetes de Viagem (PDF ou Imagens)</span>
+                    <div class="pro-ticket-btns">
+                      <button type="button" class="btn ai-pill small" id="btnProTicketsAiUpload" title="Selecione 1 ou vários bilhetes (ida, conexões, volta) para leitura incremental sem sobrescrever">✨ Anexar e Ler com IA</button>
+                      <button type="button" class="btn ghost small" id="btnProTicketsOnlyUpload" title="Anexar bilhetes sem chamar a IA">📎 Apenas Anexar</button>
+                    </div>
                   </div>
-                  <input type="file" id="pc-ticketInput" accept=".pdf,image/*" hidden>
+                  <input type="file" id="pc-ticketsAiInput" accept=".pdf,image/*" multiple hidden>
+                  <input type="file" id="pc-ticketsOnlyInput" accept=".pdf,image/*" multiple hidden>
                   <div id="pc-ticketStatus" class="modal-ai-status" role="status" aria-live="polite" hidden style="margin-top:6px"></div>
-                  <div id="pc-ticketFilePreview" class="pro-ticket-preview" hidden></div>
+                  <div id="pc-ticketsList" class="pro-tickets-list"></div>
                 </div>
-                <div class="form-grid" style="margin-top:8px">
+
+                <!-- 2. Lista de Trechos + Carteira do Google por Trecho -->
+                <div class="pro-segments-block" id="proSegmentsBlock">
+                  <div class="route-head-row">
+                    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                      <span class="route-title">🛫 Trechos da Viagem</span>
+                      <span class="pill" id="proSegmentsCountBadge" style="font-size:0.68rem">0 trechos</span>
+                    </div>
+                    <button type="button" class="btn ghost small" id="btnProAddSegment">➕ Adicionar Trecho</button>
+                  </div>
+                  <div id="pc-walletSetupNotice" class="pro-wallet-notice" hidden></div>
+                  <div id="pc-segmentsList" class="pro-segments-list"></div>
+                </div>
+
+                <!-- 3. Demais campos opcionais -->
+                <div class="form-grid" style="margin-top:4px">
                   <label>Modalidade de Transporte
                     <select id="pc-travelTransport" aria-label="Modalidade de transporte da viagem">
                       <option value="">— Selecionar —</option>
@@ -3454,19 +3660,54 @@
   </form>
 </dialog>
 
+<!-- MODAL: PREVIEW DE DOCUMENTO (PDF / IMAGEM) -->
+<dialog id="proDocPreviewModal" class="pro-doc-preview-dialog">
+  <div class="modal-head">
+    <div style="min-width:0">
+      <h3 id="proDocPreviewTitle" style="margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 Documento</h3>
+      <div class="muted small" id="proDocPreviewMeta"></div>
+    </div>
+    <button type="button" class="icon-btn" id="btnProDocPreviewClose" aria-label="Fechar visualização">✕</button>
+  </div>
+  <div id="proDocPreviewBody" class="pro-doc-preview-body"></div>
+  <div class="modal-actions">
+    <button type="button" class="btn ghost" id="btnProDocPreviewOpenCard">🗂️ Abrir Cartão</button>
+    <span class="spacer"></span>
+    <a class="btn primary" id="btnProDocPreviewDownload" href="#" download target="_blank" rel="noopener">⬇️ Baixar</a>
+    <button type="button" class="btn ghost" id="btnProDocPreviewDone">Fechar</button>
+  </div>
+</dialog>
+
+<!-- MODAL: CONFIRMAÇÃO DE EXCLUSÃO DE DOCUMENTO -->
+<dialog id="proDocDeleteModal" class="pro-doc-delete-dialog">
+  <div class="modal-head">
+    <h3>🗑️ Excluir Documento</h3>
+    <button type="button" class="icon-btn" id="btnProDocDelClose" aria-label="Fechar">✕</button>
+  </div>
+  <div style="padding:4px 0 12px">
+    <p id="proDocDelMessage" style="margin:0 0 8px"></p>
+    <p class="muted small" style="margin:0">Esta ação remove o anexo do cartão vinculado e atualiza automaticamente a Central de Documentos.</p>
+  </div>
+  <div class="modal-actions">
+    <span class="spacer"></span>
+    <button type="button" class="btn ghost" id="btnProDocDelCancel">Cancelar</button>
+    <button type="button" class="btn danger" id="btnProDocDelConfirm">🗑️ Excluir Documento</button>
+  </div>
+</dialog>
+
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=43"></script>
-<script src="vehicles.js?v=43"></script>
-<script src="countries.js?v=43"></script>
-<script src="data.js?v=43"></script>
-<script src="maps.js?v=43"></script>
-<script src="calendar.js?v=43"></script>
-<script src="report.js?v=43"></script>
-<script src="api.js?v=43"></script>
-<script src="pro.js?v=43"></script>
-<script src="app.js?v=43"></script>
+<script src="config.example.js?v=44"></script>
+<script src="vehicles.js?v=44"></script>
+<script src="countries.js?v=44"></script>
+<script src="data.js?v=44"></script>
+<script src="maps.js?v=44"></script>
+<script src="calendar.js?v=44"></script>
+<script src="report.js?v=44"></script>
+<script src="api.js?v=44"></script>
+<script src="pro.js?v=44"></script>
+<script src="app.js?v=44"></script>
 </body>
 </html>

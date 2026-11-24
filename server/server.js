@@ -59,6 +59,8 @@ const ENV_GMAPS_KEY = (process.env.GOOGLE_MAPS_API_KEY || "").trim();
 const ENV_WALLET_ISSUER_ID = (process.env.GOOGLE_WALLET_ISSUER_ID || "").trim();
 const ENV_WALLET_SA_JSON = (process.env.GOOGLE_WALLET_SA_JSON || "").trim();
 const ENV_WALLET_SA_FILE = (process.env.GOOGLE_WALLET_SA_FILE || "").trim();
+const ENV_WALLET_CLIENT_EMAIL = (process.env.GOOGLE_WALLET_CLIENT_EMAIL || "").trim();
+const ENV_WALLET_PRIVATE_KEY = String(process.env.GOOGLE_WALLET_PRIVATE_KEY || "").replace(/\\n/g, "\n").trim();
 const SMTP_HOST = (process.env.SMTP_HOST || "").trim();
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || "587", 10);
 const SMTP_USER = (process.env.SMTP_USER || "").trim();
@@ -454,6 +456,9 @@ function getGlobalConfig() {
   let envSaRaw = ENV_WALLET_SA_JSON;
   if (!envSaRaw && ENV_WALLET_SA_FILE && fs.existsSync(ENV_WALLET_SA_FILE)) {
     try { envSaRaw = fs.readFileSync(ENV_WALLET_SA_FILE, "utf8"); } catch {}
+  }
+  if (!envSaRaw && ENV_WALLET_CLIENT_EMAIL && ENV_WALLET_PRIVATE_KEY) {
+    envSaRaw = JSON.stringify({ client_email: ENV_WALLET_CLIENT_EMAIL, private_key: ENV_WALLET_PRIVATE_KEY });
   }
   const walletSaJson = (envSaRaw || decryptSecret(sys.walletSaJsonEnc) || "").trim();
 
@@ -1671,6 +1676,246 @@ function buildGoogleWalletSaveUrl(issuerId, saJsonStr, activity, tripName, origi
   const sig = signer.sign(sa.private_key);
   const jwt = `${headerB64}.${claimB64}.${base64Url(sig)}`;
   return `https://pay.google.com/gp/v/save/${jwt}`;
+}
+
+const BR_CITY_IATA = {
+  brasilia: "BSB", "sao paulo": "GRU", guarulhos: "GRU", congonhas: "CGH",
+  "rio de janeiro": "GIG", galeao: "GIG", "santos dumont": "SDU",
+  manaus: "MAO", "porto alegre": "POA", salvador: "SSA", recife: "REC",
+  fortaleza: "FOR", "belo horizonte": "CNF", confins: "CNF", curitiba: "CWB",
+  florianopolis: "FLN", belem: "BEL", goiania: "GYN", vitoria: "VIX",
+  natal: "NAT", maceio: "MCZ", campinas: "VCP", viracopos: "VCP",
+  cuiaba: "CGB", "campo grande": "CGR", "joao pessoa": "JPA", aracaju: "AJU",
+  "sao luis": "SLZ", teresina: "THE", palmas: "PMW", "porto velho": "PVH",
+  macapa: "MCP", "boa vista": "BVB", "rio branco": "RBR", navegantes: "NVT",
+  "foz do iguacu": "IGU", "porto seguro": "BPS", ilheus: "IOS", uberlandia: "UDI"
+};
+
+function resolveIataAirportCode(rawText) {
+  const s = String(rawText || "").trim();
+  if (!s) return "";
+  const direct = s.match(/\b([A-Z]{3})\b/);
+  if (direct && !["IDA", "VOL", "VOO", "DIA", "BUS", "CAR", "PDF", "BRL"].includes(direct[1])) {
+    return direct[1];
+  }
+  const norm = s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  for (const [city, code] of Object.entries(BR_CITY_IATA)) {
+    if (norm.includes(city)) return code;
+  }
+  return "";
+}
+
+function parseCarrierAndFlightNumber(carrierRaw, flightNumRaw) {
+  const combined = `${String(flightNumRaw || "").trim()} ${String(carrierRaw || "").trim()}`.trim();
+  const m = combined.match(/\b([A-Z0-9]{2})\s*[-]?\s*(\d{1,5})\b/i);
+  if (m) {
+    return { carrierIataCode: m[1].toUpperCase(), flightNumber: m[2] };
+  }
+  const cNorm = String(carrierRaw || "").toLowerCase();
+  let code = "MP";
+  if (cNorm.includes("latam") || cNorm.includes("tam")) code = "LA";
+  else if (cNorm.includes("gol")) code = "G3";
+  else if (cNorm.includes("azul")) code = "AD";
+  else if (cNorm.includes("voepass") || cNorm.includes("passaredo")) code = "2Z";
+  else if (cNorm.includes("tap")) code = "TP";
+  else if (cNorm.includes("american")) code = "AA";
+  else if (cNorm.includes("united")) code = "UA";
+  else if (cNorm.includes("delta")) code = "DL";
+  else if (cNorm.includes("copa")) code = "CM";
+  else if (cNorm.includes("air france")) code = "AF";
+  else if (cNorm.includes("lufthansa")) code = "LH";
+  else if (cNorm.includes("iberia")) code = "IB";
+  else if (cNorm.includes("emirates")) code = "EK";
+  else if (cNorm.includes("qatar")) code = "QR";
+  const digits = String(flightNumRaw || "").replace(/\D+/g, "").slice(0, 5) || "0001";
+  return { carrierIataCode: code, flightNumber: digits };
+}
+
+function normalizeWalletLocalDateTime(dtStr, fallbackDateIso) {
+  const clean = String(dtStr || "").trim().replace(" ", "T");
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?/.test(clean)) {
+    return clean.length === 16 ? `${clean}:00` : clean.slice(0, 19);
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return `${clean}T08:00:00`;
+  if (fallbackDateIso && /^\d{4}-\d{2}-\d{2}$/.test(fallbackDateIso)) return `${fallbackDateIso}T08:00:00`;
+  return `${new Date().toISOString().slice(0, 10)}T08:00:00`;
+}
+
+function buildGoogleWalletSegmentSaveUrl(issuerId, saJsonStr, segment, card, tripName, originHost) {
+  let sa;
+  try { sa = JSON.parse(saJsonStr); } catch { throw new Error("JSON da Service Account da Carteira do Google inválido."); }
+  if (!sa.client_email || !sa.private_key) {
+    throw new Error("Service Account precisa conter client_email e private_key.");
+  }
+  const privateKey = String(sa.private_key).replace(/\\n/g, "\n");
+  const seg = segment && typeof segment === "object" ? segment : {};
+  const crd = card && typeof card === "object" ? card : {};
+
+  const legLabels = {
+    ida: "Ida",
+    conexao_ida: "Conexão Ida",
+    volta: "Volta",
+    conexao_volta: "Conexão Volta",
+    outro: "Trecho"
+  };
+  const legLabel = legLabels[String(seg.legType || "ida").toLowerCase()] || "Trecho";
+  const transport = String(seg.transport || crd.travelDetails?.transport || "Avião").trim() || "Avião";
+  const originTxt = String(seg.origin || "").trim() || "Origem";
+  const destTxt = String(seg.destination || crd.location || "").trim() || "Destino";
+  const passenger = String(seg.passengerName || crd.assignee || "Passageiro").trim().slice(0, 80);
+  const locator = String(seg.locator || "").trim().toUpperCase().slice(0, 40);
+  const seat = String(seg.seat || "").trim().toUpperCase().slice(0, 16);
+  const carrier = String(seg.carrier || "").trim().slice(0, 60);
+  const flightNum = String(seg.flightNumber || "").trim().slice(0, 24);
+  const depDt = normalizeWalletLocalDateTime(seg.departAt, crd.start);
+  const arrDt = seg.arriveAt ? normalizeWalletLocalDateTime(seg.arriveAt, crd.end || crd.start) : "";
+
+  const suffix = crypto
+    .createHash("md5")
+    .update(`${crd.id || "card"}-${seg.id || "seg"}-${originTxt}-${destTxt}-${depDt}`)
+    .digest("hex")
+    .slice(0, 14);
+
+  const bcMap = {
+    aztec: "AZTEC",
+    pdf417: "PDF_417",
+    pdf_417: "PDF_417",
+    code_128: "CODE_128",
+    code128: "CODE_128",
+    qr_code: "QR_CODE",
+    qr: "QR_CODE"
+  };
+  const barcodeType = bcMap[String(seg.barcodeType || "").toLowerCase()] || "QR_CODE";
+  const barcodeValue = String(seg.barcodeValue || "").trim()
+    || `MYPLAN|${legLabel.toUpperCase()}|${originTxt}->${destTxt}|${depDt}|${carrier} ${flightNum}|${locator || suffix}|${passenger}`.slice(0, 240);
+
+  const isAir = /avi[aã]o|a[eé]re|voo|flight/i.test(transport) || Boolean(flightNum);
+  const origIata = resolveIataAirportCode(originTxt);
+  const destIata = resolveIataAirportCode(destTxt);
+
+  let payload;
+  let objectType;
+
+  if (isAir && origIata && destIata && origIata !== destIata) {
+    objectType = "flightObject";
+    const { carrierIataCode, flightNumber } = parseCarrierAndFlightNumber(carrier, flightNum);
+    const classId = `${issuerId}.mp_flt_${suffix}`;
+    const objectId = `${issuerId}.mp_fltobj_${suffix}`;
+    const flightClass = {
+      id: classId,
+      issuerName: "My Plan",
+      reviewStatus: "UNDER_REVIEW",
+      localScheduledDepartureDateTime: depDt,
+      flightHeader: {
+        carrier: {
+          carrierIataCode,
+          airlineName: carrier ? { defaultValue: { language: "pt-BR", value: carrier } } : undefined
+        },
+        flightNumber
+      },
+      origin: {
+        airportIataCode: origIata,
+        terminal: seg.terminal ? String(seg.terminal).slice(0, 16) : undefined,
+        gate: seg.gate ? String(seg.gate).slice(0, 16) : undefined
+      },
+      destination: {
+        airportIataCode: destIata
+      }
+    };
+    if (arrDt) flightClass.localScheduledArrivalDateTime = arrDt;
+
+    const flightObject = {
+      id: objectId,
+      classId,
+      state: "ACTIVE",
+      hexBackgroundColor: String(seg.legType || "").includes("volta") ? "#059669" : "#0284c7",
+      passengerName: passenger,
+      reservationInfo: {
+        confirmationCode: locator || `MP${suffix.slice(0, 6).toUpperCase()}`
+      },
+      boardingAndSeatingInfo: seat ? { seatNumber: seat } : undefined,
+      barcode: {
+        type: barcodeType,
+        value: barcodeValue,
+        alternateText: (locator || `${carrierIataCode}${flightNumber}`).slice(0, 32)
+      },
+      textModulesData: [
+        { id: "trecho", header: "Trecho", body: `${legLabel}: ${originTxt} → ${destTxt}` },
+        crd.name ? { id: "evento", header: "Evento / Missão", body: String(crd.name).slice(0, 140) } : null,
+        seg.notes ? { id: "obs", header: "Observações", body: String(seg.notes).slice(0, 300) } : null
+      ].filter(Boolean)
+    };
+    payload = {
+      flightClasses: [flightClass],
+      flightObjects: [flightObject]
+    };
+  } else {
+    objectType = "genericObject";
+    const classId = `${issuerId}.myplan_travel_seg_v1`;
+    const objectId = `${issuerId}.mp_seg_${suffix}`;
+    const fmtDtBR = (iso) => {
+      if (!iso) return "";
+      const [d, t] = iso.split("T");
+      const [y, m, day] = (d || "").split("-");
+      return `${day}/${m}/${y}${t ? ` ${t.slice(0, 5)}` : ""}`;
+    };
+    const textModulesData = [
+      { id: "passageiro", header: "Passageiro", body: passenger },
+      { id: "partida", header: "Partida", body: fmtDtBR(depDt) || "-" }
+    ];
+    if (arrDt) textModulesData.push({ id: "chegada", header: "Chegada", body: fmtDtBR(arrDt) });
+    if (carrier || flightNum) textModulesData.push({ id: "cia", header: "Companhia / Transporte", body: [transport, carrier, flightNum].filter(Boolean).join(" · ") });
+    if (locator) textModulesData.push({ id: "localizador", header: "Localizador / Código", body: locator });
+    if (seat) textModulesData.push({ id: "assento", header: "Assento", body: seat });
+    if (crd.name) textModulesData.push({ id: "evento", header: "Evento / Cartão", body: String(crd.name).slice(0, 140) });
+    if (seg.notes) textModulesData.push({ id: "obs", header: "Observações", body: String(seg.notes).slice(0, 300) });
+
+    const bgByTransport = {
+      "Avião": "#0284c7",
+      "Ônibus": "#d97706",
+      "Carro": "#0f766e",
+      "Outro": "#4f46e5"
+    };
+    const genericObj = {
+      id: objectId,
+      classId,
+      state: "ACTIVE",
+      genericType: "GENERIC_TYPE_UNSPECIFIED",
+      hexBackgroundColor: bgByTransport[transport] || "#2563eb",
+      cardTitle: { defaultValue: { language: "pt-BR", value: `My Plan · ${legLabel} (${transport})` } },
+      header: { defaultValue: { language: "pt-BR", value: `${originTxt} → ${destTxt}` } },
+      subheader: { defaultValue: { language: "pt-BR", value: [fmtDtBR(depDt), carrier, flightNum].filter(Boolean).join(" · ") || (tripName || "Viagem") } },
+      barcode: {
+        type: barcodeType,
+        value: barcodeValue,
+        alternateText: (locator || `${carrier} ${flightNum}`.trim() || `MP-${suffix.slice(0, 6).toUpperCase()}`).slice(0, 36)
+      },
+      textModulesData
+    };
+    payload = {
+      genericClasses: [{ id: classId, issuerName: "My Plan", reviewStatus: "UNDER_REVIEW" }],
+      genericObjects: [genericObj]
+    };
+  }
+
+  const claims = {
+    iss: sa.client_email,
+    aud: "google",
+    typ: "savetowallet",
+    iat: Math.floor(Date.now() / 1000),
+    origins: originHost ? [originHost] : [],
+    payload
+  };
+  const headerB64 = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claimB64 = base64Url(JSON.stringify(claims));
+  const signer = crypto.createSign("RSA-SHA256");
+  signer.update(`${headerB64}.${claimB64}`);
+  const sig = signer.sign(privateKey);
+  const jwt = `${headerB64}.${claimB64}.${base64Url(sig)}`;
+  return {
+    saveUrl: `https://pay.google.com/gp/v/save/${jwt}`,
+    objectType
+  };
 }
 
 /* ---------- ZERO-DEPENDENCY .PKPASS (ZIP) PARA CARTEIRA DO GOOGLE ---------- */
@@ -3530,6 +3775,87 @@ Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para
       }
     }
 
+    /* ---------- IA MULTI-BILHETES DE VIAGEM (EXTRATOR INCREMENTAL DE TRECHOS) ---------- */
+    if (pathname === "/api/ai/analyze-tickets" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.geminiKey) {
+        return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key na Central de Integrações ou Parâmetros." });
+      }
+      const body = await readBody(req);
+      const todayIso = String(body.baseDate || new Date().toISOString().slice(0, 10));
+      const mediaList = Array.isArray(body.media) ? body.media.slice(0, 8) : [];
+      if (!mediaList.length) {
+        return sendJson(res, 400, { ok: false, error: "Envie ao menos 1 bilhete (PDF ou imagem) para leitura por IA." });
+      }
+      const fileNames = Array.isArray(body.fileNames) ? body.fileNames.slice(0, 8).map(n => String(n || "")) : [];
+      const existingCtx = body.existingContext && typeof body.existingContext === "object" ? body.existingContext : {};
+      const existingSummary = Array.isArray(existingCtx.segments) && existingCtx.segments.length
+        ? `\nCONTEXTO JÁ REGISTRADO NO CARTÃO (NÃO repita estes trechos na saída, extraia APENAS os novos arquivos enviados e use o contexto apenas para diferenciar se o novo arquivo é Ida, Conexão ou Volta):\n${JSON.stringify(existingCtx.segments.slice(0, 12))}`
+        : "";
+      const eventCtx = (existingCtx.eventStart || existingCtx.eventEnd || existingCtx.location)
+        ? `\nDados do evento vinculado: Início=${existingCtx.eventStart || "?"}, Fim=${existingCtx.eventEnd || "?"}, Destino/Local=${existingCtx.location || "?"}.`
+        : "";
+      const fileIdxHint = fileNames.length
+        ? `\nArquivos enviados nesta chamada (use fileIndex 0..${fileNames.length - 1}): ${fileNames.map((n, i) => `[${i}] ${n}`).join(", ")}`
+        : "";
+      const parts = [{
+        text: `Data de referência hoje: ${todayIso}. Analise TODOS os bilhetes/passagens/cartões de embarque anexados nesta chamada.${eventCtx}${fileIdxHint}${existingSummary}`
+      }];
+      mediaList.forEach(m => {
+        const p = parseGeminiMediaPart(m);
+        if (p) parts.push(p);
+      });
+
+      const sysTickets = `Você é um especialista em leitura de passagens aéreas, rodoviárias, ferroviárias e cartões de embarque (PDFs e imagens) para o My Plan.
+Você pode receber 1 ou vários bilhetes simultaneamente (ida, conexões e volta).
+Analise CADA arquivo enviado e retorne EXCLUSIVAMENTE um JSON válido neste formato exato:
+{
+  "transport": "Avião | Ônibus | Carro | Outro",
+  "costAmount": 0,
+  "notes": "Informações úteis novas (bagagem, portão, terminal, política, companhia)",
+  "ticketClassifications": [
+    {
+      "fileIndex": 0,
+      "legType": "ida | conexao_ida | volta | conexao_volta | outro",
+      "label": "Resumo curto ex: Ida BSB → GRU"
+    }
+  ],
+  "segments": [
+    {
+      "fileIndex": 0,
+      "legType": "ida | conexao_ida | volta | conexao_volta | outro",
+      "transport": "Avião | Ônibus | Carro | Outro",
+      "origin": "Código IATA e/ou cidade de origem (ex: BSB - Brasília)",
+      "destination": "Código IATA e/ou cidade de destino (ex: GRU - São Paulo)",
+      "departAt": "YYYY-MM-DDTHH:MM",
+      "arriveAt": "YYYY-MM-DDTHH:MM",
+      "carrier": "Nome da companhia (ex: LATAM, GOL, Azul, Viação Cometa)",
+      "flightNumber": "Número do voo ou linha (ex: LA3210, G31405)",
+      "locator": "Código localizador / PNR (ex: X9K4LP)",
+      "seat": "Assento (ex: 12A)",
+      "terminal": "Terminal se constar",
+      "gate": "Portão se constar",
+      "passengerName": "Nome do passageiro se constar",
+      "barcodeValue": "Texto completo do QR Code/Aztec/PDF417/código de barras se legível, senão vazio",
+      "barcodeType": "QR_CODE | AZTEC | PDF_417 | CODE_128",
+      "notes": "Detalhes extras do trecho"
+    }
+  ]
+}
+Regras importantes:
+- Se um único arquivo PDF contiver múltiplos trechos (ex: ida + conexão, ou ida + volta), retorne todos os trechos encontrados em "segments" em ordem cronológica, classificando cada um corretamente como "ida", "conexao_ida", "volta" ou "conexao_volta".
+- Use o destino/datas do evento e o contexto já registrado para classificar com precisão se o bilhete é de IDA ou VOLTA.
+- Nunca invente horários ou valores se não constarem no bilhete (deixe string vazia "" ou 0).`;
+      try {
+        const result = await callGeminiJSON(creds.geminiKey, parts, sysTickets);
+        return sendJson(res, 200, { ok: true, result: result || {} });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: err.message || "Erro ao analisar bilhetes com IA." });
+      }
+    }
+
     /* ---------- PROXY STATIC ROUTE MAP (EVITA QUEBRA NO RELATÓRIO PDF) ---------- */
     if (pathname === "/api/maps/static-route" && req.method === "POST") {
       const auth = getAuthUser(req);
@@ -3628,6 +3954,37 @@ Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para
     }
 
     /* ---------- CARTEIRA DO GOOGLE PASS SIGNER ---------- */
+    if (pathname === "/api/wallet/generate-link" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.walletIssuerId || !creds.walletSaJson) {
+        return sendJson(res, 200, {
+          ok: true,
+          configured: false,
+          message: "Configure GOOGLE_WALLET_ISSUER_ID e a Service Account (GOOGLE_WALLET_CLIENT_EMAIL / GOOGLE_WALLET_PRIVATE_KEY ou JSON) em Parâmetros ou no .env do servidor."
+        });
+      }
+      const body = await readBody(req);
+      if (!body.segment || typeof body.segment !== "object") {
+        return sendJson(res, 400, { ok: false, error: "Dados do trecho ausentes." });
+      }
+      try {
+        const originHost = req.headers.origin || `${req.headers["x-forwarded-proto"] || "https"}://${req.headers.host}`;
+        const built = buildGoogleWalletSegmentSaveUrl(
+          creds.walletIssuerId,
+          creds.walletSaJson,
+          body.segment,
+          body.card || {},
+          body.tripName || "My Plan",
+          originHost
+        );
+        return sendJson(res, 200, { ok: true, configured: true, saveUrl: built.saveUrl, objectType: built.objectType });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: err.message || "Falha ao gerar link da Carteira do Google." });
+      }
+    }
+
     if (pathname === "/api/wallet/sign" && req.method === "POST") {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
