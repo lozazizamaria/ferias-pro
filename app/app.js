@@ -6548,8 +6548,28 @@ async function openAdminUserModal(userId, focusTripId = null) {
   }
 }
 
+if ($("#btnMenuParams")) {
+  $("#btnMenuParams").onclick = () => {
+    $("#menu")?.classList.remove("open");
+    if (appMode === "professional") switchProView("pro-params");
+    else switchAppView("params");
+  };
+}
 if ($("#btnMenuAdmin")) {
-  $("#btnMenuAdmin").onclick = () => switchAppView("admin");
+  $("#btnMenuAdmin").onclick = () => {
+    $("#menu")?.classList.remove("open");
+    switchAppView("admin");
+  };
+}
+if ($("#btnMenuSyncDrive")) {
+  $("#btnMenuSyncDrive").onclick = () => {
+    $("#menu")?.classList.remove("open");
+    if (window.MyPlanPro?.syncGoogleDrive) {
+      window.MyPlanPro.syncGoogleDrive();
+    } else {
+      toast("⚠️ Módulo de sincronização do Google Drive indisponível.");
+    }
+  };
 }
 if ($("#btnAdminRefresh")) {
   $("#btnAdminRefresh").onclick = () => loadAndRenderAdmin();

@@ -515,10 +515,40 @@
       return `<div class="pm-att-chip">
         <span>📎</span>
         <button type="button" class="pm-att-name" data-pm-att-view="${idx}" title="Visualizar">${esc(att.fileName || "Arquivo")}</button>
+        <button type="button" class="icon-btn" data-pm-att-ren="${idx}" title="Renomear">✏️</button>
         ${href ? `<a class="icon-btn" href="${esc(href)}" download="${esc(att.fileName || "arquivo")}" target="_blank" rel="noopener" title="Baixar">⬇️</a>` : ""}
         <button type="button" class="icon-btn" data-pm-att-del="${idx}" title="Remover">✕</button>
       </div>`;
     }).join("");
+    box.querySelectorAll("[data-pm-att-ren]").forEach(b => {
+      b.onclick = () => {
+        const ctx = getActiveContext();
+        if (!ctx?.minute) return;
+        const idx = parseInt(b.dataset.pmAttRen, 10);
+        const att = ctx.minute.attachments[idx];
+        if (!att) return;
+        const doRename = async nextName => {
+          const cleanNew = String(nextName || "").trim();
+          if (!cleanNew || cleanNew === att.fileName) return;
+          if (att.id && window.FeriasApi?.renameAttachment) {
+            try { await window.FeriasApi.renameAttachment(att.id, cleanNew); } catch (err) {
+              toast("❌ " + (err.message || "Falha ao renomear documento."));
+              return;
+            }
+          }
+          att.fileName = cleanNew;
+          renderMinuteAttachments(ctx.minute);
+          scheduleAutoSave(true);
+          toast(`✏️ Anexo renomeado para "${cleanNew}"`);
+        };
+        if (host.openRenameAttachment) {
+          host.openRenameAttachment({ fileName: att.fileName || "Arquivo", isLink: false, onConfirm: doRename });
+        } else {
+          const next = prompt("Novo nome do arquivo:", att.fileName || "Arquivo");
+          if (next) doRename(next);
+        }
+      };
+    });
     box.querySelectorAll("[data-pm-att-view]").forEach(b => {
       b.onclick = () => {
         const att = list[parseInt(b.dataset.pmAttView, 10)];
@@ -954,9 +984,52 @@
       activeSlideIdx = 0;
       renderSlidesPreview();
       $("#proMinuteSlidesModal")?.showModal();
+      // Salvar e anexar automaticamente o arquivo .pptx na própria Ata (visível na Ata, em Documentos e no Google Drive)
+      autoAttachPresentationToMinute(ctx, currentDeckSlides).catch(() => {});
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = "📊 Criar Apresentação"; }
     }
+  }
+
+  async function autoAttachPresentationToMinute(ctx, slides) {
+    if (!ctx?.minute || !Array.isArray(slides) || !slides.length) return;
+    if (!window.FeriasApi?.buildMinutesPptxBlob || !window.FeriasApi?.uploadAttachment) return;
+    const rawTitle = (ctx.minute.title || ctx.card?.name || "Ata").trim();
+    const safeBase = rawTitle.replace(/[^\wÀ-ÿ\- ]+/g, "").replace(/\s+/g, "_").slice(0, 60) || "Ata";
+    const fileName = `Apresentacao_${safeBase}.pptx`;
+    const blob = await window.FeriasApi.buildMinutesPptxBlob({
+      title: rawTitle,
+      fileName: `Apresentacao_${safeBase}`,
+      slides
+    });
+    const pptxMime = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    const file = new File([blob], fileName, { type: pptxMime });
+    const tripId = ctx.trip?.id || host.core?.getActiveTrip?.()?.id || "local";
+    const cardId = ctx.card?.id || activeCardId || "minute";
+    const up = await window.FeriasApi.uploadAttachment(tripId, cardId, file);
+    if (!Array.isArray(ctx.minute.attachments)) ctx.minute.attachments = [];
+    const newAtt = {
+      ...up,
+      fileName: up.fileName || fileName,
+      size: up.size || file.size || 0,
+      mimeType: up.mimeType || pptxMime,
+      uploadedAt: up.uploadedAt || new Date().toISOString(),
+      autoPresentation: true
+    };
+    const prevIdx = ctx.minute.attachments.findIndex(a => a && a.autoPresentation);
+    if (prevIdx >= 0) {
+      const oldAtt = ctx.minute.attachments[prevIdx];
+      if (oldAtt?.driveFileId) newAtt.driveFileId = oldAtt.driveFileId;
+      if (oldAtt?.id && oldAtt.id !== newAtt.id && window.FeriasApi?.deleteAttachment) {
+        window.FeriasApi.deleteAttachment(oldAtt.id).catch(() => {});
+      }
+      ctx.minute.attachments[prevIdx] = newAtt;
+    } else {
+      ctx.minute.attachments.push(newAtt);
+    }
+    renderMinuteAttachments(ctx.minute);
+    scheduleAutoSave(true);
+    toast(`📊 Apresentação "${newAtt.fileName}" salva automaticamente nos anexos da Ata!`);
   }
 
   function renderSlidesPreview() {

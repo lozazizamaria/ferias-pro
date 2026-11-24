@@ -396,6 +396,16 @@
     return r.data.attachment;
   }
 
+  async function renameAttachment(attId, fileName) {
+    if (!serverAvailable || String(attId).startsWith("loc_")) return { ok: true, attachment: { id: attId, fileName } };
+    const r = await req(`/api/attachments/${encodeURIComponent(attId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ fileName })
+    });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao renomear documento.");
+    return r.data;
+  }
+
   async function deleteAttachment(attId) {
     if (!serverAvailable || String(attId).startsWith("loc_")) return { ok: true };
     const r = await req(`/api/attachments/${encodeURIComponent(attId)}`, { method: "DELETE" });
@@ -488,6 +498,13 @@
     return r.data.result || {};
   }
 
+  async function aiSummarizeAttachments(payload) {
+    if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
+    const r = await req("/api/ai/summarize-attachments", { method: "POST", body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error(r.data?.message || r.data?.error || "Falha ao ler anexos com IA.");
+    return r.data;
+  }
+
   async function aiImproveMinutes(payload) {
     if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
     const r = await req("/api/ai/improve-minutes", { method: "POST", body: JSON.stringify(payload) });
@@ -531,6 +548,22 @@
 
   async function exportMinutesPptx(payload, fileName = "Apresentacao_Ata.pptx") {
     return downloadBinaryExport("/api/minutes/export-pptx", payload, fileName);
+  }
+
+  async function buildMinutesPptxBlob(payload) {
+    if (!serverAvailable) throw new Error("Servidor offline para gerar arquivo .pptx.");
+    const res = await fetch("/api/minutes/export-pptx", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      let msg = "Falha ao gerar apresentação .pptx.";
+      try { const j = await res.json(); msg = j.error || msg; } catch {}
+      throw new Error(msg);
+    }
+    return await res.blob();
   }
 
   async function generateWalletSegmentLink(segment, card, tripName) {
@@ -664,6 +697,7 @@
     removeShare,
     respondShare,
     uploadAttachment,
+    renameAttachment,
     deleteAttachment,
     attachmentHref,
     rotateCalToken,
@@ -676,10 +710,12 @@
     aiVehicleSpecs,
     aiAnalyzeActivity,
     aiAnalyzeTickets,
+    aiSummarizeAttachments,
     aiImproveMinutes,
     aiGenerateSlides,
     exportMinutesDocx,
     exportMinutesPptx,
+    buildMinutesPptxBlob,
     generateWalletSegmentLink,
     signWalletPass,
     createPkpassUrl,

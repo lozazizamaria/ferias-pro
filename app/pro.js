@@ -100,6 +100,8 @@
   let editingProTripRef = null;
   let proModalDraftId = "";
   let proModalAttachments = [];
+  let proModalTempUploadIds = [];
+  let proModalSaved = false;
   let proModalSubtasks = [];
   let proModalLabels = [];
   let proModalCoverColor = "";
@@ -2276,9 +2278,9 @@
   /* ---------- 2B. MAPA DE EVENTOS & VIAGENS DOS RESPONSÁVEIS ---------- */
   const PRO_MENU_ITEMS = [
     { id: "pro-board",     tabId: "tab-pro-board",     label: "🗂️ Quadro" },
-    { id: "pro-gantt",     tabId: "tab-pro-gantt",     label: "📅 Gantt & Timeline" },
+    { id: "pro-gantt",     tabId: "tab-pro-gantt",     label: "📅 Timeline" },
     { id: "pro-map",       tabId: "tab-pro-map",       label: "🗺️ Mapa" },
-    { id: "pro-travels",   tabId: "tab-pro-travels",   label: "✈️ Deslocamentos" },
+    { id: "pro-travels",   tabId: "tab-pro-travels",   label: "✈️ Viagens" },
     { id: "pro-control",   tabId: "tab-pro-control",   label: "📋 Controle" },
     { id: "pro-docs",      tabId: "tab-pro-docs",      label: "📁 Documentos" },
     { id: "pro-dashboard", tabId: "tab-pro-dashboard", label: "📊 Dashboard" },
@@ -6267,8 +6269,9 @@
         const legType = origin === "travel" ? (raw.legType || "ida") : "";
         const legMeta = legType ? (LEG_TYPE_META[legType] || LEG_TYPE_META.ida) : null;
         out.push({
-          docKey: `${origin}:${c.id}:${raw.id || fileName}`,
+          docKey: `${origin}:${c.id}:${raw._minuteId ? raw._minuteId + ":" : ""}${raw.id || fileName}`,
           id: String(raw.id || ""),
+          minuteId: String(raw._minuteId || ""),
           origin,
           originLabel: origin === "travel" ? `✈️ Viagem${legMeta ? ` · ${legMeta.label}` : ""}` : "📎 Geral",
           originShort: origin === "travel" ? "✈️ Viagem" : "📎 Geral",
@@ -6378,7 +6381,7 @@
           ].join(" ").toLowerCase()
         });
         (Array.isArray(min.attachments) ? min.attachments : []).forEach(matt => {
-          pushDoc({ ...matt, label: `Anexo da Ata: ${min.title || "Ata"}` }, "general");
+          pushDoc({ ...matt, _minuteId: min.id, label: `Anexo da Ata: ${min.title || "Ata"}` }, "general");
         });
       });
     });
@@ -6589,10 +6592,104 @@
         (doc.id && att.id === doc.id) || (!doc.id && att.fileName === doc.fileName)
       ));
     }
+    if (Array.isArray(a.minutes)) {
+      a.minutes.forEach(m => {
+        if (Array.isArray(m.attachments)) {
+          m.attachments = m.attachments.filter(att => !(
+            (doc.id && att.id === doc.id) || (!doc.id && att.fileName === doc.fileName)
+          ));
+        }
+      });
+    }
     if (doc.id && !doc.isLink && window.FeriasApi?.deleteAttachment) {
       try { await window.FeriasApi.deleteAttachment(doc.id); } catch {}
     }
     await core.saveTripRecord(ctx.trip, `🗑️ Documento "${doc.fileName}" removido!`);
+  }
+
+  /* ---------- RENOMEAÇÃO DE ANEXOS (PRESERVANDO EXTENSÃO E SINCRONIZADA) ---------- */
+  function splitFileNameExt(fullName, isLink = false) {
+    const raw = String(fullName || "").trim();
+    if (isLink || !raw) return { base: raw, ext: "" };
+    const dot = raw.lastIndexOf(".");
+    if (dot > 0 && dot < raw.length - 1 && (raw.length - dot) <= 10) {
+      return { base: raw.slice(0, dot), ext: raw.slice(dot) };
+    }
+    return { base: raw, ext: "" };
+  }
+
+  let renameAttPendingCb = null;
+  let renameAttPendingExt = "";
+
+  function openRenameAttachmentModal({ fileName, isLink = false, onConfirm }) {
+    const dlg = $("#renameAttModal");
+    const inp = $("#renameAttInput");
+    const extBadge = $("#renameAttExtBadge");
+    if (!dlg || !inp) {
+      const { base, ext } = splitFileNameExt(fileName, isLink);
+      const next = prompt(`Renomear arquivo${ext ? ` (extensão ${ext} preservada)` : ""}:`, base);
+      if (next && next.trim() && onConfirm) onConfirm(next.trim() + ext);
+      return;
+    }
+    const { base, ext } = splitFileNameExt(fileName, isLink);
+    renameAttPendingExt = ext;
+    renameAttPendingCb = onConfirm || null;
+    inp.value = base;
+    if (extBadge) {
+      extBadge.textContent = ext;
+      extBadge.hidden = !ext;
+    }
+    dlg.showModal();
+    setTimeout(() => { inp.focus(); inp.select(); }, 30);
+  }
+
+  async function renameAttachmentOnCard(cardId, { id, oldFileName, isLink = false, newFileName }) {
+    const cleanNew = String(newFileName || "").trim();
+    if (!cleanNew || cleanNew === oldFileName) return false;
+    const ctx = cardId ? findProCardContext(cardId) : null;
+    if (ctx?.trip?.role === "viewer") {
+      core.toast("👁️ Projeto compartilhado somente para visualização.");
+      return false;
+    }
+    if (id && !isLink && window.FeriasApi?.renameAttachment) {
+      try { await window.FeriasApi.renameAttachment(id, cleanNew); } catch (err) {
+        core.toast("❌ " + (err.message || "Falha ao renomear arquivo no servidor."));
+        return false;
+      }
+    }
+    const matches = item => item && ((id && item.id === id) || (!id && item.fileName === oldFileName));
+    if (ctx?.activity) {
+      const a = ctx.activity;
+      if (Array.isArray(a.attachments)) {
+        a.attachments.forEach(att => { if (matches(att)) att.fileName = cleanNew; });
+      }
+      if (a.travelDetails && Array.isArray(a.travelDetails.tickets)) {
+        a.travelDetails.tickets.forEach(tk => { if (matches(tk)) tk.fileName = cleanNew; });
+        if (a.travelDetails.ticketFile && matches(a.travelDetails.ticketFile)) {
+          a.travelDetails.ticketFile.fileName = cleanNew;
+        }
+      }
+      if (Array.isArray(a.minutes)) {
+        a.minutes.forEach(m => {
+          if (Array.isArray(m.attachments)) {
+            m.attachments.forEach(matt => { if (matches(matt)) matt.fileName = cleanNew; });
+          }
+        });
+      }
+    }
+    // Sincronizar imediatamente caso o modal do cartão esteja aberto para o mesmo cartão
+    if (editingProCardId && editingProCardId === cardId) {
+      proModalAttachments.forEach(att => { if (matches(att)) att.fileName = cleanNew; });
+      proModalTickets.forEach(tk => { if (matches(tk)) tk.fileName = cleanNew; });
+      renderProModalAttachments();
+      renderProModalTicketsList();
+    }
+    if (ctx?.trip) {
+      await core.saveTripRecord(ctx.trip, `✏️ Documento renomeado para "${cleanNew}"`);
+    } else {
+      renderProDocs();
+    }
+    return true;
   }
 
   function renderProDocs(allCardsOpt = null) {
@@ -6753,7 +6850,8 @@
               </td>
               <td class="nowrap" style="text-align:right">
                 <div class="pro-doc-actions">
-                  <button type="button" class="icon-btn" data-doc-preview="${core.esc(d.docKey)}" title="${d.origin === "minutes" ? "Abrir Editor da Ata" : "Visualizar"}">${d.origin === "minutes" ? "✏️" : "👁️"}</button>
+                  <button type="button" class="icon-btn" data-doc-preview="${core.esc(d.docKey)}" title="${d.origin === "minutes" ? "Abrir Editor da Ata" : "Visualizar"}">${d.origin === "minutes" ? "📝" : "👁️"}</button>
+                  ${d.origin !== "minutes" ? `<button type="button" class="icon-btn" data-doc-rename="${core.esc(d.docKey)}" title="Renomear documento">✏️</button>` : ""}
                   ${d.origin === "minutes" ? `<button type="button" class="icon-btn" data-doc-min-dl="${core.esc(d.docKey)}" title="Baixar Ata (.docx)">⬇️</button>` : (d.url ? `<a class="icon-btn" href="${core.esc(d.url)}" ${d.isLink ? 'target="_blank" rel="noopener"' : `download="${core.esc(d.fileName)}" target="_blank" rel="noopener"`} title="${d.isLink ? "Abrir link" : "Baixar"}">${d.isLink ? "↗️" : "⬇️"}</a>` : "")}
                   <button type="button" class="icon-btn" data-doc-open-card="${core.esc(d.cardId)}" title="Abrir Cartão">🗂️</button>
                   <button type="button" class="icon-btn" data-doc-del="${core.esc(d.docKey)}" title="Excluir documento">🗑️</button>
@@ -6793,6 +6891,7 @@
             ${tagsHtml ? `<div class="pro-doc-tags-wrap">${tagsHtml}</div>` : ""}
             <div class="pro-doc-grid-foot">
               <button type="button" class="btn ghost small" data-doc-preview="${core.esc(d.docKey)}">👁️ Ver</button>
+              ${d.origin !== "minutes" ? `<button type="button" class="icon-btn" data-doc-rename="${core.esc(d.docKey)}" title="Renomear documento">✏️</button>` : ""}
               ${d.url ? `<a class="btn ghost small" href="${core.esc(d.url)}" ${d.isLink ? 'target="_blank" rel="noopener"' : `download="${core.esc(d.fileName)}" target="_blank" rel="noopener"`}>${d.isLink ? "↗️ Abrir" : "⬇️ Baixar"}</a>` : ""}
               <button type="button" class="icon-btn" data-doc-open-card="${core.esc(d.cardId)}" title="Abrir Cartão">🗂️</button>
               <button type="button" class="icon-btn" data-doc-del="${core.esc(d.docKey)}" title="Excluir">🗑️</button>
@@ -6825,6 +6924,24 @@
       });
       activeHost.querySelectorAll("[data-doc-open-card]").forEach(el => {
         el.onclick = () => openProCardModal(el.dataset.docOpenCard);
+      });
+      activeHost.querySelectorAll("[data-doc-rename]").forEach(el => {
+        el.onclick = () => {
+          const doc = docByKey.get(el.dataset.docRename);
+          if (!doc) return;
+          openRenameAttachmentModal({
+            fileName: doc.fileName,
+            isLink: Boolean(doc.isLink),
+            onConfirm: async nextName => {
+              await renameAttachmentOnCard(doc.cardId, {
+                id: doc.id,
+                oldFileName: doc.fileName,
+                isLink: Boolean(doc.isLink),
+                newFileName: nextName
+              });
+            }
+          });
+        };
       });
       activeHost.querySelectorAll("[data-doc-del]").forEach(el => {
         el.onclick = () => {
@@ -7583,6 +7700,7 @@
     }
     applyProVisibleMenusUI();
     renderProTravelFinanceParams(st);
+    renderProDriveParams(st);
   }
 
   /* ---------- 7. CHECKLIST EXECUTIVO ---------- */
@@ -7769,6 +7887,9 @@
 
   function renderProModalAttachments() {
     const box = $("#pc-attachList");
+    const aiReadBtn = $("#btnProCardAiReadAttachments");
+    const totalAtts = proModalAttachments.length + proModalTickets.length;
+    if (aiReadBtn) aiReadBtn.disabled = totalAtts === 0;
     if (!box) return;
     if (!proModalAttachments.length) {
       box.innerHTML = `<div class="muted small">Nenhum arquivo ou link anexado.</div>`;
@@ -7779,9 +7900,42 @@
       const ico = att.isLink ? "🔗" : (String(att.mimeType || "").includes("pdf") ? "📕" : "📄");
       return `<div class="attach-chip">
         <a href="${core.esc(href)}" target="_blank" rel="noopener">${ico} ${core.esc(att.fileName || att.url || "Anexo")}</a>
+        <button type="button" class="icon-btn" data-patt-ren="${idx}" title="Renomear">✏️</button>
         <button type="button" class="icon-btn" data-patt-del="${idx}" title="Remover">✕</button>
       </div>`;
     }).join("");
+    box.querySelectorAll("[data-patt-ren]").forEach(b => {
+      b.onclick = () => {
+        const idx = parseInt(b.dataset.pattRen, 10);
+        const att = proModalAttachments[idx];
+        if (!att) return;
+        openRenameAttachmentModal({
+          fileName: att.fileName || att.url || "Anexo",
+          isLink: Boolean(att.isLink),
+          onConfirm: async nextName => {
+            const oldName = att.fileName;
+            if (att.id && !att.isLink && window.FeriasApi?.renameAttachment) {
+              try { await window.FeriasApi.renameAttachment(att.id, nextName); } catch (err) {
+                core.toast("❌ " + (err.message || "Falha ao renomear arquivo."));
+                return;
+              }
+            }
+            att.fileName = nextName;
+            renderProModalAttachments();
+            if (editingProCardId) {
+              await renameAttachmentOnCard(editingProCardId, {
+                id: att.id,
+                oldFileName: oldName,
+                isLink: Boolean(att.isLink),
+                newFileName: nextName
+              });
+            } else {
+              core.toast(`✏️ Renomeado para "${nextName}"`);
+            }
+          }
+        });
+      };
+    });
     box.querySelectorAll("[data-patt-del]").forEach(b => {
       b.onclick = async () => {
         const idx = parseInt(b.dataset.pattDel, 10);
@@ -8074,6 +8228,7 @@
         </div>
         <div class="pro-ticket-item-actions">
           <select class="pro-tk-leg-sel" data-tk-leg="${idx}" aria-label="Tipo do trecho deste bilhete">${legOpts(t.legType || "ida")}</select>
+          <button type="button" class="icon-btn" data-tk-ren="${idx}" title="Renomear bilhete">✏️</button>
           ${href ? `<button type="button" class="icon-btn" data-tk-view="${idx}" title="Visualizar bilhete">👁️</button>` : ""}
           ${href ? `<a class="icon-btn" href="${core.esc(href)}" download="${core.esc(t.fileName || "bilhete")}" target="_blank" rel="noopener" title="Baixar bilhete">⬇️</a>` : ""}
           <button type="button" class="icon-btn" data-tk-del="${idx}" title="Remover bilhete">✕</button>
@@ -8081,6 +8236,40 @@
       </div>`;
     }).join("");
 
+    const aiReadBtn = $("#btnProCardAiReadAttachments");
+    if (aiReadBtn) aiReadBtn.disabled = (proModalAttachments.length + proModalTickets.length) === 0;
+    box.querySelectorAll("[data-tk-ren]").forEach(btn => {
+      btn.onclick = () => {
+        const i = parseInt(btn.dataset.tkRen, 10);
+        const tk = proModalTickets[i];
+        if (!tk) return;
+        openRenameAttachmentModal({
+          fileName: tk.fileName || "Bilhete",
+          isLink: false,
+          onConfirm: async nextName => {
+            const oldName = tk.fileName;
+            if (tk.id && window.FeriasApi?.renameAttachment) {
+              try { await window.FeriasApi.renameAttachment(tk.id, nextName); } catch (err) {
+                core.toast("❌ " + (err.message || "Falha ao renomear bilhete."));
+                return;
+              }
+            }
+            tk.fileName = nextName;
+            renderProModalTicketsList();
+            if (editingProCardId) {
+              await renameAttachmentOnCard(editingProCardId, {
+                id: tk.id,
+                oldFileName: oldName,
+                isLink: false,
+                newFileName: nextName
+              });
+            } else {
+              core.toast(`✏️ Bilhete renomeado para "${nextName}"`);
+            }
+          }
+        });
+      };
+    });
     box.querySelectorAll("[data-tk-leg]").forEach(sel => {
       sel.onchange = () => {
         const i = parseInt(sel.dataset.tkLeg, 10);
@@ -8869,6 +9058,9 @@
     editingProTripRef = ctx?.trip || core.getActiveTrip();
     editingProCardId = a ? a.id : null;
     proModalDraftId = a ? a.id : core.uid();
+    proModalTempUploadIds = [];
+    proModalSaved = false;
+    if ($("#pc-aiReadStatus")) { $("#pc-aiReadStatus").hidden = true; $("#pc-aiReadStatus").innerHTML = ""; }
 
     const targetModeSel = $("#pc-targetMode");
     const targetTripWrap = $("#pc-targetTripWrap");
@@ -10051,36 +10243,307 @@
         $("#pc-newSubtask").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); addSub(); } };
       }
     }
+    async function uploadFilesToProCardModal(files, { isTemp = false } = {}) {
+      if (!files || !files.length) return;
+      const tTripId = (!$("#pc-targetTripWrap")?.hidden && $("#pc-targetTrip")?.value)
+        ? $("#pc-targetTrip").value
+        : (editingProTripRef?.id || core.getActiveTrip()?.id || "local");
+      const loadEl = $("#pc-attachLoading");
+      const loadTxt = $("#pc-attachLoadingText");
+      const btn = $("#btnProAttachFile");
+      if (btn) btn.disabled = true;
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        try {
+          if (loadEl) loadEl.hidden = false;
+          if (loadTxt) loadTxt.textContent = `Carregando arquivo "${f.name}" (${i + 1}/${files.length})...`;
+          const up = await window.FeriasApi.uploadAttachment(tTripId, proModalDraftId, f);
+          const rec = {
+            ...up,
+            size: up.size || f.size || 0,
+            mimeType: up.mimeType || f.type || "",
+            uploadedAt: up.uploadedAt || new Date().toISOString()
+          };
+          proModalAttachments.push(rec);
+          if (isTemp && rec.id) proModalTempUploadIds.push(rec.id);
+          renderProModalAttachments();
+          core.toast(`📎 "${f.name}" anexado`);
+        } catch (err) { core.toast("❌ " + (err.message || err)); }
+      }
+      if (loadEl) loadEl.hidden = true;
+      if (btn) btn.disabled = false;
+    }
+
     if ($("#btnProAttachFile")) $("#btnProAttachFile").onclick = () => $("#pc-attachInput").click();
     if ($("#pc-attachInput")) {
       $("#pc-attachInput").onchange = async e => {
         const files = [...(e.target.files || [])];
         if (!files.length) return;
-        const tTripId = (!$("#pc-targetTripWrap")?.hidden && $("#pc-targetTrip")?.value) ? $("#pc-targetTrip").value : (editingProTripRef?.id || core.getActiveTrip()?.id || "local");
-        const loadEl = $("#pc-attachLoading");
-        const loadTxt = $("#pc-attachLoadingText");
-        const btn = $("#btnProAttachFile");
-        if (btn) btn.disabled = true;
-        for (let i = 0; i < files.length; i++) {
-          const f = files[i];
-          try {
-            if (loadEl) loadEl.hidden = false;
-            if (loadTxt) loadTxt.textContent = `Carregando arquivo "${f.name}" (${i + 1}/${files.length})...`;
-            const up = await window.FeriasApi.uploadAttachment(tTripId, proModalDraftId, f);
-            proModalAttachments.push({
-              ...up,
-              size: up.size || f.size || 0,
-              mimeType: up.mimeType || f.type || "",
-              uploadedAt: up.uploadedAt || new Date().toISOString()
-            });
-            renderProModalAttachments();
-            core.toast(`📎 "${f.name}" anexado`);
-          } catch (err) { core.toast("❌ " + (err.message || err)); }
-        }
-        if (loadEl) loadEl.hidden = true;
-        if (btn) btn.disabled = false;
+        await uploadFilesToProCardModal(files, { isTemp: !editingProCardId });
         e.target.value = "";
       };
+    }
+
+    // Limpeza de uploads temporários se o modal for fechado/cancelado sem salvar
+    if ($("#proCardModal")) {
+      $("#proCardModal").addEventListener("close", () => {
+        if (!proModalSaved && proModalTempUploadIds.length && window.FeriasApi?.deleteAttachment) {
+          const toClean = proModalTempUploadIds.slice();
+          proModalTempUploadIds = [];
+          toClean.forEach(id => { window.FeriasApi.deleteAttachment(id).catch(() => {}); });
+        }
+      });
+      // Permitir soltar arquivos diretamente dentro do modal de cartão já aberto
+      $("#proCardModal").addEventListener("dragover", e => {
+        if (e.dataTransfer?.types && [...e.dataTransfer.types].includes("Files")) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      });
+      $("#proCardModal").addEventListener("drop", async e => {
+        const files = [...(e.dataTransfer?.files || [])];
+        if (!files.length) return;
+        e.preventDefault();
+        e.stopPropagation();
+        await uploadFilesToProCardModal(files, { isTemp: !editingProCardId });
+      });
+    }
+
+    // PARTE 2: Botão "Ler anexos com IA e inserir na Descrição" (preserva texto existente!)
+    if ($("#btnProCardAiReadAttachments")) {
+      $("#btnProCardAiReadAttachments").onclick = async () => {
+        const allAtts = [...proModalAttachments, ...proModalTickets];
+        if (!allAtts.length) return core.toast("📎 Anexe pelo menos 1 arquivo antes de ler com IA.");
+        const btn = $("#btnProCardAiReadAttachments");
+        const stEl = $("#pc-aiReadStatus");
+        const origText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "⏳ Lendo anexos com IA...";
+        if (stEl) {
+          stEl.hidden = false;
+          stEl.className = "modal-ai-status is-loading";
+          stEl.innerHTML = `<span class="ai-spinner" aria-hidden="true"></span><span>Analisando ${allAtts.length} ${allAtts.length === 1 ? "anexo" : "anexos"} com Gemini AI...</span>`;
+        }
+        try {
+          const res = await window.FeriasApi.aiSummarizeAttachments({
+            cardTitle: ($("#pc-name")?.value || "").trim(),
+            attachments: allAtts.map(a => ({
+              id: a.id || "",
+              fileName: a.fileName || a.name || "",
+              mimeType: a.mimeType || "",
+              isLink: Boolean(a.isLink),
+              url: a.url || "",
+              dataUrl: a.dataUrl || ""
+            }))
+          });
+          const summary = String(res?.summary || "").trim();
+          if (!summary) throw new Error("A IA não retornou resumo.");
+          const notesEl = $("#pc-notes");
+          if (notesEl) {
+            const existing = notesEl.value || "";
+            if (!existing.trim()) {
+              notesEl.value = summary;
+            } else {
+              // Regra obrigatória: preserva texto existente, pula uma linha (\n\n) e inicia o resumo abaixo
+              notesEl.value = existing.replace(/\s+$/, "") + "\n\n" + summary;
+            }
+            notesEl.scrollTop = notesEl.scrollHeight;
+          }
+          if (stEl) {
+            stEl.className = "modal-ai-status";
+            stEl.innerHTML = `✅ Resumo inserido na Descrição (${(res?.filesRead || []).length} ${(res?.filesRead || []).length === 1 ? "anexo lido" : "anexos lidos"}).`;
+          }
+          core.toast("✨ Resumo dos anexos inserido na Descrição!");
+        } catch (err) {
+          if (stEl) {
+            stEl.className = "modal-ai-status is-error";
+            stEl.textContent = "❌ " + (err.message || "Falha ao ler anexos com IA.");
+          }
+          core.toast("❌ " + (err.message || "Falha ao ler anexos com IA."));
+        } finally {
+          btn.disabled = (proModalAttachments.length + proModalTickets.length) === 0;
+          btn.textContent = origText;
+        }
+      };
+    }
+
+    // PARTE 3: Botão de Encaminhar para WhatsApp no topo de cada Cartão
+    if ($("#btnProCardHeadWhatsApp")) {
+      $("#btnProCardHeadWhatsApp").onclick = () => {
+        const title = ($("#pc-name")?.value || "").trim() || "Cartão My Plan";
+        const desc = ($("#pc-notes")?.value || "").trim();
+        const endIso = ($("#pc-end")?.value || "").trim();
+        const parts = [`*${title}*`];
+        if (desc) parts.push(desc);
+        if (endIso && /^\d{4}-\d{2}-\d{2}$/.test(endIso)) {
+          const [y, m, d] = endIso.split("-");
+          parts.push(`*Prazo:* ${d}/${m}/${y}`);
+        }
+        const msg = parts.join("\n\n");
+        window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+      };
+    }
+
+    // PARTE 5.2: Modal de Renomeação de Anexos
+    if ($("#renameAttForm")) {
+      const closeRen = () => { renameAttPendingCb = null; $("#renameAttModal")?.close(); };
+      if ($("#btnRenameAttClose")) $("#btnRenameAttClose").onclick = closeRen;
+      if ($("#btnRenameAttCancel")) $("#btnRenameAttCancel").onclick = closeRen;
+      $("#renameAttForm").onsubmit = async e => {
+        e.preventDefault();
+        const base = ($("#renameAttInput")?.value || "").trim();
+        if (!base) return core.toast("Informe um nome válido.");
+        const fullName = base + (renameAttPendingExt || "");
+        const cb = renameAttPendingCb;
+        renameAttPendingCb = null;
+        $("#renameAttModal")?.close();
+        if (cb) await cb(fullName);
+      };
+    }
+
+    // PARTE 1: Drag & Drop Global (funciona em qualquer tela do aplicativo)
+    (function setupGlobalDragAndDrop() {
+      if (window.__myplanGlobalDropBound) return;
+      window.__myplanGlobalDropBound = true;
+      const overlay = $("#globalDropOverlay");
+      let dragDepth = 0;
+
+      const isExternalFileDrag = e => {
+        const types = e.dataTransfer?.types ? [...e.dataTransfer.types] : [];
+        return types.includes("Files");
+      };
+      const hasBlockingModalOpen = () => Boolean(
+        $("#proCardModal")?.open ||
+        $("#proMinuteEditorModal")?.open ||
+        $("#modal")?.open ||
+        $("#authView")?.hidden === false
+      );
+      const showOverlay = () => {
+        if (!overlay) return;
+        overlay.hidden = false;
+        overlay.setAttribute("aria-hidden", "false");
+      };
+      const hideOverlay = () => {
+        dragDepth = 0;
+        if (!overlay) return;
+        overlay.hidden = true;
+        overlay.setAttribute("aria-hidden", "true");
+      };
+
+      window.addEventListener("dragenter", e => {
+        if (!isExternalFileDrag(e)) return;
+        if (hasBlockingModalOpen()) return;
+        e.preventDefault();
+        dragDepth++;
+        showOverlay();
+      }, true);
+
+      window.addEventListener("dragover", e => {
+        if (!isExternalFileDrag(e)) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+        if (!hasBlockingModalOpen()) showOverlay();
+      }, true);
+
+      window.addEventListener("dragleave", e => {
+        if (!isExternalFileDrag(e)) return;
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0 || (e.clientX <= 0 && e.clientY <= 0)) {
+          hideOverlay();
+        }
+      }, true);
+
+      window.addEventListener("drop", async e => {
+        if (!isExternalFileDrag(e)) return;
+        const files = [...(e.dataTransfer?.files || [])];
+        hideOverlay();
+        if (hasBlockingModalOpen()) return;
+        e.preventDefault();
+        if (!files.length) return;
+        openProCardModal();
+        const nameInput = $("#pc-name");
+        if (nameInput && !nameInput.value.trim()) {
+          const { base } = splitFileNameExt(files[0].name, false);
+          nameInput.value = base || files[0].name;
+        }
+        await uploadFilesToProCardModal(files, { isTemp: true });
+      }, true);
+
+      window.addEventListener("blur", hideOverlay);
+      window.addEventListener("keydown", e => { if (e.key === "Escape") hideOverlay(); });
+    })();
+
+    // PARTE 4: Eventos da Integração com Google Drive
+    if ($("#btnProDriveConnect")) {
+      $("#btnProDriveConnect").onclick = async () => {
+        const clientId = window.FeriasApi?.getGoogleClientId?.() || "";
+        if (!clientId) return core.toast("⚠️ Google OAuth Client ID não configurado.");
+        const btn = $("#btnProDriveConnect");
+        btn.disabled = true;
+        btn.textContent = "⏳ Conectando...";
+        try {
+          const res = await window.MyPlanDrive.connect(clientId, true);
+          const st = core.getState();
+          st.params = st.params || {};
+          st.params.drive = { ...(st.params.drive || {}), connectedEmail: res.email || "" };
+          await window.FeriasApi.saveIntegrations({ driveConnectedEmail: res.email || "" }).catch(() => {});
+          renderProDriveParams(st);
+          core.toast(`✅ Google Drive conectado${res.email ? ` (${res.email})` : ""}!`);
+        } catch (err) {
+          core.toast("❌ " + (err.message || "Falha ao conectar Google Drive."));
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "🔗 Conectar Google Drive";
+        }
+      };
+    }
+    if ($("#btnProDriveDisconnect")) {
+      $("#btnProDriveDisconnect").onclick = async () => {
+        window.MyPlanDrive?.disconnect?.();
+        const st = core.getState();
+        if (st.params?.drive) st.params.drive.connectedEmail = "";
+        await window.FeriasApi.saveIntegrations({ driveConnectedEmail: "" }).catch(() => {});
+        renderProDriveParams(st);
+        core.toast("🔌 Google Drive desconectado.");
+      };
+    }
+    if ($("#btnProDrivePickFolder")) {
+      $("#btnProDrivePickFolder").onclick = () => openDriveFolderPickerModal();
+    }
+    if ($("#btnDrivePickerClose")) $("#btnDrivePickerClose").onclick = () => $("#driveFolderPickerModal")?.close();
+    if ($("#btnDrivePickerCancel")) $("#btnDrivePickerCancel").onclick = () => $("#driveFolderPickerModal")?.close();
+    if ($("#btnDrivePickerSearch")) {
+      $("#btnDrivePickerSearch").onclick = () => loadDrivePickerFolders($("#drivePickerSearch")?.value || "");
+    }
+    if ($("#drivePickerSearch")) {
+      $("#drivePickerSearch").onkeydown = e => {
+        if (e.key === "Enter") { e.preventDefault(); loadDrivePickerFolders(e.target.value || ""); }
+      };
+    }
+    if ($("#btnProSaveDriveConfig")) {
+      $("#btnProSaveDriveConfig").onclick = async () => {
+        const raw = ($("#proDriveFolderInput")?.value || "").trim();
+        const folderId = window.MyPlanDrive?.extractFolderId ? window.MyPlanDrive.extractFolderId(raw) : raw;
+        if (raw && !folderId) {
+          return core.toast("⚠️ URL ou ID de pasta do Google Drive inválido. Cole o link completo da pasta ou o ID.");
+        }
+        const st = core.getState();
+        st.params = st.params || {};
+        st.params.drive = {
+          ...(st.params.drive || {}),
+          folderId: folderId || "",
+          folderUrl: raw || ""
+        };
+        await window.FeriasApi.saveIntegrations({
+          driveFolderId: folderId || "",
+          driveFolderUrl: raw || ""
+        }).catch(() => {});
+        core.save("💾 Configuração do Google Drive salva!");
+        renderProDriveParams(st);
+      };
+    }
+    if ($("#btnProSyncDriveNow")) {
+      $("#btnProSyncDriveNow").onclick = () => syncGoogleDrive();
     }
     if ($("#btnProAttachLink")) {
       $("#btnProAttachLink").onclick = () => {
@@ -10185,6 +10648,8 @@
           }
           if (!Array.isArray(targetPersonalTrip.data.activities)) targetPersonalTrip.data.activities = [];
           targetPersonalTrip.data.activities.push(converted);
+          proModalSaved = true;
+          proModalTempUploadIds = [];
           $("#proCardModal").close();
           if (editingProCardId && sourceTrip && sourceTrip.id !== targetPersonalTrip.id) {
             await core.saveTripRecord(sourceTrip, "");
@@ -10232,6 +10697,8 @@
           sourceTrip.data.activities = (sourceTrip.data?.activities || []).filter(x => x.id !== editingProCardId);
           data.order = tgtData.activities.filter(x => x.columnId === data.columnId).length;
           tgtData.activities.push({ ...orig, ...data, id: editingProCardId });
+          proModalSaved = true;
+          proModalTempUploadIds = [];
           $("#proCardModal").close();
           await core.saveTripRecord(sourceTrip, "");
           await core.saveTripRecord(targetTrip, `📦 Cartão movido para "${tgtData.title || targetTrip.name}"`);
@@ -10245,6 +10712,8 @@
           data.order = tgtData.activities.filter(x => x.columnId === data.columnId).length;
           tgtData.activities.push({ id: proModalDraftId || core.uid(), ...data });
         }
+        proModalSaved = true;
+        proModalTempUploadIds = [];
         $("#proCardModal").close();
         core.saveTripRecord(targetTrip, editingProCardId ? "💾 Cartão atualizado!" : "🗂️ Cartão adicionado!");
       };
@@ -10472,6 +10941,158 @@
     renderProChecklist();
   }
 
+  /* ---------- INTEGRAÇÃO & SINCRONIZAÇÃO COM GOOGLE DRIVE ---------- */
+  function getDriveConfig(stOpt = null) {
+    const st = stOpt || core?.getState?.() || {};
+    const uInteg = window.FeriasApi?.getUser?.()?.integrations || {};
+    const pDrive = (st.params && st.params.drive && typeof st.params.drive === "object") ? st.params.drive : {};
+    const folderUrl = pDrive.folderUrl || uInteg.driveFolderUrl || "";
+    const folderId = pDrive.folderId || uInteg.driveFolderId || (window.MyPlanDrive?.extractFolderId ? window.MyPlanDrive.extractFolderId(folderUrl) : "");
+    const connectedEmail = window.MyPlanDrive?.getConnectedEmail?.() || pDrive.connectedEmail || uInteg.driveConnectedEmail || "";
+    const folderName = pDrive.folderName || uInteg.driveFolderName || "";
+    const lastSyncAt = pDrive.lastSyncAt || "";
+    return { folderId, folderUrl, folderName, connectedEmail, lastSyncAt };
+  }
+
+  function renderProDriveParams(stOpt = null) {
+    const cfg = getDriveConfig(stOpt);
+    const liveConnected = Boolean(window.MyPlanDrive?.isConnected?.());
+    const badge = $("#proDriveStatusBadge");
+    const accInfo = $("#proDriveAccountInfo");
+    const btnConn = $("#btnProDriveConnect");
+    const btnDisc = $("#btnProDriveDisconnect");
+    const folderInp = $("#proDriveFolderInput");
+    const lastSyncEl = $("#proDriveLastSyncInfo");
+
+    if (badge) {
+      if (liveConnected || cfg.connectedEmail) {
+        badge.textContent = liveConnected ? "Conectado" : "Configurado";
+        badge.className = "pill ok";
+      } else {
+        badge.textContent = "Desconectado";
+        badge.className = "pill warn";
+      }
+    }
+    if (accInfo) {
+      accInfo.textContent = cfg.connectedEmail
+        ? `Conta: ${cfg.connectedEmail}${cfg.folderName ? ` · Pasta: ${cfg.folderName}` : ""}`
+        : "";
+    }
+    if (btnConn) btnConn.textContent = (liveConnected || cfg.connectedEmail) ? "🔄 Reconectar Google Drive" : "🔗 Conectar Google Drive";
+    if (btnDisc) btnDisc.hidden = !(liveConnected || cfg.connectedEmail);
+    if (folderInp && document.activeElement !== folderInp) {
+      folderInp.value = cfg.folderUrl || cfg.folderId || "";
+    }
+    if (lastSyncEl) {
+      lastSyncEl.textContent = cfg.lastSyncAt
+        ? `Última sincronização: ${new Date(cfg.lastSyncAt).toLocaleString("pt-BR")}`
+        : "";
+    }
+  }
+
+  async function loadDrivePickerFolders(queryText = "") {
+    const listEl = $("#drivePickerList");
+    if (!listEl) return;
+    const clientId = window.FeriasApi?.getGoogleClientId?.() || "";
+    if (!clientId) {
+      listEl.innerHTML = `<div class="muted small" style="padding:12px">Google OAuth Client ID não configurado.</div>`;
+      return;
+    }
+    listEl.innerHTML = `<div class="muted small" style="padding:12px">⏳ Carregando pastas do seu Google Drive...</div>`;
+    try {
+      const folders = await window.MyPlanDrive.listFolders(clientId, queryText);
+      if (!folders.length) {
+        listEl.innerHTML = `<div class="muted small" style="padding:12px">Nenhuma pasta encontrada.</div>`;
+        return;
+      }
+      listEl.innerHTML = folders.map(f => `
+        <button type="button" class="drive-picker-item" data-dp-id="${core.esc(f.id)}" data-dp-name="${core.esc(f.name)}" data-dp-url="${core.esc(f.webViewLink || "")}">
+          <span class="drive-picker-ico">📁</span>
+          <span class="drive-picker-main">
+            <strong>${core.esc(f.name)}</strong>
+            <small class="muted">${core.esc(f.id)}</small>
+          </span>
+        </button>`).join("");
+      listEl.querySelectorAll("[data-dp-id]").forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.dpId;
+          const name = btn.dataset.dpName || "";
+          const url = btn.dataset.dpUrl || `https://drive.google.com/drive/folders/${id}`;
+          if ($("#proDriveFolderInput")) $("#proDriveFolderInput").value = url;
+          const st = core.getState();
+          st.params = st.params || {};
+          st.params.drive = { ...(st.params.drive || {}), folderId: id, folderName: name, folderUrl: url };
+          await window.FeriasApi.saveIntegrations({ driveFolderId: id, driveFolderName: name, driveFolderUrl: url }).catch(() => {});
+          core.save(`📂 Pasta "${name}" selecionada para o Google Drive!`);
+          renderProDriveParams(st);
+          $("#driveFolderPickerModal")?.close();
+        };
+      });
+    } catch (err) {
+      listEl.innerHTML = `<div class="auth-error" style="margin:8px">❌ ${core.esc(err.message || "Falha ao listar pastas.")}</div>`;
+    }
+  }
+
+  function openDriveFolderPickerModal() {
+    const dlg = $("#driveFolderPickerModal");
+    if (!dlg) return;
+    if ($("#drivePickerSearch")) $("#drivePickerSearch").value = "";
+    dlg.showModal();
+    loadDrivePickerFolders("");
+  }
+
+  let driveSyncRunning = false;
+  async function syncGoogleDrive() {
+    if (driveSyncRunning) return core.toast("⏳ Sincronização com o Google Drive já está em andamento...");
+    const trip = core.getActiveTrip?.();
+    if (!trip || !trip.data) return core.toast("⚠️ Nenhum planejamento ativo para sincronizar.");
+    const cfg = getDriveConfig(trip.data);
+    const rootFolderId = cfg.folderId || (window.MyPlanDrive?.extractFolderId ? window.MyPlanDrive.extractFolderId(cfg.folderUrl) : "");
+    if (!rootFolderId) {
+      core.toast("⚙️ Configure a pasta raiz do Google Drive em Parâmetros primeiro.");
+      if (core.switchProView) core.switchProView("pro-params");
+      setTimeout(() => $("#proDriveParamsPanel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+      return;
+    }
+    const clientId = window.FeriasApi?.getGoogleClientId?.() || "";
+    if (!clientId) return core.toast("⚠️ Google OAuth Client ID não configurado.");
+
+    driveSyncRunning = true;
+    const syncBtn = $("#btnProSyncDriveNow");
+    if (syncBtn) { syncBtn.disabled = true; syncBtn.textContent = "⏳ Sincronizando..."; }
+    core.toast("☁️ Sincronizando cartões com o Google Drive...");
+    try {
+      const result = await window.MyPlanDrive.syncProjectToDrive({
+        clientId,
+        rootFolderId,
+        trip,
+        columns: trip.data.columns || getMergedColumns(),
+        labels: trip.data.labels || getMergedLabels(),
+        resolveDocHref,
+        onProgress: ({ step, total, cardName }) => {
+          core.toast(`☁️ Sincronizando Google Drive (${step}/${total}): ${String(cardName || "").slice(0, 32)}...`);
+        }
+      });
+      trip.data.params = trip.data.params || {};
+      trip.data.params.drive = {
+        ...(trip.data.params.drive || {}),
+        folderId: result.rootFolderId,
+        folderName: result.rootFolderName || cfg.folderName || "",
+        lastSyncAt: result.syncedAt,
+        connectedEmail: window.MyPlanDrive?.getConnectedEmail?.() || cfg.connectedEmail || ""
+      };
+      await core.saveTripRecord(trip, "");
+      renderProDriveParams(trip.data);
+      const warnBit = result.failedFiles ? ` (${result.failedFiles} anexo(s) indisponível(is))` : "";
+      core.toast(`✅ Google Drive atualizado com sucesso! (${result.syncedCards} ${result.syncedCards === 1 ? "cartão" : "cartões"}, ${result.syncedFiles} arquivos)${warnBit}`);
+    } catch (err) {
+      core.toast("❌ " + (err.message || "Falha ao sincronizar com o Google Drive."));
+    } finally {
+      driveSyncRunning = false;
+      if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = "🔄 Atualizar Google Drive"; }
+    }
+  }
+
   window.MyPlanPro = {
     init(c) {
       core = c;
@@ -10485,6 +11106,7 @@
           getAllAssignees: getAllProAssignees,
           openCardModal: openProCardModal,
           openDocPreview: openProDocPreviewModal,
+          openRenameAttachment: openRenameAttachmentModal,
           resolveDocHref
         });
       }
@@ -10506,6 +11128,7 @@
     buildProSummaryHTML,
     openProCardModal,
     exportProXlsx,
-    buildProWhatsAppText
+    buildProWhatsAppText,
+    syncGoogleDrive
   };
 })();

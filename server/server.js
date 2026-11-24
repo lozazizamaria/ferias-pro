@@ -775,7 +775,11 @@ function publicUser(u) {
       gmapsKey: creds.gmapsKey || "",
       googleClientId: creds.googleClientId || "",
       hasWallet: Boolean(creds.walletIssuerId && creds.walletSaJson),
-      walletIssuerId: creds.walletIssuerId || ""
+      walletIssuerId: creds.walletIssuerId || "",
+      driveFolderId: String(u.integrations?.driveFolderId || ""),
+      driveFolderName: String(u.integrations?.driveFolderName || ""),
+      driveFolderUrl: String(u.integrations?.driveFolderUrl || ""),
+      driveConnectedEmail: String(u.integrations?.driveConnectedEmail || "")
     }
   };
 }
@@ -2637,6 +2641,18 @@ const server = http.createServer(async (req, res) => {
           delete u.integrations.walletSaJson;
         }
       }
+      if (typeof body.driveFolderId === "string") {
+        u.integrations.driveFolderId = body.driveFolderId.trim().slice(0, 128);
+      }
+      if (typeof body.driveFolderName === "string") {
+        u.integrations.driveFolderName = body.driveFolderName.trim().slice(0, 180);
+      }
+      if (typeof body.driveFolderUrl === "string") {
+        u.integrations.driveFolderUrl = body.driveFolderUrl.trim().slice(0, 320);
+      }
+      if (typeof body.driveConnectedEmail === "string") {
+        u.integrations.driveConnectedEmail = body.driveConnectedEmail.trim().slice(0, 160);
+      }
       auditLog("user.integrations_update", { userId: u.id, email: u.email, ip: getClientIp(req), detail: "Integrações criptografadas (AES-256-GCM)" });
       saveDb();
       return sendJson(res, 200, { ok: true, user: publicUser(u) });
@@ -3398,6 +3414,18 @@ const server = http.createServer(async (req, res) => {
         return fs.createReadStream(filePath).pipe(res);
       }
 
+      if (req.method === "PATCH") {
+        if (access !== "owner" && access !== "editor") {
+          return sendJson(res, 403, { ok: false, error: "Sem permissão para renomear." });
+        }
+        const body = await readBody(req);
+        const rawName = String(body.fileName || "").trim();
+        if (!rawName) return sendJson(res, 400, { ok: false, error: "Nome do arquivo inválido." });
+        att.fileName = safeFileName(rawName);
+        saveDb();
+        return sendJson(res, 200, { ok: true, attachment: att });
+      }
+
       if (req.method === "DELETE") {
         if (access !== "owner" && access !== "editor") {
           return sendJson(res, 403, { ok: false, error: "Sem permissão para excluir." });
@@ -3854,6 +3882,167 @@ Regras importantes:
         return sendJson(res, 200, { ok: true, result: result || {} });
       } catch (err) {
         return sendJson(res, 502, { ok: false, error: err.message || "Erro ao analisar bilhetes com IA." });
+      }
+    }
+
+    /* ---------- IA: LER ANEXOS DO CARTÃO E GERAR RESUMO PARA DESCRIÇÃO ---------- */
+    if (pathname === "/api/ai/summarize-attachments" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.geminiKey) {
+        return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key em Parâmetros ou no seu Perfil para ler anexos com IA." });
+      }
+      const body = await readBody(req);
+      const cardTitle = String(body.cardTitle || "").trim();
+      const rawAtts = Array.isArray(body.attachments) ? body.attachments.slice(0, 12) : [];
+      if (!rawAtts.length) {
+        return sendJson(res, 400, { ok: false, error: "Nenhum anexo informado para leitura." });
+      }
+
+      const extractOoxmlText = buf => {
+        try {
+          const texts = [];
+          let pos = 0;
+          while (pos + 30 < buf.length) {
+            const sig = buf.readUInt32LE(pos);
+            if (sig !== 0x04034b50) break;
+            const method = buf.readUInt16LE(pos + 8);
+            const compSize = buf.readUInt32LE(pos + 18);
+            const nameLen = buf.readUInt16LE(pos + 26);
+            const extraLen = buf.readUInt16LE(pos + 28);
+            const nameStart = pos + 30;
+            const name = buf.toString("utf8", nameStart, nameStart + nameLen);
+            const dataStart = nameStart + nameLen + extraLen;
+            const dataEnd = dataStart + compSize;
+            if (compSize > 0 && dataEnd <= buf.length && /\.xml$/i.test(name) && /(word\/document|ppt\/slides\/slide|xl\/sharedStrings|xl\/worksheets\/sheet)/i.test(name)) {
+              const rawEntry = buf.subarray(dataStart, dataEnd);
+              let xmlStr = "";
+              if (method === 0) xmlStr = rawEntry.toString("utf8");
+              else if (method === 8) xmlStr = zlib.inflateRawSync(rawEntry).toString("utf8");
+              if (xmlStr) {
+                const cleaned = xmlStr
+                  .replace(/<\/(w:p|a:p|row|si|tr)>/gi, "\n")
+                  .replace(/<[^>]+>/g, " ")
+                  .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+                  .replace(/[ \t]+/g, " ")
+                  .replace(/\n{3,}/g, "\n\n")
+                  .trim();
+                if (cleaned) texts.push(cleaned);
+              }
+            }
+            if (compSize === 0 && (buf.readUInt16LE(pos + 6) & 0x08)) break;
+            pos = dataEnd;
+          }
+          return texts.join("\n\n").slice(0, 28000);
+        } catch {
+          return "";
+        }
+      };
+
+      const parts = [];
+      let totalInlineBytes = 0;
+      const MAX_INLINE_BYTES = 14 * 1024 * 1024;
+      const uploadsBase = path.resolve(UPLOADS_DIR) + path.sep;
+      const readList = [];
+
+      parts.push({
+        text: `Cartão: ${cardTitle || "(sem título)"}\nAnalise cuidadosamente todos os anexos fornecidos abaixo e gere um resumo completo, claro, objetivo e bem estruturado em português para ser inserido na Descrição do cartão.`
+      });
+
+      for (const item of rawAtts) {
+        if (!item || typeof item !== "object") continue;
+        const fName = String(item.fileName || item.url || "Anexo").trim();
+        if (item.isLink) {
+          parts.push({ text: `[Link anexado] ${fName}: ${String(item.url || "")}` });
+          readList.push(fName);
+          continue;
+        }
+        let buf = null;
+        let mime = String(item.mimeType || "").toLowerCase();
+        if (item.id && db.attachments[item.id]) {
+          const attMeta = db.attachments[item.id];
+          const trip = db.trips[attMeta.tripId];
+          const access = getTripAccess(trip, auth.user);
+          if (access || isAdminUser(auth.user)) {
+            const filePath = path.resolve(UPLOADS_DIR, attMeta.id);
+            if (filePath.startsWith(uploadsBase) && fs.existsSync(filePath)) {
+              buf = fs.readFileSync(filePath);
+              mime = String(attMeta.mimeType || mime || "").toLowerCase();
+            }
+          }
+        } else if (typeof item.dataUrl === "string" && item.dataUrl.includes("base64,")) {
+          const m = item.dataUrl.match(/^data:([^;]+);base64,(.*)$/);
+          if (m) {
+            mime = (m[1] || mime || "").toLowerCase();
+            buf = Buffer.from(m[2], "base64");
+          }
+        }
+        if (!buf || !buf.length) {
+          parts.push({ text: `[Anexo listado sem conteúdo binário disponível]: ${fName}` });
+          continue;
+        }
+        const ext = (fName.split(".").pop() || "").toLowerCase();
+        const isInlineSupported =
+          mime.startsWith("image/") ||
+          mime === "application/pdf" ||
+          mime.startsWith("audio/") ||
+          ["pdf", "png", "jpg", "jpeg", "webp", "gif", "mp3", "wav", "ogg", "m4a"].includes(ext);
+
+        if (isInlineSupported) {
+          if (!mime || mime === "application/octet-stream") {
+            if (ext === "pdf") mime = "application/pdf";
+            else if (["jpg", "jpeg"].includes(ext)) mime = "image/jpeg";
+            else if (ext === "png") mime = "image/png";
+            else if (ext === "webp") mime = "image/webp";
+            else if (ext === "gif") mime = "image/gif";
+            else mime = "application/pdf";
+          }
+          if (totalInlineBytes + buf.length <= MAX_INLINE_BYTES) {
+            totalInlineBytes += buf.length;
+            parts.push({ text: `[Arquivo anexo: ${fName}]` });
+            parts.push({ inlineData: { mimeType: mime, data: buf.toString("base64") } });
+            readList.push(fName);
+          } else {
+            parts.push({ text: `[Arquivo anexo excedeu limite de tamanho para leitura direta: ${fName}]` });
+          }
+        } else if (["docx", "pptx", "xlsx"].includes(ext) || /officedocument/i.test(mime)) {
+          const extracted = extractOoxmlText(buf);
+          if (extracted) {
+            parts.push({ text: `[Conteúdo extraído do documento "${fName}"]:\n${extracted}` });
+            readList.push(fName);
+          } else {
+            parts.push({ text: `[Documento Office anexado "${fName}" (${buf.length} bytes) — sem texto extraível.]` });
+          }
+        } else if (mime.startsWith("text/") || ["txt", "md", "csv", "json", "xml", "html", "log", "ics", "yml", "yaml"].includes(ext)) {
+          const txt = buf.toString("utf8").slice(0, 28000);
+          parts.push({ text: `[Conteúdo do arquivo texto "${fName}"]:\n${txt}` });
+          readList.push(fName);
+        } else {
+          parts.push({ text: `[Anexo "${fName}" (${mime || ext || "binário"}, ${buf.length} bytes)]` });
+        }
+      }
+
+      if (!readList.length) {
+        return sendJson(res, 400, { ok: false, error: "Não foi possível ler o conteúdo dos anexos informados (formato não suportado ou arquivo indisponível)." });
+      }
+
+      const sysPrompt = `Você é um analista executivo sênior. Leia o conteúdo dos anexos fornecidos e produza um resumo completo, claro e bem estruturado em português do Brasil para a Descrição de um cartão de projeto/tarefa.
+Regras:
+- Organize com títulos curtos em texto simples e marcadores ("•"), sem usar tags HTML nem blocos markdown excessivos.
+- Destaque objetivo/assunto principal, pontos-chave, datas/prazos, valores financeiros, partes envolvidas, localizadores/códigos e ações/pendências relevantes se existirem nos documentos.
+- Se houver múltiplos anexos, sintetize de forma integrada ou por documento de maneira limpa e fácil de ler.
+Retorne EXCLUSIVAMENTE um JSON válido no formato:
+{
+  "summary": "Texto estruturado do resumo completo aqui"
+}`;
+      try {
+        const result = await callGeminiJSON(creds.geminiKey, parts, sysPrompt);
+        const summary = String(result?.summary || "").trim();
+        if (!summary) return sendJson(res, 502, { ok: false, error: "A IA não retornou um resumo válido." });
+        return sendJson(res, 200, { ok: true, summary, filesRead: readList });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: err.message || "Falha ao ler anexos com Gemini." });
       }
     }
 

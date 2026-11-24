@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=47">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=47">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=47">
+<link rel="manifest" href="/manifest.webmanifest?v=48">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=48">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=48">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=47">
+<link rel="stylesheet" href="styles.css?v=48">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=47" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=48" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=47" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=48" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -184,7 +184,12 @@
               <span id="btnShareTripLabel">Compartilhar viagem</span>
             </button>
             <button type="button" id="btnMenuCrossings" hidden>🔀 Cruzamentos de Viagens</button>
+            <button type="button" id="btnMenuParams">⚙️ Parâmetros</button>
             <button type="button" id="btnMenuAdmin" hidden>🛡️ Admin (Super Painel)</button>
+            <button type="button" id="btnMenuSyncDrive" class="menu-icon-row">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><polygon points="8,3 16,3 22,14 14,14" fill="#FBBC05"/><polygon points="2,14 8,3 12,10 6,21" fill="#34A853"/><polygon points="6,21 10,14 22,14 18,21" fill="#4285F4"/></svg>
+              <span>Atualizar Google Drive</span>
+            </button>
             <button type="button" id="btnMenuWhatsApp">💬 Enviar p/ meu WhatsApp</button>
             <button type="button" id="btnMenuCalendarAll">📅 Enviar p/ Google Agenda</button>
             <a href="/como-usar.html" class="menu-link">📖 Como utilizar o My Plan</a>
@@ -211,24 +216,20 @@
       <button class="tab" data-view="dashboard" id="tab-dashboard" type="button">📊 Dashboard</button>
       <button class="tab" data-view="finance" id="tab-finance" type="button">💰 Financeiro</button>
       <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
-      <button class="tab" data-view="params" id="tab-params" type="button">⚙️ Parâmetros</button>
       <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
-      <button class="tab tab-admin" data-view="admin" id="tab-admin" type="button" hidden>🛡️ Admin</button>
     </nav>
 
     <nav class="tabs tabs-pro" id="tabsPro" aria-label="Navegação profissional" hidden>
       <button class="tab active" data-pro-view="pro-board" id="tab-pro-board" type="button">🗂️ Quadro</button>
-      <button class="tab" data-pro-view="pro-gantt" id="tab-pro-gantt" type="button">📅 Gantt &amp; Timeline</button>
+      <button class="tab" data-pro-view="pro-gantt" id="tab-pro-gantt" type="button">📅 Timeline</button>
       <button class="tab" data-pro-view="pro-map" id="tab-pro-map" type="button">🗺️ Mapa</button>
-      <button class="tab" data-pro-view="pro-travels" id="tab-pro-travels" type="button">✈️ Deslocamentos</button>
+      <button class="tab" data-pro-view="pro-travels" id="tab-pro-travels" type="button">✈️ Viagens</button>
       <button class="tab" data-pro-view="pro-control" id="tab-pro-control" type="button">📋 Controle</button>
       <button class="tab" data-pro-view="pro-docs" id="tab-pro-docs" type="button">📁 Documentos</button>
       <button class="tab" data-pro-view="pro-dashboard" id="tab-pro-dashboard" type="button">📊 Dashboard</button>
       <button class="tab" data-pro-view="pro-finance" id="tab-pro-finance" type="button">💼 Financeiro</button>
       <button class="tab" data-pro-view="pro-table" id="tab-pro-table" type="button">🧾 Tabela</button>
-      <button class="tab" data-pro-view="pro-params" id="tab-pro-params" type="button">⚙️ Parâmetros</button>
       <button class="tab" data-pro-view="pro-checklist" id="tab-pro-checklist" type="button">✅ Checklist</button>
-      <button class="tab tab-admin" data-pro-view="admin" id="tab-pro-admin" type="button" hidden>🛡️ Admin</button>
     </nav>
   </header>
 
@@ -2421,6 +2422,32 @@
             <button type="button" class="btn primary small" id="btnProSaveWalletCreds">💾 Salvar Credenciais Google Wallet</button>
           </div>
         </div>
+
+        <div class="gmaps-key-panel" id="proDriveParamsPanel" style="margin-top:12px">
+          <div class="gmaps-key-head">
+            <strong>☁️ Integração com Google Drive (Sincronização de Cartões &amp; Anexos)</strong>
+            <span class="pill warn" id="proDriveStatusBadge">Desconectado</span>
+          </div>
+          <p class="muted small">Conecte sua conta Google e informe a pasta raiz do Drive (URL ou ID) onde cada cartão do projeto terá sua subpasta com <code>Detalhes_do_Cartao.txt</code> e todos os anexos atualizados sem duplicidade.</p>
+          <div class="key-actions-row" style="margin-top:8px;margin-bottom:10px;align-items:center">
+            <button type="button" class="btn primary small" id="btnProDriveConnect">🔗 Conectar Google Drive</button>
+            <button type="button" class="btn ghost small" id="btnProDriveDisconnect" hidden>🔌 Desconectar</button>
+            <span class="muted small" id="proDriveAccountInfo"></span>
+          </div>
+          <div class="form-grid" style="margin-top:6px">
+            <label class="span2">Pasta Raiz no Google Drive (cole a URL da pasta ou o ID)
+              <div class="key-input-row">
+                <input type="text" id="proDriveFolderInput" placeholder="Ex: https://drive.google.com/drive/folders/1AbC... ou ID da pasta" autocomplete="off">
+                <button type="button" class="btn ghost small" id="btnProDrivePickFolder" title="Listar e escolher uma pasta do seu Google Drive">📂 Escolher pasta</button>
+              </div>
+            </label>
+          </div>
+          <div class="key-actions-row" style="margin-top:8px;align-items:center">
+            <button type="button" class="btn primary small" id="btnProSaveDriveConfig">💾 Salvar Configuração do Drive</button>
+            <button type="button" class="btn ghost small" id="btnProSyncDriveNow">🔄 Atualizar Google Drive</button>
+            <span class="muted small" id="proDriveLastSyncInfo"></span>
+          </div>
+        </div>
       </div>
 
       <!-- PARÂMETROS FINANCEIROS DE VIAGENS (FORÇAS ARMADAS — 2026) -->
@@ -3304,6 +3331,9 @@
         </button>
       </div>
       <div class="modal-head-right">
+        <button type="button" class="btn ghost small btn-modal-whatsapp" id="btnProCardHeadWhatsApp" title="Encaminhar via WhatsApp" aria-label="Encaminhar via WhatsApp">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#25D366"/><path d="M8.5 8.5c-.3.5-.4 1.2-.1 2 .5 1.4 1.9 2.9 3.4 3.6.8.4 1.5.4 2 .1l.9-.7c.2-.2.5-.2.7 0l1.1.9c.2.2.3.5.1.8-.4.7-1.2 1.2-2.2 1.1-2.5-.2-5.4-2.5-6.6-5.2-.4-1-.2-2 .4-2.7.2-.3.5-.3.8-.1l.9 1c.2.2.2.5 0 .7l-.6.5z" fill="#ffffff"/></svg>
+        </button>
         <button type="button" class="btn primary small" id="btnProCardHeadSave" title="Salvar alterações do cartão">💾 Salvar</button>
         <button type="button" class="btn ghost small" id="btnProCardHeadNewMinute" title="Criar nova Ata de Reunião vinculada a este cartão">📝 Nova Ata</button>
         <button type="button" class="icon-btn modal-close" id="btnProCardCloseX" aria-label="Fechar">✕</button>
@@ -3363,7 +3393,11 @@
               <button type="button" class="btn ghost small" id="btnProAttachLink">🔗 Link</button>
             </div>
           </div>
-          <input type="file" id="pc-attachInput" multiple accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.txt" hidden>
+          <div class="pro-attach-ai-bar" style="margin-top:8px">
+            <button type="button" class="btn ai-pill small" id="btnProCardAiReadAttachments" disabled title="Lê o conteúdo dos anexos deste cartão com IA e insere um resumo estruturado na Descrição">✨ Ler anexos com IA e inserir na Descrição</button>
+          </div>
+          <div id="pc-aiReadStatus" class="modal-ai-status" role="status" aria-live="polite" hidden style="margin-top:6px"></div>
+          <input type="file" id="pc-attachInput" multiple hidden>
           <div id="pc-attachLoading" class="modal-ai-status is-loading" role="status" aria-live="polite" hidden style="margin-top:8px">
             <span class="ai-spinner" aria-hidden="true"></span>
             <span id="pc-attachLoadingText">Carregando arquivo...</span>
@@ -3963,20 +3997,69 @@
   </form>
 </dialog>
 
+<!-- OVERLAY GLOBAL DE DRAG & DROP EM TELA CHEIA -->
+<div id="globalDropOverlay" class="global-drop-overlay" hidden aria-hidden="true">
+  <div class="global-drop-box">
+    <div class="global-drop-ico" aria-hidden="true">📥</div>
+    <div class="global-drop-title">Solte aqui para criar um novo cartão com este(s) arquivo(s)</div>
+    <div class="global-drop-sub">Aceita um ou múltiplos arquivos (PDF, imagens, Word, Excel, PowerPoint, textos e mais)</div>
+  </div>
+</div>
+
+<!-- MODAL COMPACTO: RENOMEAR ANEXO PRESERVANDO EXTENSÃO -->
+<dialog id="renameAttModal" class="rename-att-dialog">
+  <form id="renameAttForm" method="dialog">
+    <div class="modal-head">
+      <h3>✏️ Renomear Documento</h3>
+      <button type="button" class="icon-btn" id="btnRenameAttClose" aria-label="Fechar">✕</button>
+    </div>
+    <label class="pro-field-stack" style="margin:12px 0">
+      <span>Novo nome do arquivo</span>
+      <div class="rename-att-input-row">
+        <input type="text" id="renameAttInput" required autocomplete="off" placeholder="Digite o novo nome...">
+        <span id="renameAttExtBadge" class="rename-att-ext" hidden>.pdf</span>
+      </div>
+    </label>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnRenameAttCancel">Cancelar</button>
+      <button type="submit" class="btn primary">💾 Salvar nome</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- MODAL: SELETOR DE PASTA DO GOOGLE DRIVE -->
+<dialog id="driveFolderPickerModal" class="drive-picker-dialog">
+  <div class="modal-head">
+    <h3>📂 Escolher Pasta no Google Drive</h3>
+    <button type="button" class="icon-btn" id="btnDrivePickerClose" aria-label="Fechar">✕</button>
+  </div>
+  <div class="key-input-row" style="margin:10px 0">
+    <input type="search" id="drivePickerSearch" placeholder="🔎 Filtrar pastas do seu Google Drive...">
+    <button type="button" class="btn ghost small" id="btnDrivePickerSearch">Buscar</button>
+  </div>
+  <div id="drivePickerList" class="drive-picker-list"></div>
+  <div class="modal-actions">
+    <span class="spacer"></span>
+    <button type="button" class="btn ghost" id="btnDrivePickerCancel">Fechar</button>
+  </div>
+</dialog>
+
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=47"></script>
-<script src="vehicles.js?v=47"></script>
-<script src="countries.js?v=47"></script>
-<script src="data.js?v=47"></script>
-<script src="maps.js?v=47"></script>
-<script src="calendar.js?v=47"></script>
-<script src="report.js?v=47"></script>
-<script src="api.js?v=47"></script>
-<script src="minutes.js?v=47"></script>
-<script src="pro.js?v=47"></script>
-<script src="app.js?v=47"></script>
+<script src="config.example.js?v=48"></script>
+<script src="vehicles.js?v=48"></script>
+<script src="countries.js?v=48"></script>
+<script src="data.js?v=48"></script>
+<script src="maps.js?v=48"></script>
+<script src="calendar.js?v=48"></script>
+<script src="drive.js?v=48"></script>
+<script src="report.js?v=48"></script>
+<script src="api.js?v=48"></script>
+<script src="minutes.js?v=48"></script>
+<script src="pro.js?v=48"></script>
+<script src="app.js?v=48"></script>
 </body>
 </html>
