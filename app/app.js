@@ -1288,7 +1288,7 @@ function populateTypeSelectors() {
 
 /* ---------- RENDER ---------- */
 function render(allSortedOpt) {
-  if (window.MyPlanPro) {
+  if (appMode === "professional" && window.MyPlanPro) {
     window.MyPlanPro.renderAll();
     return;
   }
@@ -5775,29 +5775,30 @@ async function setAppMode(nextMode, opts = {}) {
     swBtn.title = isPro ? "Mudar para o Modo Pessoal (Férias & Viagens)" : "Mudar para o Modo Profissional (Quadro, Gantt & Projetos)";
   }
 
-  if ($("#tabs")) $("#tabs").hidden = true;
-  if ($("#tabsPro")) $("#tabsPro").hidden = false;
+  if ($("#tabs")) $("#tabs").hidden = isPro;
+  if ($("#tabsPro")) $("#tabsPro").hidden = !isPro;
 
-  if ($("#btnAddLabel")) $("#btnAddLabel").textContent = "Cartão";
-  if ($("#btnAdd")) $("#btnAdd").title = isPro ? "Adicionar cartão profissional" : "Adicionar cartão pessoal";
+  if ($("#btnAddLabel")) $("#btnAddLabel").textContent = isPro ? "Cartão" : "Evento";
+  if ($("#btnAdd")) $("#btnAdd").title = isPro ? "Adicionar cartão profissional" : "Adicionar evento ou viagem";
   if ($("#btnAddMinuteTop")) {
-    $("#btnAddMinuteTop").hidden = false;
+    $("#btnAddMinuteTop").hidden = !isPro;
     const minTxt = $("#btnAddMinuteTop .btn-text");
-    if (minTxt) minTxt.textContent = isPro ? "Ata" : "Nota";
-    $("#btnAddMinuteTop").title = isPro ? "Criar nova Ata de Reunião" : "Criar nova Nota / Registro";
+    if (minTxt) minTxt.textContent = "Ata";
+    $("#btnAddMinuteTop").title = "Criar nova Ata de Reunião";
   }
-  if ($("#btnNewTrip")) $("#btnNewTrip").title = isPro ? "Criar novo projeto profissional" : "Criar novo planejamento pessoal";
-  if ($("#btnPrintReport")) $("#btnPrintReport").textContent = isPro ? "🖨️ Imprimir relatório executivo" : "🖨️ Imprimir relatório pessoal";
-  if ($("#btnShareTripLabel")) $("#btnShareTripLabel").textContent = isPro ? "Compartilhar projeto" : "Compartilhar planejamento";
-  if ($("#btnMenuCalendarAll")) $("#btnMenuCalendarAll").textContent = isPro ? "📅 Enviar agenda p/ Google Agenda" : "📅 Enviar planejamento p/ Google Agenda";
+  if ($("#btnNewTrip")) $("#btnNewTrip").title = isPro ? "Criar novo projeto profissional" : "Criar nova viagem";
+  if ($("#btnPrintReport")) $("#btnPrintReport").textContent = isPro ? "🖨️ Imprimir relatório executivo" : "🖨️ Imprimir relatório da viagem";
+  if ($("#btnShareTripLabel")) $("#btnShareTripLabel").textContent = isPro ? "Compartilhar projeto" : "Compartilhar viagem";
+  if ($("#btnMenuCalendarAll")) $("#btnMenuCalendarAll").textContent = isPro ? "📅 Enviar agenda p/ Google Agenda" : "📅 Enviar férias p/ Google Agenda";
   if ($("#btnImportXlsx")) $("#btnImportXlsx").hidden = isPro;
-  if ($("#btnRenameTrip")) $("#btnRenameTrip").textContent = isPro ? "✏️ Renomear projeto atual" : "✏️ Renomear planejamento atual";
-  if ($("#btnDeleteTrip")) $("#btnDeleteTrip").textContent = isPro ? "🗑️ Excluir projeto atual" : "🗑️ Excluir planejamento atual";
+  if ($("#btnRenameTrip")) $("#btnRenameTrip").textContent = isPro ? "✏️ Renomear projeto atual" : "✏️ Renomear viagem atual";
+  if ($("#btnDeleteTrip")) $("#btnDeleteTrip").textContent = isPro ? "🗑️ Excluir projeto atual" : "🗑️ Excluir viagem atual";
 
-  document.body.classList.toggle("is-personal-mode", !isPro);
+  document.body.classList.remove("is-personal-mode");
   updateCrossingsMenuVisibility();
   updateAdminMenuVisibility();
-  switchProView(lastProView || "pro-board");
+  if (isPro) switchProView(lastProView || "pro-board");
+  else switchAppView(lastPersonalView || "gantt");
 
   if (!opts.skipLoad) {
     selectedTripIds = [];
@@ -6558,7 +6559,8 @@ async function openAdminUserModal(userId, focusTripId = null) {
 if ($("#btnMenuParams")) {
   $("#btnMenuParams").onclick = () => {
     $("#menu")?.classList.remove("open");
-    switchProView("pro-params");
+    if (appMode === "professional") switchProView("pro-params");
+    else switchAppView("params");
   };
 }
 if ($("#btnMenuAdmin")) {
@@ -6631,7 +6633,7 @@ if ($("#btnCloseAdminUser")) $("#btnCloseAdminUser").onclick = () => $("#adminUs
 if ($("#btnAdminUserDone")) $("#btnAdminUserDone").onclick = () => $("#adminUserModal").close();
 
 $("#btnAdd").onclick = () => {
-  if (window.MyPlanPro) window.MyPlanPro.openProCardModal();
+  if (appMode === "professional" && window.MyPlanPro) window.MyPlanPro.openProCardModal();
   else openModal();
 };
 if ($("#btnAddEventGantt")) $("#btnAddEventGantt").onclick = () => openModal();
@@ -9429,9 +9431,9 @@ if ($("#btnProfileForgotPw")) {
 }
 
 function sendPlanToMyWhatsApp() {
-  const text = window.MyPlanPro?.buildProWhatsAppText
+  const text = (appMode === "professional" && window.MyPlanPro?.buildProWhatsAppText)
     ? window.MyPlanPro.buildProWhatsAppText()
-    : `*${state?.title || "My Plan"}*`;
+    : window.FeriasCountries.buildWhatsAppTripMessage(state, sorted(), totals(), calc, reportHelpers());
   const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
   window.open(url, "_blank", "noopener");
   toast("💬 Abrindo WhatsApp para escolher contato ou grupo...");
