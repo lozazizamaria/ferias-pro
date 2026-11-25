@@ -1304,6 +1304,9 @@ function render(allSortedOpt) {
   renderTable(s, totals());
   renderParams();
   renderChecklist();
+  if ($("#view-pro-map")?.classList.contains("active") && window.MyPlanPro?.renderProMap) {
+    window.MyPlanPro.renderProMap();
+  }
 }
 
 /* ---------- LINHA FINA DE CIDADES NO GANTT & CRUZAMENTOS ---------- */
@@ -5735,6 +5738,7 @@ function switchAppView(viewId) {
   $("#tabsPro")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.proView === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
   if (viewId === "admin") loadAndRenderAdmin();
+  if (viewId === "pro-map" && window.MyPlanPro?.renderProMap) window.MyPlanPro.renderProMap();
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();
 }

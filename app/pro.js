@@ -2993,7 +2993,7 @@
 
     const editBtn = $("#btnProMapInspEdit", insp);
     if (editBtn && targetCard) {
-      editBtn.onclick = () => openProCardModal(targetCard.id);
+      editBtn.onclick = () => isPersonalMode() ? core.openModal(targetCard.id) : openProCardModal(targetCard.id);
     }
     const backListBtn = $("#btnProMapInspBack", insp);
     if (backListBtn && resolvedGroup) {
@@ -3508,7 +3508,7 @@
       tableEl.querySelectorAll("[data-map-edit-direct]").forEach(btn => {
         btn.onclick = (ev) => {
           ev.stopPropagation();
-          openProCardModal(btn.dataset.mapEditDirect);
+          isPersonalMode() ? core.openModal(btn.dataset.mapEditDirect) : openProCardModal(btn.dataset.mapEditDirect);
         };
       });
     }
@@ -3549,7 +3549,7 @@
       mobileListEl.querySelectorAll("[data-map-edit-direct]").forEach(btn => {
         btn.onclick = (ev) => {
           ev.stopPropagation();
-          openProCardModal(btn.dataset.mapEditDirect);
+          isPersonalMode() ? core.openModal(btn.dataset.mapEditDirect) : openProCardModal(btn.dataset.mapEditDirect);
         };
       });
     }
@@ -3737,8 +3737,15 @@
   async function renderProMap(filteredCardsOpt) {
     const canvas = $("#proMapCanvas");
     if (!canvas) return;
+    bindProEvents();
     const seq = ++proMapRenderSeq;
-    const cards = filteredCardsOpt || applyProUnifiedFilters(getProSortedActivities());
+    const rawCards = filteredCardsOpt || (isPersonalMode()
+      ? getProSortedActivities().map(c => ({
+          ...c,
+          location: String(c.location || c.to || c.city || c.from || "").trim()
+        }))
+      : applyProUnifiedFilters(getProSortedActivities()));
+    const cards = rawCards;
     const withLoc = cards.filter(c => String(c.location || "").trim());
 
     // Resumo de deslocamentos/viagens por responsável ao longo do ano
