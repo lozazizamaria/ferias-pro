@@ -5381,10 +5381,10 @@ html[data-theme="light"] .pro-map-explode-badge {
   gap: 6px;
   padding: 5px 11px;
   border-radius: 999px;
-  background: #0f172a;
-  color: #f8fafc;
-  border: 2px solid var(--tag-c, #38bdf8);
-  box-shadow: 0 6px 16px rgba(2, 8, 23, 0.48);
+  background: #ffffff;
+  color: #0f172a;
+  border: 2px solid var(--tag-c, #2563eb);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.28);
   font-family: 'Outfit', sans-serif;
   font-size: 0.77rem;
   font-weight: 700;
@@ -5400,6 +5400,11 @@ html[data-theme="light"] .pro-map-tag {
   background: #ffffff;
   color: #0f172a;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.22);
+}
+.pro-map-hub-node {
+  background: var(--tag-c, #2563eb) !important;
+  color: #ffffff !important;
+  border-color: #ffffff !important;
 }
 .pro-map-marker-pill:hover,
 .pro-map-tag:hover {

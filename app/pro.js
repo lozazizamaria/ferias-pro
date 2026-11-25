@@ -3026,6 +3026,46 @@
     };
   }
 
+  const PRO_MAP_CITY_PALETTE = [
+    "#2563eb", // Azul Royal
+    "#10b981", // Esmeralda
+    "#f59e0b", // Âmbar / Laranja
+    "#8b5cf6", // Roxo
+    "#ec4899", // Rosa / Magenta
+    "#06b6d4", // Ciano / Teal
+    "#4f46e5", // Índigo
+    "#ef4444", // Vermelho Coral
+    "#65a30d", // Verde-Oliva
+    "#e11d48", // Carmesim
+    "#0284c7", // Azul Celeste
+    "#9333ea"  // Violeta
+  ];
+
+  function assignProMapCityColors(groups) {
+    const usedSlots = new Set();
+    const byKey = new Map();
+    (groups || []).forEach(g => {
+      const k = String(g.cityLabel || g.label || g.key || "")
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+      if (byKey.has(k)) {
+        g.cityColor = byKey.get(k);
+        return;
+      }
+      let hash = 0;
+      for (let i = 0; i < k.length; i++) hash = ((hash * 31) + k.charCodeAt(i)) >>> 0;
+      let slot = hash % PRO_MAP_CITY_PALETTE.length;
+      for (let probe = 0; probe < PRO_MAP_CITY_PALETTE.length; probe++) {
+        const cand = (slot + probe) % PRO_MAP_CITY_PALETTE.length;
+        if (!usedSlots.has(cand)) { slot = cand; break; }
+      }
+      usedSlots.add(slot);
+      const col = PRO_MAP_CITY_PALETTE[slot];
+      byKey.set(k, col);
+      g.cityColor = col;
+    });
+    return groups;
+  }
+
   function renderProMapFallbackSvg(canvas, groups) {
     const isLight = document.documentElement.getAttribute("data-theme") === "light";
     const bg = isLight ? "#e2e8f0" : "#0b1325";
@@ -3069,7 +3109,7 @@
 
       const linesSvg = items
         .filter(it => it.movedPx > 4 || it.group.cards.length > 1)
-        .map(it => `<line x1="${it.ax.toFixed(1)}" y1="${it.ay.toFixed(1)}" x2="${it.x.toFixed(1)}" y2="${it.y.toFixed(1)}" stroke="${core.esc(it.meta.tagCol)}" stroke-width="1.8" stroke-opacity="${isLight ? "0.62" : "0.7"}" stroke-dasharray="4 3" />`)
+        .map(it => `<line x1="${it.ax.toFixed(1)}" y1="${it.ay.toFixed(1)}" x2="${it.x.toFixed(1)}" y2="${it.y.toFixed(1)}" stroke="${core.esc(it.group.cityColor || it.meta.tagCol)}" stroke-width="2" stroke-opacity="0.72" stroke-dasharray="4 3" />`)
         .join("");
 
       const hubsHtml = anchors
@@ -3077,13 +3117,14 @@
         .map(anc => {
           const g = anc.group;
           const isAct = g.key === proMapActiveGroupKey && !proMapActiveCardId ? " is-active" : "";
-          return `<button type="button" class="pro-map-hub-node${isAct}" data-map-group-key="${core.esc(g.key)}" style="position:absolute;left:${anc.ax.toFixed(1)}px;top:${anc.ay.toFixed(1)}px;transform:translate(-50%,-50%);z-index:4" title="📍 ${core.esc(g.cityLabel)} — ${g.cards.length} ${g.cards.length === 1 ? "missão" : "missões"}">${g.cards.length > 1 ? g.cards.length : ""}</button>`;
+          return `<button type="button" class="pro-map-hub-node${isAct}" data-map-group-key="${core.esc(g.key)}" style="--tag-c:${core.esc(g.cityColor || "#2563eb")};position:absolute;left:${anc.ax.toFixed(1)}px;top:${anc.ay.toFixed(1)}px;transform:translate(-50%,-50%);z-index:4" title="📍 ${core.esc(g.cityLabel)} — ${g.cards.length} ${g.cards.length === 1 ? "missão" : "missões"}">${g.cards.length > 1 ? g.cards.length : ""}</button>`;
         }).join("");
 
       const pillsHtml = items.map(it => {
         const isAct = it.card.id === proMapActiveCardId ? " is-active" : "";
+        const cCol = it.group.cityColor || it.meta.tagCol;
         return `<div class="pro-map-tag-group" style="position:absolute;left:${it.x.toFixed(1)}px;top:${it.y.toFixed(1)}px;transform:translate(-50%,-50%);z-index:${isAct ? 9 : 6}">
-          <button type="button" class="pro-map-marker-pill pro-map-marker-pill--mission${isAct}" data-map-card-id="${core.esc(it.card.id)}" style="--tag-c:${core.esc(it.meta.tagCol)}" title="${core.esc(it.meta.tooltip)}">
+          <button type="button" class="pro-map-marker-pill pro-map-marker-pill--mission${isAct}" data-map-card-id="${core.esc(it.card.id)}" style="--tag-c:${core.esc(cCol)}" title="${core.esc(it.meta.tooltip)}">
             ${it.meta.html}
           </button>
         </div>`;
@@ -3124,7 +3165,8 @@
     const nodes = groups.map(g => {
       const lat = g.displayLat ?? g.lat;
       const lng = g.displayLng ?? g.lng;
-      const { tagCol, html } = createClusterMarkerInnerHTML(g);
+      const { tagCol: fallbackCol, html } = createClusterMarkerInnerHTML(g);
+      const tagCol = g.cityColor || fallbackCol;
       const labelTxt = g.cards.length === 1 ? `${g.cityLabel} · ${g.cards[0].name.slice(0, 22)}` : `${g.cityLabel} ${g.cards.length}`;
       const w = Math.min(isMobile ? 215 : 242, Math.max(106, Math.ceil(labelTxt.length * 7.5 + 48)));
       const h = 44;
@@ -3577,10 +3619,11 @@
 
         const { tagCol, html } = createClusterMarkerInnerHTML(g);
         const btn = document.createElement("button");
+        const cityCol = g.cityColor || tagCol;
         btn.type = "button";
         btn.className = `pro-map-marker-pill${g.key === proMapActiveGroupKey ? " is-active" : ""}`;
         btn.dataset.mapGroupKey = g.key;
-        btn.style.setProperty("--tag-c", tagCol);
+        btn.style.setProperty("--tag-c", cityCol);
         btn.innerHTML = html;
         btn.title = `${g.cityLabel} (${g.cards.length} ${g.cards.length === 1 ? "cartão" : "cartões"}) — clique para ver resumo`;
         btn.onclick = (ev) => {
@@ -3595,7 +3638,7 @@
 
         const dot = document.createElement("span");
         dot.className = "pro-map-pin-dot";
-        dot.style.setProperty("--tag-c", tagCol);
+        dot.style.setProperty("--tag-c", cityCol);
         content.appendChild(dot);
 
         const marker = new AdvMarker({
@@ -3644,6 +3687,7 @@
       hubBtn.type = "button";
       hubBtn.className = `pro-map-hub-node${g.key === proMapActiveGroupKey && !proMapActiveCardId ? " is-active" : ""}`;
       hubBtn.dataset.mapGroupKey = g.key;
+      hubBtn.style.setProperty("--tag-c", g.cityColor || "#2563eb");
       hubBtn.textContent = g.cards.length > 1 ? String(g.cards.length) : "";
       hubBtn.title = `📍 ${g.cityLabel} — ${g.cards.length} ${g.cards.length === 1 ? "missão" : "missões"} (clique para listar)`;
       hubBtn.onclick = (ev) => {
@@ -3674,13 +3718,14 @@
         : { lat: it.group.lat, lng: it.group.lng };
       proMapExplodedPosByCardId.set(it.card.id, pos);
 
+      const cityCol = it.group.cityColor || it.meta.tagCol;
       if (isSpread) {
         const line = new google.maps.Polyline({
           path: [{ lat: it.group.lat, lng: it.group.lng }, pos],
           geodesic: false,
-          strokeColor: it.meta.tagCol || (isDark ? "#38bdf8" : "#2563eb"),
-          strokeOpacity: isDark ? 0.68 : 0.6,
-          strokeWeight: 1.8,
+          strokeColor: cityCol || (isDark ? "#38bdf8" : "#2563eb"),
+          strokeOpacity: 0.72,
+          strokeWeight: 2,
           clickable: false,
           map
         });
@@ -3695,7 +3740,7 @@
       const isAct = it.card.id === proMapActiveCardId;
       btn.className = `pro-map-marker-pill pro-map-marker-pill--mission${isAct ? " is-active" : ""}`;
       btn.dataset.mapCardId = it.card.id;
-      btn.style.setProperty("--tag-c", it.meta.tagCol);
+      btn.style.setProperty("--tag-c", cityCol);
       btn.innerHTML = it.meta.html;
       btn.title = it.meta.tooltip;
       btn.onclick = (ev) => {
@@ -3711,7 +3756,7 @@
       if (!isSpread) {
         const dot = document.createElement("span");
         dot.className = "pro-map-pin-dot";
-        dot.style.setProperty("--tag-c", it.meta.tagCol);
+        dot.style.setProperty("--tag-c", cityCol);
         content.appendChild(dot);
       }
 
@@ -3803,7 +3848,7 @@
       rawGroupMap.get(gKey).cards.push(c);
     }
 
-    const groups = clusterMapGroupsByProximity([...rawGroupMap.values()]);
+    const groups = assignProMapCityColors(clusterMapGroupsByProximity([...rawGroupMap.values()]));
     proMapCachedGroups = groups;
 
     const totalCardsOnMap = groups.reduce((s, g) => s + g.cards.length, 0);

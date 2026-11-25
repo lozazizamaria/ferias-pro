@@ -9688,8 +9688,45 @@ let pmapRenderSeq = 0;
 let pmapGmapInstance = null;
 let pmapMarkers = [];
 let pmapPolylines = [];
-let pmapDirectionsRenderer = null;
+let pmapDirectionsRenderers = [];
 let pmapEventsBound = false;
+
+function isPersonalFlightLeg(a) {
+  if (!a || typeof a !== "object") return false;
+  if (a.type === "Voo") return true;
+  const tr = String(a.transport || a.travelDetails?.transport || "").toLowerCase();
+  return /avi[aã]o|voo|a[eé]reo/.test(tr);
+}
+
+function computeBezierFlightArc(p1, p2, steps = 36) {
+  const dLat = p2.lat - p1.lat;
+  const dLng = p2.lng - p1.lng;
+  const dist = Math.hypot(dLat, dLng) || 0.01;
+  // Vetor perpendicular para criar arco suave (sempre curvando ligeiramente para o norte/cima)
+  let perpLat = -dLng / dist;
+  let perpLng = dLat / dist;
+  if (perpLat < 0) { perpLat = -perpLat; perpLng = -perpLng; }
+  const offset = Math.min(3.5, Math.max(0.18, dist * 0.2));
+  const cLat = (p1.lat + p2.lat) / 2 + perpLat * offset;
+  const cLng = (p1.lng + p2.lng) / 2 + perpLng * offset;
+
+  const path = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const u = 1 - t;
+    path.push({
+      lat: u * u * p1.lat + 2 * u * t * cLat + t * t * p2.lat,
+      lng: u * u * p1.lng + 2 * u * t * cLng + t * t * p2.lng
+    });
+  }
+  const midpoint = path[Math.floor(steps / 2)];
+  // Ângulo da tangente no ponto médio (0° = Norte, sentido horário)
+  const cosLat = Math.cos((midpoint.lat * Math.PI) / 180) || 1;
+  const vx = (p2.lng - p1.lng) * cosLat;
+  const vy = p2.lat - p1.lat;
+  const bearingDeg = ((Math.atan2(vx, vy) * 180) / Math.PI + 360) % 360;
+  return { path, midpoint, bearingDeg };
+}
 
 function bindPersonalMapControls() {
   if (pmapEventsBound) return;
@@ -9747,7 +9784,7 @@ function buildPersonalDateRangeISOs(acts, dateFrom, dateTo) {
   return out;
 }
 
-function renderPersonalMapSvgFallback(canvas, cityPoints) {
+function renderPersonalMapSvgFallback(canvas, cityPoints, legSegments = []) {
   if (!cityPoints.length) {
     canvas.innerHTML = `<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:8px">
       <div style="font-size:2.4rem">🗺️</div>
@@ -9760,24 +9797,57 @@ function renderPersonalMapSvgFallback(canvas, cityPoints) {
   const lngs = cityPoints.map(p => p.lng);
   const minLat = Math.min(...lats), maxLat = Math.max(...lats);
   const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-  const padLat = Math.max(0.6, (maxLat - minLat) * 0.2);
-  const padLng = Math.max(0.6, (maxLng - minLng) * 0.2);
+  const padLat = Math.max(0.6, (maxLat - minLat) * 0.22);
+  const padLng = Math.max(0.6, (maxLng - minLng) * 0.22);
   const W = 720, H = 440;
   const proj = (lat, lng) => ({
     x: 56 + ((lng - (minLng - padLng)) / Math.max(0.001, (maxLng + padLng) - (minLng - padLng))) * (W - 112),
     y: H - 56 - ((lat - (minLat - padLat)) / Math.max(0.001, (maxLat + padLat) - (minLat - padLat))) * (H - 112)
   });
   const pts = cityPoints.map(p => ({ ...p, ...proj(p.lat, p.lng) }));
-  const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  const ptByKey = new Map(pts.map(p => [p.key, p]));
+
+  let routesSvg = "";
+  if (legSegments.length) {
+    routesSvg = legSegments.map(leg => {
+      const a = ptByKey.get(leg.fromKey);
+      const b = ptByKey.get(leg.toKey);
+      if (!a || !b || a.key === b.key) return "";
+      if (leg.isFlight) {
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 1;
+        let nx = -dy / d, ny = dx / d;
+        if (ny > 0) { nx = -nx; ny = -ny; }
+        const bend = Math.min(72, Math.max(22, d * 0.22));
+        const cx = (a.x + b.x) / 2 + nx * bend;
+        const cy = (a.y + b.y) / 2 + ny * bend;
+        const mx = 0.25 * a.x + 0.5 * cx + 0.25 * b.x;
+        const my = 0.25 * a.y + 0.5 * cy + 0.25 * b.y;
+        const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+        return `<g>
+          <path d="M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}" fill="none" stroke="#f97316" stroke-width="3" stroke-dasharray="7 5" stroke-linecap="round"/>
+          <g transform="translate(${mx.toFixed(1)},${my.toFixed(1)}) rotate(${angleDeg.toFixed(1)})">
+            <circle r="11" fill="#ffffff" stroke="#f97316" stroke-width="2"/>
+            <path d="M0 -6.5 L1.6 -1.5 L6.5 1 L6.5 2.6 L1.6 1.2 L1.6 4.8 L3.6 6 L3.6 7.2 L0 6.2 L-3.6 7.2 L-3.6 6 L-1.6 4.8 L-1.6 1.2 L-6.5 2.6 L-6.5 1 L-1.6 -1.5 Z" fill="#f97316"/>
+          </g>
+        </g>`;
+      }
+      return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" stroke="#2563eb" stroke-width="3.2" stroke-linecap="round"/>`;
+    }).join("");
+  } else if (pts.length >= 2) {
+    const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+    routesSvg = `<path d="${pathD}" fill="none" stroke="#2563eb" stroke-width="3.2" stroke-dasharray="8 6" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+
   const markersSvg = pts.map((p, i) => `
     <g>
       <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="13" fill="${p.hex}" stroke="#ffffff" stroke-width="2.5"/>
       <text x="${p.x.toFixed(1)}" y="${(p.y + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">${i + 1}</text>
-      <text x="${p.x.toFixed(1)}" y="${(p.y - 18).toFixed(1)}" text-anchor="middle" font-size="11.5" font-weight="700" fill="currentColor">${esc(p.city)} (${p.days}d)</text>
+      <text x="${p.x.toFixed(1)}" y="${(p.y - 18).toFixed(1)}" text-anchor="middle" font-size="11.5" font-weight="700" fill="currentColor">${esc(p.city)}${p.days ? ` (${p.days}d)` : ""}</text>
     </g>`).join("");
   canvas.innerHTML = `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:10px">
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:100%;max-height:500px;color:var(--text)">
-      <path d="${pathD}" fill="none" stroke="#2563eb" stroke-width="3.2" stroke-dasharray="8 6" stroke-linecap="round" stroke-linejoin="round"/>
+      ${routesSvg}
       ${markersSvg}
     </svg>
   </div>`;
@@ -9846,23 +9916,44 @@ async function renderPersonalMap() {
 
   let totalKm = 0;
   let totalRoadMin = 0;
+  let flightLegsCount = 0;
   const passedCityKeys = new Set();
   const routeSequence = [];
+  const routeLegs = [];
   const pushRouteCity = raw => {
     const clean = cleanCityName(raw);
     const k = normCityKey(clean);
-    if (!clean || !k) return;
+    if (!clean || !k) return null;
     passedCityKeys.add(k);
     if (!routeSequence.length || routeSequence[routeSequence.length - 1].key !== k) {
       routeSequence.push({ key: k, city: clean });
     }
+    return { key: k, city: clean };
   };
   legsInRange.forEach(a => {
-    totalKm += Number(a.km) || 0;
-    totalRoadMin += (Number(a.drive) || 0) + (Number(a.stopTime) || 0);
-    if (a.from) pushRouteCity(a.from);
-    if (Array.isArray(a.waypoints)) a.waypoints.forEach(w => pushRouteCity(w));
-    if (a.to) pushRouteCity(a.to);
+    const isFlight = isPersonalFlightLeg(a);
+    // Trechos de avião NÃO entram no Tempo de estrada nem na distância rodoviária
+    if (isFlight) {
+      flightLegsCount++;
+    } else {
+      totalKm += Number(a.km) || 0;
+      totalRoadMin += (Number(a.drive) || 0) + (Number(a.stopTime) || 0);
+    }
+    const legCities = [];
+    if (a.from) { const c = pushRouteCity(a.from); if (c) legCities.push(c); }
+    if (Array.isArray(a.waypoints)) a.waypoints.forEach(w => { const c = pushRouteCity(w); if (c) legCities.push(c); });
+    if (a.to) { const c = pushRouteCity(a.to); if (c) legCities.push(c); }
+    for (let i = 0; i < legCities.length - 1; i++) {
+      if (legCities[i].key !== legCities[i + 1].key) {
+        routeLegs.push({
+          fromKey: legCities[i].key,
+          fromCity: legCities[i].city,
+          toKey: legCities[i + 1].key,
+          toCity: legCities[i + 1].city,
+          isFlight
+        });
+      }
+    }
   });
   chronologicalStayCities.forEach(c => {
     passedCityKeys.add(c.key);
@@ -9873,15 +9964,16 @@ async function renderPersonalMap() {
   const visitedCitiesCount = chronologicalStayCities.length;
   const passedCitiesCount = Math.max(visitedCitiesCount, passedCityKeys.size);
 
-  // 2. Card Lateral de Resumo da Viagem
+  // 2. Card Lateral de Resumo da Viagem (coerente: voos separados do tempo de estrada)
   const statsEl = $("#pmapStatsGrid");
   if (statsEl) {
-    statsEl.innerHTML = [
-      ["🛣️ Distância total", totalKm > 0 ? `${num(totalKm)} km` : "—"],
-      ["⏱️ Tempo de estrada", totalRoadMin > 0 ? hmHuman(totalRoadMin) : "—"],
+    const statsList = [
+      ["🛣️ Distância terrestre", totalKm > 0 ? `${num(totalKm)} km` : "—"],
+      ["⏱️ Tempo de estrada", totalRoadMin > 0 ? hmHuman(totalRoadMin) : (flightLegsCount > 0 ? "0h (aéreo)" : "—")],
       ["📍 Cidades a visitar", `${visitedCitiesCount} ${visitedCitiesCount === 1 ? "cidade" : "cidades"}`],
-      ["🧭 Total na rota", `${passedCitiesCount} ${passedCitiesCount === 1 ? "cidade" : "cidades"}`]
-    ].map(([lbl, val]) => `
+      [flightLegsCount > 0 ? "✈️ Trechos aéreos" : "🧭 Total na rota", flightLegsCount > 0 ? `${flightLegsCount} ${flightLegsCount === 1 ? "voo" : "voos"} · ${passedCitiesCount} cid.` : `${passedCitiesCount} ${passedCitiesCount === 1 ? "cidade" : "cidades"}`]
+    ];
+    statsEl.innerHTML = statsList.map(([lbl, val]) => `
       <div class="pmap-stat-box">
         <div class="pmap-stat-lbl">${lbl}</div>
         <div class="pmap-stat-val">${esc(val)}</div>
@@ -9987,8 +10079,9 @@ async function renderPersonalMap() {
   }
 
   const hasGmaps = Boolean(window.FeriasMaps?.hasKey?.());
+  const uniqueCityPts = routeCoords.filter((p, i, arr) => arr.findIndex(x => x.key === p.key) === i);
   if (!hasGmaps || !routeCoords.length) {
-    renderPersonalMapSvgFallback(canvas, routeCoords.filter((p, i, arr) => arr.findIndex(x => x.key === p.key) === i));
+    renderPersonalMapSvgFallback(canvas, uniqueCityPts, routeLegs);
     return;
   }
 
@@ -10000,9 +10093,10 @@ async function renderPersonalMap() {
 
     pmapMarkers.forEach(m => { try { m.setMap(null); } catch {} });
     pmapPolylines.forEach(pl => { try { pl.setMap(null); } catch {} });
-    if (pmapDirectionsRenderer) { try { pmapDirectionsRenderer.setMap(null); } catch {} }
+    pmapDirectionsRenderers.forEach(dr => { try { dr.setMap(null); } catch {} });
     pmapMarkers = [];
     pmapPolylines = [];
+    pmapDirectionsRenderers = [];
 
     canvas.innerHTML = "";
     pmapGmapInstance = new GMap(canvas, {
@@ -10015,17 +10109,9 @@ async function renderPersonalMap() {
 
     const bounds = new google.maps.LatLngBounds();
     const infoWin = new google.maps.InfoWindow();
-    const uniqueStops = [];
-    const seenPin = new Set();
-    routeCoords.forEach(pt => {
-      bounds.extend({ lat: pt.lat, lng: pt.lng });
-      if (!seenPin.has(pt.key)) {
-        seenPin.add(pt.key);
-        uniqueStops.push(pt);
-      }
-    });
+    uniqueCityPts.forEach(pt => bounds.extend({ lat: pt.lat, lng: pt.lng }));
 
-    uniqueStops.forEach((pt, idx) => {
+    uniqueCityPts.forEach((pt, idx) => {
       const marker = new google.maps.Marker({
         position: { lat: pt.lat, lng: pt.lng },
         map: pmapGmapInstance,
@@ -10039,51 +10125,95 @@ async function renderPersonalMap() {
       pmapMarkers.push(marker);
     });
 
-    // Traçar rota completa no mapa (DirectionsService com fallback Polyline)
-    if (routeCoords.length >= 2) {
-      const drawPolyline = () => {
-        const pl = new google.maps.Polyline({
-          path: routeCoords.map(p => ({ lat: p.lat, lng: p.lng })),
-          geodesic: true,
-          strokeColor: "#2563eb",
-          strokeOpacity: 0.9,
-          strokeWeight: 4,
-          map: pmapGmapInstance
-        });
-        pmapPolylines.push(pl);
+    // Traçar trechos: Avião = curva Bézier laranja + ícone avião rotacionado; Terrestre = rota rodoviária azul
+    const drawRoadPolyline = (p1, p2) => {
+      const pl = new google.maps.Polyline({
+        path: [{ lat: p1.lat, lng: p1.lng }, { lat: p2.lat, lng: p2.lng }],
+        geodesic: true,
+        strokeColor: "#2563eb",
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        map: pmapGmapInstance
+      });
+      pmapPolylines.push(pl);
+    };
+
+    const drawFlightArc = (p1, p2) => {
+      const { path, midpoint, bearingDeg } = computeBezierFlightArc(p1, p2, 36);
+      path.forEach(pt => bounds.extend(pt));
+      const dashSymbol = {
+        path: "M 0,-1 0,1",
+        strokeOpacity: 0.92,
+        strokeColor: "#f97316",
+        scale: 3.2
       };
-      if (google.maps.DirectionsService && routeCoords.length <= 25) {
-        try {
-          const ds = new google.maps.DirectionsService();
-          pmapDirectionsRenderer = new google.maps.DirectionsRenderer({
-            map: pmapGmapInstance,
-            suppressMarkers: true,
-            preserveViewport: false,
-            polylineOptions: { strokeColor: "#2563eb", strokeWeight: 4.5, strokeOpacity: 0.9 }
-          });
-          const waypoints = routeCoords.slice(1, -1).map(p => ({ location: { lat: p.lat, lng: p.lng }, stopover: true }));
-          ds.route({
-            origin: { lat: routeCoords[0].lat, lng: routeCoords[0].lng },
-            destination: { lat: routeCoords[routeCoords.length - 1].lat, lng: routeCoords[routeCoords.length - 1].lng },
-            waypoints,
-            travelMode: google.maps.TravelMode.DRIVING
-          }, (result, stDir) => {
-            if (seq !== pmapRenderSeq) return;
-            if (stDir === "OK" && result) {
-              pmapDirectionsRenderer.setDirections(result);
-            } else {
-              drawPolyline();
-              pmapGmapInstance.fitBounds(bounds, 48);
-            }
-          });
-        } catch {
-          drawPolyline();
-          pmapGmapInstance.fitBounds(bounds, 48);
+      const arc = new google.maps.Polyline({
+        path,
+        geodesic: false,
+        strokeOpacity: 0,
+        icons: [{ icon: dashSymbol, offset: "0", repeat: "14px" }],
+        map: pmapGmapInstance
+      });
+      pmapPolylines.push(arc);
+
+      const planeIcon = {
+        path: "M 0,-10 L 2.2,-2.2 L 10,1.5 L 10,3.8 L 2.2,1.8 L 2.2,7.2 L 5.2,9 L 5.2,10.8 L 0,9.4 L -5.2,10.8 L -5.2,9 L -2.2,7.2 L -2.2,1.8 L -10,3.8 L -10,1.5 L -2.2,-2.2 Z",
+        fillColor: "#f97316",
+        fillOpacity: 1,
+        strokeColor: "#ffffff",
+        strokeWeight: 1.5,
+        scale: 1.25,
+        rotation: bearingDeg,
+        anchor: new google.maps.Point(0, 0)
+      };
+      const planeMarker = new google.maps.Marker({
+        position: midpoint,
+        map: pmapGmapInstance,
+        icon: planeIcon,
+        title: `✈️ Voo: ${p1.city} ➔ ${p2.city}`,
+        zIndex: 30
+      });
+      pmapMarkers.push(planeMarker);
+    };
+
+    if (routeLegs.length) {
+      const ds = google.maps.DirectionsService ? new google.maps.DirectionsService() : null;
+      routeLegs.forEach(leg => {
+        const p1 = cityCoordByKey.get(leg.fromKey);
+        const p2 = cityCoordByKey.get(leg.toKey);
+        if (!p1 || !p2) return;
+        if (leg.isFlight) {
+          drawFlightArc(p1, p2);
+        } else if (ds) {
+          try {
+            const dr = new google.maps.DirectionsRenderer({
+              map: pmapGmapInstance,
+              suppressMarkers: true,
+              preserveViewport: true,
+              polylineOptions: { strokeColor: "#2563eb", strokeWeight: 4.2, strokeOpacity: 0.9 }
+            });
+            pmapDirectionsRenderers.push(dr);
+            ds.route({
+              origin: { lat: p1.lat, lng: p1.lng },
+              destination: { lat: p2.lat, lng: p2.lng },
+              travelMode: google.maps.TravelMode.DRIVING
+            }, (result, stDir) => {
+              if (seq !== pmapRenderSeq) return;
+              if (stDir === "OK" && result) dr.setDirections(result);
+              else drawRoadPolyline(p1, p2);
+            });
+          } catch {
+            drawRoadPolyline(p1, p2);
+          }
+        } else {
+          drawRoadPolyline(p1, p2);
         }
-      } else {
-        drawPolyline();
-        pmapGmapInstance.fitBounds(bounds, 48);
-      }
+      });
+      if (uniqueCityPts.length > 1) pmapGmapInstance.fitBounds(bounds, 48);
+      else { pmapGmapInstance.setCenter({ lat: uniqueCityPts[0].lat, lng: uniqueCityPts[0].lng }); pmapGmapInstance.setZoom(10); }
+    } else if (uniqueCityPts.length >= 2) {
+      for (let i = 0; i < uniqueCityPts.length - 1; i++) drawRoadPolyline(uniqueCityPts[i], uniqueCityPts[i + 1]);
+      pmapGmapInstance.fitBounds(bounds, 48);
     } else {
       pmapGmapInstance.setCenter({ lat: routeCoords[0].lat, lng: routeCoords[0].lng });
       pmapGmapInstance.setZoom(10);
@@ -10102,7 +10232,7 @@ async function renderPersonalMap() {
       });
     }
   } catch {
-    renderPersonalMapSvgFallback(canvas, routeCoords.filter((p, i, arr) => arr.findIndex(x => x.key === p.key) === i));
+    renderPersonalMapSvgFallback(canvas, uniqueCityPts, routeLegs);
   }
 }
 
