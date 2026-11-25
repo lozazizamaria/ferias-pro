@@ -1304,9 +1304,8 @@ function render(allSortedOpt) {
   renderTable(s, totals());
   renderParams();
   renderChecklist();
-  if ($("#view-pro-map")?.classList.contains("active") && window.MyPlanPro?.renderProMap) {
-    window.MyPlanPro.renderProMap();
-  }
+  if ($("#view-personal-map")?.classList.contains("active")) renderPersonalMap();
+  if ($("#view-personal-board")?.classList.contains("active")) renderPersonalBoard();
 }
 
 /* ---------- LINHA FINA DE CIDADES NO GANTT & CRUZAMENTOS ---------- */
@@ -5738,7 +5737,9 @@ function switchAppView(viewId) {
   $("#tabsPro")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.proView === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
   if (viewId === "admin") loadAndRenderAdmin();
-  if (viewId === "pro-map" && window.MyPlanPro?.renderProMap) window.MyPlanPro.renderProMap();
+  if ($("#personalMapNavFilterHost")) $("#personalMapNavFilterHost").hidden = (viewId !== "personal-map");
+  if (viewId === "personal-map") renderPersonalMap();
+  if (viewId === "personal-board") renderPersonalBoard();
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();
 }
@@ -5799,6 +5800,7 @@ async function setAppMode(nextMode, opts = {}) {
   if ($("#btnDeleteTrip")) $("#btnDeleteTrip").textContent = isPro ? "🗑️ Excluir projeto atual" : "🗑️ Excluir viagem atual";
 
   document.body.classList.remove("is-personal-mode");
+  if ($("#personalMapNavFilterHost") && isPro) $("#personalMapNavFilterHost").hidden = true;
   updateCrossingsMenuVisibility();
   updateAdminMenuVisibility();
   if (isPro) switchProView(lastProView || "pro-board");
@@ -9679,6 +9681,544 @@ if ($("#financeDayForm")) {
     $("#financeDayModal").close();
     save("💰 Gasto real lançado e dias restantes redistribuídos!");
   };
+}
+
+/* ---------- MODO PESSOAL: MAPA (SINCRONIZADO COM A BARRA DE CIDADES DO GANTT) ---------- */
+let pmapRenderSeq = 0;
+let pmapGmapInstance = null;
+let pmapMarkers = [];
+let pmapPolylines = [];
+let pmapDirectionsRenderer = null;
+let pmapEventsBound = false;
+
+function bindPersonalMapControls() {
+  if (pmapEventsBound) return;
+  pmapEventsBound = true;
+  const popBtn = $("#btnPmapFilterPop");
+  const popPanel = $("#pmapFilterPopPanel");
+  if (popBtn && popPanel) {
+    popBtn.onclick = e => {
+      e.stopPropagation();
+      const willOpen = popPanel.hidden;
+      popPanel.hidden = !willOpen;
+      popBtn.setAttribute("aria-expanded", String(willOpen));
+    };
+    document.addEventListener("click", e => {
+      if (!popPanel.hidden && !popPanel.contains(e.target) && !popBtn.contains(e.target)) {
+        popPanel.hidden = true;
+        popBtn.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+  ["#pmapDateFrom", "#pmapDateTo", "#pmapCitySearch"].forEach(sel => {
+    const el = $(sel);
+    if (el) el.addEventListener(sel === "#pmapCitySearch" ? "input" : "change", () => renderPersonalMap());
+  });
+  if ($("#btnPmapClearFilters")) {
+    $("#btnPmapClearFilters").onclick = () => {
+      if ($("#pmapDateFrom")) $("#pmapDateFrom").value = "";
+      if ($("#pmapDateTo")) $("#pmapDateTo").value = "";
+      if ($("#pmapCitySearch")) $("#pmapCitySearch").value = "";
+      renderPersonalMap();
+    };
+  }
+}
+
+function buildPersonalDateRangeISOs(acts, dateFrom, dateTo) {
+  const dated = acts.filter(a => a && a.start);
+  if (!dated.length) return [];
+  let minIso = dated.reduce((m, a) => (a.start < m ? a.start : m), dated[0].start);
+  let maxIso = dated.reduce((m, a) => {
+    const e = a.end || a.start;
+    return e > m ? e : m;
+  }, dated[0].end || dated[0].start);
+  if (dateFrom && dateFrom > minIso) minIso = dateFrom;
+  if (dateTo && dateTo < maxIso) maxIso = dateTo;
+  if (minIso > maxIso) return [];
+  const out = [];
+  const cur = parseD(minIso);
+  const end = parseD(maxIso);
+  let guard = 0;
+  while (cur <= end && guard < 730) {
+    out.push(fmtISO(cur));
+    cur.setDate(cur.getDate() + 1);
+    guard++;
+  }
+  return out;
+}
+
+function renderPersonalMapSvgFallback(canvas, cityPoints) {
+  if (!cityPoints.length) {
+    canvas.innerHTML = `<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;gap:8px">
+      <div style="font-size:2.4rem">🗺️</div>
+      <strong>Nenhuma cidade encontrada no período selecionado</strong>
+      <span class="muted small">Adicione trechos de viagem (Origem ➔ Destino) no Cronograma para visualizar a rota e os dias por cidade.</span>
+    </div>`;
+    return;
+  }
+  const lats = cityPoints.map(p => p.lat);
+  const lngs = cityPoints.map(p => p.lng);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const padLat = Math.max(0.6, (maxLat - minLat) * 0.2);
+  const padLng = Math.max(0.6, (maxLng - minLng) * 0.2);
+  const W = 720, H = 440;
+  const proj = (lat, lng) => ({
+    x: 56 + ((lng - (minLng - padLng)) / Math.max(0.001, (maxLng + padLng) - (minLng - padLng))) * (W - 112),
+    y: H - 56 - ((lat - (minLat - padLat)) / Math.max(0.001, (maxLat + padLat) - (minLat - padLat))) * (H - 112)
+  });
+  const pts = cityPoints.map(p => ({ ...p, ...proj(p.lat, p.lng) }));
+  const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+  const markersSvg = pts.map((p, i) => `
+    <g>
+      <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="13" fill="${p.hex}" stroke="#ffffff" stroke-width="2.5"/>
+      <text x="${p.x.toFixed(1)}" y="${(p.y + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">${i + 1}</text>
+      <text x="${p.x.toFixed(1)}" y="${(p.y - 18).toFixed(1)}" text-anchor="middle" font-size="11.5" font-weight="700" fill="currentColor">${esc(p.city)} (${p.days}d)</text>
+    </g>`).join("");
+  canvas.innerHTML = `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:10px">
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:100%;max-height:500px;color:var(--text)">
+      <path d="${pathD}" fill="none" stroke="#2563eb" stroke-width="3.2" stroke-dasharray="8 6" stroke-linecap="round" stroke-linejoin="round"/>
+      ${markersSvg}
+    </svg>
+  </div>`;
+}
+
+async function renderPersonalMap() {
+  bindPersonalMapControls();
+  const canvas = $("#personalMapCanvas");
+  if (!canvas) return;
+  const seq = ++pmapRenderSeq;
+  const acts = sorted();
+
+  const dateFrom = ($("#pmapDateFrom")?.value || "").trim();
+  const dateTo = ($("#pmapDateTo")?.value || "").trim();
+  const citySearch = ($("#pmapCitySearch")?.value || "").trim().toLowerCase();
+  const activeFilterCount = (dateFrom ? 1 : 0) + (dateTo ? 1 : 0) + (citySearch ? 1 : 0);
+
+  if ($("#pmapFilterCount")) {
+    $("#pmapFilterCount").textContent = activeFilterCount ? String(activeFilterCount) : "";
+    $("#pmapFilterCount").hidden = !activeFilterCount;
+  }
+  if ($("#btnPmapClearFilters")) $("#btnPmapClearFilters").hidden = !activeFilterCount;
+  if ($("#pmapPeriodBadge")) {
+    $("#pmapPeriodBadge").textContent = (dateFrom || dateTo)
+      ? `${dateFrom ? fmtShortBR(dateFrom) : "Início"} → ${dateTo ? fmtShortBR(dateTo) : "Fim"}`
+      : "Roteiro completo";
+  }
+
+  // 1. Fonte Única de Verdade: barra de cidades do Gantt (computeDailyCityTimeline)
+  const dateISOs = buildPersonalDateRangeISOs(acts, dateFrom, dateTo);
+  const cityTimeline = computeDailyCityTimeline(acts, dateISOs);
+  const dark = isDarkTheme();
+
+  // Filtrar dias pela busca de cidade se informada
+  const dayCitiesFiltered = cityTimeline.dayCities.filter(dc => {
+    if (!dc.city) return false;
+    if (citySearch && !dc.city.toLowerCase().includes(citySearch)) return false;
+    return true;
+  });
+
+  // Agregar dias reais por cidade (mantendo ordem cronológica de visita)
+  const cityDaysMap = new Map();
+  const chronologicalStayCities = [];
+  dayCitiesFiltered.forEach(dc => {
+    const colObj = cityTimeline.colorMap[dc.key] || CITY_PALETTE[0];
+    const hex = dark ? colObj.darkTxt : colObj.lightTxt;
+    if (!cityDaysMap.has(dc.key)) {
+      const rec = { key: dc.key, city: dc.city, days: 0, hex, firstIso: dc.iso, lastIso: dc.iso };
+      cityDaysMap.set(dc.key, rec);
+      chronologicalStayCities.push(rec);
+    }
+    const rec = cityDaysMap.get(dc.key);
+    rec.days++;
+    rec.lastIso = dc.iso;
+  });
+
+  // Sequência completa de cidades passadas (origem + paradas intermediárias + destinos) e distância/tempo de estrada
+  const legsInRange = acts.filter(a => {
+    if (!a || !(a.from || a.to)) return false;
+    const s = a.start || "";
+    const e = a.end || s;
+    if (dateFrom && e < dateFrom) return false;
+    if (dateTo && s > dateTo) return false;
+    return true;
+  });
+
+  let totalKm = 0;
+  let totalRoadMin = 0;
+  const passedCityKeys = new Set();
+  const routeSequence = [];
+  const pushRouteCity = raw => {
+    const clean = cleanCityName(raw);
+    const k = normCityKey(clean);
+    if (!clean || !k) return;
+    passedCityKeys.add(k);
+    if (!routeSequence.length || routeSequence[routeSequence.length - 1].key !== k) {
+      routeSequence.push({ key: k, city: clean });
+    }
+  };
+  legsInRange.forEach(a => {
+    totalKm += Number(a.km) || 0;
+    totalRoadMin += (Number(a.drive) || 0) + (Number(a.stopTime) || 0);
+    if (a.from) pushRouteCity(a.from);
+    if (Array.isArray(a.waypoints)) a.waypoints.forEach(w => pushRouteCity(w));
+    if (a.to) pushRouteCity(a.to);
+  });
+  chronologicalStayCities.forEach(c => {
+    passedCityKeys.add(c.key);
+    if (!routeSequence.some(r => r.key === c.key)) routeSequence.push({ key: c.key, city: c.city });
+  });
+
+  const totalVacationDays = dayCitiesFiltered.length;
+  const visitedCitiesCount = chronologicalStayCities.length;
+  const passedCitiesCount = Math.max(visitedCitiesCount, passedCityKeys.size);
+
+  // 2. Card Lateral de Resumo da Viagem
+  const statsEl = $("#pmapStatsGrid");
+  if (statsEl) {
+    statsEl.innerHTML = [
+      ["🛣️ Distância total", totalKm > 0 ? `${num(totalKm)} km` : "—"],
+      ["⏱️ Tempo de estrada", totalRoadMin > 0 ? hmHuman(totalRoadMin) : "—"],
+      ["📍 Cidades a visitar", `${visitedCitiesCount} ${visitedCitiesCount === 1 ? "cidade" : "cidades"}`],
+      ["🧭 Total na rota", `${passedCitiesCount} ${passedCitiesCount === 1 ? "cidade" : "cidades"}`]
+    ].map(([lbl, val]) => `
+      <div class="pmap-stat-box">
+        <div class="pmap-stat-lbl">${lbl}</div>
+        <div class="pmap-stat-val">${esc(val)}</div>
+      </div>`).join("");
+  }
+
+  const citiesListEl = $("#pmapCitiesList");
+  if (citiesListEl) {
+    if (!chronologicalStayCities.length) {
+      citiesListEl.innerHTML = `<div class="muted small" style="padding:8px 0">Nenhuma cidade encontrada no cronograma para este filtro.</div>`;
+    } else {
+      citiesListEl.innerHTML = chronologicalStayCities.map(c => `
+        <button type="button" class="pmap-city-row" data-pmap-city="${esc(c.key)}" title="${esc(c.city)} — ${c.days} ${c.days === 1 ? "dia" : "dias"}">
+          <span class="pmap-city-left">
+            <span class="pmap-city-dot" style="background:${esc(c.hex)}"></span>
+            <span class="pmap-city-name">${esc(c.city)}</span>
+          </span>
+          <span class="pmap-city-days">${c.days} ${c.days === 1 ? "dia" : "dias"}</span>
+        </button>`).join("");
+    }
+  }
+  if ($("#pmapTotalDaysFoot")) {
+    $("#pmapTotalDaysFoot").textContent = `${totalVacationDays} ${totalVacationDays === 1 ? "dia" : "dias"}`;
+  }
+
+  // 3. Dashboard Abaixo do Mapa (EXATAMENTE 2 cards lado a lado: Total de dias por localidade + Distribuição Temporal Mensal)
+  const daysChartEl = $("#pmapChartDaysByCity");
+  if (daysChartEl) {
+    const sortedCities = chronologicalStayCities.slice().sort((a, b) => b.days - a.days);
+    if (!sortedCities.length) {
+      daysChartEl.innerHTML = `<div class="muted small" style="padding:16px 0">Sem dados de permanência no período selecionado.</div>`;
+    } else {
+      const maxD = Math.max(1, ...sortedCities.map(c => c.days));
+      daysChartEl.innerHTML = `<div class="pmap-hbar-list">${sortedCities.map(c => `
+        <div class="pmap-hbar-row">
+          <div class="pmap-hbar-top">
+            <span><span class="pmap-city-dot" style="display:inline-block;margin-right:6px;background:${esc(c.hex)}"></span>${esc(c.city)}</span>
+            <strong>${c.days} ${c.days === 1 ? "dia" : "dias"}</strong>
+          </div>
+          <div class="pmap-hbar-track">
+            <div class="pmap-hbar-fill" style="width:${Math.round((c.days / maxD) * 100)}%;background:${esc(c.hex)}"></div>
+          </div>
+        </div>`).join("")}</div>`;
+    }
+  }
+
+  const monthChartEl = $("#pmapChartMonthly");
+  if (monthChartEl) {
+    const byMonth = new Map();
+    dayCitiesFiltered.forEach(dc => {
+      const ym = String(dc.iso || "").slice(0, 7);
+      if (ym.length === 7) byMonth.set(ym, (byMonth.get(ym) || 0) + 1);
+    });
+    const months = [...byMonth.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    if (!months.length) {
+      monthChartEl.innerHTML = `<div class="muted small" style="padding:16px 0">Sem dados mensais no período selecionado.</div>`;
+    } else {
+      const maxM = Math.max(1, ...months.map(m => m[1]));
+      monthChartEl.innerHTML = `<div class="pmap-vbars">${months.map(([ym, cnt]) => {
+        const [y, m] = ym.split("-");
+        const lbl = `${MON[parseInt(m, 10) - 1]}/${y.slice(-2)}`;
+        const pct = Math.max(8, Math.round((cnt / maxM) * 100));
+        return `<div class="pmap-vbar-col" title="${lbl}: ${cnt} ${cnt === 1 ? "dia" : "dias"}">
+          <span class="pmap-vbar-val">${cnt}d</span>
+          <div class="pmap-vbar-track"><div class="pmap-vbar-fill" style="height:${pct}%"></div></div>
+          <span class="pmap-vbar-lbl">${esc(lbl)}</span>
+        </div>`;
+      }).join("")}</div>`;
+    }
+  }
+
+  // 4. Geocodificar cidades em ordem cronológica e desenhar Mapa + Rota Completa
+  const geocodeCity = async city => {
+    if (window.FeriasMaps?.geocodeLocation) {
+      const g = await window.FeriasMaps.geocodeLocation(city).catch(() => null);
+      if (g && isFinite(g.lat) && isFinite(g.lng)) return g;
+    }
+    if (window.FeriasMaps?.lookupBuiltinLocation) {
+      const b = window.FeriasMaps.lookupBuiltinLocation(city);
+      if (b && isFinite(b.lat) && isFinite(b.lng)) return b;
+    }
+    return null;
+  };
+
+  const routeCoords = [];
+  const cityCoordByKey = new Map();
+  for (const stop of routeSequence) {
+    const coords = await geocodeCity(stop.city);
+    if (seq !== pmapRenderSeq) return;
+    if (coords) {
+      const stay = cityDaysMap.get(stop.key);
+      const pt = {
+        key: stop.key,
+        city: stop.city,
+        lat: coords.lat,
+        lng: coords.lng,
+        days: stay ? stay.days : 0,
+        hex: stay ? stay.hex : "#2563eb"
+      };
+      routeCoords.push(pt);
+      cityCoordByKey.set(stop.key, pt);
+    }
+  }
+
+  const hasGmaps = Boolean(window.FeriasMaps?.hasKey?.());
+  if (!hasGmaps || !routeCoords.length) {
+    renderPersonalMapSvgFallback(canvas, routeCoords.filter((p, i, arr) => arr.findIndex(x => x.key === p.key) === i));
+    return;
+  }
+
+  try {
+    await window.FeriasMaps.ensureLoaded();
+    if (seq !== pmapRenderSeq) return;
+    const { Map: GMap } = await google.maps.importLibrary("maps");
+    if (seq !== pmapRenderSeq) return;
+
+    pmapMarkers.forEach(m => { try { m.setMap(null); } catch {} });
+    pmapPolylines.forEach(pl => { try { pl.setMap(null); } catch {} });
+    if (pmapDirectionsRenderer) { try { pmapDirectionsRenderer.setMap(null); } catch {} }
+    pmapMarkers = [];
+    pmapPolylines = [];
+
+    canvas.innerHTML = "";
+    pmapGmapInstance = new GMap(canvas, {
+      center: { lat: routeCoords[0].lat, lng: routeCoords[0].lng },
+      zoom: 6,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: true
+    });
+
+    const bounds = new google.maps.LatLngBounds();
+    const infoWin = new google.maps.InfoWindow();
+    const uniqueStops = [];
+    const seenPin = new Set();
+    routeCoords.forEach(pt => {
+      bounds.extend({ lat: pt.lat, lng: pt.lng });
+      if (!seenPin.has(pt.key)) {
+        seenPin.add(pt.key);
+        uniqueStops.push(pt);
+      }
+    });
+
+    uniqueStops.forEach((pt, idx) => {
+      const marker = new google.maps.Marker({
+        position: { lat: pt.lat, lng: pt.lng },
+        map: pmapGmapInstance,
+        label: { text: String(idx + 1), color: "#ffffff", fontWeight: "700", fontSize: "12px" },
+        title: `${pt.city}${pt.days ? ` — ${pt.days} ${pt.days === 1 ? "dia" : "dias"}` : ""}`
+      });
+      marker.addListener("click", () => {
+        infoWin.setContent(`<div style="color:#0f172a;padding:2px 4px"><strong>${esc(pt.city)}</strong><br><span>${pt.days ? `${pt.days} ${pt.days === 1 ? "dia" : "dias"} no cronograma` : "Cidade de passagem"}</span></div>`);
+        infoWin.open(pmapGmapInstance, marker);
+      });
+      pmapMarkers.push(marker);
+    });
+
+    // Traçar rota completa no mapa (DirectionsService com fallback Polyline)
+    if (routeCoords.length >= 2) {
+      const drawPolyline = () => {
+        const pl = new google.maps.Polyline({
+          path: routeCoords.map(p => ({ lat: p.lat, lng: p.lng })),
+          geodesic: true,
+          strokeColor: "#2563eb",
+          strokeOpacity: 0.9,
+          strokeWeight: 4,
+          map: pmapGmapInstance
+        });
+        pmapPolylines.push(pl);
+      };
+      if (google.maps.DirectionsService && routeCoords.length <= 25) {
+        try {
+          const ds = new google.maps.DirectionsService();
+          pmapDirectionsRenderer = new google.maps.DirectionsRenderer({
+            map: pmapGmapInstance,
+            suppressMarkers: true,
+            preserveViewport: false,
+            polylineOptions: { strokeColor: "#2563eb", strokeWeight: 4.5, strokeOpacity: 0.9 }
+          });
+          const waypoints = routeCoords.slice(1, -1).map(p => ({ location: { lat: p.lat, lng: p.lng }, stopover: true }));
+          ds.route({
+            origin: { lat: routeCoords[0].lat, lng: routeCoords[0].lng },
+            destination: { lat: routeCoords[routeCoords.length - 1].lat, lng: routeCoords[routeCoords.length - 1].lng },
+            waypoints,
+            travelMode: google.maps.TravelMode.DRIVING
+          }, (result, stDir) => {
+            if (seq !== pmapRenderSeq) return;
+            if (stDir === "OK" && result) {
+              pmapDirectionsRenderer.setDirections(result);
+            } else {
+              drawPolyline();
+              pmapGmapInstance.fitBounds(bounds, 48);
+            }
+          });
+        } catch {
+          drawPolyline();
+          pmapGmapInstance.fitBounds(bounds, 48);
+        }
+      } else {
+        drawPolyline();
+        pmapGmapInstance.fitBounds(bounds, 48);
+      }
+    } else {
+      pmapGmapInstance.setCenter({ lat: routeCoords[0].lat, lng: routeCoords[0].lng });
+      pmapGmapInstance.setZoom(10);
+    }
+
+    // Clique na lista lateral de cidades foca a cidade no mapa
+    if (citiesListEl) {
+      citiesListEl.querySelectorAll("[data-pmap-city]").forEach(btn => {
+        btn.onclick = () => {
+          const pt = cityCoordByKey.get(btn.dataset.pmapCity);
+          if (pt && pmapGmapInstance) {
+            pmapGmapInstance.panTo({ lat: pt.lat, lng: pt.lng });
+            pmapGmapInstance.setZoom(11);
+          }
+        };
+      });
+    }
+  } catch {
+    renderPersonalMapSvgFallback(canvas, routeCoords.filter((p, i, arr) => arr.findIndex(x => x.key === p.key) === i));
+  }
+}
+
+/* ---------- MODO PESSOAL: ABA QUADROS (ENTRE FINANCEIRO E TABELA) ---------- */
+let pboardEventsBound = false;
+
+function ensurePersonalBoardColumns() {
+  if (!Array.isArray(state.personalColumns) || !state.personalColumns.length) {
+    state.personalColumns = [
+      { id: "pcol_assuntos", title: "Assuntos", color: "#64748b" },
+      { id: "pcol_plan",     title: "Planejando", color: "#0284c7" },
+      { id: "pcol_conf",     title: "Reservado / Confirmado", color: "#2563eb" },
+      { id: "pcol_done",     title: "Concluído", color: "#10b981" }
+    ];
+  }
+  return state.personalColumns;
+}
+
+function bindPersonalBoardEvents() {
+  if (pboardEventsBound) return;
+  pboardEventsBound = true;
+  if ($("#pboardSearch")) $("#pboardSearch").oninput = () => renderPersonalBoard();
+  if ($("#btnPboardAddCard")) $("#btnPboardAddCard").onclick = () => openModal();
+  if ($("#btnPboardAddCol")) {
+    $("#btnPboardAddCol").onclick = () => {
+      const title = prompt("Nome da nova lista no Quadro Pessoal:");
+      if (!title || !title.trim()) return;
+      const cols = ensurePersonalBoardColumns();
+      cols.push({ id: "pcol_" + uid(), title: title.trim(), color: "#2563eb" });
+      save(`🗂️ Lista "${title.trim()}" criada!`);
+    };
+  }
+}
+
+function renderPersonalBoard() {
+  bindPersonalBoardEvents();
+  const host = $("#personalBoardCols");
+  if (!host) return;
+  const cols = ensurePersonalBoardColumns();
+  const q = ($("#pboardSearch")?.value || "").trim().toLowerCase();
+  const acts = sorted().filter(a => {
+    if (!q) return true;
+    const hay = [a.name || "", a.notes || "", a.from || "", a.to || "", a.type || ""].join(" ").toLowerCase();
+    return hay.includes(q);
+  });
+
+  const colIds = new Set(cols.map(c => c.id));
+  const defaultColId = cols[0].id;
+
+  host.innerHTML = cols.map(col => {
+    const items = acts.filter(a => {
+      const cid = (a.personalColId && colIds.has(a.personalColId)) ? a.personalColId : defaultColId;
+      return cid === col.id;
+    });
+    const cardsHtml = items.length
+      ? items.map(a => {
+          const info = getTypeInfoAny(a);
+          const dt = a.start ? (a.end && a.end !== a.start ? `${fmtShortBR(a.start)} → ${fmtShortBR(a.end)}` : fmtShortBR(a.start)) : "";
+          const route = (a.from || a.to) ? `${a.from || "?"} ➔ ${a.to || "?"}` : "";
+          return `<article class="pro-card" draggable="true" data-pb-card="${esc(a.id)}">
+            <div class="pro-card-top">
+              <span class="pro-type-pill ${info.cls || ""}">${info.icon || "📌"} ${esc(a.type || "Evento")}</span>
+              ${dt ? `<span class="muted small">${esc(dt)}</span>` : ""}
+            </div>
+            <div class="pro-card-title">${esc(a.name || "Sem título")}</div>
+            ${route ? `<div class="muted small" style="margin-top:4px">📍 ${esc(route)}</div>` : ""}
+          </article>`;
+        }).join("")
+      : `<div class="muted small" style="padding:10px 6px;text-align:center">Nenhum item nesta lista.</div>`;
+
+    return `<section class="pro-col" data-pb-col="${esc(col.id)}">
+      <div class="pro-col-head" style="border-top:3px solid ${esc(col.color || "#2563eb")}">
+        <div style="display:flex;align-items:center;gap:6px;min-width:0">
+          <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(col.title)}</strong>
+          <span class="pill" style="font-size:0.7rem">${items.length}</span>
+        </div>
+        ${cols.length > 1 ? `<button type="button" class="icon-btn" data-pb-delcol="${esc(col.id)}" title="Remover lista">✕</button>` : ""}
+      </div>
+      <div class="pro-col-cards" data-pb-drop="${esc(col.id)}">${cardsHtml}</div>
+    </section>`;
+  }).join("");
+
+  host.querySelectorAll("[data-pb-card]").forEach(el => {
+    el.onclick = () => openModal(el.dataset.pbCard);
+    el.ondragstart = e => {
+      e.dataTransfer.setData("text/plain", el.dataset.pbCard);
+      el.style.opacity = "0.55";
+    };
+    el.ondragend = () => { el.style.opacity = ""; };
+  });
+  host.querySelectorAll("[data-pb-drop]").forEach(zone => {
+    zone.ondragover = e => { e.preventDefault(); zone.classList.add("drag-over"); };
+    zone.ondragleave = () => zone.classList.remove("drag-over");
+    zone.ondrop = e => {
+      e.preventDefault();
+      zone.classList.remove("drag-over");
+      const id = e.dataTransfer.getData("text/plain");
+      const targetCol = zone.dataset.pbDrop;
+      const act = (state.activities || []).find(x => x.id === id);
+      if (act && targetCol) {
+        act.personalColId = targetCol;
+        save("🗂️ Item movido no quadro!");
+      }
+    };
+  });
+  host.querySelectorAll("[data-pb-delcol]").forEach(btn => {
+    btn.onclick = () => {
+      const cid = btn.dataset.pbDelcol;
+      if (state.personalColumns.length <= 1) return;
+      if (!confirm("Remover esta lista do Quadro Pessoal? Os eventos serão movidos para a primeira lista.")) return;
+      state.personalColumns = state.personalColumns.filter(c => c.id !== cid);
+      const fallbackId = state.personalColumns[0].id;
+      (state.activities || []).forEach(a => { if (a.personalColId === cid) a.personalColId = fallbackId; });
+      save("🗑️ Lista removida do quadro.");
+    };
+  });
 }
 
 window.addEventListener("resize", () => {

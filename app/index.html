@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=52">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=52">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=52">
+<link rel="manifest" href="/manifest.webmanifest?v=53">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=53">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=53">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=52">
+<link rel="stylesheet" href="styles.css?v=53">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=52" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=53" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=52" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=53" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -221,11 +221,39 @@
 
     <nav class="tabs" id="tabs" aria-label="Navegação pessoal">
       <button class="tab active" data-view="gantt" id="tab-gantt" type="button">📅 Cronograma</button>
-      <button class="tab" data-view="pro-map" id="tab-map" type="button">🗺️ Mapa</button>
+      <button class="tab" data-view="personal-map" id="tab-map" type="button">🗺️ Mapa</button>
       <button class="tab" data-view="dashboard" id="tab-dashboard" type="button">📊 Dashboard</button>
       <button class="tab" data-view="finance" id="tab-finance" type="button">💰 Financeiro</button>
+      <button class="tab" data-view="personal-board" id="tab-personal-board" type="button">🗂️ Quadros</button>
       <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
       <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
+      <div class="gantt-pop-host pmap-nav-filter-host" id="personalMapNavFilterHost" hidden>
+        <button type="button" class="btn ghost small gantt-pop-trigger pmap-nav-filter-btn" id="btnPmapFilterPop" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Mapa">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          <span>Filtros</span>
+          <span class="gantt-pop-count" id="pmapFilterCount" hidden></span>
+        </button>
+        <div class="gantt-pop-panel pmap-filter-pop" id="pmapFilterPopPanel" hidden>
+          <div class="gantt-pop-head">
+            <strong>Filtros do Mapa</strong>
+            <button type="button" class="btn ghost small" id="btnPmapClearFilters" hidden>✕ Limpar</button>
+          </div>
+          <div class="gantt-pop-grid">
+            <div class="gantt-pop-field">
+              <span class="gantt-pop-lbl">Data inicial</span>
+              <input type="date" id="pmapDateFrom" aria-label="Data inicial do mapa">
+            </div>
+            <div class="gantt-pop-field">
+              <span class="gantt-pop-lbl">Data final</span>
+              <input type="date" id="pmapDateTo" aria-label="Data final do mapa">
+            </div>
+            <div class="gantt-pop-field span2">
+              <span class="gantt-pop-lbl">Buscar cidade</span>
+              <input type="search" id="pmapCitySearch" placeholder="🔎 Filtrar cidade..." autocomplete="off">
+            </div>
+          </div>
+        </div>
+      </div>
     </nav>
 
     <nav class="tabs tabs-pro" id="tabsPro" aria-label="Navegação profissional" hidden>
@@ -245,6 +273,68 @@
   <main>
     <!-- CONVITES PENDENTES -->
     <div id="invitesBanner" class="invites-banner" hidden></div>
+
+    <!-- MAPA PESSOAL (SINCRONIZADO COM A BARRA DE CIDADES DO GANTT) -->
+    <section class="view" id="view-personal-map">
+      <div class="pmap-hero-grid">
+        <div class="card pmap-canvas-card">
+          <div id="personalMapCanvas" class="pmap-canvas" role="region" aria-label="Mapa da rota pessoal"></div>
+        </div>
+        <aside class="card pmap-summary-card" id="personalMapSummaryCard">
+          <div class="pmap-summary-head">
+            <h2>🧭 Resumo da Viagem</h2>
+            <span class="pill" id="pmapPeriodBadge">Roteiro completo</span>
+          </div>
+          <div class="pmap-stats-grid" id="pmapStatsGrid"></div>
+          <div class="pmap-cities-sec">
+            <div class="pmap-cities-head">
+              <strong>📍 Cidades Destino</strong>
+              <span class="muted small">Dias no cronograma</span>
+            </div>
+            <div id="pmapCitiesList" class="pmap-cities-list"></div>
+          </div>
+          <div class="pmap-summary-foot" id="pmapSummaryFoot">
+            <span>Total de dias das férias</span>
+            <strong id="pmapTotalDaysFoot">0 dias</strong>
+          </div>
+        </aside>
+      </div>
+
+      <div class="pmap-dash-grid">
+        <div class="card pmap-dash-card">
+          <div class="card-head">
+            <div>
+              <h2>📊 Total de dias por localidade</h2>
+              <span class="muted small">Dias reais conforme a barra de cidades do Cronograma</span>
+            </div>
+          </div>
+          <div id="pmapChartDaysByCity" class="pmap-chart-body"></div>
+        </div>
+        <div class="card pmap-dash-card">
+          <div class="card-head">
+            <div>
+              <h2>📅 Distribuição Temporal Mensal</h2>
+              <span class="muted small">Dias de viagem distribuídos mês a mês</span>
+            </div>
+          </div>
+          <div id="pmapChartMonthly" class="pmap-chart-body"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- QUADROS PESSOAL (ENTRE FINANCEIRO E TABELA) -->
+    <section class="view" id="view-personal-board">
+      <div class="card pboard-bar">
+        <div class="pboard-bar-left">
+          <input type="search" id="pboardSearch" placeholder="🔎 Buscar nos quadros pessoais..." autocomplete="off">
+        </div>
+        <div class="pboard-bar-right">
+          <button type="button" class="btn ghost small" id="btnPboardAddCol">➕ Nova Lista</button>
+          <button type="button" class="btn primary small" id="btnPboardAddCard">➕ Novo Evento</button>
+        </div>
+      </div>
+      <div id="personalBoardCols" class="pro-board pboard-cols"></div>
+    </section>
 
     <!-- CRONOGRAMA (1ª ABA) -->
     <section class="view active" id="view-gantt">
@@ -4127,17 +4217,17 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=52"></script>
-<script src="vehicles.js?v=52"></script>
-<script src="countries.js?v=52"></script>
-<script src="data.js?v=52"></script>
-<script src="maps.js?v=52"></script>
-<script src="calendar.js?v=52"></script>
-<script src="drive.js?v=52"></script>
-<script src="report.js?v=52"></script>
-<script src="api.js?v=52"></script>
-<script src="minutes.js?v=52"></script>
-<script src="pro.js?v=52"></script>
-<script src="app.js?v=52"></script>
+<script src="config.example.js?v=53"></script>
+<script src="vehicles.js?v=53"></script>
+<script src="countries.js?v=53"></script>
+<script src="data.js?v=53"></script>
+<script src="maps.js?v=53"></script>
+<script src="calendar.js?v=53"></script>
+<script src="drive.js?v=53"></script>
+<script src="report.js?v=53"></script>
+<script src="api.js?v=53"></script>
+<script src="minutes.js?v=53"></script>
+<script src="pro.js?v=53"></script>
+<script src="app.js?v=53"></script>
 </body>
 </html>
