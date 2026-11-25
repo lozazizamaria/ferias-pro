@@ -195,12 +195,88 @@ function loadDb() {
 }
 
 let db = loadDb();
+let dbVersion = 0;
+let dbWrittenVersion = 0;
+let dbDirty = false;
+let dbSaveTimer = null;
+let dbWriteInFlight = Promise.resolve();
+let dbTmpSeq = 0;
+
+function saveDbSync() {
+  if (dbSaveTimer) {
+    clearTimeout(dbSaveTimer);
+    dbSaveTimer = null;
+  }
+  ensureDirs();
+  dbVersion += 1;
+  const targetVersion = dbVersion;
+  const payload = JSON.stringify(db);
+  const tmp = `${DB_FILE}.${process.pid}.${Date.now()}.${++dbTmpSeq}.tmp`;
+  fs.writeFileSync(tmp, payload, "utf8");
+  fs.renameSync(tmp, DB_FILE);
+  dbWrittenVersion = Math.max(dbWrittenVersion, targetVersion);
+  dbDirty = false;
+}
+
+function flushDbAsync() {
+  dbSaveTimer = null;
+  if (!dbDirty) return dbWriteInFlight;
+  dbWriteInFlight = dbWriteInFlight.then(async () => {
+    if (!dbDirty) return;
+    ensureDirs();
+    const snapVersion = dbVersion;
+    if (snapVersion <= dbWrittenVersion) {
+      dbDirty = false;
+      return;
+    }
+    const payload = JSON.stringify(db);
+    const tmp = `${DB_FILE}.${process.pid}.${Date.now()}.${++dbTmpSeq}.tmp`;
+    await fs.promises.writeFile(tmp, payload, "utf8");
+    if (snapVersion <= dbWrittenVersion) {
+      await fs.promises.unlink(tmp).catch(() => {});
+      return;
+    }
+    await fs.promises.rename(tmp, DB_FILE);
+    dbWrittenVersion = Math.max(dbWrittenVersion, snapVersion);
+    if (dbVersion <= dbWrittenVersion) {
+      dbDirty = false;
+    } else if (!dbSaveTimer) {
+      dbSaveTimer = setTimeout(() => { flushDbAsync().catch(() => {}); }, 35);
+      if (typeof dbSaveTimer.unref === "function") dbSaveTimer.unref();
+    }
+  }).catch(() => {
+    // Fallback síncrono se escrita assíncrona falhar pontualmente
+    try { saveDbSync(); } catch {}
+  });
+  return dbWriteInFlight;
+}
 
 function saveDb() {
-  ensureDirs();
-  const tmp = `${DB_FILE}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2), "utf8");
-  fs.renameSync(tmp, DB_FILE);
+  dbVersion += 1;
+  dbDirty = true;
+  if (dbSaveTimer) clearTimeout(dbSaveTimer);
+  dbSaveTimer = setTimeout(() => { flushDbAsync().catch(() => {}); }, 35);
+  if (typeof dbSaveTimer.unref === "function") dbSaveTimer.unref();
+}
+
+function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  if (options && options.signal) return fetch(url, options);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(new Error(`Timeout após ${timeoutMs}ms`)), timeoutMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
+function buildContentDisposition(disposition, fileName) {
+  const mode = disposition === "attachment" ? "attachment" : "inline";
+  const raw = String(fileName || "anexo").replace(/[\r\n]/g, " ").trim() || "anexo";
+  const asciiFallback = raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "_")
+    .replace(/["\\;]/g, "_");
+  const encoded = encodeURIComponent(raw).replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `${mode}; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
 }
 
 function hashPassword(password) {
@@ -909,7 +985,13 @@ function serveStaticFile(req, res, reqPath) {
 }
 
 function safeFileName(name) {
-  return String(name || "documento").replace(/[^\w.\-() ]+/g, "_").slice(0, 120) || "documento";
+  const base = path.basename(String(name || "documento"));
+  const cleaned = base
+    .replace(/[^\p{L}\p{N}.\-() _]+/gu, "_")
+    .replace(/^\.+/, "")
+    .trim()
+    .slice(0, 120);
+  return cleaned || "documento";
 }
 
 function addDaysISO(iso, delta) {
@@ -1040,7 +1122,7 @@ async function verifyGoogleIdToken(credential) {
   const sys = getGlobalConfig();
   const cids = [...new Set([getServerGoogleClientId(), sys.googleLoginClientId].filter(Boolean))];
   if (!cids.length) throw new Error("GOOGLE_NOT_CONFIGURED");
-  const resp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+  const resp = await fetchWithTimeout(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`, {}, 12000);
   if (!resp.ok) throw new Error("GOOGLE_TOKEN_INVALID");
   const info = await resp.json();
   if (!cids.includes(info.aud)) throw new Error("GOOGLE_AUD_MISMATCH");
@@ -1253,14 +1335,14 @@ async function sendTransactionalEmail({ to, subject, text, html }) {
   const sys = getGlobalConfig();
   if (sys.resendApiKey) {
     try {
-      const resp = await fetch("https://api.resend.com/emails", {
+      const resp = await fetchWithTimeout("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${sys.resendApiKey}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ from: sys.smtpFrom, to: [extractEmailAddress(to)], subject, text, html })
-      });
+      }, 15000);
       if (!resp.ok) {
         const errBody = await resp.text().catch(() => "");
         throw new Error(`Resend HTTP ${resp.status}: ${errBody.slice(0, 200)}`);
@@ -1351,6 +1433,7 @@ function pruneBackups() {
 
 function createBackup(reason = "manual") {
   ensureDirs();
+  if (dbDirty) saveDbSync();
   const now = Date.now();
   const stamp = new Date(now).toISOString().replace(/[:.]/g, "-");
   const filename = `ferias-pro-backup-${stamp}.json.gz`;
@@ -1446,7 +1529,7 @@ function scoreGeminiFlashModel(id) {
 
 async function discoverAvailableGeminiFlashModels(apiKey) {
   try {
-    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+    const resp = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`, {}, 12000);
     const json = await resp.json().catch(() => null);
     if (!resp.ok || !Array.isArray(json?.models)) return [];
     const list = json.models
@@ -1515,11 +1598,11 @@ async function callGeminiJSON(apiKey, parts, systemInstruction) {
     seen.add(model);
 
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const resp = await fetch(endpoint, {
+    const resp = await fetchWithTimeout(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
-    });
+    }, 45000);
     const json = await resp.json().catch(() => null);
     if (!resp.ok) {
       const errMsg = json?.error?.message || `Gemini API HTTP ${resp.status}`;
@@ -3419,7 +3502,7 @@ const server = http.createServer(async (req, res) => {
         }
         res.writeHead(200, {
           "Content-Type": att.mimeType || "application/octet-stream",
-          "Content-Disposition": `inline; filename="${att.fileName}"`,
+          "Content-Disposition": buildContentDisposition("inline", att.fileName),
           "Content-Length": att.size,
           "X-Content-Type-Options": "nosniff"
         });
@@ -3913,10 +3996,16 @@ Regras importantes:
       }
 
       const extractOoxmlText = buf => {
+        const MAX_XML_ENTRIES = 40;
+        const MAX_ENTRY_RAW_BYTES = 4 * 1024 * 1024;
+        const MAX_ENTRY_OUT_BYTES = 2 * 1024 * 1024;
+        const MAX_TOTAL_OUT_BYTES = 6 * 1024 * 1024;
         try {
           const texts = [];
           let pos = 0;
-          while (pos + 30 < buf.length) {
+          let xmlEntriesRead = 0;
+          let totalOutBytes = 0;
+          while (pos + 30 < buf.length && xmlEntriesRead < MAX_XML_ENTRIES && totalOutBytes < MAX_TOTAL_OUT_BYTES) {
             const sig = buf.readUInt32LE(pos);
             if (sig !== 0x04034b50) break;
             const method = buf.readUInt16LE(pos + 8);
@@ -3927,12 +4016,21 @@ Regras importantes:
             const name = buf.toString("utf8", nameStart, nameStart + nameLen);
             const dataStart = nameStart + nameLen + extraLen;
             const dataEnd = dataStart + compSize;
-            if (compSize > 0 && dataEnd <= buf.length && /\.xml$/i.test(name) && /(word\/document|ppt\/slides\/slide|xl\/sharedStrings|xl\/worksheets\/sheet)/i.test(name)) {
+            if (
+              compSize > 0
+              && compSize <= MAX_ENTRY_RAW_BYTES
+              && dataEnd <= buf.length
+              && /\.xml$/i.test(name)
+              && /(word\/document|ppt\/slides\/slide|xl\/sharedStrings|xl\/worksheets\/sheet)/i.test(name)
+            ) {
+              xmlEntriesRead++;
               const rawEntry = buf.subarray(dataStart, dataEnd);
-              let xmlStr = "";
-              if (method === 0) xmlStr = rawEntry.toString("utf8");
-              else if (method === 8) xmlStr = zlib.inflateRawSync(rawEntry).toString("utf8");
-              if (xmlStr) {
+              let outBuf = null;
+              if (method === 0) outBuf = rawEntry.subarray(0, MAX_ENTRY_OUT_BYTES);
+              else if (method === 8) outBuf = zlib.inflateRawSync(rawEntry, { maxOutputLength: MAX_ENTRY_OUT_BYTES });
+              if (outBuf && outBuf.length) {
+                totalOutBytes += outBuf.length;
+                const xmlStr = outBuf.toString("utf8");
                 const cleaned = xmlStr
                   .replace(/<\/(w:p|a:p|row|si|tr)>/gi, "\n")
                   .replace(/<[^>]+>/g, " ")
@@ -4189,7 +4287,7 @@ Retorne EXCLUSIVAMENTE JSON:
         const markers = stops.map((p, i) => `markers=color:${i === 0 ? "green" : (i === stops.length - 1 ? "red" : "blue")}|label:${i + 1}|${encodeURIComponent(p + ", Brasil")}`).join("&");
         const pathParam = "path=color:0x0284c7ff|weight:4|" + stops.map(p => encodeURIComponent(p + ", Brasil")).join("|");
         const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?size=640x250&scale=2&language=pt-BR&region=BR&${markers}&${pathParam}&key=${encodeURIComponent(key)}`;
-        const mRes = await fetch(mapUrl);
+        const mRes = await fetchWithTimeout(mapUrl, {}, 12000);
         const ct = mRes.headers.get("content-type") || "";
         if (!mRes.ok || !ct.startsWith("image/")) {
           return sendJson(res, 200, { ok: true, available: false });
@@ -4216,29 +4314,29 @@ Retorne EXCLUSIVAMENTE JSON:
         const hdrs = { Accept: "application/json" };
         const normArr = x => Array.isArray(x) ? x : (x ? [x] : []);
         if (action === "years") {
-          const r = await fetch("https://www.fueleconomy.gov/ws/rest/vehicle/menu/year", { headers: hdrs });
+          const r = await fetchWithTimeout("https://www.fueleconomy.gov/ws/rest/vehicle/menu/year", { headers: hdrs }, 12000);
           const j = await r.json();
           return sendJson(res, 200, { ok: true, items: normArr(j.menuItem) });
         }
         if (action === "makes") {
-          const r = await fetch(`https://www.fueleconomy.gov/ws/rest/vehicle/menu/make?year=${encodeURIComponent(year)}`, { headers: hdrs });
+          const r = await fetchWithTimeout(`https://www.fueleconomy.gov/ws/rest/vehicle/menu/make?year=${encodeURIComponent(year)}`, { headers: hdrs }, 12000);
           const j = await r.json();
           return sendJson(res, 200, { ok: true, items: normArr(j.menuItem) });
         }
         if (action === "models") {
           if (!make) return sendJson(res, 200, { ok: true, items: [] });
-          const r = await fetch(`https://www.fueleconomy.gov/ws/rest/vehicle/menu/model?year=${encodeURIComponent(year)}&make=${encodeURIComponent(make)}`, { headers: hdrs });
+          const r = await fetchWithTimeout(`https://www.fueleconomy.gov/ws/rest/vehicle/menu/model?year=${encodeURIComponent(year)}&make=${encodeURIComponent(make)}`, { headers: hdrs }, 12000);
           const j = await r.json();
           return sendJson(res, 200, { ok: true, items: normArr(j.menuItem) });
         }
         if (action === "options") {
           if (!make || !model) return sendJson(res, 200, { ok: true, items: [] });
-          const r = await fetch(`https://www.fueleconomy.gov/ws/rest/vehicle/menu/options?year=${encodeURIComponent(year)}&make=${encodeURIComponent(make)}&model=${encodeURIComponent(model)}`, { headers: hdrs });
+          const r = await fetchWithTimeout(`https://www.fueleconomy.gov/ws/rest/vehicle/menu/options?year=${encodeURIComponent(year)}&make=${encodeURIComponent(make)}&model=${encodeURIComponent(model)}`, { headers: hdrs }, 12000);
           const j = await r.json();
           return sendJson(res, 200, { ok: true, items: normArr(j.menuItem) });
         }
         if (action === "spec" && vid) {
-          const r = await fetch(`https://www.fueleconomy.gov/ws/rest/vehicle/${encodeURIComponent(vid)}`, { headers: hdrs });
+          const r = await fetchWithTimeout(`https://www.fueleconomy.gov/ws/rest/vehicle/${encodeURIComponent(vid)}`, { headers: hdrs }, 12000);
           const v = await r.json();
           const ft = String(v.fuelType1 || v.fuelType || "").toLowerCase();
           const atv = String(v.atvType || "").toLowerCase();
@@ -4432,11 +4530,15 @@ if (typeof schedulerTimer.unref === "function") schedulerTimer.unref();
 
 const gracefulShutdown = () => {
   if (schedulerTimer) { clearInterval(schedulerTimer); schedulerTimer = null; }
+  if (dbDirty) { try { saveDbSync(); } catch {} }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
 };
 process.on("SIGINT", gracefulShutdown);
 process.on("SIGTERM", gracefulShutdown);
+process.on("beforeExit", () => {
+  if (dbDirty) { try { saveDbSync(); } catch {} }
+});
 
 server.listen(PORT, HOST, () => {
   const sys = getGlobalConfig();

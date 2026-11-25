@@ -74,6 +74,141 @@
     try { return new Date(s).toLocaleString("pt-BR"); } catch { return s; }
   }
 
+  function sanitizeStyleAttr(rawStyle) {
+    const safeProps = new Set([
+      "color", "background", "background-color", "font-weight", "font-style",
+      "text-decoration", "text-align", "font-size", "font-family",
+      "margin", "margin-top", "margin-bottom", "margin-left", "margin-right",
+      "padding", "padding-top", "padding-bottom", "padding-left", "padding-right",
+      "border", "border-collapse", "width", "max-width", "height"
+    ]);
+    const clean = [];
+    String(rawStyle || "").split(";").forEach(decl => {
+      const idx = decl.indexOf(":");
+      if (idx <= 0) return;
+      const prop = decl.slice(0, idx).trim().toLowerCase();
+      const val = decl.slice(idx + 1).trim();
+      if (!safeProps.has(prop) || !val) return;
+      if (/url\s*\(|expression\s*\(|javascript:|vbscript:|@import|-moz-binding/i.test(val)) return;
+      clean.push(`${prop}: ${val}`);
+    });
+    return clean.join("; ");
+  }
+
+  function sanitizeMinuteHtml(rawHtml) {
+    const fallback = "<p><br></p>";
+    const str = String(rawHtml || "").trim();
+    if (!str) return fallback;
+    const DROP_TAGS = new Set([
+      "script", "style", "iframe", "object", "embed", "svg", "math",
+      "form", "button", "textarea", "select", "option", "link", "meta",
+      "base", "noscript", "template", "audio", "video", "source", "track",
+      "frame", "frameset"
+    ]);
+    const ALLOW_TAGS = new Set([
+      "p", "div", "br", "h1", "h2", "h3", "h4", "h5", "h6",
+      "ul", "ol", "li", "b", "strong", "i", "em", "u", "s", "strike", "del",
+      "blockquote", "pre", "code", "hr", "table", "thead", "tbody", "tfoot",
+      "tr", "th", "td", "a", "span", "img", "sub", "sup", "font", "colgroup", "col", "input"
+    ]);
+    const doc = new DOMParser().parseFromString(`<div>${str}</div>`, "text/html");
+    const root = doc.body.firstElementChild;
+    if (!root) return fallback;
+
+    const cleanNode = (node) => {
+      const children = [...node.childNodes];
+      for (const ch of children) {
+        if (ch.nodeType === 8) {
+          ch.remove();
+          continue;
+        }
+        if (ch.nodeType !== 1) continue;
+        const tag = ch.tagName.toLowerCase();
+        if (DROP_TAGS.has(tag)) {
+          ch.remove();
+          continue;
+        }
+        if (tag === "input") {
+          const tp = String(ch.getAttribute("type") || "").toLowerCase();
+          if (tp !== "checkbox") {
+            ch.remove();
+            continue;
+          }
+          const isChecked = ch.hasAttribute("checked");
+          for (const a of [...ch.attributes]) ch.removeAttribute(a.name);
+          ch.setAttribute("type", "checkbox");
+          if (isChecked) ch.setAttribute("checked", "");
+          continue;
+        }
+        if (!ALLOW_TAGS.has(tag)) {
+          cleanNode(ch);
+          while (ch.firstChild) node.insertBefore(ch.firstChild, ch);
+          ch.remove();
+          continue;
+        }
+        for (const attr of [...ch.attributes]) {
+          const name = attr.name.toLowerCase();
+          const val = attr.value;
+          if (name.startsWith("on") || name === "srcdoc" || name === "formaction") {
+            ch.removeAttribute(attr.name);
+            continue;
+          }
+          if (name === "class") {
+            const safeClass = String(val).replace(/[^a-zA-Z0-9_\- ]+/g, "").trim();
+            if (safeClass) ch.setAttribute("class", safeClass);
+            else ch.removeAttribute("class");
+            continue;
+          }
+          if (name === "style") {
+            const safeStyle = sanitizeStyleAttr(val);
+            if (safeStyle) ch.setAttribute("style", safeStyle);
+            else ch.removeAttribute("style");
+            continue;
+          }
+          if (name === "data-pm-open-card" && (tag === "span" || tag === "a")) {
+            const cid = String(val).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+            if (cid) ch.setAttribute("data-pm-open-card", cid);
+            else ch.removeAttribute("data-pm-open-card");
+            continue;
+          }
+          if (name === "dir" || name === "align" || name === "title") continue;
+          if (tag === "a" && name === "href") {
+            const trimmed = String(val || "").trim();
+            if (/^(https?:\/\/|mailto:|tel:|#)/i.test(trimmed)) ch.setAttribute("href", trimmed);
+            else ch.removeAttribute("href");
+            continue;
+          }
+          if (tag === "a" && name === "target") {
+            if (val === "_blank") {
+              ch.setAttribute("target", "_blank");
+              ch.setAttribute("rel", "noopener noreferrer");
+            } else {
+              ch.removeAttribute("target");
+            }
+            continue;
+          }
+          if (tag === "img" && name === "src") {
+            const trimmed = String(val || "").trim();
+            if (/^(data:image\/(png|jpe?g|gif|webp);base64,|https?:\/\/|\/api\/attachments\/)/i.test(trimmed)) {
+              ch.setAttribute("src", trimmed);
+            } else {
+              ch.removeAttribute("src");
+            }
+            continue;
+          }
+          if (tag === "img" && (name === "alt" || name === "width" || name === "height")) continue;
+          if ((tag === "td" || tag === "th" || tag === "col") && (name === "colspan" || name === "rowspan" || name === "scope")) continue;
+          if (tag === "font" && (name === "color" || name === "face" || name === "size")) continue;
+          ch.removeAttribute(attr.name);
+        }
+        cleanNode(ch);
+      }
+    };
+
+    cleanNode(root);
+    return root.innerHTML.trim() ? root.innerHTML : fallback;
+  }
+
   function normalizeMinute(raw, cardName = "") {
     const m = raw && typeof raw === "object" ? raw : {};
     const nowIso = new Date().toISOString();
@@ -83,14 +218,14 @@
       meetingDate: String(m.meetingDate || nowIso.slice(0, 16)),
       location: String(m.location || "").trim(),
       participants: Array.isArray(m.participants) ? [...new Set(m.participants.map(p => String(p || "").trim()).filter(Boolean))] : [],
-      html: String(m.html || "<p><br></p>"),
+      html: sanitizeMinuteHtml(m.html || "<p><br></p>"),
       createdAt: String(m.createdAt || nowIso),
       updatedAt: String(m.updatedAt || nowIso),
       versions: Array.isArray(m.versions) ? m.versions.slice(-30).map(v => ({
         id: String(v?.id || uid()),
         label: String(v?.label || "Versão salva"),
         savedAt: String(v?.savedAt || nowIso),
-        html: String(v?.html || "")
+        html: sanitizeMinuteHtml(v?.html || "")
       })) : [],
       attachments: Array.isArray(m.attachments) ? m.attachments.filter(a => a && typeof a === "object").map(a => ({ ...a })) : [],
       linkedActions: Array.isArray(m.linkedActions) ? m.linkedActions.filter(a => a && typeof a === "object").map(a => ({ ...a })) : []
@@ -147,7 +282,7 @@
     standaloneDraft.title = ($("#pm-title")?.value || "").trim() || "Ata de Reunião";
     standaloneDraft.meetingDate = $("#pm-meetingDate")?.value || "";
     standaloneDraft.location = ($("#pm-location")?.value || "").trim();
-    standaloneDraft.html = $("#pm-editor")?.innerHTML || "<p><br></p>";
+    standaloneDraft.html = sanitizeMinuteHtml($("#pm-editor")?.innerHTML || "<p><br></p>");
     standaloneDraft.updatedAt = new Date().toISOString();
 
     if (standaloneLinkMode === "existing") {
@@ -247,7 +382,7 @@
     populateParticipantsPicker(standaloneDraft);
     renderParticipantsChips(standaloneDraft);
     const ed = $("#pm-editor");
-    if (ed) ed.innerHTML = standaloneDraft.html;
+    if (ed) ed.innerHTML = sanitizeMinuteHtml(standaloneDraft.html);
     updateWordCount();
     updateHistoryBadge(standaloneDraft);
     renderMinuteAttachments(standaloneDraft);
@@ -377,7 +512,7 @@
     renderParticipantsChips(min);
 
     const ed = $("#pm-editor");
-    if (ed) ed.innerHTML = min.html || "<p><br></p>";
+    if (ed) ed.innerHTML = sanitizeMinuteHtml(min.html || "<p><br></p>");
     updateWordCount();
     updateHistoryBadge(min);
     renderMinuteAttachments(min);
@@ -457,7 +592,7 @@
             standaloneDraft.title = ($("#pm-title")?.value || "").trim() || "Nova Ata de Reunião";
             standaloneDraft.meetingDate = $("#pm-meetingDate")?.value || "";
             standaloneDraft.location = ($("#pm-location")?.value || "").trim();
-            standaloneDraft.html = $("#pm-editor")?.innerHTML || "<p><br></p>";
+            standaloneDraft.html = sanitizeMinuteHtml($("#pm-editor")?.innerHTML || "<p><br></p>");
           }
           if ($("#pm-saveStatus")) $("#pm-saveStatus").textContent = "Rascunho — vincule um cartão ou clique em Salvar Ata";
           return false;
@@ -467,7 +602,7 @@
       ctx.minute.title = ($("#pm-title")?.value || "").trim() || `Ata - ${ctx.card?.name || "Reunião"}`;
       ctx.minute.meetingDate = $("#pm-meetingDate")?.value || "";
       ctx.minute.location = ($("#pm-location")?.value || "").trim();
-      ctx.minute.html = $("#pm-editor")?.innerHTML || "<p><br></p>";
+      ctx.minute.html = sanitizeMinuteHtml($("#pm-editor")?.innerHTML || "<p><br></p>");
       ctx.minute.updatedAt = new Date().toISOString();
       await host.core.saveTripRecord(ctx.trip, "");
       if ($("#pm-saveStatus")) $("#pm-saveStatus").textContent = `✓ Salvo às ${fmtTimeNow()}`;
@@ -493,7 +628,7 @@
   function pushVersionSnapshot(minute, label) {
     if (!minute) return;
     if (!Array.isArray(minute.versions)) minute.versions = [];
-    const curHtml = $("#pm-editor")?.innerHTML || minute.html || "";
+    const curHtml = sanitizeMinuteHtml($("#pm-editor")?.innerHTML || minute.html || "");
     minute.versions.unshift({
       id: uid(),
       label: label || "Edição manual",
@@ -752,7 +887,7 @@
         cardName: ctx.card.name
       });
       if (res && res.html) {
-        ed.innerHTML = res.html;
+        ed.innerHTML = sanitizeMinuteHtml(res.html);
         const styleLbl = style === "clarity" ? "Clareza e Gramática" : (style === "bullets" ? "Tópicos Objetivos" : "Ata Executiva");
         pushVersionSnapshot(ctx.minute, `✨ Melhorado com IA (${styleLbl})`);
         updateWordCount();
@@ -800,7 +935,7 @@
       const sel = list[selectedHistoryIdx];
       if (sel) {
         if (prevTitle) prevTitle.textContent = `${sel.label} · ${fmtDateTimeBR(sel.savedAt)}`;
-        if (prevBody) prevBody.innerHTML = sel.html || "<p class='muted'>Vazio</p>";
+        if (prevBody) prevBody.innerHTML = sel.html ? sanitizeMinuteHtml(sel.html) : "<p class='muted'>Vazio</p>";
         if (restoreBtn) restoreBtn.hidden = false;
       }
     };
@@ -811,7 +946,7 @@
   /* ---------- CONVERSÃO HTML -> BLOCOS OOXML & SLIDES CLEAN ---------- */
   function extractBlocksFromHtml(htmlStr) {
     const tmp = document.createElement("div");
-    tmp.innerHTML = htmlStr || "";
+    tmp.innerHTML = sanitizeMinuteHtml(htmlStr || "");
     const blocks = [];
 
     const parseRuns = (el) => {
@@ -1623,7 +1758,7 @@
         const sel = ctx?.minute?.versions?.[selectedHistoryIdx];
         if (!sel) return;
         pushVersionSnapshot(ctx.minute, "Antes de restaurar versão");
-        if ($("#pm-editor")) $("#pm-editor").innerHTML = sel.html || "<p><br></p>";
+        if ($("#pm-editor")) $("#pm-editor").innerHTML = sanitizeMinuteHtml(sel.html || "<p><br></p>");
         updateWordCount();
         scheduleAutoSave(true);
         $("#proMinuteHistoryModal")?.close();

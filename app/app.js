@@ -463,6 +463,7 @@ const parseHM = s => {
   return Math.round(parseFloat(s.replace(",", ".")) * 60) || 0;
 };
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const safeCmpIso = (a, b) => String(a || "").localeCompare(String(b || ""));
 const isTravelType = t => ["Viagem", "Voo", "Trem", "Ônibus", "Navio"].includes(t);
 const isTransitOrShip = t => t === "Trem" || t === "Ônibus" || t === "Navio";
 const label = a => isTravelType(a.type) && (a.from || a.to) ? `${a.name} (${a.from || "?"} ➔ ${a.to || "?"})` : a.name;
@@ -480,7 +481,7 @@ const sorted = () => {
       tripRef: tr,
       colorIdx: 0
     }));
-    return acts.filter(a => a && !a.archived).sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+    return acts.filter(a => a && !a.archived).sort((a, b) => safeCmpIso(a?.start, b?.start) || ((a?.type === "Viagem") - (b?.type === "Viagem")));
   }
   const all = [];
   trips.forEach((tr, idx) => {
@@ -498,7 +499,7 @@ const sorted = () => {
       all.push(a);
     });
   });
-  return all.sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+  return all.sort((a, b) => safeCmpIso(a?.start, b?.start) || ((a?.type === "Viagem") - (b?.type === "Viagem")));
 };
 
 function toast(m) {
@@ -582,7 +583,7 @@ const COST_CATEGORY_STYLES = {
 
 function computeSingleTripTotals(tripData, kmLOverride, actsOverride = null) {
   const sourceActs = Array.isArray(actsOverride) ? actsOverride : (tripData.activities || []);
-  const acts = [...sourceActs].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+  const acts = [...sourceActs].sort((a, b) => safeCmpIso(a?.start, b?.start) || ((a?.type === "Viagem") - (b?.type === "Viagem")));
   const t = {
     km: 0, drive: 0, stopTime: 0, stops: 0, ev: 0, hev: 0, liters: 0,
     fuel: 0, charge: 0, toll: 0, total: 0, tanks: 0, trips: 0,
@@ -591,9 +592,13 @@ function computeSingleTripTotals(tripData, kmLOverride, actsOverride = null) {
     contingencyCost: 0, grandTotal: 0, totalDays: 0
   };
 
-  if (acts.length) {
-    const min = acts[0].start;
-    const max = acts.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, min);
+  const firstDated = acts.find(a => a && a.start);
+  if (firstDated) {
+    const min = firstDated.start;
+    const max = acts.reduce((m, a) => {
+      const cand = a?.end || a?.start || "";
+      return cand && (!m || cand > m) ? cand : m;
+    }, min);
     t.totalDays = days({ start: min, end: max });
   }
 
@@ -1360,7 +1365,7 @@ function computeDailyCityTimeline(activitiesList, dateISOs) {
     .slice()
     .sort((a, b) => {
       const ae = a.end || a.start, be = b.end || b.start;
-      return ae.localeCompare(be) || a.start.localeCompare(b.start);
+      return safeCmpIso(ae, be) || safeCmpIso(a?.start, b?.start);
     });
   if (!travelLegs.length) return { dayCities: [], spans: [], colorMap: {} };
 
@@ -1722,7 +1727,7 @@ function buildUnifiedItems() {
       items.push(item);
     });
   });
-  items.sort((a, b) => a.start.localeCompare(b.start) || (a.startTime || "").localeCompare(b.startTime || ""));
+  items.sort((a, b) => safeCmpIso(a?.start, b?.start) || safeCmpIso(a?.startTime, b?.startTime));
   detectUnifiedConflicts(items);
   return items;
 }
@@ -2861,7 +2866,7 @@ function computeFinancialTimeline(s, t) {
   let sumActualLogged = 0, sumLoggedGoal = 0;
 
   trips.forEach(tr => {
-    const trActs = [...(tr.data.activities || [])].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+    const trActs = [...(tr.data.activities || [])].sort((a, b) => safeCmpIso(a?.start, b?.start) || ((a?.type === "Viagem") - (b?.type === "Viagem")));
     const trTotals = computeSingleTripTotals(tr.data);
     const sub = computeSingleTripFinancialTimeline(tr.data, trActs, trTotals);
     plannedTotal += sub.plannedTotal;
@@ -3690,8 +3695,58 @@ function renderParams() {
     cidInput.value = getEffectiveCalendarClientId();
   }
 
+  renderPersonalDriveParams();
   renderParamTickets();
   renderScenarios();
+}
+
+function getPersonalDriveConfig() {
+  const uInteg = window.FeriasApi?.getUser?.()?.integrations || {};
+  const pDrive = (state?.params?.drive && typeof state.params.drive === "object") ? state.params.drive : {};
+  const folderUrl = pDrive.folderUrl || uInteg.personalDriveFolderUrl || "";
+  const folderId = pDrive.folderId || uInteg.personalDriveFolderId || (window.MyPlanDrive?.extractFolderId ? window.MyPlanDrive.extractFolderId(folderUrl) : "");
+  const folderName = pDrive.folderName || uInteg.personalDriveFolderName || "";
+  const connectedEmail = window.MyPlanDrive?.getConnectedEmail?.() || pDrive.connectedEmail || uInteg.driveConnectedEmail || "";
+  const lastSyncAt = pDrive.lastSyncAt || "";
+  return { folderId, folderUrl, folderName, connectedEmail, lastSyncAt };
+}
+
+function renderPersonalDriveParams() {
+  const panel = $("#personalDriveParamsPanel");
+  if (!panel) return;
+  const cfg = getPersonalDriveConfig();
+  const liveConnected = Boolean(window.MyPlanDrive?.isConnected?.());
+  const badge = $("#personalDriveStatusBadge");
+  const accInfo = $("#personalDriveAccountInfo");
+  const btnConn = $("#btnPersonalDriveConnect");
+  const btnDisc = $("#btnPersonalDriveDisconnect");
+  const folderInp = $("#personalDriveFolderInput");
+  const lastSyncEl = $("#personalDriveLastSyncInfo");
+
+  if (badge) {
+    if (liveConnected || cfg.connectedEmail) {
+      badge.textContent = liveConnected ? "Conectado" : "Configurado";
+      badge.className = "pill ok";
+    } else {
+      badge.textContent = "Desconectado";
+      badge.className = "pill warn";
+    }
+  }
+  if (accInfo) {
+    accInfo.textContent = cfg.connectedEmail
+      ? `Conta: ${cfg.connectedEmail}${cfg.folderName ? ` · Pasta: ${cfg.folderName}` : ""}`
+      : "";
+  }
+  if (btnConn) btnConn.textContent = (liveConnected || cfg.connectedEmail) ? "🔄 Reconectar Google Drive" : "🔗 Conectar Google Drive";
+  if (btnDisc) btnDisc.hidden = !(liveConnected || cfg.connectedEmail);
+  if (folderInp && document.activeElement !== folderInp) {
+    folderInp.value = cfg.folderUrl || cfg.folderId || "";
+  }
+  if (lastSyncEl) {
+    lastSyncEl.textContent = cfg.lastSyncAt
+      ? `Última sincronização: ${new Date(cfg.lastSyncAt).toLocaleString("pt-BR")}`
+      : "";
+  }
 }
 
 function renderParamTickets() {
@@ -4078,34 +4133,32 @@ function renderModalAttachments() {
     return `<div class="attach-item">
       <a href="${esc(href)}" target="_blank" rel="noopener">📄 ${esc(att.fileName || att.name || "Documento")}${sizeTxt}</a>
       <div class="inline-actions" style="gap:4px">
-        <button type="button" class="icon-btn" data-attren="${idx}" title="Renomear anexo">✏️</button>
-        <button type="button" class="icon-btn" data-attdel="${idx}" title="Remover anexo">🗑️</button>
+        <button type="button" class="icon-btn" data-attren="${idx}" title="Renomear anexo" aria-label="Renomear anexo">✏️</button>
+        <button type="button" class="icon-btn" data-attdel="${idx}" title="Remover anexo" aria-label="Remover anexo">🗑️</button>
       </div>
     </div>`;
   }).join("");
 
   list.querySelectorAll("[data-attren]").forEach(btn => {
-    btn.onclick = async () => {
+    btn.onclick = () => {
       const idx = parseInt(btn.dataset.attren, 10);
       const att = modalAttachments[idx];
       if (!att) return;
       const curName = String(att.fileName || att.name || "Documento").trim();
       const isLink = Boolean(att.url && !att.id);
-      const dot = (!isLink && curName.lastIndexOf(".") > 0) ? curName.lastIndexOf(".") : -1;
-      const base = dot > 0 ? curName.slice(0, dot) : curName;
-      const ext = dot > 0 ? curName.slice(dot) : "";
-      const next = prompt(`Renomear anexo${ext ? ` (extensão ${ext} preservada)` : ""}:`, base);
-      if (!next || !next.trim()) return;
-      const fullName = next.trim() + ext;
-      if (att.id && !isLink && window.FeriasApi?.renameAttachment) {
-        try { await window.FeriasApi.renameAttachment(att.id, fullName); } catch (err) {
-          toast("❌ " + (err.message || "Falha ao renomear."));
-          return;
+      if (!window.MyPlanPro?.openRenameAttachmentModal) return;
+      window.MyPlanPro.openRenameAttachmentModal({
+        fileName: curName,
+        isLink,
+        onConfirm: async fullName => {
+          if (att.id && !isLink && window.FeriasApi?.renameAttachment) {
+            await window.FeriasApi.renameAttachment(att.id, fullName);
+          }
+          att.fileName = fullName;
+          renderModalAttachments();
+          toast(`✏️ Anexo renomeado para "${fullName}"`);
         }
-      }
-      att.fileName = fullName;
-      renderModalAttachments();
-      toast(`✏️ Anexo renomeado para "${fullName}"`);
+      });
     };
   });
 
@@ -4115,6 +4168,7 @@ function renderModalAttachments() {
       const att = modalAttachments[idx];
       if (att && att.id && !att.url) {
         await window.FeriasApi.deleteAttachment(att.id).catch(() => {});
+        personalModalTempAttIds = personalModalTempAttIds.filter(tid => tid !== att.id);
       }
       modalAttachments.splice(idx, 1);
       renderModalAttachments();
@@ -4297,6 +4351,150 @@ async function computeModalTransitRoute(force = false) {
   }
 }
 
+let personalModalInitialSnap = "";
+let personalModalTempAttIds = [];
+let personalModalSaving = false;
+
+function getPersonalModalSnapshot() {
+  if (!$("#form")) return "";
+  return JSON.stringify({
+    form: readForm(),
+    col: $("#f-personalCol")?.value || "",
+    completed: Boolean(modalCompleted),
+    subtasks: modalSubtasks,
+    travelTickets: modalTravelTickets,
+    travelSegments: modalTravelSegments,
+    minutes: modalMinutes
+  });
+}
+
+function isPersonalModalDirty() {
+  if (!$("#modal")?.open || personalModalSaving) return false;
+  if (personalModalTempAttIds.length > 0) return true;
+  return getPersonalModalSnapshot() !== personalModalInitialSnap;
+}
+
+function cleanupPersonalTempUploads() {
+  const ids = [...new Set(personalModalTempAttIds)];
+  personalModalTempAttIds = [];
+  ids.forEach(attId => {
+    window.FeriasApi?.deleteAttachment?.(attId).catch(() => {});
+  });
+}
+
+function requestClosePersonalModal() {
+  const dlg = $("#modal");
+  if (!dlg || !dlg.open) return;
+  if (!isPersonalModalDirty()) {
+    dlg.close();
+    return;
+  }
+  window.__myplanUnsavedTarget = "personal";
+  const unsavedDlg = $("#proCardUnsavedModal");
+  if (unsavedDlg && !unsavedDlg.open) {
+    unsavedDlg.showModal();
+  } else {
+    cleanupPersonalTempUploads();
+    dlg.close();
+  }
+}
+
+function discardPersonalModalChanges() {
+  cleanupPersonalTempUploads();
+  $("#modal")?.close();
+}
+
+function savePersonalModalFromUnsaved() {
+  $("#form")?.requestSubmit();
+}
+
+async function openPersonalModalWithFiles(files) {
+  if (!Array.isArray(files) || !files.length) return;
+  openModal();
+  const nameEl = $("#f-name");
+  if (nameEl && !nameEl.value.trim()) {
+    const raw = String(files[0].name || "").trim();
+    const dot = raw.lastIndexOf(".");
+    nameEl.value = (dot > 0 ? raw.slice(0, dot) : raw) || "Anexo";
+  }
+  const tripId = activeTrip?.id || "local";
+  const actId = modalDraftId || uid();
+  for (const file of files) {
+    try {
+      const att = await window.FeriasApi.uploadAttachment(tripId, actId, file);
+      if (att?.id) personalModalTempAttIds.push(att.id);
+      modalAttachments.push(att);
+    } catch (err) {
+      toast("❌ " + (err.message || err));
+    }
+  }
+  renderModalAttachments();
+  updateModalPreview();
+  toast(`📎 ${files.length} ${files.length === 1 ? "arquivo anexado" : "arquivos anexados"} ao cartão pessoal!`);
+}
+
+function getPersonalAllActivities({ includeArchived = false, onlyArchived = false } = {}) {
+  const trips = getSelectedTrips();
+  const listTrips = trips.length ? trips : (activeTrip ? [activeTrip] : []);
+  const out = [];
+  listTrips.forEach((tr, idx) => {
+    if (!tr || !tr.data) return;
+    const cols = Array.isArray(tr.data.personalColumns) && tr.data.personalColumns.length
+      ? tr.data.personalColumns
+      : ensurePersonalBoardColumns();
+    const colMap = new Map(cols.map(c => [c.id, c.title]));
+    const fallbackCol = cols[0] || { id: "", title: "" };
+    (tr.data.activities || []).forEach(a => {
+      if (!a) return;
+      const isArch = Boolean(a.archived);
+      if (onlyArchived && !isArch) return;
+      if (!onlyArchived && !includeArchived && isArch) return;
+      actOriginMap.set(a, {
+        tripId: tr.id,
+        tripName: tr.data?.title || tr.name,
+        role: tr.role || "owner",
+        vehicle: tr.data?.vehicle || state.vehicle,
+        params: tr.data?.params || state.params,
+        tripRef: tr,
+        colorIdx: idx % MULTI_TRIP_COLORS.length
+      });
+      const cid = a.personalColId && colMap.has(a.personalColId) ? a.personalColId : fallbackCol.id;
+      const cTitle = cid ? (colMap.get(cid) || fallbackCol.title || "") : "";
+      out.push({
+        ...a,
+        columnId: cid,
+        columnTitle: cTitle
+      });
+    });
+  });
+  return out.sort((a, b) => safeCmpIso(a?.start, b?.start) || ((a?.type === "Viagem") - (b?.type === "Viagem")));
+}
+
+async function unarchivePersonalCard(id) {
+  const ctx = findActivityContext(id);
+  if (!ctx?.activity) return false;
+  if (ctx.trip?.role === "viewer") {
+    toast("👁️ Somente visualização.");
+    return false;
+  }
+  ctx.activity.archived = false;
+  ctx.activity.archivedAt = "";
+  await saveTripRecord(ctx.trip, `📤 Cartão "${ctx.activity.name || "Sem título"}" desarquivado!`);
+  return true;
+}
+
+async function deletePersonalCardPermanent(id) {
+  const ctx = findActivityContext(id);
+  if (!ctx?.activity) return false;
+  if (ctx.trip?.role === "viewer") {
+    toast("👁️ Somente visualização.");
+    return false;
+  }
+  ctx.data.activities = (ctx.data.activities || []).filter(x => x.id !== id);
+  await saveTripRecord(ctx.trip, "🗑️ Cartão arquivado excluído definitivamente.");
+  return true;
+}
+
 window.openModal = function (idOrOpts) {
   initAutocompleteControllers();
   const isObj = idOrOpts && typeof idOrOpts === "object";
@@ -4436,6 +4634,9 @@ window.openModal = function (idOrOpts) {
   renderModalAttachments();
   updateModalPreview();
   prefetchModalWalletPass();
+  personalModalTempAttIds = [];
+  personalModalSaving = false;
+  personalModalInitialSnap = getPersonalModalSnapshot();
   $("#modal").showModal();
 };
 
@@ -5567,10 +5768,18 @@ async function boot() {
       sendPlanToMyWhatsApp,
       setUnifiedState: next => toggleUnifiedGanttMode(next),
       switchProView,
+      deletePersonalCardPermanent,
+      discardPersonalModalChanges,
+      getPersonalAllActivities,
+      openPersonalModalWithFiles,
+      renderPersonalDriveParams,
+      savePersonalModalFromUnsaved,
+      switchAppView,
       syncSingleActivityToCalendar,
       toast,
       toggleGanttFullscreen,
       uid,
+      unarchivePersonalCard,
       unifiedConflictMap,
       unifiedMetaMap,
       WD
@@ -5880,11 +6089,9 @@ function switchProView(viewId) {
   $("#tabsPro")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.proView === viewId));
   $("#tabs")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.view === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
+  const renderedDirty = Boolean(window.MyPlanPro?.renderProViewIfDirty?.(viewId));
   if (viewId === "admin") loadAndRenderAdmin();
-  if (viewId === "pro-map" && window.MyPlanPro?.renderProMap) window.MyPlanPro.renderProMap();
-  if (viewId === "pro-travels" && window.MyPlanPro?.renderProTravels) window.MyPlanPro.renderProTravels();
-  if (viewId === "pro-control" && window.MyPlanPro?.renderProControl) window.MyPlanPro.renderProControl();
-  if (viewId === "pro-docs" && window.MyPlanPro?.renderProDocs) window.MyPlanPro.renderProDocs();
+  else if (viewId === "pro-map" && !renderedDirty && window.MyPlanPro?.renderProMap) window.MyPlanPro.renderProMap();
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();
   window.scrollTo(0, 0);
@@ -6146,7 +6353,7 @@ function renderAdminSubView(precomputedOv) {
         ${filtered.map(t => {
           const isProTrip = getTripMode(t) === "professional";
           const td = (isProTrip && window.MyPlanPro) ? window.MyPlanPro.migrateProState(t.data) : migrateState(t.data);
-          const acts = [...(td.activities || [])].sort((a, b) => a.start.localeCompare(b.start));
+          const acts = [...(td.activities || [])].sort((a, b) => safeCmpIso(a?.start, b?.start));
           const spanTxt = acts.length ? `${fmtShortBR(acts[0].start)} – ${fmtShortBR(acts.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, acts[0].start))}` : "—";
           let kmTxt = "—", totTxt = "—";
           if (isProTrip && window.MyPlanPro) {
@@ -6488,14 +6695,14 @@ async function printAdminTripReport(tripId) {
   toast(`🖨️ Gerando relatório de "${tr.name}"...`);
   if (getTripMode(tr) === "professional" && window.MyPlanPro) {
     const td = window.MyPlanPro.migrateProState(tr.data);
-    const acts = [...(td.activities || [])].sort((a, b) => a.start.localeCompare(b.start));
+    const acts = [...(td.activities || [])].sort((a, b) => safeCmpIso(a?.start, b?.start));
     const pt = window.MyPlanPro.computeProTotals(acts);
     const helpers = { ...reportHelpers(), getTypeInfo: t => window.MyPlanPro.getProTypeInfo(t) };
     await window.FeriasReport.printFullProReport(td, acts, pt, helpers);
     return;
   }
   const td = migrateState(tr.data);
-  const acts = [...(td.activities || [])].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+  const acts = [...(td.activities || [])].sort((a, b) => safeCmpIso(a?.start, b?.start) || ((a?.type === "Viagem") - (b?.type === "Viagem")));
   const tot = computeSingleTripTotals(td);
   const helpers = {
     ...reportHelpers(),
@@ -6554,7 +6761,7 @@ async function openAdminUserModal(userId, focusTripId = null) {
 
     const renderTripCard = (tr, idx) => {
       const td = migrateState(tr.data);
-      const acts = [...(td.activities || [])].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+      const acts = [...(td.activities || [])].sort((a, b) => safeCmpIso(a?.start, b?.start) || ((a?.type === "Viagem") - (b?.type === "Viagem")));
       const tot = computeSingleTripTotals(td);
       const fin = computeSingleTripFinancialTimeline(td, acts, tot);
       const openAttr = (focusTripId ? tr.id === focusTripId : idx === 0) ? "open" : "";
@@ -6774,7 +6981,44 @@ $("#btnAdd").onclick = () => {
   else openModal();
 };
 if ($("#btnAddEventGantt")) $("#btnAddEventGantt").onclick = () => openModal();
-$("#btnCloseX").onclick = $("#btnCancel").onclick = () => $("#modal").close();
+$("#btnCloseX").onclick = $("#btnCancel").onclick = () => requestClosePersonalModal();
+{
+  const pModalEl = $("#modal");
+  if (pModalEl && !pModalEl.dataset.dropBound) {
+    pModalEl.dataset.dropBound = "1";
+    pModalEl.addEventListener("cancel", e => {
+      if (isPersonalModalDirty()) {
+        e.preventDefault();
+        requestClosePersonalModal();
+      }
+    });
+    pModalEl.addEventListener("dragover", e => {
+      const types = e.dataTransfer?.types ? [...e.dataTransfer.types] : [];
+      if (types.includes("Files")) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      }
+    });
+    pModalEl.addEventListener("drop", async e => {
+      const files = [...(e.dataTransfer?.files || [])];
+      if (!files.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const tripId = activeTrip?.id || "local";
+      const actId = modalDraftId || uid();
+      for (const file of files) {
+        try {
+          const att = await window.FeriasApi.uploadAttachment(tripId, actId, file);
+          if (att?.id) personalModalTempAttIds.push(att.id);
+          modalAttachments.push(att);
+        } catch (err) { toast("❌ " + (err.message || err)); }
+      }
+      renderModalAttachments();
+      updateModalPreview();
+      toast(`📎 ${files.length} ${files.length === 1 ? "anexo adicionado" : "anexos adicionados"} ao cartão!`);
+    });
+  }
+}
 $("#f-type").onchange = toggleTrip;
 
 const syncStartDateInput = () => {
@@ -6860,6 +7104,7 @@ $("#f-attachInput").onchange = async e => {
       if (loadEl) loadEl.hidden = false;
       if (loadTxt) loadTxt.textContent = `Carregando arquivo "${file.name}" (${i + 1}/${files.length})...`;
       const att = await window.FeriasApi.uploadAttachment(activeTrip.id, modalDraftId, file);
+      if (att?.id) personalModalTempAttIds.push(att.id);
       modalAttachments.push(att);
       renderModalAttachments();
       toast(`✅ "${file.name}" anexado!`);
@@ -7148,6 +7393,8 @@ $("#form").onsubmit = async e => {
     const proCard = convertPersonalActivityToProCard({ ...a, id: editing || modalDraftId || uid() }, targetProTrip);
     if (!Array.isArray(targetProTrip.data.activities)) targetProTrip.data.activities = [];
     targetProTrip.data.activities.push(proCard);
+    personalModalSaving = true;
+    personalModalTempAttIds = [];
     $("#modal").close();
     saveTripRecord(targetProTrip, `💼 Migrado para Profissional ("${targetProTrip.data.title || targetProTrip.name}")!`);
     return;
@@ -7187,6 +7434,8 @@ $("#form").onsubmit = async e => {
       if (!(k in a)) delete cloned[k];
     }
     tgtData.activities.push(cloned);
+    personalModalSaving = true;
+    personalModalTempAttIds = [];
     $("#modal").close();
     saveTripRecord(sourceTrip, "", true);
     saveTripRecord(targetTrip, `📦 Atividade movida para "${tgtData.title || targetTrip.name}"`);
@@ -7202,6 +7451,8 @@ $("#form").onsubmit = async e => {
   } else {
     tgtData.activities.push({ id: modalDraftId || uid(), ...a });
   }
+  personalModalSaving = true;
+  personalModalTempAttIds = [];
   $("#modal").close();
   saveTripRecord(targetTrip, editing ? "✔️ Atividade atualizada" : "➕ Atividade adicionada");
 };
@@ -7879,6 +8130,62 @@ $("#btnSaveGeminiKey").onclick = async () => {
     toast("❌ " + (err.message || err));
   }
 };
+
+if ($("#btnPersonalDriveConnect")) {
+  $("#btnPersonalDriveConnect").onclick = async () => {
+    const clientId = window.FeriasApi?.getGoogleClientId?.() || "";
+    if (!clientId) return toast("⚠️ Google OAuth Client ID não configurado.");
+    const btn = $("#btnPersonalDriveConnect");
+    btn.disabled = true;
+    btn.textContent = "⏳ Conectando...";
+    try {
+      const res = await window.MyPlanDrive.connect(clientId, true);
+      state.params = state.params || {};
+      state.params.drive = { ...(state.params.drive || {}), connectedEmail: res.email || "" };
+      await window.FeriasApi.saveIntegrations({ driveConnectedEmail: res.email || "" }).catch(() => {});
+      renderPersonalDriveParams();
+      toast(`✅ Google Drive conectado${res.email ? ` (${res.email})` : ""}!`);
+    } catch (err) {
+      toast("❌ " + (err.message || "Falha ao conectar Google Drive."));
+    } finally {
+      btn.disabled = false;
+      renderPersonalDriveParams();
+    }
+  };
+}
+if ($("#btnPersonalDriveDisconnect")) {
+  $("#btnPersonalDriveDisconnect").onclick = async () => {
+    window.MyPlanDrive?.disconnect?.();
+    if (state.params?.drive) state.params.drive.connectedEmail = "";
+    await window.FeriasApi.saveIntegrations({ driveConnectedEmail: "" }).catch(() => {});
+    renderPersonalDriveParams();
+    toast("🔌 Google Drive desconectado.");
+  };
+}
+if ($("#btnPersonalDrivePickFolder")) {
+  $("#btnPersonalDrivePickFolder").onclick = () => {
+    window.MyPlanPro?.openDriveFolderPickerModal?.("personal");
+  };
+}
+if ($("#btnPersonalSaveDriveConfig")) {
+  $("#btnPersonalSaveDriveConfig").onclick = async () => {
+    const raw = ($("#personalDriveFolderInput")?.value || "").trim();
+    const folderId = window.MyPlanDrive?.extractFolderId ? window.MyPlanDrive.extractFolderId(raw) : raw;
+    if (raw && !folderId) {
+      return toast("⚠️ URL ou ID de pasta do Google Drive inválido. Cole o link completo ou ID.");
+    }
+    state.params = state.params || {};
+    state.params.drive = { ...(state.params.drive || {}), folderId: folderId || "", folderUrl: raw || "" };
+    await window.FeriasApi.saveIntegrations({ personalDriveFolderId: folderId || "", personalDriveFolderUrl: raw || "" }).catch(() => {});
+    save("💾 Pasta do Google Drive Pessoal salva!");
+    renderPersonalDriveParams();
+  };
+}
+if ($("#btnPersonalSyncDriveNow")) {
+  $("#btnPersonalSyncDriveNow").onclick = () => {
+    window.MyPlanPro?.syncGoogleDrive?.();
+  };
+}
 
 $("#btnToggleKey").onclick = () => { const inp = $("#gmapsKeyInput"); inp.type = inp.type === "password" ? "text" : "password"; };
 $("#btnSaveKey").onclick = async () => {
@@ -9821,6 +10128,7 @@ let pmapMarkers = [];
 let pmapPolylines = [];
 let pmapDirectionsRenderers = [];
 let pmapEventsBound = false;
+const pmapRouteCache = new Map();
 
 let personalUnifiedFilter = {
   search: "",
@@ -10520,6 +10828,50 @@ async function renderPersonalMap() {
 
     if (routeLegs.length) {
       const ds = google.maps.DirectionsService ? new google.maps.DirectionsService() : null;
+      const runLeg = (p1, p2) => new Promise(resolve => {
+        const key = `${p1.lat.toFixed(4)},${p1.lng.toFixed(4)}=>${p2.lat.toFixed(4)},${p2.lng.toFixed(4)}`;
+        const applyOk = res => {
+          const dr = new google.maps.DirectionsRenderer({
+            map: pmapGmapInstance,
+            suppressMarkers: true,
+            preserveViewport: true,
+            polylineOptions: { strokeColor: "#2563eb", strokeWeight: 4.2, strokeOpacity: 0.9 }
+          });
+          pmapDirectionsRenderers.push(dr);
+          dr.setDirections(res);
+        };
+        const cached = pmapRouteCache.get(key);
+        if (cached) {
+          applyOk(cached);
+          resolve(true);
+          return;
+        }
+        try {
+          ds.route({
+            origin: { lat: p1.lat, lng: p1.lng },
+            destination: { lat: p2.lat, lng: p2.lng },
+            travelMode: google.maps.TravelMode.DRIVING
+          }, (result, stDir) => {
+            if (seq !== pmapRenderSeq) { resolve(false); return; }
+            if (stDir === "OK" && result) {
+              if (pmapRouteCache.size >= 120) {
+                const oldestKey = pmapRouteCache.keys().next().value;
+                if (oldestKey !== undefined) pmapRouteCache.delete(oldestKey);
+              }
+              pmapRouteCache.set(key, result);
+              applyOk(result);
+            } else {
+              drawRoadPolyline(p1, p2);
+            }
+            resolve(false);
+          });
+        } catch {
+          drawRoadPolyline(p1, p2);
+          resolve(false);
+        }
+      });
+
+      const roadLegsToFetch = [];
       routeLegs.forEach(leg => {
         const p1 = cityCoordByKey.get(leg.fromKey);
         const p2 = cityCoordByKey.get(leg.toKey);
@@ -10527,32 +10879,24 @@ async function renderPersonalMap() {
         if (leg.isFlight) {
           drawFlightArc(p1, p2);
         } else if (ds) {
-          try {
-            const dr = new google.maps.DirectionsRenderer({
-              map: pmapGmapInstance,
-              suppressMarkers: true,
-              preserveViewport: true,
-              polylineOptions: { strokeColor: "#2563eb", strokeWeight: 4.2, strokeOpacity: 0.9 }
-            });
-            pmapDirectionsRenderers.push(dr);
-            ds.route({
-              origin: { lat: p1.lat, lng: p1.lng },
-              destination: { lat: p2.lat, lng: p2.lng },
-              travelMode: google.maps.TravelMode.DRIVING
-            }, (result, stDir) => {
-              if (seq !== pmapRenderSeq) return;
-              if (stDir === "OK" && result) dr.setDirections(result);
-              else drawRoadPolyline(p1, p2);
-            });
-          } catch {
-            drawRoadPolyline(p1, p2);
-          }
+          roadLegsToFetch.push([p1, p2]);
         } else {
           drawRoadPolyline(p1, p2);
         }
       });
       if (uniqueCityPts.length > 1) pmapGmapInstance.fitBounds(bounds, 48);
       else { pmapGmapInstance.setCenter({ lat: uniqueCityPts[0].lat, lng: uniqueCityPts[0].lng }); pmapGmapInstance.setZoom(10); }
+
+      (async () => {
+        for (let i = 0; i < roadLegsToFetch.length; i++) {
+          if (seq !== pmapRenderSeq) return;
+          const [p1, p2] = roadLegsToFetch[i];
+          const fromCache = await runLeg(p1, p2);
+          if (!fromCache && i < roadLegsToFetch.length - 1) {
+            await new Promise(r => setTimeout(r, 120));
+          }
+        }
+      })();
     } else if (uniqueCityPts.length >= 2) {
       for (let i = 0; i < uniqueCityPts.length - 1; i++) drawRoadPolyline(uniqueCityPts[i], uniqueCityPts[i + 1]);
       pmapGmapInstance.fitBounds(bounds, 48);
@@ -10710,7 +11054,7 @@ function renderPersonalModalSegments() {
       </div>
       <div class="inline-actions" style="gap:4px">
         <button type="button" class="btn ghost small" data-pseg-wallet="${idx}" title="Abrir na Carteira do Google">💳 Carteira</button>
-        <button type="button" class="icon-btn" data-pseg-del="${idx}" title="Remover trecho">✕</button>
+        <button type="button" class="icon-btn" data-pseg-del="${idx}" title="Remover trecho" aria-label="Remover trecho">✕</button>
       </div>
     </div>`).join("");
   box.querySelectorAll("[data-pseg-wallet]").forEach(btn => {
@@ -10732,6 +11076,44 @@ function renderPersonalModalSegments() {
   });
 }
 
+let editingPersonalMinuteIdx = -1;
+let acPersonalSegFromCtrl = null;
+let acPersonalSegToCtrl = null;
+
+function openPersonalMinuteModal(idx = -1) {
+  const dlg = $("#personalMinuteModal");
+  if (!dlg) return;
+  editingPersonalMinuteIdx = idx;
+  const existing = idx >= 0 ? modalMinutes[idx] : null;
+  if ($("#pminModalTitle")) $("#pminModalTitle").textContent = existing ? "✏️ Editar Ata / Nota" : "📝 Nova Ata / Nota do Cartão";
+  if ($("#pmin-title")) $("#pmin-title").value = existing ? (existing.title || "") : `Ata - ${($("#f-name")?.value || "Compromisso").trim()}`;
+  if ($("#pmin-body")) $("#pmin-body").value = existing ? (existing.text || "") : "";
+  dlg.showModal();
+  setTimeout(() => $("#pmin-title")?.focus(), 30);
+}
+
+function openPersonalSegmentModal() {
+  const dlg = $("#personalSegmentModal");
+  if (!dlg) return;
+  if (!acPersonalSegFromCtrl && $("#pseg-from") && $("#ac-psegFrom") && window.FeriasMaps?.attachAutocomplete) {
+    acPersonalSegFromCtrl = window.FeriasMaps.attachAutocomplete($("#pseg-from"), $("#ac-psegFrom"));
+  }
+  if (!acPersonalSegToCtrl && $("#pseg-to") && $("#ac-psegTo") && window.FeriasMaps?.attachAutocomplete) {
+    acPersonalSegToCtrl = window.FeriasMaps.attachAutocomplete($("#pseg-to"), $("#ac-psegTo"));
+  }
+  acPersonalSegFromCtrl?.clearSelected?.();
+  acPersonalSegToCtrl?.clearSelected?.();
+  if ($("#pseg-transport")) $("#pseg-transport").value = "Avião";
+  if ($("#pseg-date")) $("#pseg-date").value = $("#f-start")?.value || "";
+  if ($("#pseg-from")) $("#pseg-from").value = "";
+  if ($("#pseg-to")) $("#pseg-to").value = "";
+  if ($("#pseg-time")) $("#pseg-time").value = "";
+  if ($("#pseg-carrier")) $("#pseg-carrier").value = "";
+  if ($("#pseg-locator")) $("#pseg-locator").value = "";
+  dlg.showModal();
+  setTimeout(() => $("#pseg-from")?.focus(), 30);
+}
+
 function renderPersonalModalMinutes() {
   const box = $("#f-minutesList");
   if (!box) return;
@@ -10746,25 +11128,12 @@ function renderPersonalModalMinutes() {
         <span class="muted small">${m.updatedAt ? new Date(m.updatedAt).toLocaleDateString("pt-BR") : ""}</span>
       </div>
       <div class="inline-actions" style="gap:4px">
-        <button type="button" class="icon-btn" data-pmin-edit="${idx}" title="Editar ata">✏️</button>
-        <button type="button" class="icon-btn" data-pmin-del="${idx}" title="Excluir ata">🗑️</button>
+        <button type="button" class="icon-btn" data-pmin-edit="${idx}" title="Editar ata" aria-label="Editar ata">✏️</button>
+        <button type="button" class="icon-btn" data-pmin-del="${idx}" title="Excluir ata" aria-label="Excluir ata">🗑️</button>
       </div>
     </div>`).join("");
   box.querySelectorAll("[data-pmin-edit]").forEach(el => {
-    el.onclick = () => {
-      const idx = parseInt(el.dataset.pminEdit, 10);
-      const m = modalMinutes[idx];
-      if (!m) return;
-      const nextTitle = prompt("Título da Ata:", m.title || "Ata");
-      if (nextTitle === null) return;
-      const nextBody = prompt("Conteúdo / Registro da Ata:", m.text || "");
-      if (nextBody === null) return;
-      m.title = nextTitle.trim() || m.title;
-      m.text = nextBody;
-      m.updatedAt = new Date().toISOString();
-      renderPersonalModalMinutes();
-      toast("📝 Ata atualizada!");
-    };
+    el.onclick = () => openPersonalMinuteModal(parseInt(el.dataset.pminEdit, 10));
   });
   box.querySelectorAll("[data-pmin-del]").forEach(btn => {
     btn.onclick = () => {
@@ -10817,17 +11186,30 @@ function bindPersonalCardProFeatures() {
       window.open(`https://wa.me/?text=${encodeURIComponent(parts.join("\n\n"))}`, "_blank", "noopener");
     };
   }
-  const createPersonalMinute = () => {
-    const defTitle = `Ata - ${($("#f-name")?.value || "Compromisso").trim()}`;
-    const title = prompt("Título da nova Ata:", defTitle);
-    if (!title || !title.trim()) return;
-    const text = prompt("Resumo / Pontos da Ata (opcional):", "") || "";
-    modalMinutes.push({ id: "pmin_" + uid(), title: title.trim(), text, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
-    renderPersonalModalMinutes();
-    toast("📝 Ata adicionada ao cartão!");
-  };
-  if ($("#btnHeadNewMinute")) $("#btnHeadNewMinute").onclick = createPersonalMinute;
-  if ($("#btnActNewMinute")) $("#btnActNewMinute").onclick = createPersonalMinute;
+  if ($("#btnHeadNewMinute")) $("#btnHeadNewMinute").onclick = () => openPersonalMinuteModal(-1);
+  if ($("#btnActNewMinute")) $("#btnActNewMinute").onclick = () => openPersonalMinuteModal(-1);
+  if ($("#btnPminClose")) $("#btnPminClose").onclick = () => $("#personalMinuteModal")?.close();
+  if ($("#btnPminCancel")) $("#btnPminCancel").onclick = () => $("#personalMinuteModal")?.close();
+  if ($("#personalMinuteForm")) {
+    $("#personalMinuteForm").onsubmit = e => {
+      e.preventDefault();
+      const title = ($("#pmin-title")?.value || "").trim();
+      if (!title) return;
+      const text = $("#pmin-body")?.value || "";
+      const nowIso = new Date().toISOString();
+      if (editingPersonalMinuteIdx >= 0 && modalMinutes[editingPersonalMinuteIdx]) {
+        modalMinutes[editingPersonalMinuteIdx].title = title;
+        modalMinutes[editingPersonalMinuteIdx].text = text;
+        modalMinutes[editingPersonalMinuteIdx].updatedAt = nowIso;
+        toast("📝 Ata atualizada!");
+      } else {
+        modalMinutes.push({ id: "pmin_" + uid(), title, text, createdAt: nowIso, updatedAt: nowIso });
+        toast("📝 Ata adicionada ao cartão!");
+      }
+      $("#personalMinuteModal")?.close();
+      renderPersonalModalMinutes();
+    };
+  }
 
   // Checklist do Cartão
   const addSub = () => {
@@ -10848,13 +11230,23 @@ function bindPersonalCardProFeatures() {
   if ($("#btnActQuickEditCol")) $("#btnActQuickEditCol").onclick = () => openPersonalColModal($("#f-personalCol")?.value || null);
   if ($("#btnActQuickAddType")) {
     $("#btnActQuickAddType").onclick = () => {
-      const name = prompt("Nome do novo tipo de atividade pessoal (ex: Saúde, Estudo, Família):");
-      if (!name || !name.trim()) return;
-      const clean = name.trim();
+      if ($("#ptype-name")) $("#ptype-name").value = "";
+      $("#personalCustomTypeModal")?.showModal();
+      setTimeout(() => $("#ptype-name")?.focus(), 30);
+    };
+  }
+  if ($("#btnPtypeClose")) $("#btnPtypeClose").onclick = () => $("#personalCustomTypeModal")?.close();
+  if ($("#btnPtypeCancel")) $("#btnPtypeCancel").onclick = () => $("#personalCustomTypeModal")?.close();
+  if ($("#personalCustomTypeForm")) {
+    $("#personalCustomTypeForm").onsubmit = e => {
+      e.preventDefault();
+      const clean = ($("#ptype-name")?.value || "").trim();
+      if (!clean) return;
       if (!Array.isArray(state.customPersonalTypes)) state.customPersonalTypes = [];
       if (!state.customPersonalTypes.includes(clean)) state.customPersonalTypes.push(clean);
       ensurePersonalCustomTypesInSelect();
       if ($("#f-type")) { $("#f-type").value = clean; toggleTrip(); }
+      $("#personalCustomTypeModal")?.close();
       toast(`📌 Tipo "${clean}" adicionado!`);
     };
   }
@@ -10951,6 +11343,7 @@ function bindPersonalCardProFeatures() {
     for (const f of files) {
       try {
         const up = await window.FeriasApi.uploadAttachment(tripId, actId, f);
+        if (up?.id) personalModalTempAttIds.push(up.id);
         modalTravelTickets.push({ ...up, fileName: up.fileName || f.name, mimeType: up.mimeType || f.type || "" });
         if (useAi && typeof fileToBase64Obj === "function") {
           aiFilesPayload.push(await fileToBase64Obj(f));
@@ -10979,14 +11372,23 @@ function bindPersonalCardProFeatures() {
   if ($("#f-ticketsAiInput")) $("#f-ticketsAiInput").onchange = async e => { await uploadPersonalTickets([...(e.target.files || [])], true); e.target.value = ""; };
   if ($("#f-ticketsOnlyInput")) $("#f-ticketsOnlyInput").onchange = async e => { await uploadPersonalTickets([...(e.target.files || [])], false); e.target.value = ""; };
   if ($("#btnActAddSegment")) {
-    $("#btnActAddSegment").onclick = () => {
-      const transport = prompt("Modalidade (Avião, Carro, Ônibus, Trem, Navio):", "Avião") || "Avião";
-      const from = prompt("Origem do trecho:", "") || "";
-      const to = prompt("Destino do trecho:", "") || "";
-      if (!from && !to) return;
-      const departureDate = prompt("Data (AAAA-MM-DD, opcional):", $("#f-start")?.value || "") || "";
-      const locator = prompt("Localizador / Reserva (opcional):", "") || "";
-      modalTravelSegments.push({ transport, from, to, departureDate, locator });
+    $("#btnActAddSegment").onclick = () => openPersonalSegmentModal();
+  }
+  if ($("#btnPsegClose")) $("#btnPsegClose").onclick = () => $("#personalSegmentModal")?.close();
+  if ($("#btnPsegCancel")) $("#btnPsegCancel").onclick = () => $("#personalSegmentModal")?.close();
+  if ($("#personalSegmentForm")) {
+    $("#personalSegmentForm").onsubmit = e => {
+      e.preventDefault();
+      const transport = ($("#pseg-transport")?.value || "Avião").trim();
+      const from = ($("#pseg-from")?.value || "").trim();
+      const to = ($("#pseg-to")?.value || "").trim();
+      if (!from && !to) return toast("⚠️ Informe a origem ou o destino do trecho.");
+      const departureDate = ($("#pseg-date")?.value || "").trim();
+      const departureTime = ($("#pseg-time")?.value || "").trim();
+      const carrier = ($("#pseg-carrier")?.value || "").trim();
+      const locator = ($("#pseg-locator")?.value || "").trim();
+      modalTravelSegments.push({ transport, from, to, departureDate, departureTime, carrier, locator });
+      $("#personalSegmentModal")?.close();
       renderPersonalModalSegments();
       toast("🛫 Trecho adicionado!");
     };
@@ -11086,7 +11488,7 @@ function renderPersonalBoard() {
           <span class="pill" style="font-size:0.7rem">${items.length}</span>
         </div>
         <div class="inline-actions" style="gap:2px">
-          <button type="button" class="icon-btn" data-pb-editcol="${esc(col.id)}" title="Editar lista">✏️</button>
+          <button type="button" class="icon-btn" data-pb-editcol="${esc(col.id)}" title="Editar lista" aria-label="Editar lista ${esc(col.title)}">✏️</button>
         </div>
       </div>
       <div class="pro-col-cards" data-pb-drop="${esc(col.id)}">${cardsHtml}</div>

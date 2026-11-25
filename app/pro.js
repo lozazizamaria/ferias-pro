@@ -13,69 +13,6 @@
     if (mi < 0 || mi > 11) return "";
     return `${d}/${PT_MONTHS_SHORT[mi]}/${y.slice(-2)}`;
   }
-
-  function ensurePersonalStateShape(st) {
-    if (!st || typeof st !== "object") return;
-    if (!Array.isArray(st.columns) || !st.columns.length) {
-      st.columns = [
-        { id: "assuntos", title: "Assuntos",     color: "#64748b" },
-        { id: "todo",     title: "A Fazer",      color: "#0284c7" },
-        { id: "doing",    title: "Em Andamento", color: "#2563eb" },
-        { id: "done",     title: "Concluído",    color: "#10b981" }
-      ];
-    }
-    if (!Array.isArray(st.labels) || !st.labels.length) {
-      st.labels = [
-        { id: "lbl_familia",  name: "Família",  color: "#ec4899" },
-        { id: "lbl_viagem",   name: "Viagem",   color: "#f59e0b" },
-        { id: "lbl_casa",     name: "Casa",     color: "#0284c7" },
-        { id: "lbl_saude",    name: "Saúde",    color: "#10b981" },
-        { id: "lbl_lazer",    name: "Lazer",    color: "#8b5cf6" },
-        { id: "lbl_financas", name: "Finanças", color: "#2563eb" }
-      ];
-    }
-    if (!st.params || typeof st.params !== "object") st.params = {};
-    if (!Array.isArray(st.activities)) st.activities = [];
-    if (!Array.isArray(st.checklist)) st.checklist = [];
-    if (!Array.isArray(st.customCardTypes)) st.customCardTypes = [];
-  }
-
-  function applyPersonalModeAdaptations() {
-    const pers = isPersonalMode();
-    document.body.classList.toggle("is-personal-mode", pers);
-    // Títulos e rótulos em Configurações
-    const paramsMainTitle = document.querySelector("#view-pro-params .card h2");
-    if (paramsMainTitle) {
-      paramsMainTitle.textContent = pers ? "🏡 Configurações & Metas Pessoais" : "⚙️ Configurações do Projeto & Metas";
-    }
-    const clientParamLbl = $("#pp-client")?.closest(".param-row")?.querySelector("span");
-    if (clientParamLbl) clientParamLbl.textContent = pers ? "Categoria / Contexto padrão" : "Cliente / Carteira padrão";
-    if ($("#pp-client")) $("#pp-client").placeholder = pers ? "Ex: Família, Casa, Viagens" : "Ex: Conta Corporativa";
-
-    const cardClientLbl = $("#pc-client")?.closest("label");
-    if (cardClientLbl && cardClientLbl.firstChild && cardClientLbl.firstChild.nodeType === 3) {
-      cardClientLbl.firstChild.textContent = pers ? "Categoria / Contexto\n              " : "Cliente / Conta\n              ";
-    }
-    if ($("#pc-client")) $("#pc-client").placeholder = pers ? "Ex: Família, Saúde, Casa, Lazer, Finanças" : "Ex: Cliente Alpha";
-
-    // Notas & Registros vs Atas de Reunião
-    if ($("#btnProCardHeadNewMinute")) {
-      $("#btnProCardHeadNewMinute").textContent = pers ? "📝 Nova Nota" : "📝 Nova Ata";
-      $("#btnProCardHeadNewMinute").title = pers ? "Criar nova Nota / Registro vinculada a este cartão" : "Criar nova Ata de Reunião vinculada a este cartão";
-    }
-    if ($("#btnProCardNewMinute")) {
-      $("#btnProCardNewMinute").textContent = pers ? "➕ Nova Nota" : "➕ Nova Ata de Reunião";
-    }
-    const minCardTitle = $("#pc-minutesCardBox .pro-side-title");
-    if (minCardTitle) minCardTitle.textContent = pers ? "📝 Notas & Registros" : "📝 Atas de Reunião";
-
-    // Ocultar campos militares/corporativos no ambiente Pessoal
-    if ($("#proTravelFinanceParamsCard")) $("#proTravelFinanceParamsCard").hidden = pers;
-    if ($("#pc-travelFinanceBox") && pers) $("#pc-travelFinanceBox").hidden = true;
-    if ($("#pc-primaryTravelMode") && pers) $("#pc-primaryTravelMode").hidden = true;
-    if ($("#btnProControlGoParams")) $("#btnProControlGoParams").hidden = pers;
-    if ($("#proControlQuickMode")) $("#proControlQuickMode").hidden = pers;
-  }
   const COVER_SWATCHES = ["", "#1d4ed8", "#0284c7", "#0ea5e9", "#10b981", "#6366f1", "#8b5cf6", "#f59e0b", "#ef4444", "#64748b"];
   const ASSIGNEE_PALETTE = [
     { darkBg: "rgba(37, 99, 235, 0.22)",  darkFg: "#93c5fd", darkBd: "rgba(59, 130, 246, 0.55)",  lightBg: "#dbeafe", lightFg: "#1e40af", lightBd: "#93c5fd", hex: "#3b82f6" },
@@ -2993,7 +2930,7 @@
 
     const editBtn = $("#btnProMapInspEdit", insp);
     if (editBtn && targetCard) {
-      editBtn.onclick = () => isPersonalMode() ? core.openModal(targetCard.id) : openProCardModal(targetCard.id);
+      editBtn.onclick = () => openProCardModal(targetCard.id);
     }
     const backListBtn = $("#btnProMapInspBack", insp);
     if (backListBtn && resolvedGroup) {
@@ -3550,7 +3487,7 @@
       tableEl.querySelectorAll("[data-map-edit-direct]").forEach(btn => {
         btn.onclick = (ev) => {
           ev.stopPropagation();
-          isPersonalMode() ? core.openModal(btn.dataset.mapEditDirect) : openProCardModal(btn.dataset.mapEditDirect);
+          openProCardModal(btn.dataset.mapEditDirect);
         };
       });
     }
@@ -3591,7 +3528,7 @@
       mobileListEl.querySelectorAll("[data-map-edit-direct]").forEach(btn => {
         btn.onclick = (ev) => {
           ev.stopPropagation();
-          isPersonalMode() ? core.openModal(btn.dataset.mapEditDirect) : openProCardModal(btn.dataset.mapEditDirect);
+          openProCardModal(btn.dataset.mapEditDirect);
         };
       });
     }
@@ -3784,12 +3721,7 @@
     if (!canvas) return;
     bindProEvents();
     const seq = ++proMapRenderSeq;
-    const rawCards = filteredCardsOpt || (isPersonalMode()
-      ? getProSortedActivities().map(c => ({
-          ...c,
-          location: String(c.location || c.to || c.city || c.from || "").trim()
-        }))
-      : applyProUnifiedFilters(getProSortedActivities()));
+    const rawCards = filteredCardsOpt || applyProUnifiedFilters(getProSortedActivities());
     const cards = rawCards;
     const withLoc = cards.filter(c => String(c.location || "").trim());
 
@@ -5350,134 +5282,7 @@
   let proControlTableSort = { col: "start", dir: "asc" };
   let proControlLastReport = null;
 
-  function renderPersonalControl(filteredCardsOpt) {
-    const viewEl = $("#view-pro-control");
-    if (!viewEl) return;
-    const cards = filteredCardsOpt || applyProUnifiedFilters(getProSortedActivities());
-    const travelCards = cards.filter(c => {
-      const td = c.travelDetails && typeof c.travelDetails === "object" ? c.travelDetails : null;
-      const asgs = getCardAssigneesList(c);
-      return c.type === "Viagem" || asgs.some(a => a.travels) || Boolean(td && (td.transport || td.hasCost || (td.tickets && td.tickets.length) || (td.segments && td.segments.length))) || (proControlScope === "with_location" && Boolean(String(c.location || "").trim()));
-    });
-
-    const yearSel = $("#proControlQuickYear");
-    const yearsSet = new Set();
-    travelCards.forEach(c => { const y = String(c.start || "").slice(0, 4); if (/^\d{4}$/.test(y)) yearsSet.add(y); });
-    const years = [...yearsSet].sort();
-    if (yearSel) {
-      const prev = proControlQuickYear || yearSel.value || "";
-      yearSel.innerHTML = `<option value="">Todos os anos</option>` + years.map(y => `<option value="${y}">${y}</option>`).join("");
-      yearSel.value = years.includes(prev) ? prev : "";
-    }
-    const selYear = yearSel?.value || "";
-    const selMonth = $("#proControlQuickMonth")?.value || "";
-
-    const rows = travelCards.filter(c => {
-      const iso = String(c.start || "");
-      if (selYear && !iso.startsWith(selYear)) return false;
-      if (selMonth && iso.slice(5, 7) !== selMonth) return false;
-      return true;
-    });
-
-    let totalDays = 0, totalPlanned = 0, totalActual = 0;
-    const peopleSet = new Set();
-    rows.forEach(c => {
-      totalDays += Math.max(1, core.days(c) || 1);
-      const td = c.travelDetails || {};
-      const planned = Number(c.amount) > 0 ? Number(c.amount) : (td.hasCost ? Number(td.costAmount) || 0 : 0);
-      const actual = Number(c.actualAmount) > 0 ? Number(c.actualAmount) : planned;
-      totalPlanned += planned;
-      totalActual += actual;
-      getCardAssigneesList(c).forEach(a => { if (a.name) peopleSet.add(a.name); });
-    });
-
-    if ($("#proControlCountBadge")) {
-      $("#proControlCountBadge").textContent = `${rows.length} ${rows.length === 1 ? "viagem" : "viagens"} · ${totalDays}d fora`;
-    }
-    const emptyEl = $("#proControlEmptyBanner");
-    if (emptyEl) {
-      emptyEl.hidden = rows.length > 0;
-      if (!rows.length) {
-        emptyEl.innerHTML = `<div class="pro-travels-empty-inner">
-          <div style="font-size:2rem">🧳</div>
-          <h3>Nenhuma viagem pessoal encontrada</h3>
-          <p class="muted small">Crie um cartão do tipo <b>Viagem</b> ou marque <b>"✈️ Viaja"</b> / preencha <b>Detalhes da Viagem</b> para acompanhar roteiros, dias fora e gastos pessoais aqui.</p>
-          <button type="button" class="btn primary small" id="btnPersCtrlAdd">➕ Nova Viagem</button>
-        </div>`;
-        if ($("#btnPersCtrlAdd", emptyEl)) $("#btnPersCtrlAdd", emptyEl).onclick = () => openProCardModal({ type: "Viagem" });
-      }
-    }
-    const kpisEl = $("#proControlKpis");
-    if (kpisEl) {
-      const kpis = [
-        ["Viagens / Roteiros", String(rows.length), `${peopleSet.size} pessoa(s) envolvida(s)`, "#38bdf8"],
-        ["Total de Dias Fora", `${totalDays}d`, rows.length ? `Média ${(totalDays / rows.length).toFixed(1)}d / viagem` : "—", "#f59e0b"],
-        ["Gasto Previsto", core.money(totalPlanned), "Transporte, hospedagem e roteiro", "#6366f1"],
-        ["Gasto Realizado", core.money(totalActual), totalPlanned > 0 ? `${Math.round((totalActual / totalPlanned) * 100)}% do previsto` : "—", "#10b981"]
-      ];
-      kpisEl.innerHTML = kpis.map(([lbl, val, sub, col]) => `
-        <div class="kpi pro-map-kpi-card pro-travels-kpi" style="--c:${core.esc(col)}">
-          <div class="lbl">${core.esc(lbl)}</div>
-          <div class="val">${core.esc(val)}</div>
-          <div class="sub">${core.esc(sub)}</div>
-        </div>`).join("");
-    }
-    const mainWrap = $("#proControlMainContent");
-    if (mainWrap) mainWrap.hidden = !rows.length;
-    const ctrlSub = $("#view-pro-control .pro-travels-table-card .muted.small");
-    if (ctrlSub) ctrlSub.textContent = "Clique em qualquer viagem para editar roteiro, bilhetes, trechos e gastos pessoais.";
-    const summaryEl = $("#proControlPersonCards");
-    if (summaryEl) summaryEl.innerHTML = "";
-    const tbl = $("#proControlTable");
-    if (tbl) {
-      tbl.innerHTML = `
-        <thead>
-          <tr>
-            <th>Viagem / Roteiro</th>
-            <th>Pessoas / Família</th>
-            <th>Destino</th>
-            <th>Datas</th>
-            <th>Dias</th>
-            <th>Transporte</th>
-            <th class="num">Previsto</th>
-            <th class="num">Realizado</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map(c => {
-            const td = c.travelDetails || {};
-            const asgs = getCardAssigneesList(c).map(a => a.name).filter(Boolean).join(", ") || "—";
-            const dt = c.start ? (c.end && c.end !== c.start ? `${core.fmtBR(c.start)} → ${core.fmtBR(c.end)}` : core.fmtBR(c.start)) : "Sem data";
-            const dCnt = Math.max(1, core.days(c) || 1);
-            const planned = Number(c.amount) > 0 ? Number(c.amount) : (td.hasCost ? Number(td.costAmount) || 0 : 0);
-            const actual = Number(c.actualAmount) > 0 ? Number(c.actualAmount) : 0;
-            return `<tr data-pctrl-card="${core.esc(c.id)}" style="cursor:pointer">
-              <td><strong>${core.esc(c.name || "Sem título")}</strong>${c.client ? `<div class="muted small">${core.esc(c.client)}</div>` : ""}</td>
-              <td>${core.esc(asgs)}</td>
-              <td>${c.location ? `📍 ${core.esc(shortLocationCityName(c.location))}` : `<span class="muted">—</span>`}</td>
-              <td class="nowrap">${core.esc(dt)}</td>
-              <td class="nowrap">${dCnt}d</td>
-              <td>${core.esc(td.transport || "—")}</td>
-              <td class="num">${planned > 0 ? core.money(planned) : "—"}</td>
-              <td class="num">${actual > 0 ? core.money(actual) : "—"}</td>
-              <td><span class="pill">${core.esc(c.finStatus || (c.completed ? "Concluído" : "Planejado"))}</span></td>
-            </tr>`;
-          }).join("")}
-        </tbody>`;
-      tbl.querySelectorAll("[data-pctrl-card]").forEach(tr => {
-        tr.onclick = () => openProCardModal(tr.dataset.pctrlCard);
-      });
-    }
-    const mobEl = $("#proControlMobileCards");
-    if (mobEl) mobEl.innerHTML = "";
-  }
-
   function renderProControl(filteredCardsOpt) {
-    if (isPersonalMode()) {
-      renderPersonalControl(filteredCardsOpt);
-      return;
-    }
     const viewEl = $("#view-pro-control");
     if (!viewEl) return;
 
@@ -9386,7 +9191,7 @@
     proModalSaved = false;
     if ($("#pc-aiReadStatus")) { $("#pc-aiReadStatus").hidden = true; $("#pc-aiReadStatus").innerHTML = ""; }
 
-    const curMode = isPersonalMode() ? "personal" : "professional";
+    const curMode = "professional";
     const targetModeSel = $("#pc-targetMode");
     const targetTripWrap = $("#pc-targetTripWrap");
     const targetTripSel = $("#pc-targetTrip");
@@ -9419,12 +9224,11 @@
     const initFinDir = a ? a.finDirection : (opts?.finDirection || tInfo.defaultFin || "none");
     const defaultAssuntosCol = cols.find(c => String(c.title || "").trim().toLowerCase() === "assuntos" || c.id === "assuntos") || cols[0];
 
-    $("#proCardModalTitle").textContent = a ? `Editar Cartão` : (isPersonalMode() ? "Novo Cartão Pessoal" : "Novo Cartão Profissional");
+    $("#proCardModalTitle").textContent = a ? `Editar Cartão` : "Novo Cartão Profissional";
     $("#pc-name").value = a ? a.name : "";
     $("#pc-notes").value = a ? (a.notes || "") : "";
     $("#pc-column").value = a ? (a.columnId ?? "") : (opts && "columnId" in opts ? opts.columnId : (defaultAssuntosCol?.id || ""));
     $("#pc-type").value = initType;
-    applyPersonalModeAdaptations();
     updateProModalTypePreview();
     $("#pc-start").value = a ? (a.start || "") : (opts && "start" in opts ? (opts.start || "") : "");
     $("#pc-end").value = a ? (a.end || a.start || "") : (opts && "end" in opts ? (opts.end || "") : (opts?.start || ""));
@@ -9816,7 +9620,7 @@
   function buildProWhatsAppText() {
     const st = core.getState();
     const cards = getProSortedActivities();
-    const title = st.title || (isPersonalMode() ? "Meu Planejamento" : "Projeto");
+    const title = st.title || "Projeto";
     const lines = [`*${title}*`, ""];
     cards.forEach(a => {
       const name = String(a.name || "Sem título").trim();
@@ -10546,6 +10350,7 @@
         dlg.close();
         return;
       }
+      window.__myplanUnsavedTarget = "pro";
       const unsavedDlg = $("#proCardUnsavedModal");
       if (unsavedDlg && !unsavedDlg.open) {
         unsavedDlg.showModal();
@@ -10568,16 +10373,29 @@
     if ($("#btnProUnsavedDiscard")) {
       $("#btnProUnsavedDiscard").onclick = () => {
         $("#proCardUnsavedModal")?.close();
+        if (window.__myplanUnsavedTarget === "personal") {
+          window.__myplanUnsavedTarget = "pro";
+          core.discardPersonalModalChanges?.();
+          return;
+        }
         proModalForceClose = true;
         $("#proCardModal")?.close();
       };
     }
     if ($("#btnProUnsavedCancel")) {
-      $("#btnProUnsavedCancel").onclick = () => $("#proCardUnsavedModal")?.close();
+      $("#btnProUnsavedCancel").onclick = () => {
+        $("#proCardUnsavedModal")?.close();
+        window.__myplanUnsavedTarget = "pro";
+      };
     }
     if ($("#btnProUnsavedSaveExit")) {
       $("#btnProUnsavedSaveExit").onclick = () => {
         $("#proCardUnsavedModal")?.close();
+        if (window.__myplanUnsavedTarget === "personal") {
+          window.__myplanUnsavedTarget = "pro";
+          core.savePersonalModalFromUnsaved?.();
+          return;
+        }
         $("#proCardForm")?.requestSubmit();
       };
     }
@@ -10614,9 +10432,16 @@
       const renderResults = () => {
         const q = (inp.value || "").trim().toLowerCase();
         if (!q) { closeDd(); return; }
-        const allCards = getProSortedActivities({ includeArchived: true });
+        const inPersonal = isPersonalMode();
+        const allCards = inPersonal && core.getPersonalAllActivities
+          ? core.getPersonalAllActivities({ includeArchived: true })
+          : getProSortedActivities({ includeArchived: true });
         const matches = allCards.filter(c => {
-          const hay = [c.name || "", c.notes || "", c.client || "", c.location || "", (c.assignee || ""), (c.columnTitle || "")].join(" ").toLowerCase();
+          const hay = [
+            c.name || "", c.notes || "", c.client || "",
+            c.location || "", c.from || "", c.to || "",
+            c.assignee || "", c.columnTitle || ""
+          ].join(" ").toLowerCase();
           return hay.includes(q);
         }).slice(0, 20);
 
@@ -10652,7 +10477,8 @@
             const cid = btn.dataset.gsCard;
             closeDd();
             inp.value = "";
-            openProCardModal(cid);
+            if (isPersonalMode()) core.openModal(cid);
+            else openProCardModal(cid);
           };
         });
       };
@@ -10943,6 +10769,10 @@
         if (hasBlockingModalOpen()) return;
         e.preventDefault();
         if (!files.length) return;
+        if (isPersonalMode() && core.openPersonalModalWithFiles) {
+          await core.openPersonalModalWithFiles(files);
+          return;
+        }
         openProCardModal();
         const nameInput = $("#pc-name");
         if (nameInput && !nameInput.value.trim()) {
@@ -11415,28 +11245,63 @@
     }
   }
 
+  const ALL_PRO_VIEWS = [
+    "pro-board", "pro-gantt", "pro-timeline", "pro-map",
+    "pro-travels", "pro-control", "pro-docs", "pro-dashboard",
+    "pro-finance", "pro-table", "pro-params", "pro-checklist"
+  ];
+  const proDirtyViews = new Set();
+  let proLastRenderCtx = null;
+  let drivePickerMode = "professional";
+
+  function renderSingleProView(viewId, ctx) {
+    if (!ctx) return;
+    switch (viewId) {
+      case "pro-board": renderProBoard(); break;
+      case "pro-gantt": renderProGantt(ctx.cards); break;
+      case "pro-timeline": renderProTimeline(ctx.cards); break;
+      case "pro-map": renderProMap(ctx.filteredCards); break;
+      case "pro-travels": renderProTravels(ctx.filteredCards); break;
+      case "pro-control": renderProControl(ctx.filteredCards); break;
+      case "pro-docs": renderProDocs(ctx.cards); break;
+      case "pro-dashboard": renderProDashboard(ctx.filteredCards, ctx.t); break;
+      case "pro-finance": renderProFinance(ctx.filteredCards, ctx.t); break;
+      case "pro-table": renderProTable(ctx.cards); break;
+      case "pro-params": renderProParams(); break;
+      case "pro-checklist": renderProChecklist(); break;
+    }
+  }
+
+  function renderProViewIfDirty(viewId) {
+    if (!core || !proDirtyViews.has(viewId)) return false;
+    if (!proLastRenderCtx) {
+      const cards = getProSortedActivities();
+      const filteredCards = applyProUnifiedFilters(cards, false);
+      const t = computeProTotals(filteredCards);
+      proLastRenderCtx = { cards, filteredCards, t };
+    }
+    proDirtyViews.delete(viewId);
+    renderSingleProView(viewId, proLastRenderCtx);
+    return true;
+  }
+
   function renderAll() {
     if (!core) return;
     bindProEvents();
-    if (isPersonalMode()) ensurePersonalStateShape(core.getState());
-    applyPersonalModeAdaptations();
     applyProVisibleMenusUI();
     const cards = getProSortedActivities();
     refreshProFilterOptions(cards);
     const filteredCards = applyProUnifiedFilters(cards, false);
     const t = computeProTotals(filteredCards);
-    renderProBoard();
-    renderProGantt(cards);
-    renderProTimeline(cards);
-    renderProMap(filteredCards);
-    renderProTravels(filteredCards);
-    renderProControl(filteredCards);
-    renderProDocs(cards);
-    renderProDashboard(filteredCards, t);
-    renderProFinance(filteredCards, t);
-    renderProTable(cards);
-    renderProParams();
-    renderProChecklist();
+    proLastRenderCtx = { cards, filteredCards, t };
+    ALL_PRO_VIEWS.forEach(v => proDirtyViews.add(v));
+
+    const activeEl = document.querySelector(".view.active");
+    const activeView = activeEl && activeEl.id && activeEl.id.startsWith("view-") ? activeEl.id.slice(5) : "pro-board";
+    const targetView = ALL_PRO_VIEWS.includes(activeView) ? activeView : "pro-board";
+    proDirtyViews.delete(targetView);
+    renderSingleProView(targetView, proLastRenderCtx);
+
     if ($("#proAllCardsModal")?.open) renderAllCardsModal();
     if ($("#proArchivedCardsModal")?.open) renderArchivedCardsModal();
   }
@@ -11522,13 +11387,20 @@
           const id = btn.dataset.dpId;
           const name = btn.dataset.dpName || "";
           const url = btn.dataset.dpUrl || `https://drive.google.com/drive/folders/${id}`;
-          if ($("#proDriveFolderInput")) $("#proDriveFolderInput").value = url;
           const st = core.getState();
           st.params = st.params || {};
           st.params.drive = { ...(st.params.drive || {}), folderId: id, folderName: name, folderUrl: url };
-          await window.FeriasApi.saveIntegrations({ driveFolderId: id, driveFolderName: name, driveFolderUrl: url }).catch(() => {});
-          core.save(`📂 Pasta "${name}" selecionada para o Google Drive!`);
-          renderProDriveParams(st);
+          if (drivePickerMode === "personal") {
+            if ($("#personalDriveFolderInput")) $("#personalDriveFolderInput").value = url;
+            await window.FeriasApi.saveIntegrations({ personalDriveFolderId: id, personalDriveFolderName: name, personalDriveFolderUrl: url }).catch(() => {});
+            core.save(`📂 Pasta "${name}" selecionada para o Google Drive Pessoal!`);
+            core.renderPersonalDriveParams?.();
+          } else {
+            if ($("#proDriveFolderInput")) $("#proDriveFolderInput").value = url;
+            await window.FeriasApi.saveIntegrations({ driveFolderId: id, driveFolderName: name, driveFolderUrl: url }).catch(() => {});
+            core.save(`📂 Pasta "${name}" selecionada para o Google Drive!`);
+            renderProDriveParams(st);
+          }
           $("#driveFolderPickerModal")?.close();
         };
       });
@@ -11537,9 +11409,12 @@
     }
   }
 
-  function openDriveFolderPickerModal() {
+  function openDriveFolderPickerModal(modeOpt = null) {
     const dlg = $("#driveFolderPickerModal");
     if (!dlg) return;
+    drivePickerMode = (modeOpt === "personal" || modeOpt === "professional")
+      ? modeOpt
+      : (isPersonalMode() ? "personal" : "professional");
     if ($("#drivePickerSearch")) $("#drivePickerSearch").value = "";
     dlg.showModal();
     loadDrivePickerFolders("");
@@ -11550,19 +11425,26 @@
     if (driveSyncRunning) return core.toast("⏳ Sincronização com o Google Drive já está em andamento...");
     const trip = core.getActiveTrip?.();
     if (!trip || !trip.data) return core.toast("⚠️ Nenhum planejamento ativo para sincronizar.");
+    const pers = isPersonalMode();
     const cfg = getDriveConfig(trip.data);
     const rootFolderId = cfg.folderId || (window.MyPlanDrive?.extractFolderId ? window.MyPlanDrive.extractFolderId(cfg.folderUrl) : "");
     if (!rootFolderId) {
       core.toast("⚙️ Configure a pasta raiz do Google Drive em Parâmetros primeiro.");
-      if (core.switchProView) core.switchProView("pro-params");
-      setTimeout(() => $("#proDriveParamsPanel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+      if (pers) {
+        if (core.switchAppView) core.switchAppView("params");
+        setTimeout(() => $("#personalDriveParamsPanel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+      } else {
+        if (core.switchProView) core.switchProView("pro-params");
+        setTimeout(() => $("#proDriveParamsPanel")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+      }
       return;
     }
     const clientId = window.FeriasApi?.getGoogleClientId?.() || "";
     if (!clientId) return core.toast("⚠️ Google OAuth Client ID não configurado.");
 
     driveSyncRunning = true;
-    const syncBtn = $("#btnProSyncDriveNow");
+    const syncBtn = pers ? $("#btnPersonalSyncDriveNow") : $("#btnProSyncDriveNow");
+    const syncOrigText = syncBtn ? syncBtn.textContent : "";
     if (syncBtn) { syncBtn.disabled = true; syncBtn.textContent = "⏳ Sincronizando..."; }
     core.toast("☁️ Sincronizando cartões com o Google Drive...");
     try {
@@ -11570,8 +11452,8 @@
         clientId,
         rootFolderId,
         trip,
-        columns: trip.data.columns || getMergedColumns(),
-        labels: trip.data.labels || getMergedLabels(),
+        columns: pers ? (trip.data.personalColumns || []) : (trip.data.columns || getMergedColumns()),
+        labels: pers ? [] : (trip.data.labels || getMergedLabels()),
         resolveDocHref,
         onProgress: ({ step, total, cardName }) => {
           core.toast(`☁️ Sincronizando Google Drive (${step}/${total}): ${String(cardName || "").slice(0, 32)}...`);
@@ -11586,14 +11468,15 @@
         connectedEmail: window.MyPlanDrive?.getConnectedEmail?.() || cfg.connectedEmail || ""
       };
       await core.saveTripRecord(trip, "");
-      renderProDriveParams(trip.data);
+      if (pers) core.renderPersonalDriveParams?.();
+      else renderProDriveParams(trip.data);
       const warnBit = result.failedFiles ? ` (${result.failedFiles} anexo(s) indisponível(is))` : "";
       core.toast(`✅ Google Drive atualizado com sucesso! (${result.syncedCards} ${result.syncedCards === 1 ? "cartão" : "cartões"}, ${result.syncedFiles} arquivos)${warnBit}`);
     } catch (err) {
       core.toast("❌ " + (err.message || "Falha ao sincronizar com o Google Drive."));
     } finally {
       driveSyncRunning = false;
-      if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = "🔄 Atualizar Google Drive"; }
+      if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = syncOrigText || "🔄 Atualizar Google Drive"; }
     }
   }
 
@@ -11605,9 +11488,12 @@
     if (!tbl) return;
     const q = ($("#proAllCardsSearch")?.value || "").trim().toLowerCase();
     const filterMode = $("#proAllCardsFilterSeg")?.querySelector("button.active")?.dataset?.allFilter || "all";
+    const inPersonal = isPersonalMode();
     const labelsMap = new Map(getMergedLabels().map(l => [l.id, l]));
 
-    const allActive = getProSortedActivities({ includeArchived: false });
+    const allActive = (inPersonal && core.getPersonalAllActivities)
+      ? core.getPersonalAllActivities({ includeArchived: false })
+      : getProSortedActivities({ includeArchived: false });
     const filtered = allActive.filter(c => {
       const hasList = Boolean(c.columnId && c.columnTitle);
       const hasDate = Boolean(c.start || c.end);
@@ -11617,7 +11503,7 @@
       if (q) {
         const asgNames = getCardAssigneesList(c).map(e => e.name).join(" ");
         const lblNames = (Array.isArray(c.labels) ? c.labels : []).map(id => labelsMap.get(id)?.name || "").join(" ");
-        const hay = [c.name || "", c.notes || "", c.columnTitle || "", asgNames, lblNames, c.client || ""].join(" ").toLowerCase();
+        const hay = [c.name || "", c.notes || "", c.columnTitle || "", c.location || "", c.from || "", c.to || "", asgNames, lblNames, c.client || ""].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -11670,7 +11556,10 @@
       </tbody>`;
 
     tbl.querySelectorAll("[data-all-card]").forEach(tr => {
-      tr.onclick = () => openProCardModal(tr.dataset.allCard);
+      tr.onclick = () => {
+        if (isPersonalMode()) core.openModal(tr.dataset.allCard);
+        else openProCardModal(tr.dataset.allCard);
+      };
     });
   }
 
@@ -11690,10 +11579,14 @@
     const emptyEl = $("#proArchivedCardsEmpty");
     const countEl = $("#proArchivedCardsCount");
     if (!listEl) return;
+    const inPersonal = isPersonalMode();
     const q = ($("#proArchivedCardsSearch")?.value || "").trim().toLowerCase();
-    const archived = getProSortedActivities({ onlyArchived: true }).filter(c => {
+    const archivedList = (inPersonal && core.getPersonalAllActivities)
+      ? core.getPersonalAllActivities({ onlyArchived: true })
+      : getProSortedActivities({ onlyArchived: true });
+    const archived = archivedList.filter(c => {
       if (!q) return true;
-      const hay = [c.name || "", c.notes || "", c.columnTitle || "", c.assignee || "", c.client || ""].join(" ").toLowerCase();
+      const hay = [c.name || "", c.notes || "", c.columnTitle || "", c.location || "", c.from || "", c.to || "", c.assignee || "", c.client || ""].join(" ").toLowerCase();
       return hay.includes(q);
     });
 
@@ -11727,11 +11620,20 @@
     }).join("");
 
     listEl.querySelectorAll("[data-arch-open]").forEach(el => {
-      el.onclick = () => openProCardModal(el.dataset.archOpen);
+      el.onclick = () => {
+        if (isPersonalMode()) core.openModal(el.dataset.archOpen);
+        else openProCardModal(el.dataset.archOpen);
+      };
     });
     listEl.querySelectorAll("[data-arch-restore]").forEach(btn => {
       btn.onclick = async () => {
-        const ctx = findProCardContext(btn.dataset.archRestore);
+        const id = btn.dataset.archRestore;
+        if (isPersonalMode() && core.unarchivePersonalCard) {
+          await core.unarchivePersonalCard(id);
+          renderArchivedCardsModal();
+          return;
+        }
+        const ctx = findProCardContext(id);
         if (!ctx?.activity) return;
         if (ctx.trip?.role === "viewer") return core.toast("👁️ Somente visualização.");
         ctx.activity.archived = false;
@@ -11743,6 +11645,12 @@
     listEl.querySelectorAll("[data-arch-del]").forEach(btn => {
       btn.onclick = async () => {
         const id = btn.dataset.archDel;
+        if (isPersonalMode() && core.deletePersonalCardPermanent) {
+          if (!confirm("Excluir definitivamente este cartão arquivado? Esta ação não pode ser desfeita.")) return;
+          await core.deletePersonalCardPermanent(id);
+          renderArchivedCardsModal();
+          return;
+        }
         const ctx = findProCardContext(id);
         if (!ctx?.activity) return;
         if (ctx.trip?.role === "viewer") return core.toast("👁️ Somente visualização.");
@@ -11800,6 +11708,9 @@
     buildProWhatsAppText,
     syncGoogleDrive,
     openAllCardsModal,
-    openArchivedCardsModal
+    openArchivedCardsModal,
+    openRenameAttachmentModal,
+    openDriveFolderPickerModal,
+    renderProViewIfDirty
   };
 })();

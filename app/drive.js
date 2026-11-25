@@ -103,15 +103,67 @@
     });
   }
 
-  async function driveFetchJson(url, token, opts = {}) {
-    const res = await fetch(url, {
-      ...opts,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(opts.body && !(opts.body instanceof FormData) && !(opts.body instanceof Blob) ? { "Content-Type": "application/json" } : {}),
-        ...(opts.headers || {})
+  function sleep(ms) {
+    return new Promise(r => setTimeout(r, ms));
+  }
+
+  async function fetchDriveWithRetry(url, buildOptions, { timeoutMs = 20000, maxAttempts = 4, onRefreshToken } = {}) {
+    let refreshedAuth = false;
+    let lastErr = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(new Error(`Timeout Google Drive (${Math.round(timeoutMs / 1000)}s)`)), timeoutMs);
+      let res;
+      try {
+        const opts = typeof buildOptions === "function" ? buildOptions() : (buildOptions || {});
+        res = await fetch(url, { ...opts, signal: ctrl.signal });
+      } catch (err) {
+        lastErr = err;
+        clearTimeout(timer);
+        if (attempt < maxAttempts) {
+          await sleep(Math.min(8000, 600 * (2 ** (attempt - 1))) + Math.floor(Math.random() * 250));
+          continue;
+        }
+        throw err;
       }
-    });
+      clearTimeout(timer);
+
+      if (res.status === 401 && !refreshedAuth && typeof onRefreshToken === "function") {
+        refreshedAuth = true;
+        await onRefreshToken();
+        continue;
+      }
+      if ((res.status === 429 || (res.status >= 500 && res.status <= 599)) && attempt < maxAttempts) {
+        const retryAfter = parseInt(res.headers.get("Retry-After") || "0", 10);
+        const backoff = retryAfter > 0
+          ? Math.min(15000, retryAfter * 1000)
+          : Math.min(8000, 600 * (2 ** (attempt - 1))) + Math.floor(Math.random() * 250);
+        await sleep(backoff);
+        continue;
+      }
+      return res;
+    }
+    throw lastErr || new Error("Falha ao comunicar com Google Drive.");
+  }
+
+  async function driveFetchJson(url, tokenOrRef, opts = {}) {
+    const getToken = () => (typeof tokenOrRef === "function" ? tokenOrRef() : (accessToken || tokenOrRef));
+    const res = await fetchDriveWithRetry(
+      url,
+      () => ({
+        ...opts,
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+          ...(opts.body && !(opts.body instanceof FormData) && !(opts.body instanceof Blob) ? { "Content-Type": "application/json" } : {}),
+          ...(opts.headers || {})
+        }
+      }),
+      {
+        timeoutMs: Number(opts.timeoutMs) || 20000,
+        maxAttempts: 4,
+        onRefreshToken: tokenClientId ? () => requestAccessToken(tokenClientId, false) : null
+      }
+    );
     if (res.status === 404) return { status: 404, data: null };
     const data = await res.json().catch(() => null);
     if (!res.ok) {
@@ -257,11 +309,20 @@
       : `${DRIVE_UPLOAD_API}?uploadType=multipart&supportsAllDrives=true&fields=id,name`;
     const method = fileId ? "PATCH" : "POST";
 
-    const res = await fetch(url, {
-      method,
-      headers: { Authorization: `Bearer ${token}` },
-      body: bodyBlob
-    });
+    const getToken = () => (typeof token === "function" ? token() : (accessToken || token));
+    const res = await fetchDriveWithRetry(
+      url,
+      () => ({
+        method,
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: bodyBlob
+      }),
+      {
+        timeoutMs: 60000,
+        maxAttempts: 4,
+        onRefreshToken: tokenClientId ? () => requestAccessToken(tokenClientId, false) : null
+      }
+    );
     const data = await res.json().catch(() => null);
     if (!res.ok) {
       throw new Error(data?.error?.message || `Falha ao enviar arquivo ao Drive (HTTP ${res.status})`);
@@ -460,13 +521,19 @@
   async function fetchAttachmentBlob(att, resolveDocHref) {
     const href = resolveDocHref ? resolveDocHref(att) : (att.dataUrl || att.url || (att.id ? `/api/attachments/${encodeURIComponent(att.id)}` : ""));
     if (!href) return null;
-    const res = await fetch(href, { credentials: "same-origin" });
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    if (!blob.type && att.mimeType) {
-      return new Blob([blob], { type: att.mimeType });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(new Error("Timeout ao baixar anexo local")), 30000);
+    try {
+      const res = await fetch(href, { credentials: "same-origin", signal: ctrl.signal });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      if (!blob.type && att.mimeType) {
+        return new Blob([blob], { type: att.mimeType });
+      }
+      return blob;
+    } finally {
+      clearTimeout(timer);
     }
-    return blob;
   }
 
   async function syncProjectToDrive({ clientId, rootFolderId, trip, columns, labels, resolveDocHref, onProgress }) {

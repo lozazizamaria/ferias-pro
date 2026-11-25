@@ -2532,7 +2532,11 @@ tr.chk-row.dragging-row, .m-card.dragging-row { opacity: 0.45; }
 }
 
 @media print {
-  .topbar, .gantt-controls, .actions, .btn, .filters, .gmaps-key-panel, .pwa-banner, .invites-banner { display: none !important; }
+  .topbar, .gantt-controls, .actions, .btn, .filters, .gmaps-key-panel, .pwa-banner, .invites-banner,
+  .global-drop-overlay, .global-search-wrap, .pro-board-toolbar-card, .pro-compact-filter-bar,
+  .view-filter-bar, .pro-col-foot, .floating-actions, .modal-close, .icon-btn, .pm-bubble, .pm-plus-btn {
+    display: none !important;
+  }
   body { background: #fff; color: #000; }
   .view { display: block !important; page-break-inside: avoid; }
   .card { border: 1px solid #ccc; box-shadow: none; }
@@ -8326,7 +8330,21 @@ dialog.pro-type-dialog {
   .imp-cal-ev-row { grid-template-columns: auto 1fr; }
   .imp-cal-ev-row .imp-cal-ev-dates { grid-column: 2; }
   dialog.import-cal-dialog { width: 100%; max-width: 100vw; padding: 14px 12px calc(16px + env(safe-area-inset-bottom)); }
-  .pro-board-toolbar-card { padding: 6px 8px; margin-bottom: 8px; }
+  .pro-board-toolbar-card { padding: 6px 8px; margin-bottom: 8px; max-width: 100%; overflow: visible; }
+  .pro-board-toolbar-card .pro-compact-toolbar,
+  .pro-board-toolbar-card .gantt-toolbar-right {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin-left: 0;
+    gap: 6px;
+  }
+  .pro-board-toolbar-card .gantt-toolbar-right .btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
   .pro-compact-filter-bar { padding: 5px 8px; margin-bottom: 8px; }
   .pro-table-head { margin-bottom: 6px; }
   .pro-board-filters { width: 100%; }
