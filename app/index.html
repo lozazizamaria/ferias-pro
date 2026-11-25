@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=55">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=55">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=55">
+<link rel="manifest" href="/manifest.webmanifest?v=56">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=56">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=56">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=55">
+<link rel="stylesheet" href="styles.css?v=56">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=55" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=56" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=55" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=56" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -2780,12 +2780,21 @@
   </div>
 </div>
 
-<!-- MODAL EDITAR / NOVA ATIVIDADE -->
-<dialog id="modal">
+<!-- MODAL EDITAR / NOVO CARTÃO PESSOAL (PADRÃO VISUAL PRO + ADAPTATIVIDADE PESSOAL) -->
+<dialog id="modal" class="pro-card-dialog">
   <form id="form" method="dialog">
-    <div class="modal-head">
-      <div class="modal-head-left">
-        <h2 id="modalTitle">Atividade</h2>
+    <div class="modal-head pro-card-modal-head">
+      <div class="pro-card-head-top">
+        <h2 id="modalTitle">Novo Cartão</h2>
+        <button type="button" class="icon-btn modal-close" id="btnCloseX" aria-label="Fechar">✕</button>
+      </div>
+      <div class="pro-card-head-actions">
+        <button type="button" class="btn primary small" id="btnHeadSave" title="Salvar alterações do cartão">💾 Salvar</button>
+        <button type="button" class="btn ghost small" id="btnHeadNewMinute" title="Criar nova Ata vinculada a este cartão">📝 Nova Ata</button>
+        <button type="button" class="btn ghost small btn-modal-whatsapp" id="btnHeadWhatsApp" title="Encaminhar via WhatsApp" aria-label="Encaminhar via WhatsApp">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#25D366"/><path d="M8.5 8.5c-.3.5-.4 1.2-.1 2 .5 1.4 1.9 2.9 3.4 3.6.8.4 1.5.4 2 .1l.9-.7c.2-.2.5-.2.7 0l1.1.9c.2.2.3.5.1.8-.4.7-1.2 1.2-2.2 1.1-2.5-.2-5.4-2.5-6.6-5.2-.4-1-.2-2 .4-2.7.2-.3.5-.3.8-.1l.9 1c.2.2.2.5 0 .7l-.6.5z" fill="#ffffff"/></svg>
+        </button>
+        <button type="button" class="btn ghost small btn-modal-done" id="btnHeadDoneToggle" aria-pressed="false" title="Marcar atividade como concluída">☐ Concluir</button>
         <button type="button" class="btn ghost small btn-modal-dup" id="btnDuplicate" title="Duplicar esta atividade" hidden>⧉ Duplicar</button>
         <button type="button" class="btn ghost small btn-modal-google" id="btnHeadCal" title="Adicionar ao Google Agenda (calendário dedicado deste evento)" hidden>
           <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="3" fill="#ffffff" stroke="#4285F4" stroke-width="2"/><path d="M3 9h18" stroke="#4285F4" stroke-width="2"/><rect x="7" y="2" width="2.2" height="4" rx="1" fill="#EA4335"/><rect x="14.8" y="2" width="2.2" height="4" rx="1" fill="#34A853"/><text x="12" y="18.2" text-anchor="middle" font-size="7.5" font-weight="800" fill="#1d4ed8" font-family="sans-serif">31</text></svg>
@@ -2796,15 +2805,15 @@
           <span>Carteira</span>
         </button>
       </div>
-      <button type="button" class="icon-btn modal-close" id="btnCloseX" aria-label="Fechar">✕</button>
     </div>
 
-    <!-- ATALHO IA DENTRO DA ATIVIDADE -->
+    <!-- BLOCO DE PREENCHIMENTO COM IA (IGUAL AO PROFISSIONAL) -->
     <div class="modal-ai-strip" id="modalAiStrip">
       <div class="modal-ai-top">
-        <span>✨ Preencher automático com Gemini IA (imagem, ticket, áudio ou texto)</span>
+        <span>✨ Preencher com IA (áudio, print ou descrição)</span>
         <div class="inline-actions">
-          <button type="button" class="btn ai-pill small" id="btnActAiUpload">📷 Ler Imagem / Ticket</button>
+          <button type="button" class="btn ai-pill small" id="btnActAiUpload">📷 Imagem</button>
+          <button type="button" class="btn ghost small" id="btnActAiPdf">📄 PDF</button>
           <button type="button" class="btn ghost small" id="btnActAiAudio">🎙️ Áudio</button>
           <button type="button" class="btn ghost small" id="btnActAiText">✍️ Descrever</button>
           <input type="file" id="actAiFile" accept="image/*,audio/*,.pdf" hidden>
@@ -2817,203 +2826,313 @@
       <div class="modal-ai-status" id="actAiStatus" role="status" aria-live="polite" hidden></div>
     </div>
 
-    <div class="form-grid">
-      <label class="span2">Tipo de atividade / meio de locomoção
-        <select name="type" id="f-type"></select>
-      </label>
-      <div class="field-box modal-tags-field span2">
-        <label for="f-tagsTrigger">Tags</label>
-        <div id="modalTagsHost" class="msel-host" aria-label="Tags da atividade"></div>
-      </div>
-      <div class="field-box" id="f-targetModeWrap">
-        <label for="f-targetMode">Perfil / Modo</label>
-        <select id="f-targetMode" aria-label="Mudar perfil da atividade">
-          <option value="personal">🌴 Manter em Pessoal</option>
-          <option value="professional">💼 Mudar para Profissional</option>
-        </select>
-      </div>
-      <div class="field-box" id="f-targetTripWrap">
-        <label for="f-targetTrip">Calendário / Evento destino</label>
-        <select id="f-targetTrip" aria-label="Associar ao evento"></select>
-      </div>
-
-      <label class="span2">Nome / Descrição
-        <input name="name" id="f-name" required placeholder="Ex: Viagem SP, Voo BSB-FLN, Cruzeiro Santos, Jogo Mané Garrincha...">
-      </label>
-
-      <label><span id="lbl-start">Início</span><input type="date" name="start" id="f-start" required></label>
-      <div class="field-box arrival-date-box">
-        <label for="f-end"><span id="lbl-end">Fim</span></label>
-        <input type="date" name="end" id="f-end">
-        <label class="diff-arrival-toggle" id="f-diffArrivalWrap" hidden>
-          <input type="checkbox" id="f-diffArrival">
-          <span>Data da chegada diferente</span>
-        </label>
-      </div>
-
-      <!-- BLOCO VOO -->
-      <div class="flight-only span2 form-grid inner" hidden>
-        <label class="ac-wrap">Aeroporto / Cidade Origem (Google Maps)
-          <input id="f-flightFrom" placeholder="Ex: Brasília (BSB)" autocomplete="off">
-          <div class="ac-list" id="ac-flightFrom" hidden></div>
-        </label>
-        <label class="ac-wrap">Aeroporto / Cidade Destino (Google Maps)
-          <input id="f-flightTo" placeholder="Ex: Guarulhos (GRU)" autocomplete="off">
-          <div class="ac-list" id="ac-flightTo" hidden></div>
-        </label>
-        <label>Companhia / Nº Voo<input id="f-airline" placeholder="Ex: LATAM LA3450"></label>
-        <label>Localizador / Reserva<input id="f-bookingRef" placeholder="Ex: XYZ987"></label>
-      </div>
-
-      <!-- BLOCO TREM / ÔNIBUS / NAVIO -->
-      <div class="transit-only span2 form-grid inner" hidden>
-        <div class="span2 route-head-row">
-          <span class="route-title" id="transitBoxTitle">🚆 Trajeto (Google Maps Transporte)</span>
-          <div class="inline-actions">
-            <button type="button" class="btn ghost small" id="btnSwapTransit" title="Inverter">⇄ Inverter</button>
-            <button type="button" class="btn primary small" id="btnCalcTransit">⚡ Calcular no Google</button>
-          </div>
-        </div>
-        <label class="ac-wrap"><span id="lbl-transitFrom">Estação / Terminal / Cidade Origem</span>
-          <input id="f-transitFrom" placeholder="Origem" autocomplete="off">
-          <div class="ac-list" id="ac-tfrom" hidden></div>
-        </label>
-        <label class="ac-wrap"><span id="lbl-transitTo">Estação / Terminal / Cidade Destino</span>
-          <input id="f-transitTo" placeholder="Destino" autocomplete="off">
-          <div class="ac-list" id="ac-tto" hidden></div>
-        </label>
-        <div class="span2 maps-status" id="transitMapsStatus"></div>
-        <label>Distância aprox. (km)<input type="number" step="any" min="0" id="f-transitKm"></label>
-        <label>Duração (h:mm)<input id="f-transitDrive" placeholder="2:30"></label>
-        <label><span id="lbl-transitCarrier">Empresa / Linha / Assento</span><input id="f-transitCarrier" placeholder="Ex: Viação Cometa, Eurostar..."></label>
-        <label><span id="lbl-transitRef">Localizador / Bilhete</span><input id="f-transitRef" placeholder="Código reserva"></label>
-        <div class="span2 modal-map-wrap" id="transitMapWrap" hidden></div>
-      </div>
-
-      <!-- LOCAL (GOOGLE PLACES) PARA HOSPEDAGEM / PASSEIO / EVENTO / INGRESSO -->
-      <label class="span2 ac-wrap" id="f-locationWrap" hidden>Local / Cidade / Endereço (Google Maps)
-        <input id="f-location" placeholder="Digite cidade, hotel, ponto turístico ou endereço..." autocomplete="off">
-        <div class="ac-list" id="ac-location" hidden></div>
-      </label>
-
-      <!-- LOCALIZADOR / CÓDIGO PARA INGRESSO / HOSPEDAGEM / EVENTO -->
-      <label class="span2 ref-only" id="f-ticketRefWrap" hidden>Localizador / Código do Ingresso / Reserva
-        <input id="f-ticketRef" placeholder="Opcional — usado também na Carteira do Google">
-      </label>
-
-      <div class="span2 qr-captured-bar" id="f-qrBadgeWrap" hidden>
-        <span>📲 <b>QR Code do bilhete capturado</b> — será replicado na Carteira do Google <small class="muted" id="f-qrPreviewTxt"></small></span>
-        <button type="button" class="btn ghost small" id="btnClearActQr">✕ Remover QR</button>
-      </div>
-
-      <!-- BLOCO VIAGEM DE CARRO (GOOGLE MAPS) -->
-      <div class="trip-only span2 form-grid inner">
-        <div class="span2 route-head-row">
-          <span class="route-title">🗺️ Rota automática (Google Maps)</span>
-          <div class="inline-actions">
-            <button type="button" class="btn ghost small" id="btnSwapRoute" title="Inverter">⇄ Inverter</button>
-            <button type="button" class="btn primary small" id="btnCalcMaps">⚡ Calcular rota</button>
-          </div>
-        </div>
-
-        <label class="ac-wrap">Origem
-          <input name="from" id="f-from" placeholder="Cidade ou endereço" autocomplete="off">
-          <div class="ac-list" id="ac-from" hidden></div>
+    <div class="pro-card-modal-grid">
+      <!-- COLUNA ESQUERDA: NOME, DESCRIÇÃO, CAMPOS ADAPTATIVOS, CHECKLIST E ANEXOS -->
+      <div class="pro-card-main-col">
+        <label class="pro-field-stack">
+          <span>Nome / Título do cartão *</span>
+          <input name="name" id="f-name" required placeholder="Ex: Viagem SP, Voo BSB-FLN, Cruzeiro Santos, Jogo Mané Garrincha...">
         </label>
 
-        <label class="ac-wrap">Destino
-          <input name="to" id="f-to" placeholder="Cidade ou endereço" autocomplete="off">
-          <div class="ac-list" id="ac-to" hidden></div>
+        <label class="pro-field-stack">
+          <span>Descrição / Observações</span>
+          <textarea name="notes" id="f-notes" rows="4" placeholder="Detalhes, roteiro, observações, links ou anotações..."></textarea>
         </label>
 
-        <div class="span2 maps-status" id="modalMapsStatus"></div>
-
-        <div class="span2 modal-key-box" id="modalKeyBox" hidden>
-          <div class="small">🔑 <strong>Configure sua Google Maps API Key</strong> para calcular rota, duração e pedágio automaticamente:</div>
-          <div class="key-input-row">
-            <input type="password" id="modalKeyInput" placeholder="Cole sua API Key / Demo Key">
-            <button type="button" class="btn primary small" id="btnModalSaveKey">Salvar &amp; Calcular</button>
+        <!-- CAMPOS ADAPTATIVOS DO MODO PESSOAL (VOO, CARRO, TREM/ÔNIBUS/NAVIO, LOCAL, VALORES) -->
+        <div class="form-grid">
+          <!-- BLOCO VOO -->
+          <div class="flight-only span2 form-grid inner" hidden>
+            <label class="ac-wrap">Aeroporto / Cidade Origem (Google Maps)
+              <input id="f-flightFrom" placeholder="Ex: Brasília (BSB)" autocomplete="off">
+              <div class="ac-list" id="ac-flightFrom" hidden></div>
+            </label>
+            <label class="ac-wrap">Aeroporto / Cidade Destino (Google Maps)
+              <input id="f-flightTo" placeholder="Ex: Guarulhos (GRU)" autocomplete="off">
+              <div class="ac-list" id="ac-flightTo" hidden></div>
+            </label>
+            <label>Companhia / Nº Voo<input id="f-airline" placeholder="Ex: LATAM LA3450"></label>
+            <label>Localizador / Reserva<input id="f-bookingRef" placeholder="Ex: XYZ987"></label>
           </div>
-          <div class="muted small">
-            <a href="https://mapsplatform.google.com/maps-demo-key?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Obter Demo Key grátis</a> ·
-            <a id="modalMapsExternal" target="_blank" rel="noopener">Abrir rota no Google Maps ↗</a>
+
+          <!-- BLOCO TREM / ÔNIBUS / NAVIO -->
+          <div class="transit-only span2 form-grid inner" hidden>
+            <div class="span2 route-head-row">
+              <span class="route-title" id="transitBoxTitle">🚆 Trajeto (Google Maps Transporte)</span>
+              <div class="inline-actions">
+                <button type="button" class="btn ghost small" id="btnSwapTransit" title="Inverter">⇄ Inverter</button>
+                <button type="button" class="btn primary small" id="btnCalcTransit">⚡ Calcular no Google</button>
+              </div>
+            </div>
+            <label class="ac-wrap"><span id="lbl-transitFrom">Estação / Terminal / Cidade Origem</span>
+              <input id="f-transitFrom" placeholder="Origem" autocomplete="off">
+              <div class="ac-list" id="ac-tfrom" hidden></div>
+            </label>
+            <label class="ac-wrap"><span id="lbl-transitTo">Estação / Terminal / Cidade Destino</span>
+              <input id="f-transitTo" placeholder="Destino" autocomplete="off">
+              <div class="ac-list" id="ac-tto" hidden></div>
+            </label>
+            <div class="span2 maps-status" id="transitMapsStatus"></div>
+            <label>Distância aprox. (km)<input type="number" step="any" min="0" id="f-transitKm"></label>
+            <label>Duração (h:mm)<input id="f-transitDrive" placeholder="2:30"></label>
+            <label><span id="lbl-transitCarrier">Empresa / Linha / Assento</span><input id="f-transitCarrier" placeholder="Ex: Viação Cometa, Eurostar..."></label>
+            <label><span id="lbl-transitRef">Localizador / Bilhete</span><input id="f-transitRef" placeholder="Código reserva"></label>
+            <div class="span2 modal-map-wrap" id="transitMapWrap" hidden></div>
+          </div>
+
+          <!-- LOCAL (GOOGLE PLACES) PARA HOSPEDAGEM / PASSEIO / EVENTO / INGRESSO -->
+          <label class="span2 ac-wrap" id="f-locationWrap" hidden>Local / Cidade / Endereço (Google Maps)
+            <input id="f-location" placeholder="Digite cidade, hotel, ponto turístico ou endereço..." autocomplete="off">
+            <div class="ac-list" id="ac-location" hidden></div>
+          </label>
+
+          <!-- LOCALIZADOR / CÓDIGO PARA INGRESSO / HOSPEDAGEM / EVENTO -->
+          <label class="span2 ref-only" id="f-ticketRefWrap" hidden>Localizador / Código do Ingresso / Reserva
+            <input id="f-ticketRef" placeholder="Opcional — usado também na Carteira do Google">
+          </label>
+
+          <div class="span2 qr-captured-bar" id="f-qrBadgeWrap" hidden>
+            <span>📲 <b>QR Code do bilhete capturado</b> — será replicado na Carteira do Google <small class="muted" id="f-qrPreviewTxt"></small></span>
+            <button type="button" class="btn ghost small" id="btnClearActQr">✕ Remover QR</button>
+          </div>
+
+          <!-- BLOCO VIAGEM DE CARRO (GOOGLE MAPS) -->
+          <div class="trip-only span2 form-grid inner">
+            <div class="span2 route-head-row">
+              <span class="route-title">🗺️ Rota automática (Google Maps)</span>
+              <div class="inline-actions">
+                <button type="button" class="btn ghost small" id="btnSwapRoute" title="Inverter">⇄ Inverter</button>
+                <button type="button" class="btn primary small" id="btnCalcMaps">⚡ Calcular rota</button>
+              </div>
+            </div>
+
+            <label class="ac-wrap">Origem
+              <input name="from" id="f-from" placeholder="Cidade ou endereço" autocomplete="off">
+              <div class="ac-list" id="ac-from" hidden></div>
+            </label>
+
+            <label class="ac-wrap">Destino
+              <input name="to" id="f-to" placeholder="Cidade ou endereço" autocomplete="off">
+              <div class="ac-list" id="ac-to" hidden></div>
+            </label>
+
+            <div class="span2 maps-status" id="modalMapsStatus"></div>
+
+            <div class="span2 modal-key-box" id="modalKeyBox" hidden>
+              <div class="small">🔑 <strong>Configure sua Google Maps API Key</strong> para calcular rota, duração e pedágio automaticamente:</div>
+              <div class="key-input-row">
+                <input type="password" id="modalKeyInput" placeholder="Cole sua API Key / Demo Key">
+                <button type="button" class="btn primary small" id="btnModalSaveKey">Salvar &amp; Calcular</button>
+              </div>
+              <div class="muted small">
+                <a href="https://mapsplatform.google.com/maps-demo-key?utm_campaign=gmp_git_agentskills_v1" target="_blank" rel="noopener">Obter Demo Key grátis</a> ·
+                <a id="modalMapsExternal" target="_blank" rel="noopener">Abrir rota no Google Maps ↗</a>
+              </div>
+            </div>
+
+            <label>Distância (km)<input type="number" step="any" min="0" name="km" id="f-km"></label>
+            <label>Direção (h:mm)<input name="drive" id="f-drive" placeholder="7:30"></label>
+
+            <div class="field-box">
+              <div class="lbl-row">
+                <label for="f-stops">Paradas (qtd)</label>
+                <button type="button" class="link-btn" id="btnAutoStops">↺ Auto</button>
+              </div>
+              <input type="number" min="0" name="stops" id="f-stops">
+            </div>
+            <div class="field-box">
+              <div class="lbl-row">
+                <label for="f-stopTime">Tempo paradas (h:mm)</label>
+                <span class="auto-tag" id="autoStopTag">1 / 4h · 1h</span>
+              </div>
+              <input name="stopTime" id="f-stopTime" placeholder="1:00">
+            </div>
+
+            <div class="field-box">
+              <div class="lbl-row">
+                <label for="f-toll">Pedágio (R$)</label>
+                <span class="auto-tag" id="tollSourceTag"></span>
+              </div>
+              <input type="number" step="any" min="0" name="toll" id="f-toll">
+            </div>
+            <label>Recargas EV (qtd)<input type="number" step="any" min="0" name="charges" id="f-charges"></label>
+
+            <div class="span2 trip-preview" id="modalTripCalcPreview"></div>
+
+            <label class="span2 route-cost-toggle">
+              <input type="checkbox" id="f-includeRouteCost" checked>
+              <span><b>Utilizar custos da rota (combustível, recarga EV e pedágio) no planejamento</b> <small class="muted">— desmarque se for de carona / sem gasto do carro</small></span>
+            </label>
+
+            <div class="span2 modal-map-wrap" id="modalMapWrap" hidden></div>
+          </div>
+
+          <!-- QUANTIDADES E VALORES (MÚLTIPLOS INGRESSOS / PASSAGENS / GASTO EXTRA NA VIAGEM) -->
+          <div class="span2 tickets-box" id="f-ticketsBox">
+            <div class="route-head-row">
+              <span class="route-title" id="ticketsBoxTitle">🎟️ Quantidade &amp; Valores</span>
+              <div class="inline-actions">
+                <span class="pill" id="ticketsTotalBadge">Total: R$ 0,00</span>
+                <button type="button" class="btn ghost small" id="btnAddTicketRow">➕ Adicionar valor / ingresso</button>
+              </div>
+            </div>
+            <div id="ticketsRows" class="tickets-rows"></div>
           </div>
         </div>
 
-        <label>Distância (km)<input type="number" step="any" min="0" name="km" id="f-km"></label>
-        <label>Direção (h:mm)<input name="drive" id="f-drive" placeholder="7:30"></label>
-
-        <div class="field-box">
-          <div class="lbl-row">
-            <label for="f-stops">Paradas (qtd)</label>
-            <button type="button" class="link-btn" id="btnAutoStops">↺ Auto</button>
+        <!-- CHECKLIST DO CARTÃO PESSOAL -->
+        <div class="pro-subtasks-box" id="f-subtasksBox">
+          <div class="route-head-row">
+            <span class="route-title">☑️ Checklist do Cartão <small class="muted" id="f-subtasksProgress"></small></span>
           </div>
-          <input type="number" min="0" name="stops" id="f-stops">
-        </div>
-        <div class="field-box">
-          <div class="lbl-row">
-            <label for="f-stopTime">Tempo paradas (h:mm)</label>
-            <span class="auto-tag" id="autoStopTag">1 / 4h · 1h</span>
+          <div class="progress" style="margin:6px 0 8px"><div id="f-subtasksBar"></div></div>
+          <div id="f-subtasksList" class="pro-subtasks-list"></div>
+          <div class="key-input-row" style="margin-top:8px">
+            <input type="text" id="f-newSubtask" placeholder="Adicionar item ao checklist... (Enter)">
+            <button type="button" class="btn ghost small" id="btnActAddSubtask">➕ Adicionar</button>
           </div>
-          <input name="stopTime" id="f-stopTime" placeholder="1:00">
         </div>
 
-        <div class="field-box">
-          <div class="lbl-row">
-            <label for="f-toll">Pedágio (R$)</label>
-            <span class="auto-tag" id="tollSourceTag"></span>
+        <!-- ANEXOS, CONTRATOS & LINKS -->
+        <div class="attach-box">
+          <div class="route-head-row">
+            <span class="route-title">📎 Anexos, Contratos &amp; Links</span>
+            <div class="inline-actions">
+              <button type="button" class="btn ghost small" id="btnAttachFile">📄 Anexar arquivo</button>
+              <button type="button" class="btn ghost small" id="btnAttachLink">🔗 Link</button>
+            </div>
           </div>
-          <input type="number" step="any" min="0" name="toll" id="f-toll">
+          <div class="pro-attach-ai-bar" style="margin-top:8px">
+            <button type="button" class="btn ai-pill small" id="btnActAiReadAttachments" disabled title="Lê o conteúdo dos anexos com IA e insere um resumo estruturado na Descrição">✨ Ler anexos com IA e inserir na Descrição</button>
+          </div>
+          <div id="f-aiReadStatus" class="modal-ai-status" role="status" aria-live="polite" hidden style="margin-top:6px"></div>
+          <input type="file" id="f-attachInput" multiple hidden>
+          <div id="f-attachLoading" class="modal-ai-status is-loading" role="status" aria-live="polite" hidden style="margin-top:8px">
+            <span class="ai-spinner" aria-hidden="true"></span>
+            <span id="f-attachLoadingText">Carregando arquivo...</span>
+          </div>
+          <div id="modalAttachList" class="attach-list"></div>
         </div>
-        <label>Recargas EV (qtd)<input type="number" step="any" min="0" name="charges" id="f-charges"></label>
-
-        <div class="span2 trip-preview" id="modalTripCalcPreview"></div>
-
-        <label class="span2 route-cost-toggle">
-          <input type="checkbox" id="f-includeRouteCost" checked>
-          <span><b>Utilizar custos da rota (combustível, recarga EV e pedágio) no planejamento</b> <small class="muted">— desmarque se for de carona / sem gasto do carro</small></span>
-        </label>
-
-        <div class="span2 modal-map-wrap" id="modalMapWrap" hidden></div>
       </div>
 
-      <!-- QUANTIDADES E VALORES (MÚLTIPLOS INGRESSOS / PASSAGENS / GASTO EXTRA NA VIAGEM) -->
-      <div class="span2 tickets-box" id="f-ticketsBox">
-        <div class="route-head-row">
-          <span class="route-title" id="ticketsBoxTitle">🎟️ Quantidade &amp; Valores</span>
-          <div class="inline-actions">
-            <span class="pill" id="ticketsTotalBadge">Total: R$ 0,00</span>
-            <button type="button" class="btn ghost small" id="btnAddTicketRow">➕ Adicionar valor / ingresso</button>
+      <!-- COLUNA DIREITA: LISTA, TIPO, DATAS, TAGS, DETALHES DA VIAGEM E ATAS -->
+      <div class="pro-card-side-col">
+        <div class="pro-side-card">
+          <div class="form-grid">
+            <label class="span2">Lista (Coluna nos Quadros)
+              <div class="pro-type-picker-row">
+                <select id="f-personalCol" aria-label="Lista nos Quadros"></select>
+                <button type="button" class="btn ghost small icon-compact" id="btnActQuickAddCol" title="Criar nova lista">+</button>
+                <button type="button" class="btn ghost small icon-compact" id="btnActQuickEditCol" title="Editar lista selecionada">✏️</button>
+              </div>
+            </label>
+            <label class="span2">Tipo de atividade / meio de locomoção
+              <div class="pro-type-picker-row">
+                <select name="type" id="f-type"></select>
+                <button type="button" class="btn ghost small icon-compact" id="btnActQuickAddType" title="Adicionar novo tipo personalizado">+</button>
+              </div>
+            </label>
+            <label><span id="lbl-start">Início</span><input type="date" name="start" id="f-start" required></label>
+            <div class="field-box arrival-date-box">
+              <label for="f-end"><span id="lbl-end">Fim</span></label>
+              <input type="date" name="end" id="f-end">
+              <label class="diff-arrival-toggle" id="f-diffArrivalWrap" hidden>
+                <input type="checkbox" id="f-diffArrival">
+                <span>Data da chegada diferente</span>
+              </label>
+            </div>
+            <div class="field-box modal-tags-field span2">
+              <label for="f-tagsTrigger">Tags</label>
+              <div id="modalTagsHost" class="msel-host" aria-label="Tags da atividade"></div>
+            </div>
+            <div class="field-box" id="f-targetModeWrap">
+              <label for="f-targetMode">Perfil / Modo</label>
+              <select id="f-targetMode" aria-label="Mudar perfil da atividade">
+                <option value="personal">🌴 Manter em Pessoal</option>
+                <option value="professional">💼 Mudar para Profissional</option>
+              </select>
+            </div>
+            <div class="field-box" id="f-targetTripWrap">
+              <label for="f-targetTrip">Calendário / Evento destino</label>
+              <select id="f-targetTrip" aria-label="Associar ao evento"></select>
+            </div>
           </div>
         </div>
-        <div id="ticketsRows" class="tickets-rows"></div>
-      </div>
 
-      <!-- ANEXOS / DOCUMENTOS -->
-      <div class="span2 attach-box">
-        <div class="route-head-row">
-          <span class="route-title">📎 Documentos &amp; Comprovantes</span>
-          <div class="inline-actions">
-            <button type="button" class="btn ghost small" id="btnAttachFile">📄 Anexar arquivo</button>
-            <button type="button" class="btn ghost small" id="btnAttachLink">🔗 Link</button>
+        <!-- DETALHES DA VIAGEM (SEM CAMPOS FINANCEIROS MILITARES) -->
+        <details class="pro-travel-details-box" id="f-travelDetailsBox">
+          <summary class="pro-travel-details-sum">
+            <span>🧳 Detalhes da Viagem <small class="muted">(bilhetes IA, trechos e Carteira Google)</small></span>
+          </summary>
+          <div class="pro-travel-details-body">
+            <div class="pro-ticket-upload-block">
+              <div class="route-head-row">
+                <span class="route-title">🎫 Bilhetes &amp; Reservas (PDF ou Imagens)</span>
+                <div class="pro-ticket-btns">
+                  <button type="button" class="btn ai-pill small" id="btnActTicketsAiUpload" title="Leitura incremental com IA sem sobrescrever">✨ Anexar e Ler com IA</button>
+                  <button type="button" class="btn ghost small" id="btnActTicketsOnlyUpload" title="Anexar bilhetes sem chamar a IA">📎 Apenas Anexar</button>
+                </div>
+              </div>
+              <input type="file" id="f-ticketsAiInput" accept=".pdf,image/*" multiple hidden>
+              <input type="file" id="f-ticketsOnlyInput" accept=".pdf,image/*" multiple hidden>
+              <div id="f-ticketStatus" class="modal-ai-status" role="status" aria-live="polite" hidden style="margin-top:6px"></div>
+              <div id="f-travelTicketsList" class="pro-tickets-list"></div>
+            </div>
+
+            <div class="pro-segments-block">
+              <div class="route-head-row">
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <span class="route-title">🛫 Trechos da Viagem</span>
+                  <span class="pill" id="f-segmentsCountBadge" style="font-size:0.68rem">0 trechos</span>
+                </div>
+                <button type="button" class="btn ghost small" id="btnActAddSegment">➕ Adicionar Trecho</button>
+              </div>
+              <div id="f-segmentsList" class="pro-segments-list"></div>
+            </div>
           </div>
-        </div>
-        <input type="file" id="f-attachInput" multiple accept=".pdf,image/*,.doc,.docx,.txt" hidden>
-        <div id="f-attachLoading" class="modal-ai-status is-loading" role="status" aria-live="polite" hidden style="margin-top:8px">
-          <span class="ai-spinner" aria-hidden="true"></span>
-          <span id="f-attachLoadingText">Carregando arquivo...</span>
-        </div>
-        <div id="modalAttachList" class="attach-list"></div>
-      </div>
+        </details>
 
-      <label class="span2">Observações<textarea name="notes" id="f-notes" rows="2"></textarea></label>
+        <!-- ATAS DE REUNIÃO DO CARTÃO PESSOAL -->
+        <div class="pro-side-card" id="f-minutesCardBox">
+          <div class="route-head-row" style="margin-bottom:6px">
+            <span class="pro-side-title" style="margin:0">📝 Atas de Reunião</span>
+            <button type="button" class="btn primary small" id="btnActNewMinute">➕ Nova Ata</button>
+          </div>
+          <div id="f-minutesList" class="pro-card-minutes-list"></div>
+        </div>
+      </div>
     </div>
 
     <div class="modal-actions">
       <button type="button" class="btn danger-ghost" id="btnDelete">🗑️ Excluir</button>
+      <button type="button" class="btn ghost" id="btnActArchive" hidden>📦 Arquivar Cartão</button>
       <span class="spacer"></span>
       <button type="button" class="btn ghost" id="btnCancel">Cancelar</button>
-      <button type="submit" class="btn primary" id="btnSave">Salvar</button>
+      <button type="submit" class="btn primary" id="btnSave">Salvar Cartão</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- MODAL EDITAR / CRIAR LISTA DOS QUADROS PESSOAIS -->
+<dialog id="personalColModal">
+  <form id="personalColForm" method="dialog">
+    <div class="modal-head">
+      <h2 id="pcolModalTitle">Editar Lista</h2>
+      <button type="button" class="icon-btn modal-close" id="btnPcolClose" aria-label="Fechar">✕</button>
+    </div>
+    <div class="form-grid">
+      <label class="span2">Nome da lista *
+        <input id="pcol-name" required placeholder="Ex: Assuntos, Planejando, Reservado...">
+      </label>
+      <label class="span2">Cor da lista
+        <input type="color" id="pcol-color" value="#2563eb" style="height:40px;padding:3px">
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn danger-ghost" id="btnPcolDelete" hidden>🗑️ Excluir Lista</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnPcolCancel">Cancelar</button>
+      <button type="submit" class="btn primary">💾 Salvar Lista</button>
     </div>
   </form>
 </dialog>
@@ -4288,17 +4407,17 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=55"></script>
-<script src="vehicles.js?v=55"></script>
-<script src="countries.js?v=55"></script>
-<script src="data.js?v=55"></script>
-<script src="maps.js?v=55"></script>
-<script src="calendar.js?v=55"></script>
-<script src="drive.js?v=55"></script>
-<script src="report.js?v=55"></script>
-<script src="api.js?v=55"></script>
-<script src="minutes.js?v=55"></script>
-<script src="pro.js?v=55"></script>
-<script src="app.js?v=55"></script>
+<script src="config.example.js?v=56"></script>
+<script src="vehicles.js?v=56"></script>
+<script src="countries.js?v=56"></script>
+<script src="data.js?v=56"></script>
+<script src="maps.js?v=56"></script>
+<script src="calendar.js?v=56"></script>
+<script src="drive.js?v=56"></script>
+<script src="report.js?v=56"></script>
+<script src="api.js?v=56"></script>
+<script src="minutes.js?v=56"></script>
+<script src="pro.js?v=56"></script>
+<script src="app.js?v=56"></script>
 </body>
 </html>

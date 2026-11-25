@@ -480,11 +480,11 @@ const sorted = () => {
       tripRef: tr,
       colorIdx: 0
     }));
-    return [...acts].sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
+    return acts.filter(a => a && !a.archived).sort((a, b) => a.start.localeCompare(b.start) || (a.type === "Viagem") - (b.type === "Viagem"));
   }
   const all = [];
   trips.forEach((tr, idx) => {
-    const acts = tr?.data?.activities || [];
+    const acts = (tr?.data?.activities || []).filter(a => a && !a.archived);
     acts.forEach(a => {
       actOriginMap.set(a, {
         tripId: tr.id,
@@ -4065,6 +4065,9 @@ function renderTicketRows() {
 
 function renderModalAttachments() {
   const list = $("#modalAttachList");
+  const aiBtn = $("#btnActAiReadAttachments");
+  if (aiBtn) aiBtn.disabled = (modalAttachments.length + (Array.isArray(modalTravelTickets) ? modalTravelTickets.length : 0)) === 0;
+  if (!list) return;
   if (!modalAttachments.length) {
     list.innerHTML = `<div class="muted small">Nenhum documento anexado.</div>`;
     return;
@@ -4074,9 +4077,37 @@ function renderModalAttachments() {
     const sizeTxt = att.size ? ` (${Math.max(1, Math.round(att.size / 1024))} KB)` : " (Link)";
     return `<div class="attach-item">
       <a href="${esc(href)}" target="_blank" rel="noopener">📄 ${esc(att.fileName || att.name || "Documento")}${sizeTxt}</a>
-      <button type="button" class="icon-btn" data-attdel="${idx}" title="Remover anexo">🗑️</button>
+      <div class="inline-actions" style="gap:4px">
+        <button type="button" class="icon-btn" data-attren="${idx}" title="Renomear anexo">✏️</button>
+        <button type="button" class="icon-btn" data-attdel="${idx}" title="Remover anexo">🗑️</button>
+      </div>
     </div>`;
   }).join("");
+
+  list.querySelectorAll("[data-attren]").forEach(btn => {
+    btn.onclick = async () => {
+      const idx = parseInt(btn.dataset.attren, 10);
+      const att = modalAttachments[idx];
+      if (!att) return;
+      const curName = String(att.fileName || att.name || "Documento").trim();
+      const isLink = Boolean(att.url && !att.id);
+      const dot = (!isLink && curName.lastIndexOf(".") > 0) ? curName.lastIndexOf(".") : -1;
+      const base = dot > 0 ? curName.slice(0, dot) : curName;
+      const ext = dot > 0 ? curName.slice(dot) : "";
+      const next = prompt(`Renomear anexo${ext ? ` (extensão ${ext} preservada)` : ""}:`, base);
+      if (!next || !next.trim()) return;
+      const fullName = next.trim() + ext;
+      if (att.id && !isLink && window.FeriasApi?.renameAttachment) {
+        try { await window.FeriasApi.renameAttachment(att.id, fullName); } catch (err) {
+          toast("❌ " + (err.message || "Falha ao renomear."));
+          return;
+        }
+      }
+      att.fileName = fullName;
+      renderModalAttachments();
+      toast(`✏️ Anexo renomeado para "${fullName}"`);
+    };
+  });
 
   list.querySelectorAll("[data-attdel]").forEach(btn => {
     btn.onclick = async () => {
@@ -4334,10 +4365,32 @@ window.openModal = function (idOrOpts) {
     location: (a.locationLat != null && a.locationLng != null) ? { lat: Number(a.locationLat), lng: Number(a.locationLng), placeId: a.locationPlaceId || "" } : null
   };
 
-  $("#modalTitle").textContent = id ? "Editar atividade" : "Nova atividade";
+  $("#modalTitle").textContent = id ? "Editar Cartão" : "Novo Cartão";
   const f = $("#form");
+  populatePersonalModalColumns(a.personalColId || "");
+  ensurePersonalCustomTypesInSelect();
   for (const k of ["type", "name", "start", "end", "from", "to", "km", "stops", "toll", "charges", "notes"]) {
     if (f.elements[k]) f.elements[k].value = a[k] ?? "";
+  }
+  modalCompleted = Boolean(a.completed);
+  updatePersonalModalDoneBtn();
+  modalSubtasks = Array.isArray(a.subtasks) ? clone(a.subtasks) : [];
+  const pTd = (a.travelDetails && typeof a.travelDetails === "object") ? a.travelDetails : {};
+  modalTravelTickets = Array.isArray(pTd.tickets) ? clone(pTd.tickets) : [];
+  modalTravelSegments = Array.isArray(pTd.segments) ? clone(pTd.segments) : [];
+  modalMinutes = Array.isArray(a.minutes) ? clone(a.minutes) : [];
+  renderPersonalModalSubtasks();
+  renderPersonalModalTravelTickets();
+  renderPersonalModalSegments();
+  renderPersonalModalMinutes();
+  if ($("#f-aiReadStatus")) { $("#f-aiReadStatus").hidden = true; $("#f-aiReadStatus").innerHTML = ""; }
+  if ($("#f-travelDetailsBox")) {
+    $("#f-travelDetailsBox").open = Boolean(modalTravelTickets.length || modalTravelSegments.length);
+  }
+  const archBtn = $("#btnActArchive");
+  if (archBtn) {
+    archBtn.hidden = !id;
+    if (id) archBtn.textContent = a.archived ? "📤 Desarquivar Cartão" : "📦 Arquivar Cartão";
   }
   $("#f-includeRouteCost").checked = a.includeRouteCost !== false;
   $("#f-flightFrom").value = a.type === "Voo" ? (a.from || "") : "";
@@ -4539,6 +4592,21 @@ function readForm() {
       a.toLat = modalPlaceCoords.to.lat;
       a.toLng = modalPlaceCoords.to.lng;
       if (modalPlaceCoords.to.placeId) a.toPlaceId = modalPlaceCoords.to.placeId;
+    }
+  }
+  a.personalColId = ($("#f-personalCol")?.value || "").trim() || (ensurePersonalBoardColumns()[0]?.id || "");
+  a.completed = Boolean(modalCompleted);
+  a.subtasks = clone(modalSubtasks || []);
+  a.travelDetails = {
+    tickets: clone(modalTravelTickets || []),
+    segments: clone(modalTravelSegments || [])
+  };
+  a.minutes = clone(modalMinutes || []);
+  if (editing) {
+    const prevAct = findActivityContext(editing)?.activity;
+    if (prevAct?.archived) {
+      a.archived = true;
+      a.archivedAt = prevAct.archivedAt || "";
     }
   }
   return a;
@@ -10510,8 +10578,435 @@ async function renderPersonalMap() {
   }
 }
 
-/* ---------- MODO PESSOAL: ABA QUADROS (ENTRE FINANCEIRO E TABELA) ---------- */
+/* ---------- MODO PESSOAL: QUADROS (VISUAL PRO + EDITAR LISTA ✏️) & RECURSOS AVANÇADOS DO CARTÃO ---------- */
 let pboardEventsBound = false;
+let modalCompleted = false;
+let modalSubtasks = [];
+let modalTravelTickets = [];
+let modalTravelSegments = [];
+let modalMinutes = [];
+let editingPersonalColId = null;
+
+function updatePersonalModalDoneBtn() {
+  const b = $("#btnHeadDoneToggle");
+  if (!b) return;
+  b.setAttribute("aria-pressed", String(Boolean(modalCompleted)));
+  b.textContent = modalCompleted ? "☑ Concluído" : "☐ Concluir";
+  b.classList.toggle("is-done", Boolean(modalCompleted));
+}
+
+function populatePersonalModalColumns(selectedId = "") {
+  const sel = $("#f-personalCol");
+  if (!sel) return;
+  const cols = ensurePersonalBoardColumns();
+  sel.innerHTML = cols.map(c => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join("");
+  const defCol = cols.find(c => String(c.title || "").trim().toLowerCase() === "assuntos") || cols[0];
+  sel.value = (selectedId && cols.some(c => c.id === selectedId)) ? selectedId : (defCol?.id || "");
+}
+
+function ensurePersonalCustomTypesInSelect() {
+  const sel = $("#f-type");
+  if (!sel) return;
+  const customs = Array.isArray(state.customPersonalTypes) ? state.customPersonalTypes : [];
+  customs.forEach(ct => {
+    if (!ct) return;
+    if (![...sel.options].some(o => o.value === ct)) {
+      const opt = document.createElement("option");
+      opt.value = ct;
+      opt.textContent = `📌 ${ct}`;
+      sel.appendChild(opt);
+    }
+  });
+}
+
+function renderPersonalModalSubtasks() {
+  const listEl = $("#f-subtasksList");
+  const progEl = $("#f-subtasksProgress");
+  const barEl = $("#f-subtasksBar");
+  const doneCnt = modalSubtasks.filter(s => s.done).length;
+  const total = modalSubtasks.length;
+  if (progEl) progEl.textContent = total ? `(${doneCnt}/${total})` : "";
+  if (barEl) barEl.style.width = `${total ? Math.round((doneCnt / total) * 100) : 0}%`;
+  if (!listEl) return;
+  if (!total) {
+    listEl.innerHTML = `<div class="muted small">Nenhum item no checklist deste cartão.</div>`;
+    return;
+  }
+  listEl.innerHTML = modalSubtasks.map((st, idx) => `
+    <div class="pro-subtask-row ${st.done ? "done" : ""}">
+      <input type="checkbox" data-psub-chk="${idx}" ${st.done ? "checked" : ""}>
+      <input type="text" data-psub-txt="${idx}" value="${esc(st.text || "")}" aria-label="Item do checklist">
+      <button type="button" class="icon-btn" data-psub-del="${idx}" title="Remover item">✕</button>
+    </div>`).join("");
+  listEl.querySelectorAll("[data-psub-chk]").forEach(cb => {
+    cb.onchange = () => {
+      const i = parseInt(cb.dataset.psubChk, 10);
+      if (modalSubtasks[i]) modalSubtasks[i].done = cb.checked;
+      renderPersonalModalSubtasks();
+    };
+  });
+  listEl.querySelectorAll("[data-psub-txt]").forEach(inp => {
+    inp.onchange = () => {
+      const i = parseInt(inp.dataset.psubTxt, 10);
+      if (modalSubtasks[i]) modalSubtasks[i].text = inp.value.trim();
+    };
+  });
+  listEl.querySelectorAll("[data-psub-del]").forEach(btn => {
+    btn.onclick = () => {
+      const i = parseInt(btn.dataset.psubDel, 10);
+      modalSubtasks.splice(i, 1);
+      renderPersonalModalSubtasks();
+    };
+  });
+}
+
+function renderPersonalModalTravelTickets() {
+  const box = $("#f-travelTicketsList");
+  const aiBtn = $("#btnActAiReadAttachments");
+  if (aiBtn) aiBtn.disabled = (modalAttachments.length + modalTravelTickets.length) === 0;
+  if (!box) return;
+  if (!modalTravelTickets.length) {
+    box.innerHTML = `<div class="muted small" style="padding:2px 0">Nenhum bilhete ou reserva anexado ainda.</div>`;
+    return;
+  }
+  box.innerHTML = modalTravelTickets.map((t, idx) => {
+    const href = t.dataUrl || t.url || (t.id && window.FeriasApi?.attachmentHref ? window.FeriasApi.attachmentHref(t) : "");
+    return `<div class="pro-ticket-item">
+      <div class="pro-ticket-item-main">
+        <span>🎫</span>
+        <div class="pro-ticket-item-info">
+          <strong>${esc(t.fileName || "Bilhete")}</strong>
+        </div>
+      </div>
+      <div class="pro-ticket-item-actions">
+        ${href ? `<a class="icon-btn" href="${esc(href)}" target="_blank" rel="noopener" title="Abrir">👁️</a>` : ""}
+        <button type="button" class="icon-btn" data-ptk-del="${idx}" title="Remover">✕</button>
+      </div>
+    </div>`;
+  }).join("");
+  box.querySelectorAll("[data-ptk-del]").forEach(btn => {
+    btn.onclick = () => {
+      const i = parseInt(btn.dataset.ptkDel, 10);
+      modalTravelTickets.splice(i, 1);
+      renderPersonalModalTravelTickets();
+    };
+  });
+}
+
+function renderPersonalModalSegments() {
+  const box = $("#f-segmentsList");
+  const badge = $("#f-segmentsCountBadge");
+  if (badge) badge.textContent = `${modalTravelSegments.length} ${modalTravelSegments.length === 1 ? "trecho" : "trechos"}`;
+  if (!box) return;
+  if (!modalTravelSegments.length) {
+    box.innerHTML = `<div class="muted small" style="padding:2px 0">Nenhum trecho cadastrado. Clique em <b>➕ Adicionar Trecho</b> ou use <b>Anexar e Ler com IA</b>.</div>`;
+    return;
+  }
+  box.innerHTML = modalTravelSegments.map((sg, idx) => `
+    <div class="pro-seg-card" style="padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <div style="min-width:0;flex:1 1 180px">
+        <div style="font-weight:700;font-size:0.84rem">${esc(sg.transport || "Avião")}: ${esc(sg.from || "?")} ➔ ${esc(sg.to || "?")}</div>
+        <div class="muted small">${sg.departureDate ? fmtShortBR(sg.departureDate) : "Sem data"}${sg.departureTime ? ` ${esc(sg.departureTime)}` : ""}${sg.carrier ? ` · ${esc(sg.carrier)}` : ""}${sg.locator ? ` · Loc: ${esc(sg.locator)}` : ""}</div>
+      </div>
+      <div class="inline-actions" style="gap:4px">
+        <button type="button" class="btn ghost small" data-pseg-wallet="${idx}" title="Abrir na Carteira do Google">💳 Carteira</button>
+        <button type="button" class="icon-btn" data-pseg-del="${idx}" title="Remover trecho">✕</button>
+      </div>
+    </div>`).join("");
+  box.querySelectorAll("[data-pseg-wallet]").forEach(btn => {
+    btn.onclick = async () => {
+      const sg = modalTravelSegments[parseInt(btn.dataset.psegWallet, 10)];
+      if (!sg) return;
+      try {
+        const res = await window.FeriasApi.generateWalletSegmentLink(sg, { name: $("#f-name")?.value || "Viagem" }, state.title || "My Plan");
+        if (res?.saveUrl) window.open(res.saveUrl, "_blank", "noopener");
+        else toast("💳 Configure Google Wallet em Parâmetros ou use o botão Carteira no topo.");
+      } catch (err) { toast("❌ " + (err.message || "Falha ao abrir Carteira.")); }
+    };
+  });
+  box.querySelectorAll("[data-pseg-del]").forEach(btn => {
+    btn.onclick = () => {
+      modalTravelSegments.splice(parseInt(btn.dataset.psegDel, 10), 1);
+      renderPersonalModalSegments();
+    };
+  });
+}
+
+function renderPersonalModalMinutes() {
+  const box = $("#f-minutesList");
+  if (!box) return;
+  if (!modalMinutes.length) {
+    box.innerHTML = `<div class="muted small">Nenhuma ata registrada neste cartão. Clique em <b>➕ Nova Ata</b> para criar.</div>`;
+    return;
+  }
+  box.innerHTML = modalMinutes.map((m, idx) => `
+    <div class="pro-minute-item" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 9px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px">
+      <div style="min-width:0;cursor:pointer;flex:1" data-pmin-edit="${idx}">
+        <strong style="display:block;font-size:0.84rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📝 ${esc(m.title || "Ata")}</strong>
+        <span class="muted small">${m.updatedAt ? new Date(m.updatedAt).toLocaleDateString("pt-BR") : ""}</span>
+      </div>
+      <div class="inline-actions" style="gap:4px">
+        <button type="button" class="icon-btn" data-pmin-edit="${idx}" title="Editar ata">✏️</button>
+        <button type="button" class="icon-btn" data-pmin-del="${idx}" title="Excluir ata">🗑️</button>
+      </div>
+    </div>`).join("");
+  box.querySelectorAll("[data-pmin-edit]").forEach(el => {
+    el.onclick = () => {
+      const idx = parseInt(el.dataset.pminEdit, 10);
+      const m = modalMinutes[idx];
+      if (!m) return;
+      const nextTitle = prompt("Título da Ata:", m.title || "Ata");
+      if (nextTitle === null) return;
+      const nextBody = prompt("Conteúdo / Registro da Ata:", m.text || "");
+      if (nextBody === null) return;
+      m.title = nextTitle.trim() || m.title;
+      m.text = nextBody;
+      m.updatedAt = new Date().toISOString();
+      renderPersonalModalMinutes();
+      toast("📝 Ata atualizada!");
+    };
+  });
+  box.querySelectorAll("[data-pmin-del]").forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.pminDel, 10);
+      if (!confirm("Excluir esta ata do cartão?")) return;
+      modalMinutes.splice(idx, 1);
+      renderPersonalModalMinutes();
+    };
+  });
+}
+
+function openPersonalColModal(colId = null) {
+  const dlg = $("#personalColModal");
+  if (!dlg) return;
+  const cols = ensurePersonalBoardColumns();
+  const existing = colId ? cols.find(c => c.id === colId) : null;
+  editingPersonalColId = existing ? existing.id : null;
+  if ($("#pcolModalTitle")) $("#pcolModalTitle").textContent = existing ? "Editar Lista" : "Nova Lista";
+  if ($("#pcol-name")) $("#pcol-name").value = existing ? existing.title : "";
+  if ($("#pcol-color")) $("#pcol-color").value = existing?.color || "#2563eb";
+  if ($("#btnPcolDelete")) $("#btnPcolDelete").hidden = !existing || cols.length <= 1;
+  dlg.showModal();
+  setTimeout(() => $("#pcol-name")?.focus(), 30);
+}
+
+function bindPersonalCardProFeatures() {
+  if (window.__myplanPersonalProFeaturesBound) return;
+  window.__myplanPersonalProFeaturesBound = true;
+
+  if ($("#btnHeadSave")) $("#btnHeadSave").onclick = () => $("#form")?.requestSubmit();
+  if ($("#btnActAiPdf")) $("#btnActAiPdf").onclick = () => $("#actAiFile")?.click();
+  if ($("#btnHeadDoneToggle")) {
+    $("#btnHeadDoneToggle").onclick = () => {
+      modalCompleted = !modalCompleted;
+      updatePersonalModalDoneBtn();
+    };
+  }
+  if ($("#btnHeadWhatsApp")) {
+    $("#btnHeadWhatsApp").onclick = () => {
+      const title = ($("#f-name")?.value || "").trim() || "Cartão My Plan";
+      const desc = ($("#f-notes")?.value || "").trim();
+      const endIso = ($("#f-end")?.value || $("#f-start")?.value || "").trim();
+      const parts = [`*${title}*`];
+      if (desc) parts.push(desc);
+      if (endIso && /^\d{4}-\d{2}-\d{2}$/.test(endIso)) {
+        const [y, m, d] = endIso.split("-");
+        const mShort = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"][parseInt(m, 10) - 1] || m;
+        parts.push(`*Prazo:* ${d}/${mShort}/${y.slice(-2)}`);
+      }
+      window.open(`https://wa.me/?text=${encodeURIComponent(parts.join("\n\n"))}`, "_blank", "noopener");
+    };
+  }
+  const createPersonalMinute = () => {
+    const defTitle = `Ata - ${($("#f-name")?.value || "Compromisso").trim()}`;
+    const title = prompt("Título da nova Ata:", defTitle);
+    if (!title || !title.trim()) return;
+    const text = prompt("Resumo / Pontos da Ata (opcional):", "") || "";
+    modalMinutes.push({ id: "pmin_" + uid(), title: title.trim(), text, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    renderPersonalModalMinutes();
+    toast("📝 Ata adicionada ao cartão!");
+  };
+  if ($("#btnHeadNewMinute")) $("#btnHeadNewMinute").onclick = createPersonalMinute;
+  if ($("#btnActNewMinute")) $("#btnActNewMinute").onclick = createPersonalMinute;
+
+  // Checklist do Cartão
+  const addSub = () => {
+    const inp = $("#f-newSubtask");
+    const txt = (inp?.value || "").trim();
+    if (!txt) return;
+    modalSubtasks.push({ id: uid(), text: txt, done: false });
+    inp.value = "";
+    renderPersonalModalSubtasks();
+  };
+  if ($("#btnActAddSubtask")) $("#btnActAddSubtask").onclick = addSub;
+  if ($("#f-newSubtask")) {
+    $("#f-newSubtask").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); addSub(); } };
+  }
+
+  // Quick Add / Edit List & Quick Add Custom Personal Type
+  if ($("#btnActQuickAddCol")) $("#btnActQuickAddCol").onclick = () => openPersonalColModal(null);
+  if ($("#btnActQuickEditCol")) $("#btnActQuickEditCol").onclick = () => openPersonalColModal($("#f-personalCol")?.value || null);
+  if ($("#btnActQuickAddType")) {
+    $("#btnActQuickAddType").onclick = () => {
+      const name = prompt("Nome do novo tipo de atividade pessoal (ex: Saúde, Estudo, Família):");
+      if (!name || !name.trim()) return;
+      const clean = name.trim();
+      if (!Array.isArray(state.customPersonalTypes)) state.customPersonalTypes = [];
+      if (!state.customPersonalTypes.includes(clean)) state.customPersonalTypes.push(clean);
+      ensurePersonalCustomTypesInSelect();
+      if ($("#f-type")) { $("#f-type").value = clean; toggleTrip(); }
+      toast(`📌 Tipo "${clean}" adicionado!`);
+    };
+  }
+
+  // Modal Editar / Criar Lista (Personal Quadros)
+  if ($("#btnPcolClose")) $("#btnPcolClose").onclick = () => $("#personalColModal")?.close();
+  if ($("#btnPcolCancel")) $("#btnPcolCancel").onclick = () => $("#personalColModal")?.close();
+  if ($("#btnPcolDelete")) {
+    $("#btnPcolDelete").onclick = () => {
+      if (!editingPersonalColId) return;
+      const cols = ensurePersonalBoardColumns();
+      if (cols.length <= 1) return;
+      if (!confirm("Excluir esta lista dos Quadros Pessoais? Os cartões serão movidos para a primeira lista.")) return;
+      state.personalColumns = cols.filter(c => c.id !== editingPersonalColId);
+      const fb = state.personalColumns[0].id;
+      (state.activities || []).forEach(a => { if (a.personalColId === editingPersonalColId) a.personalColId = fb; });
+      $("#personalColModal")?.close();
+      populatePersonalModalColumns(fb);
+      save("🗑️ Lista removida dos Quadros.");
+    };
+  }
+  if ($("#personalColForm")) {
+    $("#personalColForm").onsubmit = e => {
+      e.preventDefault();
+      const title = ($("#pcol-name")?.value || "").trim();
+      if (!title) return;
+      const color = $("#pcol-color")?.value || "#2563eb";
+      const cols = ensurePersonalBoardColumns();
+      let activeColId = editingPersonalColId;
+      if (editingPersonalColId) {
+        const c = cols.find(x => x.id === editingPersonalColId);
+        if (c) { c.title = title; c.color = color; }
+      } else {
+        activeColId = "pcol_" + uid();
+        cols.push({ id: activeColId, title, color });
+      }
+      $("#personalColModal")?.close();
+      populatePersonalModalColumns(activeColId);
+      save(editingPersonalColId ? `✏️ Lista "${title}" atualizada!` : `🗂️ Lista "${title}" criada!`);
+    };
+  }
+
+  // Ler anexos com IA e inserir na Descrição (preservando texto existente!)
+  if ($("#btnActAiReadAttachments")) {
+    $("#btnActAiReadAttachments").onclick = async () => {
+      const allAtts = [...modalAttachments, ...modalTravelTickets];
+      if (!allAtts.length) return toast("📎 Anexe pelo menos 1 arquivo antes de ler com IA.");
+      const btn = $("#btnActAiReadAttachments");
+      const stEl = $("#f-aiReadStatus");
+      const origTxt = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "⏳ Lendo anexos com IA...";
+      if (stEl) {
+        stEl.hidden = false;
+        stEl.className = "modal-ai-status is-loading";
+        stEl.innerHTML = `<span class="ai-spinner" aria-hidden="true"></span><span>Analisando ${allAtts.length} anexo(s) com Gemini AI...</span>`;
+      }
+      try {
+        const res = await window.FeriasApi.aiSummarizeAttachments({
+          cardTitle: ($("#f-name")?.value || "").trim(),
+          attachments: allAtts.map(a => ({ id: a.id || "", fileName: a.fileName || a.name || "", mimeType: a.mimeType || "", isLink: Boolean(a.url && !a.id), url: a.url || "", dataUrl: a.dataUrl || "" }))
+        });
+        const summary = String(res?.summary || "").trim();
+        if (!summary) throw new Error("A IA não retornou resumo.");
+        const notesEl = $("#f-notes");
+        if (notesEl) {
+          const cur = notesEl.value || "";
+          notesEl.value = !cur.trim() ? summary : (cur.replace(/\s+$/, "") + "\n\n" + summary);
+        }
+        if (stEl) { stEl.className = "modal-ai-status"; stEl.textContent = "✅ Resumo inserido na Descrição."; }
+        toast("✨ Resumo dos anexos inserido na Descrição!");
+      } catch (err) {
+        if (stEl) { stEl.className = "modal-ai-status is-error"; stEl.textContent = "❌ " + (err.message || "Falha ao ler anexos."); }
+        toast("❌ " + (err.message || "Falha ao ler anexos."));
+      } finally {
+        btn.disabled = (modalAttachments.length + modalTravelTickets.length) === 0;
+        btn.textContent = origTxt;
+      }
+    };
+  }
+
+  // Detalhes da Viagem: Bilhetes IA incremental + Apenas Anexar + Adicionar Trecho
+  const uploadPersonalTickets = async (files, useAi) => {
+    if (!files.length) return;
+    const stEl = $("#f-ticketStatus");
+    const tripId = activeTrip?.id || "local";
+    const actId = editing || "draft";
+    if (stEl) {
+      stEl.hidden = false;
+      stEl.className = "modal-ai-status is-loading";
+      stEl.innerHTML = `<span class="ai-spinner" aria-hidden="true"></span><span>${useAi ? "Anexando e lendo bilhetes com IA..." : "Anexando bilhetes..."}</span>`;
+    }
+    const aiFilesPayload = [];
+    for (const f of files) {
+      try {
+        const up = await window.FeriasApi.uploadAttachment(tripId, actId, f);
+        modalTravelTickets.push({ ...up, fileName: up.fileName || f.name, mimeType: up.mimeType || f.type || "" });
+        if (useAi && typeof fileToBase64Obj === "function") {
+          aiFilesPayload.push(await fileToBase64Obj(f));
+        }
+      } catch (err) { toast("❌ " + (err.message || err)); }
+    }
+    renderPersonalModalTravelTickets();
+    if (useAi && aiFilesPayload.length && window.FeriasApi?.aiAnalyzeTickets) {
+      try {
+        const res = await window.FeriasApi.aiAnalyzeTickets({ files: aiFilesPayload, existingSegments: modalTravelSegments });
+        const segs = Array.isArray(res?.segments) ? res.segments : [];
+        segs.forEach(sg => { if (sg && typeof sg === "object") modalTravelSegments.push(sg); });
+        renderPersonalModalSegments();
+        if (stEl) { stEl.className = "modal-ai-status"; stEl.textContent = `✅ ${segs.length} trecho(s) extraído(s) incrementalmente!`; }
+        toast(`✨ ${segs.length} trecho(s) adicionado(s) sem sobrescrever!`);
+      } catch (err) {
+        if (stEl) { stEl.className = "modal-ai-status is-error"; stEl.textContent = "❌ " + (err.message || "Falha na leitura IA."); }
+      }
+    } else if (stEl) {
+      stEl.className = "modal-ai-status";
+      stEl.textContent = `✅ ${files.length} bilhete(s) anexado(s).`;
+    }
+  };
+  if ($("#btnActTicketsAiUpload")) $("#btnActTicketsAiUpload").onclick = () => $("#f-ticketsAiInput")?.click();
+  if ($("#btnActTicketsOnlyUpload")) $("#btnActTicketsOnlyUpload").onclick = () => $("#f-ticketsOnlyInput")?.click();
+  if ($("#f-ticketsAiInput")) $("#f-ticketsAiInput").onchange = async e => { await uploadPersonalTickets([...(e.target.files || [])], true); e.target.value = ""; };
+  if ($("#f-ticketsOnlyInput")) $("#f-ticketsOnlyInput").onchange = async e => { await uploadPersonalTickets([...(e.target.files || [])], false); e.target.value = ""; };
+  if ($("#btnActAddSegment")) {
+    $("#btnActAddSegment").onclick = () => {
+      const transport = prompt("Modalidade (Avião, Carro, Ônibus, Trem, Navio):", "Avião") || "Avião";
+      const from = prompt("Origem do trecho:", "") || "";
+      const to = prompt("Destino do trecho:", "") || "";
+      if (!from && !to) return;
+      const departureDate = prompt("Data (AAAA-MM-DD, opcional):", $("#f-start")?.value || "") || "";
+      const locator = prompt("Localizador / Reserva (opcional):", "") || "";
+      modalTravelSegments.push({ transport, from, to, departureDate, locator });
+      renderPersonalModalSegments();
+      toast("🛫 Trecho adicionado!");
+    };
+  }
+
+  // Arquivar / Desarquivar Cartão Pessoal
+  if ($("#btnActArchive")) {
+    $("#btnActArchive").onclick = async () => {
+      if (!editing) return;
+      const ctx = findActivityContext(editing);
+      if (!ctx?.activity) return;
+      if (ctx.trip?.role === "viewer") return toast("👁️ Somente visualização.");
+      const nextArch = !Boolean(ctx.activity.archived);
+      ctx.activity.archived = nextArch;
+      ctx.activity.archivedAt = nextArch ? new Date().toISOString() : "";
+      $("#modal")?.close();
+      await saveTripRecord(ctx.trip, nextArch ? `📦 Cartão "${ctx.activity.name || "Sem título"}" arquivado!` : `📤 Cartão desarquivado!`);
+    };
+  }
+}
 
 function ensurePersonalBoardColumns() {
   if (!Array.isArray(state.personalColumns) || !state.personalColumns.length) {
@@ -10526,19 +11021,12 @@ function ensurePersonalBoardColumns() {
 }
 
 function bindPersonalBoardEvents() {
+  bindPersonalCardProFeatures();
   if (pboardEventsBound) return;
   pboardEventsBound = true;
   if ($("#pboardSearch")) $("#pboardSearch").oninput = () => renderPersonalBoard();
   if ($("#btnPboardAddCard")) $("#btnPboardAddCard").onclick = () => openModal();
-  if ($("#btnPboardAddCol")) {
-    $("#btnPboardAddCol").onclick = () => {
-      const title = prompt("Nome da nova lista no Quadro Pessoal:");
-      if (!title || !title.trim()) return;
-      const cols = ensurePersonalBoardColumns();
-      cols.push({ id: "pcol_" + uid(), title: title.trim(), color: "#2563eb" });
-      save(`🗂️ Lista "${title.trim()}" criada!`);
-    };
-  }
+  if ($("#btnPboardAddCol")) $("#btnPboardAddCol").onclick = () => openPersonalColModal(null);
 }
 
 function renderPersonalBoard() {
@@ -10565,17 +11053,31 @@ function renderPersonalBoard() {
       ? items.map(a => {
           const info = getTypeInfoAny(a);
           const dt = a.start ? (a.end && a.end !== a.start ? `${fmtShortBR(a.start)} → ${fmtShortBR(a.end)}` : fmtShortBR(a.start)) : "";
-          const route = (a.from || a.to) ? `${a.from || "?"} ➔ ${a.to || "?"}` : "";
-          return `<article class="pro-card" draggable="true" data-pb-card="${esc(a.id)}">
+          const route = (a.from || a.to) ? `${a.from || "?"} ➔ ${a.to || "?"}` : (a.location || "");
+          const subs = Array.isArray(a.subtasks) ? a.subtasks : [];
+          const subsDone = subs.filter(s => s.done).length;
+          const attCnt = Array.isArray(a.attachments) ? a.attachments.length : 0;
+          const minCnt = Array.isArray(a.minutes) ? a.minutes.length : 0;
+          const tags = Array.isArray(a.tags) ? a.tags.slice(0, 2) : [];
+          const metaBits = [
+            subs.length ? `☑ ${subsDone}/${subs.length}` : "",
+            attCnt ? `📎 ${attCnt}` : "",
+            minCnt ? `📝 ${minCnt}` : ""
+          ].filter(Boolean);
+          return `<article class="pro-card${a.completed ? " is-done" : ""}" draggable="true" data-pb-card="${esc(a.id)}">
             <div class="pro-card-top">
               <span class="pro-type-pill ${info.cls || ""}">${info.icon || "📌"} ${esc(a.type || "Evento")}</span>
-              ${dt ? `<span class="muted small">${esc(dt)}</span>` : ""}
+              ${dt ? `<span class="pro-card-date">${esc(dt)}</span>` : ""}
             </div>
-            <div class="pro-card-title">${esc(a.name || "Sem título")}</div>
-            ${route ? `<div class="muted small" style="margin-top:4px">📍 ${esc(route)}</div>` : ""}
+            <div class="pro-card-title">${a.completed ? "✅ " : ""}${esc(a.name || "Sem título")}</div>
+            ${route ? `<div class="pro-card-sub"><span>📍 ${esc(route)}</span></div>` : ""}
+            ${(tags.length || metaBits.length) ? `<div class="pro-card-foot" style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:0.72rem;color:var(--muted)">
+              <span>${tags.map(tg => `<span class="tag-mini">#${esc(tg)}</span>`).join(" ")}</span>
+              <span>${metaBits.join(" · ")}</span>
+            </div>` : ""}
           </article>`;
         }).join("")
-      : `<div class="muted small" style="padding:10px 6px;text-align:center">Nenhum item nesta lista.</div>`;
+      : `<div class="muted small" style="padding:12px 6px;text-align:center">Nenhum cartão nesta lista.</div>`;
 
     return `<section class="pro-col" data-pb-col="${esc(col.id)}">
       <div class="pro-col-head" style="border-top:3px solid ${esc(col.color || "#2563eb")}">
@@ -10583,9 +11085,14 @@ function renderPersonalBoard() {
           <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(col.title)}</strong>
           <span class="pill" style="font-size:0.7rem">${items.length}</span>
         </div>
-        ${cols.length > 1 ? `<button type="button" class="icon-btn" data-pb-delcol="${esc(col.id)}" title="Remover lista">✕</button>` : ""}
+        <div class="inline-actions" style="gap:2px">
+          <button type="button" class="icon-btn" data-pb-editcol="${esc(col.id)}" title="Editar lista">✏️</button>
+        </div>
       </div>
       <div class="pro-col-cards" data-pb-drop="${esc(col.id)}">${cardsHtml}</div>
+      <div class="pro-col-foot" style="padding:6px 8px;border-top:1px solid var(--border);flex:0 0 auto">
+        <button type="button" class="btn ghost small" style="width:100%" data-pb-add-in-col="${esc(col.id)}">➕ Adicionar cartão</button>
+      </div>
     </section>`;
   }).join("");
 
@@ -10608,19 +11115,17 @@ function renderPersonalBoard() {
       const act = (state.activities || []).find(x => x.id === id);
       if (act && targetCol) {
         act.personalColId = targetCol;
-        save("🗂️ Item movido no quadro!");
+        save("🗂️ Cartão movido no quadro!");
       }
     };
   });
-  host.querySelectorAll("[data-pb-delcol]").forEach(btn => {
+  host.querySelectorAll("[data-pb-editcol]").forEach(btn => {
+    btn.onclick = () => openPersonalColModal(btn.dataset.pbEditcol);
+  });
+  host.querySelectorAll("[data-pb-add-in-col]").forEach(btn => {
     btn.onclick = () => {
-      const cid = btn.dataset.pbDelcol;
-      if (state.personalColumns.length <= 1) return;
-      if (!confirm("Remover esta lista do Quadro Pessoal? Os eventos serão movidos para a primeira lista.")) return;
-      state.personalColumns = state.personalColumns.filter(c => c.id !== cid);
-      const fallbackId = state.personalColumns[0].id;
-      (state.activities || []).forEach(a => { if (a.personalColId === cid) a.personalColId = fallbackId; });
-      save("🗑️ Lista removida do quadro.");
+      openModal();
+      if ($("#f-personalCol")) $("#f-personalCol").value = btn.dataset.pbAddInCol;
     };
   });
 }
@@ -10631,3 +11136,4 @@ window.addEventListener("resize", () => {
 });
 
 boot();
+bindPersonalCardProFeatures();
