@@ -8758,3 +8758,111 @@ dialog.pro-unsaved-dialog {
     font-size: 16px;
   }
 }
+
+/* ===== AMBIENTE PESSOAL LIMPO, REORDENAÇÃO DE TIPOS & CABEÇALHO MOBILE DO CARTÃO (v50) ===== */
+body.is-personal-mode #pc-travelFinanceBox,
+body.is-personal-mode #pc-primaryTravelMode,
+body.is-personal-mode .pro-asg-mode-sel,
+body.is-personal-mode #proTravelFinanceParamsCard,
+body.is-personal-mode #btnProControlGoParams,
+body.is-personal-mode #proControlQuickMode,
+body.is-personal-mode #proControlChartsGrid,
+body.is-personal-mode #view-pro-control .pro-travels-section-head,
+body.is-personal-mode #proControlSummaryGrid {
+  display: none !important;
+}
+
+.pro-type-row.drag-over {
+  outline: 2px dashed var(--accent);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.pro-card-modal-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.pro-card-head-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+.pro-card-head-top h2 {
+  margin: 0;
+  font-size: 1.12rem;
+  line-height: 1.25;
+}
+.pro-card-head-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+.pro-card-head-actions > .btn {
+  height: 36px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 11px;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.pro-card-head-actions > .btn-modal-whatsapp {
+  width: 38px;
+  padding: 0 !important;
+}
+
+@media (min-width: 769px) {
+  .pro-card-modal-head {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .pro-card-head-top {
+    width: auto;
+    flex: 0 0 auto;
+    order: 1;
+  }
+  .pro-card-head-top #btnProCardCloseX {
+    display: inline-flex;
+  }
+  .pro-card-head-actions {
+    width: auto;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    order: 2;
+  }
+  .pro-card-head-actions > .btn {
+    height: 32px;
+    min-height: 32px;
+  }
+}
+
+@media (max-width: 768px) {
+  .pro-card-head-top {
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pro-card-head-actions {
+    gap: 8px;
+    padding-top: 2px;
+  }
+  .pro-card-head-actions > .btn {
+    height: 38px;
+    min-height: 38px;
+    font-size: 0.84rem;
+    flex: 0 1 auto;
+  }
+  .pro-card-head-actions > #btnProCardHeadSave {
+    flex: 1 1 auto;
+    min-width: 105px;
+  }
+}

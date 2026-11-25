@@ -268,7 +268,10 @@
     const ctx = cardId ? host.findCardContext(cardId) : null;
     const list = Array.isArray(ctx?.activity?.minutes) ? ctx.activity.minutes : [];
     if (!list.length) {
-      box.innerHTML = `<div class="muted small">Nenhuma ata registrada neste cartão. Clique em <b>➕ Nova Ata de Reunião</b> para criar.</div>`;
+      const isPers = host.core?.getAppMode?.() === "personal";
+      box.innerHTML = isPers
+        ? `<div class="muted small">Nenhuma nota registrada neste cartão. Clique em <b>➕ Nova Nota</b> para criar.</div>`
+        : `<div class="muted small">Nenhuma ata registrada neste cartão. Clique em <b>➕ Nova Ata de Reunião</b> para criar.</div>`;
       return;
     }
     box.innerHTML = list.map(m => {

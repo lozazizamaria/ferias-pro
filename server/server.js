@@ -779,7 +779,10 @@ function publicUser(u) {
       driveFolderId: String(u.integrations?.driveFolderId || ""),
       driveFolderName: String(u.integrations?.driveFolderName || ""),
       driveFolderUrl: String(u.integrations?.driveFolderUrl || ""),
-      driveConnectedEmail: String(u.integrations?.driveConnectedEmail || "")
+      driveConnectedEmail: String(u.integrations?.driveConnectedEmail || ""),
+      personalDriveFolderId: String(u.integrations?.personalDriveFolderId || ""),
+      personalDriveFolderName: String(u.integrations?.personalDriveFolderName || ""),
+      personalDriveFolderUrl: String(u.integrations?.personalDriveFolderUrl || "")
     }
   };
 }
@@ -2652,6 +2655,15 @@ const server = http.createServer(async (req, res) => {
       }
       if (typeof body.driveConnectedEmail === "string") {
         u.integrations.driveConnectedEmail = body.driveConnectedEmail.trim().slice(0, 160);
+      }
+      if (typeof body.personalDriveFolderId === "string") {
+        u.integrations.personalDriveFolderId = body.personalDriveFolderId.trim().slice(0, 128);
+      }
+      if (typeof body.personalDriveFolderName === "string") {
+        u.integrations.personalDriveFolderName = body.personalDriveFolderName.trim().slice(0, 180);
+      }
+      if (typeof body.personalDriveFolderUrl === "string") {
+        u.integrations.personalDriveFolderUrl = body.personalDriveFolderUrl.trim().slice(0, 320);
       }
       auditLog("user.integrations_update", { userId: u.id, email: u.email, ip: getClientIp(req), detail: "Integrações criptografadas (AES-256-GCM)" });
       saveDb();

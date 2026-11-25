@@ -4,6 +4,78 @@
   let proInitialized = false;
 
   const proOriginMap = new WeakMap();
+  const isPersonalMode = () => core?.getAppMode?.() === "personal";
+  const PT_MONTHS_SHORT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  function fmtDateShortPt(iso) {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(String(iso))) return "";
+    const [y, m, d] = String(iso).slice(0, 10).split("-");
+    const mi = parseInt(m, 10) - 1;
+    if (mi < 0 || mi > 11) return "";
+    return `${d}/${PT_MONTHS_SHORT[mi]}/${y.slice(-2)}`;
+  }
+
+  function ensurePersonalStateShape(st) {
+    if (!st || typeof st !== "object") return;
+    if (!Array.isArray(st.columns) || !st.columns.length) {
+      st.columns = [
+        { id: "assuntos", title: "Assuntos",     color: "#64748b" },
+        { id: "todo",     title: "A Fazer",      color: "#0284c7" },
+        { id: "doing",    title: "Em Andamento", color: "#2563eb" },
+        { id: "done",     title: "Concluído",    color: "#10b981" }
+      ];
+    }
+    if (!Array.isArray(st.labels) || !st.labels.length) {
+      st.labels = [
+        { id: "lbl_familia",  name: "Família",  color: "#ec4899" },
+        { id: "lbl_viagem",   name: "Viagem",   color: "#f59e0b" },
+        { id: "lbl_casa",     name: "Casa",     color: "#0284c7" },
+        { id: "lbl_saude",    name: "Saúde",    color: "#10b981" },
+        { id: "lbl_lazer",    name: "Lazer",    color: "#8b5cf6" },
+        { id: "lbl_financas", name: "Finanças", color: "#2563eb" }
+      ];
+    }
+    if (!st.params || typeof st.params !== "object") st.params = {};
+    if (!Array.isArray(st.activities)) st.activities = [];
+    if (!Array.isArray(st.checklist)) st.checklist = [];
+    if (!Array.isArray(st.customCardTypes)) st.customCardTypes = [];
+  }
+
+  function applyPersonalModeAdaptations() {
+    const pers = isPersonalMode();
+    document.body.classList.toggle("is-personal-mode", pers);
+    // Títulos e rótulos em Configurações
+    const paramsMainTitle = document.querySelector("#view-pro-params .card h2");
+    if (paramsMainTitle) {
+      paramsMainTitle.textContent = pers ? "🏡 Configurações & Metas Pessoais" : "⚙️ Configurações do Projeto & Metas";
+    }
+    const clientParamLbl = $("#pp-client")?.closest(".param-row")?.querySelector("span");
+    if (clientParamLbl) clientParamLbl.textContent = pers ? "Categoria / Contexto padrão" : "Cliente / Carteira padrão";
+    if ($("#pp-client")) $("#pp-client").placeholder = pers ? "Ex: Família, Casa, Viagens" : "Ex: Conta Corporativa";
+
+    const cardClientLbl = $("#pc-client")?.closest("label");
+    if (cardClientLbl && cardClientLbl.firstChild && cardClientLbl.firstChild.nodeType === 3) {
+      cardClientLbl.firstChild.textContent = pers ? "Categoria / Contexto\n              " : "Cliente / Conta\n              ";
+    }
+    if ($("#pc-client")) $("#pc-client").placeholder = pers ? "Ex: Família, Saúde, Casa, Lazer, Finanças" : "Ex: Cliente Alpha";
+
+    // Notas & Registros vs Atas de Reunião
+    if ($("#btnProCardHeadNewMinute")) {
+      $("#btnProCardHeadNewMinute").textContent = pers ? "📝 Nova Nota" : "📝 Nova Ata";
+      $("#btnProCardHeadNewMinute").title = pers ? "Criar nova Nota / Registro vinculada a este cartão" : "Criar nova Ata de Reunião vinculada a este cartão";
+    }
+    if ($("#btnProCardNewMinute")) {
+      $("#btnProCardNewMinute").textContent = pers ? "➕ Nova Nota" : "➕ Nova Ata de Reunião";
+    }
+    const minCardTitle = $("#pc-minutesCardBox .pro-side-title");
+    if (minCardTitle) minCardTitle.textContent = pers ? "📝 Notas & Registros" : "📝 Atas de Reunião";
+
+    // Ocultar campos militares/corporativos no ambiente Pessoal
+    if ($("#proTravelFinanceParamsCard")) $("#proTravelFinanceParamsCard").hidden = pers;
+    if ($("#pc-travelFinanceBox") && pers) $("#pc-travelFinanceBox").hidden = true;
+    if ($("#pc-primaryTravelMode") && pers) $("#pc-primaryTravelMode").hidden = true;
+    if ($("#btnProControlGoParams")) $("#btnProControlGoParams").hidden = pers;
+    if ($("#proControlQuickMode")) $("#proControlQuickMode").hidden = pers;
+  }
   const COVER_SWATCHES = ["", "#1d4ed8", "#0284c7", "#0ea5e9", "#10b981", "#6366f1", "#8b5cf6", "#f59e0b", "#ef4444", "#64748b"];
   const ASSIGNEE_PALETTE = [
     { darkBg: "rgba(37, 99, 235, 0.22)",  darkFg: "#93c5fd", darkBd: "rgba(59, 130, 246, 0.55)",  lightBg: "#dbeafe", lightFg: "#1e40af", lightBd: "#93c5fd", hex: "#3b82f6" },
@@ -145,36 +217,50 @@
   }
 
   function getAllProTypes(dataOpt = null) {
-    const out = {};
+    const rawMap = {};
     const builtIn = window.PRO_ACTIVITY_TYPES || {};
+    const st = dataOpt || core?.getState?.() || {};
+    const overrides = (st.cardTypeOverrides && typeof st.cardTypeOverrides === "object") ? st.cardTypeOverrides : {};
+
     Object.values(builtIn).forEach(t => {
-      const iconHtml = t.iconHtml || t.icon || resolveProIconHtml(t.iconId);
-      out[t.id] = {
+      const ov = overrides[t.id];
+      if (ov && ov.hidden) return;
+      const effId = ov?.id ? sanitizeProTypeName(ov.id) || t.id : t.id;
+      const effIconId = (ov?.iconId && window.PRO_ICON_MAP && window.PRO_ICON_MAP[ov.iconId]) ? ov.iconId : t.iconId;
+      const effColor = (ov?.color && /^#[0-9a-f]{3,8}$/i.test(ov.color)) ? ov.color : t.color;
+      const effFin = (ov?.defaultFin && ["income", "expense", "none"].includes(ov.defaultFin)) ? ov.defaultFin : t.defaultFin;
+      const iconHtml = resolveProIconHtml(effIconId);
+      rawMap[effId] = {
         ...t,
-        label: t.id,
-        short: t.id,
+        id: effId,
+        origBuiltInId: t.id,
+        label: effId,
+        short: effId,
+        iconId: effIconId,
         icon: iconHtml,
         iconHtml,
+        color: effColor,
+        defaultFin: effFin,
         isCustom: false
       };
     });
 
     const dataList = [];
     if (dataOpt) dataList.push(dataOpt);
-    const st = core?.getState?.();
-    if (st) dataList.push(st);
+    const curSt = core?.getState?.();
+    if (curSt && curSt !== dataOpt) dataList.push(curSt);
     (core?.getSelectedTrips?.() || []).forEach(tr => { if (tr?.data) dataList.push(tr.data); });
 
     dataList.forEach(d => {
       const customs = Array.isArray(d?.customCardTypes) ? d.customCardTypes : [];
       customs.forEach(ct => {
         const name = sanitizeProTypeName(ct?.id || ct?.name);
-        if (!name || out[name]) return;
+        if (!name || rawMap[name]) return;
         const iconId = (window.PRO_ICON_MAP && window.PRO_ICON_MAP[ct.iconId]) ? ct.iconId : "flag";
         const color = /^#[0-9a-f]{3,8}$/i.test(String(ct.color || "")) ? String(ct.color) : "#2563eb";
         const defaultFin = ["income", "expense", "none"].includes(ct.defaultFin) ? ct.defaultFin : "none";
         const iconHtml = resolveProIconHtml(iconId);
-        out[name] = {
+        rawMap[name] = {
           id: name,
           label: name,
           short: name,
@@ -188,7 +274,14 @@
         };
       });
     });
-    return out;
+
+    // Aplicar ordem personalizada salva em st.cardTypeOrder
+    const order = Array.isArray(st.cardTypeOrder) ? st.cardTypeOrder : [];
+    if (!order.length) return rawMap;
+    const ordered = {};
+    order.forEach(id => { if (rawMap[id]) ordered[id] = rawMap[id]; });
+    Object.keys(rawMap).forEach(id => { if (!ordered[id]) ordered[id] = rawMap[id]; });
+    return ordered;
   }
 
   function getProTypeInfo(type, dataOpt = null) {
@@ -5205,7 +5298,134 @@
   let proControlTableSort = { col: "start", dir: "asc" };
   let proControlLastReport = null;
 
+  function renderPersonalControl(filteredCardsOpt) {
+    const viewEl = $("#view-pro-control");
+    if (!viewEl) return;
+    const cards = filteredCardsOpt || applyProUnifiedFilters(getProSortedActivities());
+    const travelCards = cards.filter(c => {
+      const td = c.travelDetails && typeof c.travelDetails === "object" ? c.travelDetails : null;
+      const asgs = getCardAssigneesList(c);
+      return c.type === "Viagem" || asgs.some(a => a.travels) || Boolean(td && (td.transport || td.hasCost || (td.tickets && td.tickets.length) || (td.segments && td.segments.length))) || (proControlScope === "with_location" && Boolean(String(c.location || "").trim()));
+    });
+
+    const yearSel = $("#proControlQuickYear");
+    const yearsSet = new Set();
+    travelCards.forEach(c => { const y = String(c.start || "").slice(0, 4); if (/^\d{4}$/.test(y)) yearsSet.add(y); });
+    const years = [...yearsSet].sort();
+    if (yearSel) {
+      const prev = proControlQuickYear || yearSel.value || "";
+      yearSel.innerHTML = `<option value="">Todos os anos</option>` + years.map(y => `<option value="${y}">${y}</option>`).join("");
+      yearSel.value = years.includes(prev) ? prev : "";
+    }
+    const selYear = yearSel?.value || "";
+    const selMonth = $("#proControlQuickMonth")?.value || "";
+
+    const rows = travelCards.filter(c => {
+      const iso = String(c.start || "");
+      if (selYear && !iso.startsWith(selYear)) return false;
+      if (selMonth && iso.slice(5, 7) !== selMonth) return false;
+      return true;
+    });
+
+    let totalDays = 0, totalPlanned = 0, totalActual = 0;
+    const peopleSet = new Set();
+    rows.forEach(c => {
+      totalDays += Math.max(1, core.days(c) || 1);
+      const td = c.travelDetails || {};
+      const planned = Number(c.amount) > 0 ? Number(c.amount) : (td.hasCost ? Number(td.costAmount) || 0 : 0);
+      const actual = Number(c.actualAmount) > 0 ? Number(c.actualAmount) : planned;
+      totalPlanned += planned;
+      totalActual += actual;
+      getCardAssigneesList(c).forEach(a => { if (a.name) peopleSet.add(a.name); });
+    });
+
+    if ($("#proControlCountBadge")) {
+      $("#proControlCountBadge").textContent = `${rows.length} ${rows.length === 1 ? "viagem" : "viagens"} · ${totalDays}d fora`;
+    }
+    const emptyEl = $("#proControlEmptyBanner");
+    if (emptyEl) {
+      emptyEl.hidden = rows.length > 0;
+      if (!rows.length) {
+        emptyEl.innerHTML = `<div class="pro-travels-empty-inner">
+          <div style="font-size:2rem">🧳</div>
+          <h3>Nenhuma viagem pessoal encontrada</h3>
+          <p class="muted small">Crie um cartão do tipo <b>Viagem</b> ou marque <b>"✈️ Viaja"</b> / preencha <b>Detalhes da Viagem</b> para acompanhar roteiros, dias fora e gastos pessoais aqui.</p>
+          <button type="button" class="btn primary small" id="btnPersCtrlAdd">➕ Nova Viagem</button>
+        </div>`;
+        if ($("#btnPersCtrlAdd", emptyEl)) $("#btnPersCtrlAdd", emptyEl).onclick = () => openProCardModal({ type: "Viagem" });
+      }
+    }
+    const kpisEl = $("#proControlKpis");
+    if (kpisEl) {
+      const kpis = [
+        ["Viagens / Roteiros", String(rows.length), `${peopleSet.size} pessoa(s) envolvida(s)`, "#38bdf8"],
+        ["Total de Dias Fora", `${totalDays}d`, rows.length ? `Média ${(totalDays / rows.length).toFixed(1)}d / viagem` : "—", "#f59e0b"],
+        ["Gasto Previsto", core.money(totalPlanned), "Transporte, hospedagem e roteiro", "#6366f1"],
+        ["Gasto Realizado", core.money(totalActual), totalPlanned > 0 ? `${Math.round((totalActual / totalPlanned) * 100)}% do previsto` : "—", "#10b981"]
+      ];
+      kpisEl.innerHTML = kpis.map(([lbl, val, sub, col]) => `
+        <div class="kpi pro-map-kpi-card pro-travels-kpi" style="--c:${core.esc(col)}">
+          <div class="lbl">${core.esc(lbl)}</div>
+          <div class="val">${core.esc(val)}</div>
+          <div class="sub">${core.esc(sub)}</div>
+        </div>`).join("");
+    }
+    const mainWrap = $("#proControlMainContent");
+    if (mainWrap) mainWrap.hidden = !rows.length;
+    const ctrlSub = $("#view-pro-control .pro-travels-table-card .muted.small");
+    if (ctrlSub) ctrlSub.textContent = "Clique em qualquer viagem para editar roteiro, bilhetes, trechos e gastos pessoais.";
+    const summaryEl = $("#proControlPersonCards");
+    if (summaryEl) summaryEl.innerHTML = "";
+    const tbl = $("#proControlTable");
+    if (tbl) {
+      tbl.innerHTML = `
+        <thead>
+          <tr>
+            <th>Viagem / Roteiro</th>
+            <th>Pessoas / Família</th>
+            <th>Destino</th>
+            <th>Datas</th>
+            <th>Dias</th>
+            <th>Transporte</th>
+            <th class="num">Previsto</th>
+            <th class="num">Realizado</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(c => {
+            const td = c.travelDetails || {};
+            const asgs = getCardAssigneesList(c).map(a => a.name).filter(Boolean).join(", ") || "—";
+            const dt = c.start ? (c.end && c.end !== c.start ? `${core.fmtBR(c.start)} → ${core.fmtBR(c.end)}` : core.fmtBR(c.start)) : "Sem data";
+            const dCnt = Math.max(1, core.days(c) || 1);
+            const planned = Number(c.amount) > 0 ? Number(c.amount) : (td.hasCost ? Number(td.costAmount) || 0 : 0);
+            const actual = Number(c.actualAmount) > 0 ? Number(c.actualAmount) : 0;
+            return `<tr data-pctrl-card="${core.esc(c.id)}" style="cursor:pointer">
+              <td><strong>${core.esc(c.name || "Sem título")}</strong>${c.client ? `<div class="muted small">${core.esc(c.client)}</div>` : ""}</td>
+              <td>${core.esc(asgs)}</td>
+              <td>${c.location ? `📍 ${core.esc(shortLocationCityName(c.location))}` : `<span class="muted">—</span>`}</td>
+              <td class="nowrap">${core.esc(dt)}</td>
+              <td class="nowrap">${dCnt}d</td>
+              <td>${core.esc(td.transport || "—")}</td>
+              <td class="num">${planned > 0 ? core.money(planned) : "—"}</td>
+              <td class="num">${actual > 0 ? core.money(actual) : "—"}</td>
+              <td><span class="pill">${core.esc(c.finStatus || (c.completed ? "Concluído" : "Planejado"))}</span></td>
+            </tr>`;
+          }).join("")}
+        </tbody>`;
+      tbl.querySelectorAll("[data-pctrl-card]").forEach(tr => {
+        tr.onclick = () => openProCardModal(tr.dataset.pctrlCard);
+      });
+    }
+    const mobEl = $("#proControlMobileCards");
+    if (mobEl) mobEl.innerHTML = "";
+  }
+
   function renderProControl(filteredCardsOpt) {
+    if (isPersonalMode()) {
+      renderPersonalControl(filteredCardsOpt);
+      return;
+    }
     const viewEl = $("#view-pro-control");
     if (!viewEl) return;
 
@@ -7543,35 +7763,68 @@
       doneSel.value = cols.some(c => c.id === doneVal) ? doneVal : "";
     }
 
-    // Tipos de Cartão (Padrão + Customizados)
+    // Tipos de Cartão (Todos editáveis e reordenáveis via ↑/↓ ou arrastar e soltar)
     const typesMgr = $("#proCardTypesManager");
     if (typesMgr) {
       const allTypes = Object.values(getAllProTypes(st));
-      typesMgr.innerHTML = allTypes.map(t => {
+      const moveTypeOrder = (fromIdx, toIdx) => {
+        if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || toIdx >= allTypes.length) return;
+        const ids = allTypes.map(x => x.id);
+        const [moved] = ids.splice(fromIdx, 1);
+        ids.splice(toIdx, 0, moved);
+        st.cardTypeOrder = ids;
+        core.save("↕️ Ordem dos Tipos de Cartão atualizada");
+      };
+      typesMgr.innerHTML = allTypes.map((t, idx) => {
         const badgeStyle = `style="--t-color:${core.esc(t.color || "#2563eb")}"`;
         const finHint = t.defaultFin === "income" ? " · +Receb." : (t.defaultFin === "expense" ? " · −Desp." : "");
-        const btns = t.isCustom
-          ? `<div class="inline-actions">
-              <button type="button" class="icon-btn" data-ptedit="${core.esc(t.id)}" title="Editar tipo">✏️</button>
-              <button type="button" class="icon-btn" data-ptdel="${core.esc(t.id)}" title="Excluir tipo">🗑️</button>
-            </div>`
-          : `<span class="pill" style="font-size:0.68rem">Padrão</span>`;
-        return `<div class="pro-type-row">
+        return `<div class="pro-type-row" draggable="true" data-ptidx="${idx}" data-ptid="${core.esc(t.id)}">
           <div class="pro-type-row-left">
+            <span class="drag-handle" title="Arraste para reordenar" style="cursor:grab">⋮⋮</span>
             <span class="pro-type-row-badge" ${badgeStyle}>${t.iconHtml}</span>
             <div style="min-width:0">
               <div class="pro-type-row-name">${core.esc(t.short)}</div>
-              <div class="muted" style="font-size:0.7rem">${t.isCustom ? "Personalizado" : "Sistema"}${finHint}</div>
+              <div class="muted" style="font-size:0.7rem">${t.isCustom ? "Personalizado" : "Padrão"}${finHint}</div>
             </div>
           </div>
-          ${btns}
+          <div class="inline-actions">
+            <button type="button" class="icon-btn" data-ptup="${idx}" ${idx === 0 ? "disabled" : ""} title="Mover para cima">↑</button>
+            <button type="button" class="icon-btn" data-ptdown="${idx}" ${idx === allTypes.length - 1 ? "disabled" : ""} title="Mover para baixo">↓</button>
+            <button type="button" class="icon-btn" data-ptedit="${core.esc(t.id)}" title="Editar tipo">✏️</button>
+            <button type="button" class="icon-btn" data-ptdel="${core.esc(t.id)}" ${allTypes.length <= 1 ? "disabled" : ""} title="Excluir tipo">🗑️</button>
+          </div>
         </div>`;
       }).join("");
+      typesMgr.querySelectorAll("[data-ptup]").forEach(b => {
+        b.onclick = () => { const i = parseInt(b.dataset.ptup, 10); moveTypeOrder(i, i - 1); };
+      });
+      typesMgr.querySelectorAll("[data-ptdown]").forEach(b => {
+        b.onclick = () => { const i = parseInt(b.dataset.ptdown, 10); moveTypeOrder(i, i + 1); };
+      });
       typesMgr.querySelectorAll("[data-ptedit]").forEach(b => {
         b.onclick = () => openProTypeModal({ editId: b.dataset.ptedit });
       });
       typesMgr.querySelectorAll("[data-ptdel]").forEach(b => {
         b.onclick = () => deleteProCustomType(b.dataset.ptdel);
+      });
+      let dragFromIdx = -1;
+      typesMgr.querySelectorAll(".pro-type-row[draggable]").forEach(row => {
+        row.ondragstart = e => {
+          dragFromIdx = parseInt(row.dataset.ptidx, 10);
+          row.style.opacity = "0.5";
+          try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(dragFromIdx)); } catch {}
+        };
+        row.ondragend = () => { row.style.opacity = ""; dragFromIdx = -1; };
+        row.ondragover = e => { e.preventDefault(); row.classList.add("drag-over"); };
+        row.ondragleave = () => row.classList.remove("drag-over");
+        row.ondrop = e => {
+          e.preventDefault();
+          row.classList.remove("drag-over");
+          const toIdx = parseInt(row.dataset.ptidx, 10);
+          if (dragFromIdx >= 0 && toIdx >= 0 && dragFromIdx !== toIdx) {
+            moveTypeOrder(dragFromIdx, toIdx);
+          }
+        };
       });
     }
     const colsMgr = $("#proColumnsManager");
@@ -8106,17 +8359,18 @@
     const active = core.getActiveTrip();
     if (active?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
     const st = core.getState();
-    const existing = editId ? (st.customCardTypes || []).find(t => t.id === editId) : null;
+    const allMap = getAllProTypes(st);
+    const existing = editId ? (allMap[editId] || (st.customCardTypes || []).find(t => t.id === editId) || null) : null;
     editingProTypeId = existing ? existing.id : null;
     proTypeModalCallback = typeof onCreated === "function" ? onCreated : null;
-    proTypePickedIcon = existing?.iconId || "jet-gripen";
+    proTypePickedIcon = existing?.iconId || "check";
 
     if ($("#proTypeModalTitle")) $("#proTypeModalTitle").textContent = existing ? "Editar Tipo de Cartão" : "Novo Tipo de Cartão";
     if ($("#pct-name")) $("#pct-name").value = existing ? existing.id : "";
     const col = existing?.color || "#2563eb";
     if ($("#pct-color")) $("#pct-color").value = col;
     if ($("#pct-defaultFin")) $("#pct-defaultFin").value = existing?.defaultFin || "none";
-    if ($("#btnProTypeDelete")) $("#btnProTypeDelete").hidden = !existing;
+    if ($("#btnProTypeDelete")) $("#btnProTypeDelete").hidden = !existing || Object.keys(allMap).length <= 1;
     renderProIconDropdown($("#pct-iconPicker"), proTypePickedIcon, col, id => { proTypePickedIcon = id; });
 
     const dlg = $("#proTypeModal");
@@ -8129,17 +8383,29 @@
   function deleteProCustomType(typeId) {
     const active = core.getActiveTrip();
     if (active?.role === "viewer") return core.toast("👁️ Projeto compartilhado somente para visualização.");
-    if (!confirm(`Excluir o tipo de cartão "${typeId}"? Cartões existentes desse tipo serão movidos para "Outro".`)) return;
     const st = core.getState();
-    st.customCardTypes = (st.customCardTypes || []).filter(t => t.id !== typeId);
+    const allMap = getAllProTypes(st);
+    if (Object.keys(allMap).length <= 1) return core.toast("⚠️ Mantenha pelo menos 1 tipo de cartão.");
+    if (!confirm(`Excluir o tipo de cartão "${typeId}"? Cartões existentes desse tipo serão movidos para "Outro".`)) return;
+    const target = allMap[typeId];
+    if (target && target.origBuiltInId) {
+      if (!st.cardTypeOverrides || typeof st.cardTypeOverrides !== "object") st.cardTypeOverrides = {};
+      st.cardTypeOverrides[target.origBuiltInId] = { ...(st.cardTypeOverrides[target.origBuiltInId] || {}), hidden: true };
+    } else {
+      st.customCardTypes = (st.customCardTypes || []).filter(t => t.id !== typeId);
+    }
+    if (Array.isArray(st.cardTypeOrder)) {
+      st.cardTypeOrder = st.cardTypeOrder.filter(id => id !== typeId);
+    }
     let reassigned = 0;
+    const fallbackType = Object.keys(getAllProTypes(st))[0] || "Outro";
     (st.activities || []).forEach(a => {
-      if (a.type === typeId) { a.type = "Outro"; reassigned++; }
+      if (a.type === typeId) { a.type = fallbackType; reassigned++; }
     });
     proBoardTypeSet.delete(typeId);
     proGanttTypeSet.delete(typeId);
     proTableTypeSet.delete(typeId);
-    core.save(`🗑️ Tipo "${typeId}" removido${reassigned ? ` (${reassigned} cartão(ões) movidos para Outro)` : ""}`);
+    core.save(`🗑️ Tipo "${typeId}" removido${reassigned ? ` (${reassigned} cartão(ões) movidos para ${fallbackType})` : ""}`);
   }
 
   function populateProColumnSelect(dataOpt = null) {
@@ -9068,21 +9334,22 @@
     proModalSaved = false;
     if ($("#pc-aiReadStatus")) { $("#pc-aiReadStatus").hidden = true; $("#pc-aiReadStatus").innerHTML = ""; }
 
+    const curMode = isPersonalMode() ? "personal" : "professional";
     const targetModeSel = $("#pc-targetMode");
     const targetTripWrap = $("#pc-targetTripWrap");
     const targetTripSel = $("#pc-targetTrip");
     if (targetModeSel) {
-      targetModeSel.value = "professional";
+      targetModeSel.value = curMode;
       targetModeSel.onchange = () => {
-        const chosenMode = targetModeSel.value || "professional";
+        const chosenMode = targetModeSel.value || curMode;
         if (targetTripSel && core.populateEventSelect) {
-          core.populateEventSelect(targetTripSel, chosenMode, chosenMode === "professional" ? (editingProTripRef?.id || core.getActiveTrip()?.id || "") : "");
+          core.populateEventSelect(targetTripSel, chosenMode, chosenMode === curMode ? (editingProTripRef?.id || core.getActiveTrip()?.id || "") : "");
         }
       };
     }
     if (targetTripWrap && targetTripSel) {
       if (core.populateEventSelect) {
-        core.populateEventSelect(targetTripSel, "professional", editingProTripRef?.id || core.getActiveTrip()?.id || "");
+        core.populateEventSelect(targetTripSel, curMode, editingProTripRef?.id || core.getActiveTrip()?.id || "");
       }
       targetTripWrap.hidden = false;
     }
@@ -9091,16 +9358,21 @@
     const cols = editingProTripRef?.data?.columns || getMergedColumns();
     populateProColumnSelect(editingProTripRef?.data || null);
 
-    const rawInitType = a ? a.type : (opts?.type || "Desenvolvimento");
+    // Valores padrão ao criar novo cartão: Lista = "Assuntos", Tipo = "Tarefa"
+    const allTypesForCard = getAllProTypes(editingProTripRef?.data || null);
+    const defaultTypeKey = Object.keys(allTypesForCard).find(k => k.toLowerCase() === "tarefa") || Object.keys(allTypesForCard)[0] || "Tarefa";
+    const rawInitType = a ? a.type : (opts?.type || defaultTypeKey);
     const initType = getProTypeInfo(rawInitType, editingProTripRef?.data || null).id;
     const tInfo = getProTypeInfo(initType, editingProTripRef?.data || null);
     const initFinDir = a ? a.finDirection : (opts?.finDirection || tInfo.defaultFin || "none");
+    const defaultAssuntosCol = cols.find(c => String(c.title || "").trim().toLowerCase() === "assuntos" || c.id === "assuntos") || cols[0];
 
-    $("#proCardModalTitle").textContent = a ? `Editar Cartão` : "Novo Cartão Profissional";
+    $("#proCardModalTitle").textContent = a ? `Editar Cartão` : (isPersonalMode() ? "Novo Cartão Pessoal" : "Novo Cartão Profissional");
     $("#pc-name").value = a ? a.name : "";
     $("#pc-notes").value = a ? (a.notes || "") : "";
-    $("#pc-column").value = a ? (a.columnId ?? "") : (opts && "columnId" in opts ? opts.columnId : (cols[0]?.id || ""));
+    $("#pc-column").value = a ? (a.columnId ?? "") : (opts && "columnId" in opts ? opts.columnId : (defaultAssuntosCol?.id || ""));
     $("#pc-type").value = initType;
+    applyPersonalModeAdaptations();
     updateProModalTypePreview();
     $("#pc-start").value = a ? (a.start || "") : (opts && "start" in opts ? (opts.start || "") : "");
     $("#pc-end").value = a ? (a.end || a.start || "") : (opts && "end" in opts ? (opts.end || "") : (opts?.start || ""));
@@ -9492,27 +9764,17 @@
   function buildProWhatsAppText() {
     const st = core.getState();
     const cards = getProSortedActivities();
-    const t = computeProTotals(cards);
-    const lines = [
-      `💼 *${st.title || "Projeto Profissional"}* (My Plan)`,
-      `📊 Cartões: ${t.doneCards}/${t.totalCards} concluídos (${Math.round(t.avgProgress)}% médio)`,
-      `💵 Recebimentos: *${core.money(t.totalIncome)}* (Liquidado: ${core.money(t.receivedIncome)})`,
-      `💳 Despesas: *${core.money(t.totalExpense)}* (Pago: ${core.money(t.paidExpense)})`,
-      `📈 Saldo Líquido: *${core.money(t.netPlanned - t.taxAmount)}*`,
-      "",
-      "📅 *Agenda & Entregas:*"
-    ];
-    cards.slice(0, 20).forEach(a => {
-      const dt = !a.start ? "Sem prazo" : (a.end && a.end !== a.start ? `${core.fmtBR(a.start)}–${core.fmtBR(a.end)}` : core.fmtBR(a.start));
-      const fin = formatProFinShort(a);
-      lines.push(`• ${dt} · *[${a.type}]* ${a.name}${fin ? ` (${fin})` : ""}`);
+    const title = st.title || (isPersonalMode() ? "Meu Planejamento" : "Projeto");
+    const lines = [`*${title}*`, ""];
+    cards.forEach(a => {
+      const name = String(a.name || "Sem título").trim();
+      const s = fmtDateShortPt(a.start);
+      const e = fmtDateShortPt(a.end);
+      if (s && e && e !== s) lines.push(`${s} a ${e} - ${name}`);
+      else if (s) lines.push(`${s} - ${name}`);
+      else lines.push(name);
     });
-    const pendingChk = (st.checklist || []).filter(c => c.status !== "Concluído");
-    if (pendingChk.length) {
-      lines.push("", `✅ *Checklist pendente (${pendingChk.length}):*`);
-      pendingChk.slice(0, 10).forEach(c => lines.push(`☐ [${c.prio}] ${c.item}`));
-    }
-    return lines.join("\n");
+    return lines.join("\n").trim();
   }
 
   /* ---------- BINDING DE EVENTOS ---------- */
@@ -10544,9 +10806,9 @@
         const endIso = ($("#pc-end")?.value || "").trim();
         const parts = [`*${title}*`];
         if (desc) parts.push(desc);
-        if (endIso && /^\d{4}-\d{2}-\d{2}$/.test(endIso)) {
-          const [y, m, d] = endIso.split("-");
-          parts.push(`*Prazo:* ${d}/${m}/${y}`);
+        const prazoFmt = fmtDateShortPt(endIso);
+        if (prazoFmt) {
+          parts.push(`*Prazo:* ${prazoFmt}`);
         }
         const msg = parts.join("\n\n");
         window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
@@ -10703,10 +10965,10 @@
           folderId: folderId || "",
           folderUrl: raw || ""
         };
-        await window.FeriasApi.saveIntegrations({
-          driveFolderId: folderId || "",
-          driveFolderUrl: raw || ""
-        }).catch(() => {});
+        const integPayload = isPersonalMode()
+          ? { personalDriveFolderId: folderId || "", personalDriveFolderUrl: raw || "" }
+          : { driveFolderId: folderId || "", driveFolderUrl: raw || "" };
+        await window.FeriasApi.saveIntegrations(integPayload).catch(() => {});
         core.save("💾 Configuração do Google Drive salva!");
         renderProDriveParams(st);
       };
@@ -11044,8 +11306,9 @@
         }
         const st = core.getState();
         if (!Array.isArray(st.customCardTypes)) st.customCardTypes = [];
-        const builtIn = window.PRO_ACTIVITY_TYPES || {};
-        if (builtIn[clean] || (st.customCardTypes.some(t => t.id.toLowerCase() === clean.toLowerCase() && t.id !== editingProTypeId))) {
+        const allMap = getAllProTypes(st);
+        const dup = Object.values(allMap).some(t => t.id.toLowerCase() === clean.toLowerCase() && t.id !== editingProTypeId);
+        if (dup) {
           return core.toast(`⚠️ Já existe um tipo chamado "${clean}".`);
         }
 
@@ -11054,29 +11317,41 @@
         const defaultFin = $("#pct-defaultFin")?.value || "none";
         const nextObj = { id: clean, name: clean, iconId, color, defaultFin };
 
-        if (editingProTypeId) {
+        const editingItem = editingProTypeId ? allMap[editingProTypeId] : null;
+        if (editingItem && editingItem.origBuiltInId) {
+          if (!st.cardTypeOverrides || typeof st.cardTypeOverrides !== "object") st.cardTypeOverrides = {};
+          st.cardTypeOverrides[editingItem.origBuiltInId] = { ...nextObj, hidden: false };
+          if (editingProTypeId !== clean) {
+            (st.activities || []).forEach(a => { if (a.type === editingProTypeId) a.type = clean; });
+            if (Array.isArray(st.cardTypeOrder)) {
+              st.cardTypeOrder = st.cardTypeOrder.map(id => id === editingProTypeId ? clean : id);
+            }
+            [proBoardTypeSet, proGanttTypeSet, proTableTypeSet].forEach(set => {
+              if (set.has(editingProTypeId)) { set.delete(editingProTypeId); set.add(clean); }
+            });
+          }
+        } else if (editingProTypeId) {
           const idx = st.customCardTypes.findIndex(t => t.id === editingProTypeId);
           if (idx >= 0) st.customCardTypes[idx] = nextObj;
           else st.customCardTypes.push(nextObj);
           if (editingProTypeId !== clean) {
             (st.activities || []).forEach(a => { if (a.type === editingProTypeId) a.type = clean; });
+            if (Array.isArray(st.cardTypeOrder)) {
+              st.cardTypeOrder = st.cardTypeOrder.map(id => id === editingProTypeId ? clean : id);
+            }
             [proBoardTypeSet, proGanttTypeSet, proTableTypeSet].forEach(set => {
               if (set.has(editingProTypeId)) { set.delete(editingProTypeId); set.add(clean); }
             });
           }
         } else {
           st.customCardTypes.push(nextObj);
+          if (Array.isArray(st.cardTypeOrder) && !st.cardTypeOrder.includes(clean)) {
+            st.cardTypeOrder.push(clean);
+          }
           knownProTypeIds.add(clean);
           proBoardTypeSet.add(clean);
           proGanttTypeSet.add(clean);
           proTableTypeSet.add(clean);
-        }
-
-        if (editingProTripRef && editingProTripRef.data && editingProTripRef.data !== st) {
-          if (!Array.isArray(editingProTripRef.data.customCardTypes)) editingProTripRef.data.customCardTypes = [];
-          const eIdx = editingProTripRef.data.customCardTypes.findIndex(t => t.id === (editingProTypeId || clean));
-          if (eIdx >= 0) editingProTripRef.data.customCardTypes[eIdx] = nextObj;
-          else editingProTripRef.data.customCardTypes.push(nextObj);
         }
 
         const cb = proTypeModalCallback;
@@ -11091,6 +11366,8 @@
   function renderAll() {
     if (!core) return;
     bindProEvents();
+    if (isPersonalMode()) ensurePersonalStateShape(core.getState());
+    applyPersonalModeAdaptations();
     applyProVisibleMenusUI();
     const cards = getProSortedActivities();
     refreshProFilterOptions(cards);
@@ -11117,10 +11394,14 @@
     const st = stOpt || core?.getState?.() || {};
     const uInteg = window.FeriasApi?.getUser?.()?.integrations || {};
     const pDrive = (st.params && st.params.drive && typeof st.params.drive === "object") ? st.params.drive : {};
-    const folderUrl = pDrive.folderUrl || uInteg.driveFolderUrl || "";
-    const folderId = pDrive.folderId || uInteg.driveFolderId || (window.MyPlanDrive?.extractFolderId ? window.MyPlanDrive.extractFolderId(folderUrl) : "");
+    const pers = isPersonalMode();
+    const uUrl = pers ? (uInteg.personalDriveFolderUrl || "") : (uInteg.driveFolderUrl || "");
+    const uId = pers ? (uInteg.personalDriveFolderId || "") : (uInteg.driveFolderId || "");
+    const uName = pers ? (uInteg.personalDriveFolderName || "") : (uInteg.driveFolderName || "");
+    const folderUrl = pDrive.folderUrl || uUrl || "";
+    const folderId = pDrive.folderId || uId || (window.MyPlanDrive?.extractFolderId ? window.MyPlanDrive.extractFolderId(folderUrl) : "");
     const connectedEmail = window.MyPlanDrive?.getConnectedEmail?.() || pDrive.connectedEmail || uInteg.driveConnectedEmail || "";
-    const folderName = pDrive.folderName || uInteg.driveFolderName || "";
+    const folderName = pDrive.folderName || uName || "";
     const lastSyncAt = pDrive.lastSyncAt || "";
     return { folderId, folderUrl, folderName, connectedEmail, lastSyncAt };
   }

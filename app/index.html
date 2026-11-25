@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=49">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=49">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=49">
+<link rel="manifest" href="/manifest.webmanifest?v=50">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=50">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=50">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=49">
+<link rel="stylesheet" href="styles.css?v=50">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=49" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=50" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=49" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=50" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -190,7 +190,7 @@
               <span id="btnShareTripLabel">Compartilhar viagem</span>
             </button>
             <button type="button" id="btnMenuCrossings" hidden>🔀 Cruzamentos de Viagens</button>
-            <button type="button" id="btnMenuParams">⚙️ Parâmetros</button>
+            <button type="button" id="btnMenuParams">⚙️ Configurações</button>
             <button type="button" id="btnMenuAdmin" hidden>🛡️ Admin (Super Painel)</button>
             <button type="button" id="btnMenuAllCards">📋 Mostrar todos os cartões</button>
             <button type="button" id="btnMenuArchivedCards">📦 Mostrar cartões arquivados</button>
@@ -198,7 +198,7 @@
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><polygon points="8,3 16,3 22,14 14,14" fill="#FBBC05"/><polygon points="2,14 8,3 12,10 6,21" fill="#34A853"/><polygon points="6,21 10,14 22,14 18,21" fill="#4285F4"/></svg>
               <span>Atualizar Google Drive</span>
             </button>
-            <button type="button" id="btnMenuWhatsApp">💬 Enviar p/ meu WhatsApp</button>
+            <button type="button" id="btnMenuWhatsApp">💬 Compartilhar no WhatsApp</button>
             <button type="button" id="btnMenuCalendarAll">📅 Enviar p/ Google Agenda</button>
             <a href="/como-usar.html" class="menu-link">📖 Como utilizar o My Plan</a>
             <hr>
@@ -2287,7 +2287,7 @@
       <div id="proParamsMultiNote" class="fin-redist-banner warn" hidden style="margin-bottom:14px"></div>
       <div class="grid2">
         <div class="card">
-          <h2>💼 Projeto, Metas &amp; Parâmetros Financeiros</h2>
+          <h2>⚙️ Configurações do Projeto &amp; Metas</h2>
           <div class="params-form">
             <label class="param-row">
               <span>Nome do projeto / agenda</span>
@@ -2377,7 +2377,7 @@
 
       <div class="card" style="margin-top:14px">
         <div class="card-head">
-          <h2>🧩 Tipos de Cartões (Modo Profissional)</h2>
+          <h2>🧩 Tipos de Cartões <small class="muted" style="font-weight:400;font-size:0.78rem">(edite ou reordene com ↑/↓ ou arrastando)</small></h2>
           <button type="button" class="btn primary small" id="btnProAddCardType">➕ Novo Tipo</button>
         </div>
         <div id="proCardTypesManager" class="pro-types-manager"></div>
@@ -3324,9 +3324,17 @@
 <dialog id="proCardModal" class="pro-card-dialog">
   <form id="proCardForm" method="dialog">
     <div id="proCardCoverBar" class="pro-modal-cover" hidden></div>
-    <div class="modal-head">
-      <div class="modal-head-left">
+    <div class="modal-head pro-card-modal-head">
+      <div class="pro-card-head-top">
         <h2 id="proCardModalTitle">Cartão Profissional</h2>
+        <button type="button" class="icon-btn modal-close" id="btnProCardCloseX" aria-label="Fechar">✕</button>
+      </div>
+      <div class="pro-card-head-actions">
+        <button type="button" class="btn primary small" id="btnProCardHeadSave" title="Salvar alterações do cartão">💾 Salvar</button>
+        <button type="button" class="btn ghost small" id="btnProCardHeadNewMinute" title="Criar nova Ata de Reunião vinculada a este cartão">📝 Nova Ata</button>
+        <button type="button" class="btn ghost small btn-modal-whatsapp" id="btnProCardHeadWhatsApp" title="Encaminhar via WhatsApp" aria-label="Encaminhar via WhatsApp">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#25D366"/><path d="M8.5 8.5c-.3.5-.4 1.2-.1 2 .5 1.4 1.9 2.9 3.4 3.6.8.4 1.5.4 2 .1l.9-.7c.2-.2.5-.2.7 0l1.1.9c.2.2.3.5.1.8-.4.7-1.2 1.2-2.2 1.1-2.5-.2-5.4-2.5-6.6-5.2-.4-1-.2-2 .4-2.7.2-.3.5-.3.8-.1l.9 1c.2.2.2.5 0 .7l-.6.5z" fill="#ffffff"/></svg>
+        </button>
         <button type="button" class="btn ghost small btn-modal-done" id="btnProCardDoneToggle" aria-pressed="false" title="Marcar tarefa como concluída (100%)">☐ Concluir</button>
         <button type="button" class="btn ghost small btn-modal-dup" id="btnProCardDuplicate" title="Duplicar este cartão" hidden>⧉ Duplicar</button>
         <button type="button" class="btn ghost small btn-modal-google" id="btnProHeadCal" title="Adicionar ao Google Agenda (calendário dedicado deste projeto)" hidden>
@@ -3337,14 +3345,6 @@
           <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3" fill="#34A853"/><rect x="4.5" y="7" width="15" height="4" rx="1.5" fill="#4285F4"/><rect x="4.5" y="9" width="15" height="4" rx="1.5" fill="#FBBC05"/><rect x="4.5" y="11" width="15" height="6" rx="1.5" fill="#EA4335"/></svg>
           <span>Carteira</span>
         </button>
-      </div>
-      <div class="modal-head-right">
-        <button type="button" class="btn ghost small btn-modal-whatsapp" id="btnProCardHeadWhatsApp" title="Encaminhar via WhatsApp" aria-label="Encaminhar via WhatsApp">
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#25D366"/><path d="M8.5 8.5c-.3.5-.4 1.2-.1 2 .5 1.4 1.9 2.9 3.4 3.6.8.4 1.5.4 2 .1l.9-.7c.2-.2.5-.2.7 0l1.1.9c.2.2.3.5.1.8-.4.7-1.2 1.2-2.2 1.1-2.5-.2-5.4-2.5-6.6-5.2-.4-1-.2-2 .4-2.7.2-.3.5-.3.8-.1l.9 1c.2.2.2.5 0 .7l-.6.5z" fill="#ffffff"/></svg>
-        </button>
-        <button type="button" class="btn primary small" id="btnProCardHeadSave" title="Salvar alterações do cartão">💾 Salvar</button>
-        <button type="button" class="btn ghost small" id="btnProCardHeadNewMinute" title="Criar nova Ata de Reunião vinculada a este cartão">📝 Nova Ata</button>
-        <button type="button" class="icon-btn modal-close" id="btnProCardCloseX" aria-label="Fechar">✕</button>
       </div>
     </div>
 
@@ -4126,17 +4126,17 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=49"></script>
-<script src="vehicles.js?v=49"></script>
-<script src="countries.js?v=49"></script>
-<script src="data.js?v=49"></script>
-<script src="maps.js?v=49"></script>
-<script src="calendar.js?v=49"></script>
-<script src="drive.js?v=49"></script>
-<script src="report.js?v=49"></script>
-<script src="api.js?v=49"></script>
-<script src="minutes.js?v=49"></script>
-<script src="pro.js?v=49"></script>
-<script src="app.js?v=49"></script>
+<script src="config.example.js?v=50"></script>
+<script src="vehicles.js?v=50"></script>
+<script src="countries.js?v=50"></script>
+<script src="data.js?v=50"></script>
+<script src="maps.js?v=50"></script>
+<script src="calendar.js?v=50"></script>
+<script src="drive.js?v=50"></script>
+<script src="report.js?v=50"></script>
+<script src="api.js?v=50"></script>
+<script src="minutes.js?v=50"></script>
+<script src="pro.js?v=50"></script>
+<script src="app.js?v=50"></script>
 </body>
 </html>

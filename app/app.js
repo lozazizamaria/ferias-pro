@@ -1288,7 +1288,7 @@ function populateTypeSelectors() {
 
 /* ---------- RENDER ---------- */
 function render(allSortedOpt) {
-  if (appMode === "professional" && window.MyPlanPro) {
+  if (window.MyPlanPro) {
     window.MyPlanPro.renderAll();
     return;
   }
@@ -5396,6 +5396,7 @@ async function boot() {
       fmtISO,
       fmtShortBR,
       GANTT_ZOOM_STEPS,
+      getAppMode: () => appMode,
       getActiveTrip: () => activeTrip,
       getAllAvailableTags,
       getAllUnifiedTripEntries,
@@ -5774,24 +5775,29 @@ async function setAppMode(nextMode, opts = {}) {
     swBtn.title = isPro ? "Mudar para o Modo Pessoal (Férias & Viagens)" : "Mudar para o Modo Profissional (Quadro, Gantt & Projetos)";
   }
 
-  if ($("#tabs")) $("#tabs").hidden = isPro;
-  if ($("#tabsPro")) $("#tabsPro").hidden = !isPro;
+  if ($("#tabs")) $("#tabs").hidden = true;
+  if ($("#tabsPro")) $("#tabsPro").hidden = false;
 
-  if ($("#btnAddLabel")) $("#btnAddLabel").textContent = isPro ? "Cartão" : "Evento";
-  if ($("#btnAdd")) $("#btnAdd").title = isPro ? "Adicionar cartão profissional" : "Adicionar evento ou viagem";
-  if ($("#btnAddMinuteTop")) $("#btnAddMinuteTop").hidden = !isPro;
-  if ($("#btnNewTrip")) $("#btnNewTrip").title = isPro ? "Criar novo projeto profissional" : "Criar nova viagem";
-  if ($("#btnPrintReport")) $("#btnPrintReport").textContent = isPro ? "🖨️ Imprimir relatório executivo" : "🖨️ Imprimir relatório da viagem";
-  if ($("#btnShareTripLabel")) $("#btnShareTripLabel").textContent = isPro ? "Compartilhar projeto" : "Compartilhar viagem";
-  if ($("#btnMenuCalendarAll")) $("#btnMenuCalendarAll").textContent = isPro ? "📅 Enviar agenda p/ Google Agenda" : "📅 Enviar férias p/ Google Agenda";
+  if ($("#btnAddLabel")) $("#btnAddLabel").textContent = "Cartão";
+  if ($("#btnAdd")) $("#btnAdd").title = isPro ? "Adicionar cartão profissional" : "Adicionar cartão pessoal";
+  if ($("#btnAddMinuteTop")) {
+    $("#btnAddMinuteTop").hidden = false;
+    const minTxt = $("#btnAddMinuteTop .btn-text");
+    if (minTxt) minTxt.textContent = isPro ? "Ata" : "Nota";
+    $("#btnAddMinuteTop").title = isPro ? "Criar nova Ata de Reunião" : "Criar nova Nota / Registro";
+  }
+  if ($("#btnNewTrip")) $("#btnNewTrip").title = isPro ? "Criar novo projeto profissional" : "Criar novo planejamento pessoal";
+  if ($("#btnPrintReport")) $("#btnPrintReport").textContent = isPro ? "🖨️ Imprimir relatório executivo" : "🖨️ Imprimir relatório pessoal";
+  if ($("#btnShareTripLabel")) $("#btnShareTripLabel").textContent = isPro ? "Compartilhar projeto" : "Compartilhar planejamento";
+  if ($("#btnMenuCalendarAll")) $("#btnMenuCalendarAll").textContent = isPro ? "📅 Enviar agenda p/ Google Agenda" : "📅 Enviar planejamento p/ Google Agenda";
   if ($("#btnImportXlsx")) $("#btnImportXlsx").hidden = isPro;
-  if ($("#btnRenameTrip")) $("#btnRenameTrip").textContent = isPro ? "✏️ Renomear projeto atual" : "✏️ Renomear viagem atual";
-  if ($("#btnDeleteTrip")) $("#btnDeleteTrip").textContent = isPro ? "🗑️ Excluir projeto atual" : "🗑️ Excluir viagem atual";
+  if ($("#btnRenameTrip")) $("#btnRenameTrip").textContent = isPro ? "✏️ Renomear projeto atual" : "✏️ Renomear planejamento atual";
+  if ($("#btnDeleteTrip")) $("#btnDeleteTrip").textContent = isPro ? "🗑️ Excluir projeto atual" : "🗑️ Excluir planejamento atual";
 
+  document.body.classList.toggle("is-personal-mode", !isPro);
   updateCrossingsMenuVisibility();
   updateAdminMenuVisibility();
-  if (isPro) switchProView(lastProView || "pro-board");
-  else switchAppView(lastPersonalView || "gantt");
+  switchProView(lastProView || "pro-board");
 
   if (!opts.skipLoad) {
     selectedTripIds = [];
@@ -6552,8 +6558,7 @@ async function openAdminUserModal(userId, focusTripId = null) {
 if ($("#btnMenuParams")) {
   $("#btnMenuParams").onclick = () => {
     $("#menu")?.classList.remove("open");
-    if (appMode === "professional") switchProView("pro-params");
-    else switchAppView("params");
+    switchProView("pro-params");
   };
 }
 if ($("#btnMenuAdmin")) {
@@ -6626,7 +6631,7 @@ if ($("#btnCloseAdminUser")) $("#btnCloseAdminUser").onclick = () => $("#adminUs
 if ($("#btnAdminUserDone")) $("#btnAdminUserDone").onclick = () => $("#adminUserModal").close();
 
 $("#btnAdd").onclick = () => {
-  if (appMode === "professional" && window.MyPlanPro) window.MyPlanPro.openProCardModal();
+  if (window.MyPlanPro) window.MyPlanPro.openProCardModal();
   else openModal();
 };
 if ($("#btnAddEventGantt")) $("#btnAddEventGantt").onclick = () => openModal();
@@ -9424,26 +9429,12 @@ if ($("#btnProfileForgotPw")) {
 }
 
 function sendPlanToMyWhatsApp() {
-  const u = window.FeriasApi.getUser();
-  const dial = u?.whatsappCountry || "+55";
-  const numStr = u?.whatsappNumber || "";
-  if (!numStr) {
-    toast("Cadastre seu WhatsApp no Perfil para receber o planejamento.");
-    openProfileModal();
-    return;
-  }
-  const check = window.FeriasCountries.validateWhatsApp(dial, numStr);
-  if (!check.valid) {
-    toast(check.error);
-    openProfileModal();
-    return;
-  }
-  const text = (appMode === "professional" && window.MyPlanPro)
+  const text = window.MyPlanPro?.buildProWhatsAppText
     ? window.MyPlanPro.buildProWhatsAppText()
-    : window.FeriasCountries.buildWhatsAppTripMessage(state, sorted(), totals(), calc, reportHelpers());
-  const url = `https://wa.me/${check.e164Digits}?text=${encodeURIComponent(text)}`;
+    : `*${state?.title || "My Plan"}*`;
+  const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
   window.open(url, "_blank", "noopener");
-  toast(`💬 Abrindo WhatsApp para ${check.fullDisplay}...`);
+  toast("💬 Abrindo WhatsApp para escolher contato ou grupo...");
 }
 
 if ($("#btnSendWhatsApp")) $("#btnSendWhatsApp").onclick = sendPlanToMyWhatsApp;

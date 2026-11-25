@@ -306,7 +306,8 @@ window.PRO_LEGACY_TYPE_MAP = {
 };
 
 window.PRO_ACTIVITY_TYPES = {
-  Desenvolvimento: { id: "Desenvolvimento", label: "Desenvolvimento", short: "Desenvolvimento", iconId: "code",      color: "#2563eb", cls: "pro-dev",      defaultFin: "none" },
+  Tarefa:          { id: "Tarefa",          label: "Tarefa",          short: "Tarefa",          iconId: "check",     color: "#2563eb", cls: "pro-dev",      defaultFin: "none" },
+  Desenvolvimento: { id: "Desenvolvimento", label: "Desenvolvimento", short: "Desenvolvimento", iconId: "code",      color: "#1d4ed8", cls: "pro-dev",      defaultFin: "none" },
   "Reunião":       { id: "Reunião",         label: "Reunião",         short: "Reunião",         iconId: "users",     color: "#0284c7", cls: "pro-meet",     defaultFin: "none" },
   Viagem:          { id: "Viagem",          label: "Viagem",          short: "Viagem",          iconId: "plane",     color: "#d97706", cls: "pro-travel",   defaultFin: "expense" },
   Recebimento:     { id: "Recebimento",     label: "Recebimento",     short: "Recebimento",     iconId: "income",    color: "#10b981", cls: "pro-income",   defaultFin: "income" },
@@ -322,11 +323,11 @@ Object.values(window.PRO_ACTIVITY_TYPES).forEach(t => {
 });
 
 window.PRO_DEFAULT_COLUMNS = [
-  { id: "backlog", title: "Backlog / Ideias",    color: "#64748b" },
-  { id: "todo",    title: "A Fazer",             color: "#0284c7" },
-  { id: "doing",   title: "Em Andamento",        color: "#2563eb" },
-  { id: "review",  title: "Revisão / Aprovação", color: "#d97706" },
-  { id: "done",    title: "Concluído",           color: "#10b981" }
+  { id: "assuntos", title: "Assuntos",            color: "#64748b" },
+  { id: "todo",     title: "A Fazer",             color: "#0284c7" },
+  { id: "doing",    title: "Em Andamento",        color: "#2563eb" },
+  { id: "review",   title: "Revisão / Aprovação", color: "#d97706" },
+  { id: "done",     title: "Concluído",           color: "#10b981" }
 ];
 
 window.PRO_DEFAULT_LABELS = [
