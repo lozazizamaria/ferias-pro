@@ -1292,16 +1292,18 @@ function render(allSortedOpt) {
     window.MyPlanPro.renderAll();
     return;
   }
-  const s = allSortedOpt || sorted();
-  refreshTagSelectors(s);
+  const sAll = allSortedOpt || sorted();
+  populatePersonalUnifiedFilterOptions(sAll);
+  const s = applyPersonalUnifiedFilter(sAll);
+  refreshTagSelectors(sAll);
   syncPersonalFilterUIs(s);
   const filtered = applyPersonalFilters(s);
-  const t = isPersonalFilterActive() ? totals(undefined, filtered) : totals();
+  const t = (isPersonalFilterActive() || countActivePersonalUnifiedFilters() > 0) ? totals(undefined, filtered) : totals();
   renderGantt(s);
   renderTimeline(s);
   renderDashboard(filtered, t);
   renderFinance(filtered, t);
-  renderTable(s, totals());
+  renderTable(s, totals(undefined, s));
   renderParams();
   renderChecklist();
   if ($("#view-personal-map")?.classList.contains("active")) renderPersonalMap();
@@ -3967,11 +3969,40 @@ function renderModalQrBadge() {
   }
 }
 
+let acFlightFromCtrl = null;
+let acFlightToCtrl = null;
+let acLocCtrl = null;
+let modalPlaceCoords = { from: null, to: null, location: null };
+
+async function captureModalPlaceMeta(slot, inputEl) {
+  const val = String(inputEl?.value || "").trim();
+  if (!val) { modalPlaceCoords[slot] = null; return; }
+  try {
+    let info = null;
+    if (window.FeriasMaps?.resolvePlaceStandard) {
+      info = await window.FeriasMaps.resolvePlaceStandard(val).catch(() => null);
+    }
+    if (!info && window.FeriasMaps?.geocodeLocation) {
+      info = await window.FeriasMaps.geocodeLocation(val).catch(() => null);
+    }
+    if (info && isFinite(Number(info.lat)) && isFinite(Number(info.lng))) {
+      modalPlaceCoords[slot] = {
+        lat: Number(info.lat),
+        lng: Number(info.lng),
+        placeId: String(info.placeId || info.place_id || "")
+      };
+    }
+  } catch {}
+}
+
 function initAutocompleteControllers() {
-  if (!acFromCtrl) acFromCtrl = window.FeriasMaps.attachAutocomplete($("#f-from"), $("#ac-from"), () => maybeAutoComputeRoute(true));
-  if (!acToCtrl) acToCtrl = window.FeriasMaps.attachAutocomplete($("#f-to"), $("#ac-to"), () => maybeAutoComputeRoute(true));
-  if (!acTFromCtrl && $("#f-transitFrom")) acTFromCtrl = window.FeriasMaps.attachAutocomplete($("#f-transitFrom"), $("#ac-tfrom"), () => computeModalTransitRoute(false));
-  if (!acTToCtrl && $("#f-transitTo")) acTToCtrl = window.FeriasMaps.attachAutocomplete($("#f-transitTo"), $("#ac-tto"), () => computeModalTransitRoute(false));
+  if (!acFromCtrl && $("#f-from")) acFromCtrl = window.FeriasMaps.attachAutocomplete($("#f-from"), $("#ac-from"), () => { captureModalPlaceMeta("from", $("#f-from")); maybeAutoComputeRoute(true); });
+  if (!acToCtrl && $("#f-to")) acToCtrl = window.FeriasMaps.attachAutocomplete($("#f-to"), $("#ac-to"), () => { captureModalPlaceMeta("to", $("#f-to")); maybeAutoComputeRoute(true); });
+  if (!acTFromCtrl && $("#f-transitFrom")) acTFromCtrl = window.FeriasMaps.attachAutocomplete($("#f-transitFrom"), $("#ac-tfrom"), () => { captureModalPlaceMeta("from", $("#f-transitFrom")); computeModalTransitRoute(false); });
+  if (!acTToCtrl && $("#f-transitTo")) acTToCtrl = window.FeriasMaps.attachAutocomplete($("#f-transitTo"), $("#ac-tto"), () => { captureModalPlaceMeta("to", $("#f-transitTo")); computeModalTransitRoute(false); });
+  if (!acFlightFromCtrl && $("#f-flightFrom")) acFlightFromCtrl = window.FeriasMaps.attachAutocomplete($("#f-flightFrom"), $("#ac-flightFrom"), () => captureModalPlaceMeta("from", $("#f-flightFrom")));
+  if (!acFlightToCtrl && $("#f-flightTo")) acFlightToCtrl = window.FeriasMaps.attachAutocomplete($("#f-flightTo"), $("#ac-flightTo"), () => captureModalPlaceMeta("to", $("#f-flightTo")));
+  if (!acLocCtrl && $("#f-location")) acLocCtrl = window.FeriasMaps.attachAutocomplete($("#f-location"), $("#ac-location"), () => captureModalPlaceMeta("location", $("#f-location")));
 }
 
 function getTicketBoxTitle(type) {
@@ -4294,6 +4325,14 @@ window.openModal = function (idOrOpts) {
   acToCtrl.clearSelected();
   if (acTFromCtrl) acTFromCtrl.clearSelected();
   if (acTToCtrl) acTToCtrl.clearSelected();
+  if (acFlightFromCtrl) acFlightFromCtrl.clearSelected();
+  if (acFlightToCtrl) acFlightToCtrl.clearSelected();
+  if (acLocCtrl) acLocCtrl.clearSelected();
+  modalPlaceCoords = {
+    from: (a.fromLat != null && a.fromLng != null) ? { lat: Number(a.fromLat), lng: Number(a.fromLng), placeId: a.fromPlaceId || "" } : null,
+    to: (a.toLat != null && a.toLng != null) ? { lat: Number(a.toLat), lng: Number(a.toLng), placeId: a.toPlaceId || "" } : null,
+    location: (a.locationLat != null && a.locationLng != null) ? { lat: Number(a.locationLat), lng: Number(a.locationLng), placeId: a.locationPlaceId || "" } : null
+  };
 
   $("#modalTitle").textContent = id ? "Editar atividade" : "Nova atividade";
   const f = $("#form");
@@ -4312,6 +4351,7 @@ window.openModal = function (idOrOpts) {
   $("#f-transitDrive").value = trShip && a.drive ? hm(a.drive) : "";
   $("#f-transitCarrier").value = trShip ? (a.airline || "") : "";
   $("#f-transitRef").value = trShip ? (a.bookingRef || "") : "";
+  if ($("#f-location")) $("#f-location").value = !isTravelType(a.type) ? (a.location || a.city || "") : "";
   $("#f-ticketRef").value = a.bookingRef || "";
   if ($("#f-diffArrival")) {
     $("#f-diffArrival").checked = Boolean(isTravelType(a.type) && a.start && a.end && a.end !== a.start);
@@ -4414,7 +4454,9 @@ function toggleTrip() {
     if ($("#btnCalcTransit")) $("#btnCalcTransit").hidden = isShip;
     if (isShip && $("#transitMapWrap")) $("#transitMapWrap").hidden = true;
   }
-  $("#f-ticketRefWrap").hidden = (t === "Viagem" || t === "Voo" || isTransit);
+  const isAnyTravel = (t === "Viagem" || t === "Voo" || isTransit);
+  if ($("#f-locationWrap")) $("#f-locationWrap").hidden = isAnyTravel;
+  $("#f-ticketRefWrap").hidden = isAnyTravel;
   syncTravelArrivalUI();
   updateModalPreview();
 }
@@ -4475,8 +4517,29 @@ function readForm() {
     a.airline = $("#f-transitCarrier").value.trim();
     a.bookingRef = $("#f-transitRef").value.trim();
   } else {
+    const locVal = ($("#f-location")?.value || "").trim();
+    if (locVal) {
+      a.location = locVal;
+      if (modalPlaceCoords.location) {
+        a.locationLat = modalPlaceCoords.location.lat;
+        a.locationLng = modalPlaceCoords.location.lng;
+        if (modalPlaceCoords.location.placeId) a.locationPlaceId = modalPlaceCoords.location.placeId;
+      }
+    }
     const tr = $("#f-ticketRef").value.trim();
     if (tr) a.bookingRef = tr;
+  }
+  if (isTravelType(a.type)) {
+    if (modalPlaceCoords.from) {
+      a.fromLat = modalPlaceCoords.from.lat;
+      a.fromLng = modalPlaceCoords.from.lng;
+      if (modalPlaceCoords.from.placeId) a.fromPlaceId = modalPlaceCoords.from.placeId;
+    }
+    if (modalPlaceCoords.to) {
+      a.toLat = modalPlaceCoords.to.lat;
+      a.toLng = modalPlaceCoords.to.lng;
+      if (modalPlaceCoords.to.placeId) a.toPlaceId = modalPlaceCoords.to.placeId;
+    }
   }
   return a;
 }
@@ -5737,7 +5800,7 @@ function switchAppView(viewId) {
   $("#tabsPro")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.proView === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
   if (viewId === "admin") loadAndRenderAdmin();
-  if ($("#personalMapNavFilterHost")) $("#personalMapNavFilterHost").hidden = (viewId !== "personal-map");
+  if ($("#personalMapNavFilterHost")) $("#personalMapNavFilterHost").hidden = (viewId === "admin" || viewId === "params");
   if (viewId === "personal-map") renderPersonalMap();
   if (viewId === "personal-board") renderPersonalBoard();
   closeAllGanttPopovers();
@@ -9683,13 +9746,160 @@ if ($("#financeDayForm")) {
   };
 }
 
-/* ---------- MODO PESSOAL: MAPA (SINCRONIZADO COM A BARRA DE CIDADES DO GANTT) ---------- */
+/* ---------- MODO PESSOAL: FILTROS UNIFICADOS + MAPA (SINCRONIZADO COM A BARRA DE CIDADES DO GANTT) ---------- */
 let pmapRenderSeq = 0;
 let pmapGmapInstance = null;
 let pmapMarkers = [];
 let pmapPolylines = [];
 let pmapDirectionsRenderers = [];
 let pmapEventsBound = false;
+
+let personalUnifiedFilter = {
+  search: "",
+  year: "",
+  month: "",
+  dateFrom: "",
+  dateTo: "",
+  list: "",
+  type: "",
+  transport: "",
+  city: "",
+  person: "",
+  tag: "",
+  onlyTravel: false,
+  onlyAttach: false
+};
+
+function readPersonalUnifiedFilterFromDOM() {
+  personalUnifiedFilter = {
+    search: ($("#pf-search")?.value || "").trim().toLowerCase(),
+    year: ($("#pf-year")?.value || "").trim(),
+    month: ($("#pf-month")?.value || "").trim(),
+    dateFrom: ($("#pf-dateFrom")?.value || "").trim(),
+    dateTo: ($("#pf-dateTo")?.value || "").trim(),
+    list: ($("#pf-list")?.value || "").trim(),
+    type: ($("#pf-type")?.value || "").trim(),
+    transport: ($("#pf-transport")?.value || "").trim(),
+    city: ($("#pf-city")?.value || "").trim(),
+    person: ($("#pf-person")?.value || "").trim().toLowerCase(),
+    tag: ($("#pf-tag")?.value || "").trim(),
+    onlyTravel: Boolean($("#pf-onlyTravel")?.checked),
+    onlyAttach: Boolean($("#pf-onlyAttach")?.checked)
+  };
+  return personalUnifiedFilter;
+}
+
+function countActivePersonalUnifiedFilters() {
+  const f = personalUnifiedFilter;
+  let c = 0;
+  if (f.search) c++;
+  if (f.year) c++;
+  if (f.month) c++;
+  if (f.dateFrom) c++;
+  if (f.dateTo) c++;
+  if (f.list) c++;
+  if (f.type) c++;
+  if (f.transport) c++;
+  if (f.city) c++;
+  if (f.person) c++;
+  if (f.tag) c++;
+  if (f.onlyTravel) c++;
+  if (f.onlyAttach) c++;
+  return c;
+}
+
+function updatePersonalUnifiedFilterBadge() {
+  const cnt = countActivePersonalUnifiedFilters();
+  const badge = $("#pmapFilterCount");
+  if (badge) {
+    badge.textContent = cnt ? String(cnt) : "";
+    badge.hidden = !cnt;
+  }
+  const trig = $("#btnPmapFilterPop");
+  if (trig) trig.classList.toggle("has-active", cnt > 0);
+}
+
+function populatePersonalUnifiedFilterOptions(allActs) {
+  bindPersonalMapControls();
+  const acts = Array.isArray(allActs) ? allActs : sorted();
+  const fillSel = (sel, defaultLbl, pairs) => {
+    if (!sel) return;
+    const prev = sel.value || "";
+    sel.innerHTML = `<option value="">${defaultLbl}</option>`
+      + pairs.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
+    if (prev && pairs.some(([v]) => v === prev)) sel.value = prev;
+  };
+  const years = [...new Set(acts.map(a => String(a.start || "").slice(0, 4)).filter(y => /^\d{4}$/.test(y)))].sort();
+  fillSel($("#pf-year"), "Todos os anos", years.map(y => [y, y]));
+
+  const cols = ensurePersonalBoardColumns();
+  fillSel($("#pf-list"), "Todas as listas", cols.map(c => [c.id, c.title]));
+
+  const types = [...new Set(acts.map(a => a.type).filter(Boolean))].sort();
+  fillSel($("#pf-type"), "Todos os tipos", types.map(t => [t, t]));
+
+  const citySet = new Set();
+  acts.forEach(a => {
+    [a.from, a.to, a.location, a.city].forEach(raw => {
+      const clean = cleanCityName(raw);
+      if (clean) citySet.add(clean);
+    });
+  });
+  fillSel($("#pf-city"), "Todas as cidades", [...citySet].sort().map(c => [c, c]));
+
+  const tags = [...new Set(acts.flatMap(a => Array.isArray(a.tags) ? a.tags : []).filter(Boolean))].sort();
+  fillSel($("#pf-tag"), "Todas as tags", tags.map(tg => [tg, `#${tg}`]));
+  updatePersonalUnifiedFilterBadge();
+}
+
+function applyPersonalUnifiedFilter(list) {
+  const f = personalUnifiedFilter;
+  if (!countActivePersonalUnifiedFilters()) return list;
+  const cols = ensurePersonalBoardColumns();
+  const colIds = new Set(cols.map(c => c.id));
+  const defColId = cols[0]?.id || "";
+  return list.filter(a => {
+    if (!a) return false;
+    const s = String(a.start || "");
+    const e = String(a.end || s);
+    if (f.search) {
+      const hay = [a.name || "", a.notes || "", a.from || "", a.to || "", a.location || "", a.city || "", a.airline || "", a.bookingRef || ""].join(" ").toLowerCase();
+      if (!hay.includes(f.search)) return false;
+    }
+    if (f.year && !s.startsWith(f.year) && !e.startsWith(f.year)) return false;
+    if (f.month && s.slice(5, 7) !== f.month && e.slice(5, 7) !== f.month) return false;
+    if (f.dateFrom && e && e < f.dateFrom) return false;
+    if (f.dateTo && s && s > f.dateTo) return false;
+    if (f.list) {
+      const cid = (a.personalColId && colIds.has(a.personalColId)) ? a.personalColId : defColId;
+      if (cid !== f.list) return false;
+    }
+    if (f.type && a.type !== f.type) return false;
+    if (f.transport && a.type !== f.transport) return false;
+    if (f.city) {
+      const want = normCityKey(f.city);
+      const has = [a.from, a.to, a.location, a.city].some(raw => normCityKey(raw) === want);
+      if (!has) return false;
+    }
+    if (f.person) {
+      const pHay = [a.assignee || "", a.notes || "", a.name || "", ...(Array.isArray(a.tags) ? a.tags : [])].join(" ").toLowerCase();
+      if (!pHay.includes(f.person)) return false;
+    }
+    if (f.tag && !(Array.isArray(a.tags) && a.tags.includes(f.tag))) return false;
+    if (f.onlyTravel && !isTravelType(a.type)) return false;
+    if (f.onlyAttach && !(Array.isArray(a.attachments) && a.attachments.length > 0)) return false;
+    return true;
+  });
+}
+
+function haversineKm(p1, p2) {
+  const R = 6371;
+  const toRad = d => (d * Math.PI) / 180;
+  const dLat = toRad(p2.lat - p1.lat);
+  const dLng = toRad(p2.lng - p1.lng);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(p1.lat)) * Math.cos(toRad(p2.lat)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
 
 function isPersonalFlightLeg(a) {
   if (!a || typeof a !== "object") return false;
@@ -9733,30 +9943,41 @@ function bindPersonalMapControls() {
   pmapEventsBound = true;
   const popBtn = $("#btnPmapFilterPop");
   const popPanel = $("#pmapFilterPopPanel");
+  const closePop = () => {
+    if (popPanel) popPanel.hidden = true;
+    if (popBtn) popBtn.setAttribute("aria-expanded", "false");
+  };
   if (popBtn && popPanel) {
     popBtn.onclick = e => {
       e.stopPropagation();
       const willOpen = popPanel.hidden;
+      if (willOpen) populatePersonalUnifiedFilterOptions(sorted());
       popPanel.hidden = !willOpen;
       popBtn.setAttribute("aria-expanded", String(willOpen));
     };
     document.addEventListener("click", e => {
-      if (!popPanel.hidden && !popPanel.contains(e.target) && !popBtn.contains(e.target)) {
-        popPanel.hidden = true;
-        popBtn.setAttribute("aria-expanded", "false");
-      }
+      if (!popPanel.hidden && !popPanel.contains(e.target) && !popBtn.contains(e.target)) closePop();
     });
   }
-  ["#pmapDateFrom", "#pmapDateTo", "#pmapCitySearch"].forEach(sel => {
-    const el = $(sel);
-    if (el) el.addEventListener(sel === "#pmapCitySearch" ? "input" : "change", () => renderPersonalMap());
-  });
+  if ($("#btnPufClose")) $("#btnPufClose").onclick = closePop;
+  if ($("#btnPufApply")) {
+    $("#btnPufApply").onclick = () => {
+      readPersonalUnifiedFilterFromDOM();
+      updatePersonalUnifiedFilterBadge();
+      closePop();
+      render();
+    };
+  }
   if ($("#btnPmapClearFilters")) {
     $("#btnPmapClearFilters").onclick = () => {
-      if ($("#pmapDateFrom")) $("#pmapDateFrom").value = "";
-      if ($("#pmapDateTo")) $("#pmapDateTo").value = "";
-      if ($("#pmapCitySearch")) $("#pmapCitySearch").value = "";
-      renderPersonalMap();
+      ["#pf-search", "#pf-year", "#pf-month", "#pf-dateFrom", "#pf-dateTo", "#pf-list", "#pf-type", "#pf-transport", "#pf-city", "#pf-person", "#pf-tag"].forEach(s => {
+        if ($(s)) $(s).value = "";
+      });
+      if ($("#pf-onlyTravel")) $("#pf-onlyTravel").checked = false;
+      if ($("#pf-onlyAttach")) $("#pf-onlyAttach").checked = false;
+      readPersonalUnifiedFilterFromDOM();
+      updatePersonalUnifiedFilterBadge();
+      render();
     };
   }
 }
@@ -9839,12 +10060,16 @@ function renderPersonalMapSvgFallback(canvas, cityPoints, legSegments = []) {
     routesSvg = `<path d="${pathD}" fill="none" stroke="#2563eb" stroke-width="3.2" stroke-dasharray="8 6" stroke-linecap="round" stroke-linejoin="round"/>`;
   }
 
-  const markersSvg = pts.map((p, i) => `
-    <g>
+  const markersSvg = pts.map((p, i) => {
+    const labelTxt = p.days ? `${p.city} • ${p.days}d` : p.city;
+    const pillW = Math.max(66, labelTxt.length * 6.5 + 16);
+    return `<g>
       <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="13" fill="${p.hex}" stroke="#ffffff" stroke-width="2.5"/>
       <text x="${p.x.toFixed(1)}" y="${(p.y + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">${i + 1}</text>
-      <text x="${p.x.toFixed(1)}" y="${(p.y - 18).toFixed(1)}" text-anchor="middle" font-size="11.5" font-weight="700" fill="currentColor">${esc(p.city)}${p.days ? ` (${p.days}d)` : ""}</text>
-    </g>`).join("");
+      <rect x="${(p.x + 17).toFixed(1)}" y="${(p.y - 11).toFixed(1)}" width="${pillW.toFixed(1)}" height="22" rx="11" fill="rgba(255,255,255,0.94)" stroke="rgba(15,23,42,0.16)" stroke-width="1"/>
+      <text x="${(p.x + 25).toFixed(1)}" y="${(p.y + 4).toFixed(1)}" font-size="11" font-weight="700" fill="#0f172a">${esc(labelTxt)}</text>
+    </g>`;
+  }).join("");
   canvas.innerHTML = `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:10px">
     <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:100%;max-height:500px;color:var(--text)">
       ${routesSvg}
@@ -9858,22 +10083,16 @@ async function renderPersonalMap() {
   const canvas = $("#personalMapCanvas");
   if (!canvas) return;
   const seq = ++pmapRenderSeq;
-  const acts = sorted();
+  const acts = applyPersonalUnifiedFilter(sorted());
 
-  const dateFrom = ($("#pmapDateFrom")?.value || "").trim();
-  const dateTo = ($("#pmapDateTo")?.value || "").trim();
-  const citySearch = ($("#pmapCitySearch")?.value || "").trim().toLowerCase();
-  const activeFilterCount = (dateFrom ? 1 : 0) + (dateTo ? 1 : 0) + (citySearch ? 1 : 0);
-
-  if ($("#pmapFilterCount")) {
-    $("#pmapFilterCount").textContent = activeFilterCount ? String(activeFilterCount) : "";
-    $("#pmapFilterCount").hidden = !activeFilterCount;
-  }
-  if ($("#btnPmapClearFilters")) $("#btnPmapClearFilters").hidden = !activeFilterCount;
+  const dateFrom = personalUnifiedFilter.dateFrom || "";
+  const dateTo = personalUnifiedFilter.dateTo || "";
+  const citySearch = (personalUnifiedFilter.city || "").toLowerCase();
+  updatePersonalUnifiedFilterBadge();
   if ($("#pmapPeriodBadge")) {
     $("#pmapPeriodBadge").textContent = (dateFrom || dateTo)
       ? `${dateFrom ? fmtShortBR(dateFrom) : "Início"} → ${dateTo ? fmtShortBR(dateTo) : "Fim"}`
-      : "Roteiro completo";
+      : (personalUnifiedFilter.year ? `Ano ${personalUnifiedFilter.year}` : "Roteiro completo");
   }
 
   // 1. Fonte Única de Verdade: barra de cidades do Gantt (computeDailyCityTimeline)
@@ -9916,7 +10135,10 @@ async function renderPersonalMap() {
 
   let totalKm = 0;
   let totalRoadMin = 0;
+  let roadLegsCount = 0;
   let flightLegsCount = 0;
+  let totalFlightMin = 0;
+  let totalFlightKm = 0;
   const passedCityKeys = new Set();
   const routeSequence = [];
   const routeLegs = [];
@@ -9932,10 +10154,12 @@ async function renderPersonalMap() {
   };
   legsInRange.forEach(a => {
     const isFlight = isPersonalFlightLeg(a);
-    // Trechos de avião NÃO entram no Tempo de estrada nem na distância rodoviária
     if (isFlight) {
       flightLegsCount++;
+      if (Number(a.drive) > 0) totalFlightMin += Number(a.drive);
+      if (Number(a.km) > 0) totalFlightKm += Number(a.km);
     } else {
+      roadLegsCount++;
       totalKm += Number(a.km) || 0;
       totalRoadMin += (Number(a.drive) || 0) + (Number(a.stopTime) || 0);
     }
@@ -9950,7 +10174,9 @@ async function renderPersonalMap() {
           fromCity: legCities[i].city,
           toKey: legCities[i + 1].key,
           toCity: legCities[i + 1].city,
-          isFlight
+          isFlight,
+          hasExplicitDrive: Number(a.drive) > 0,
+          hasExplicitKm: Number(a.km) > 0
         });
       }
     }
@@ -9964,21 +10190,36 @@ async function renderPersonalMap() {
   const visitedCitiesCount = chronologicalStayCities.length;
   const passedCitiesCount = Math.max(visitedCitiesCount, passedCityKeys.size);
 
-  // 2. Card Lateral de Resumo da Viagem (coerente: voos separados do tempo de estrada)
-  const statsEl = $("#pmapStatsGrid");
-  if (statsEl) {
+  const renderSummaryStats = () => {
+    const statsEl = $("#pmapStatsGrid");
+    if (!statsEl) return;
+    const onlyFlights = flightLegsCount > 0 && roadLegsCount === 0;
+    const isMixed = flightLegsCount > 0 && roadLegsCount > 0;
+    const combinedKm = totalKm + totalFlightKm;
+    const distLbl = onlyFlights ? "✈️ Distância aérea" : "🛣️ Distância total";
+    const distVal = combinedKm > 0 ? `${num(combinedKm)} km` : "—";
+    let timeLbl = "⏱️ Tempo de estrada";
+    let timeVal = totalRoadMin > 0 ? hmHuman(totalRoadMin) : "—";
+    if (onlyFlights) {
+      timeLbl = "✈️ Tempo de voo estimado";
+      timeVal = totalFlightMin > 0 ? hmHuman(totalFlightMin) : "—";
+    } else if (isMixed) {
+      timeLbl = "⏱️ Estrada + Voo";
+      timeVal = `${totalRoadMin > 0 ? hmHuman(totalRoadMin) : "0h"} · ✈️ ${totalFlightMin > 0 ? hmHuman(totalFlightMin) : "—"}`;
+    }
     const statsList = [
-      ["🛣️ Distância terrestre", totalKm > 0 ? `${num(totalKm)} km` : "—"],
-      ["⏱️ Tempo de estrada", totalRoadMin > 0 ? hmHuman(totalRoadMin) : (flightLegsCount > 0 ? "0h (aéreo)" : "—")],
+      [distLbl, distVal],
+      [timeLbl, timeVal],
       ["📍 Cidades a visitar", `${visitedCitiesCount} ${visitedCitiesCount === 1 ? "cidade" : "cidades"}`],
-      [flightLegsCount > 0 ? "✈️ Trechos aéreos" : "🧭 Total na rota", flightLegsCount > 0 ? `${flightLegsCount} ${flightLegsCount === 1 ? "voo" : "voos"} · ${passedCitiesCount} cid.` : `${passedCitiesCount} ${passedCitiesCount === 1 ? "cidade" : "cidades"}`]
+      [flightLegsCount > 0 ? "✈️ Voos / Rota" : "🧭 Total na rota", flightLegsCount > 0 ? `${flightLegsCount} ${flightLegsCount === 1 ? "voo" : "voos"} · ${passedCitiesCount} cid.` : `${passedCitiesCount} ${passedCitiesCount === 1 ? "cidade" : "cidades"}`]
     ];
     statsEl.innerHTML = statsList.map(([lbl, val]) => `
       <div class="pmap-stat-box">
         <div class="pmap-stat-lbl">${lbl}</div>
-        <div class="pmap-stat-val">${esc(val)}</div>
+        <div class="pmap-stat-val" title="${esc(val)}">${esc(val)}</div>
       </div>`).join("");
-  }
+  };
+  renderSummaryStats();
 
   const citiesListEl = $("#pmapCitiesList");
   if (citiesListEl) {
@@ -10078,6 +10319,18 @@ async function renderPersonalMap() {
     }
   }
 
+  // Estimar distância aérea e tempo de voo (~800 km/h + 40 min decolagem/pouso) para voos sem duração cadastrada
+  routeLegs.forEach(leg => {
+    if (!leg.isFlight) return;
+    const p1 = cityCoordByKey.get(leg.fromKey);
+    const p2 = cityCoordByKey.get(leg.toKey);
+    if (!p1 || !p2) return;
+    const airKm = haversineKm(p1, p2);
+    if (!leg.hasExplicitKm) totalFlightKm += airKm;
+    if (!leg.hasExplicitDrive) totalFlightMin += Math.round((airKm / 800) * 60 + 40);
+  });
+  renderSummaryStats();
+
   const hasGmaps = Boolean(window.FeriasMaps?.hasKey?.());
   const uniqueCityPts = routeCoords.filter((p, i, arr) => arr.findIndex(x => x.key === p.key) === i);
   if (!hasGmaps || !routeCoords.length) {
@@ -10089,9 +10342,11 @@ async function renderPersonalMap() {
     await window.FeriasMaps.ensureLoaded();
     if (seq !== pmapRenderSeq) return;
     const { Map: GMap } = await google.maps.importLibrary("maps");
+    let AdvMarker = null;
+    try { const mLib = await google.maps.importLibrary("marker"); AdvMarker = mLib?.AdvancedMarkerElement || null; } catch {}
     if (seq !== pmapRenderSeq) return;
 
-    pmapMarkers.forEach(m => { try { m.setMap(null); } catch {} });
+    pmapMarkers.forEach(m => { try { if (m.setMap) m.setMap(null); else m.map = null; } catch {} });
     pmapPolylines.forEach(pl => { try { pl.setMap(null); } catch {} });
     pmapDirectionsRenderers.forEach(dr => { try { dr.setMap(null); } catch {} });
     pmapMarkers = [];
@@ -10102,6 +10357,7 @@ async function renderPersonalMap() {
     pmapGmapInstance = new GMap(canvas, {
       center: { lat: routeCoords[0].lat, lng: routeCoords[0].lng },
       zoom: 6,
+      mapId: "MYPLAN_PERSONAL_MAP",
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: true
@@ -10112,17 +10368,35 @@ async function renderPersonalMap() {
     uniqueCityPts.forEach(pt => bounds.extend({ lat: pt.lat, lng: pt.lng }));
 
     uniqueCityPts.forEach((pt, idx) => {
-      const marker = new google.maps.Marker({
-        position: { lat: pt.lat, lng: pt.lng },
-        map: pmapGmapInstance,
-        label: { text: String(idx + 1), color: "#ffffff", fontWeight: "700", fontSize: "12px" },
-        title: `${pt.city}${pt.days ? ` — ${pt.days} ${pt.days === 1 ? "dia" : "dias"}` : ""}`
-      });
-      marker.addListener("click", () => {
-        infoWin.setContent(`<div style="color:#0f172a;padding:2px 4px"><strong>${esc(pt.city)}</strong><br><span>${pt.days ? `${pt.days} ${pt.days === 1 ? "dia" : "dias"} no cronograma` : "Cidade de passagem"}</span></div>`);
-        infoWin.open(pmapGmapInstance, marker);
-      });
-      pmapMarkers.push(marker);
+      if (AdvMarker) {
+        const wrap = document.createElement("div");
+        wrap.className = "pmap-pin-wrap";
+        wrap.innerHTML = `<span class="pmap-pin-num" style="background:${esc(pt.hex || "#2563eb")}">${idx + 1}</span>
+          <span class="pmap-pin-pill"><span>${esc(pt.city)}</span>${pt.days ? `<span class="pmap-pin-sep">•</span><span class="pmap-pin-days">${pt.days}d</span>` : ""}</span>`;
+        const adv = new AdvMarker({
+          map: pmapGmapInstance,
+          position: { lat: pt.lat, lng: pt.lng },
+          content: wrap,
+          title: `${pt.city}${pt.days ? ` — ${pt.days} ${pt.days === 1 ? "dia" : "dias"}` : ""}`
+        });
+        adv.addListener("click", () => {
+          infoWin.setContent(`<div style="color:#0f172a;padding:2px 4px"><strong>${esc(pt.city)}</strong><br><span>${pt.days ? `${pt.days} ${pt.days === 1 ? "dia" : "dias"} no cronograma` : "Cidade de passagem"}</span></div>`);
+          infoWin.open(pmapGmapInstance, adv);
+        });
+        pmapMarkers.push(adv);
+      } else {
+        const marker = new google.maps.Marker({
+          position: { lat: pt.lat, lng: pt.lng },
+          map: pmapGmapInstance,
+          label: { text: `${idx + 1}`, color: "#ffffff", fontWeight: "700", fontSize: "12px" },
+          title: `${pt.city}${pt.days ? ` — ${pt.days} ${pt.days === 1 ? "dia" : "dias"}` : ""}`
+        });
+        marker.addListener("click", () => {
+          infoWin.setContent(`<div style="color:#0f172a;padding:2px 4px"><strong>${esc(pt.city)}</strong><br><span>${pt.days ? `${pt.days} ${pt.days === 1 ? "dia" : "dias"} no cronograma` : "Cidade de passagem"}</span></div>`);
+          infoWin.open(pmapGmapInstance, marker);
+        });
+        pmapMarkers.push(marker);
+      }
     });
 
     // Traçar trechos: Avião = curva Bézier laranja + ícone avião rotacionado; Terrestre = rota rodoviária azul
@@ -10273,9 +10547,9 @@ function renderPersonalBoard() {
   if (!host) return;
   const cols = ensurePersonalBoardColumns();
   const q = ($("#pboardSearch")?.value || "").trim().toLowerCase();
-  const acts = sorted().filter(a => {
+  const acts = applyPersonalUnifiedFilter(sorted()).filter(a => {
     if (!q) return true;
-    const hay = [a.name || "", a.notes || "", a.from || "", a.to || "", a.type || ""].join(" ").toLowerCase();
+    const hay = [a.name || "", a.notes || "", a.from || "", a.to || "", a.location || "", a.type || ""].join(" ").toLowerCase();
     return hay.includes(q);
   });
 

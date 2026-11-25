@@ -9148,6 +9148,224 @@ body.is-personal-mode #proControlSummaryGrid {
   gap: 8px;
 }
 
+/* Correção de layout e rolagem vertical independente na aba Quadros (Modo Pessoal) */
+#view-personal-board.active {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 146px);
+  min-height: 460px;
+  overflow: hidden;
+}
+#view-personal-board .pboard-bar {
+  flex: 0 0 auto;
+  margin-bottom: 12px;
+}
+.pboard-cols {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 10px;
+}
+.pboard-cols .pro-col {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 304px;
+  width: 304px;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.pboard-cols .pro-col-head {
+  flex: 0 0 auto;
+}
+.pboard-cols .pro-col-cards {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+/* Rótulo discreto ao lado do marcador numerado no Mapa Pessoal */
+.pmap-pin-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transform: translate(calc(50% - 14px), 0);
+}
+.pmap-pin-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  border: 2px solid #ffffff;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.32);
+  flex-shrink: 0;
+}
+.pmap-pin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #0f172a;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.18);
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+}
+.pmap-pin-pill .pmap-pin-sep {
+  opacity: 0.45;
+}
+.pmap-pin-pill .pmap-pin-days {
+  color: #2563eb;
+  font-weight: 800;
+}
+
+/* Menu de Filtros Unificado e Padronizado (Modo Pessoal — Desktop Popover + Mobile Drawer) */
+.puf-panel {
+  position: fixed;
+  top: 108px;
+  right: 18px;
+  left: auto;
+  width: min(740px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100vh - 126px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background: #ffffff;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 16px;
+  box-shadow: 0 22px 54px rgba(15, 23, 42, 0.3);
+  z-index: 2600;
+  overflow: hidden;
+}
+:root[data-theme="dark"] .puf-panel,
+body.dark .puf-panel {
+  background: #161b23;
+}
+.puf-panel[hidden] { display: none !important; }
+.puf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.puf-body {
+  padding: 14px 16px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.puf-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.puf-span2 { grid-column: span 2; }
+.puf-span3 { grid-column: 1 / -1; }
+.puf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.puf-field > span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.puf-field input,
+.puf-field select {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.86rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+.puf-checks {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+.puf-chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.puf-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+  flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+  .puf-panel {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 84vh;
+    border-radius: 18px 18px 0 0;
+  }
+  .puf-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .puf-span2,
+  .puf-span3 {
+    grid-column: 1 / -1;
+  }
+  .puf-field input,
+  .puf-field select {
+    font-size: 16px;
+  }
+  #view-personal-board.active {
+    height: calc(100vh - 156px);
+  }
+  .pboard-cols .pro-col {
+    flex: 0 0 calc(100vw - 36px);
+    width: calc(100vw - 36px);
+  }
+}
+
 @media (max-width: 900px) {
   .pmap-hero-grid {
     grid-template-columns: minmax(0, 1fr);

@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=54">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=54">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=54">
+<link rel="manifest" href="/manifest.webmanifest?v=55">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=55">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=55">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=54">
+<link rel="stylesheet" href="styles.css?v=55">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=54" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=55" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=54" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=55" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -227,32 +227,12 @@
       <button class="tab" data-view="personal-board" id="tab-personal-board" type="button">🗂️ Quadros</button>
       <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
       <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
-      <div class="gantt-pop-host pmap-nav-filter-host" id="personalMapNavFilterHost" hidden>
-        <button type="button" class="btn ghost small gantt-pop-trigger pmap-nav-filter-btn" id="btnPmapFilterPop" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Mapa">
+      <div class="gantt-pop-host pmap-nav-filter-host" id="personalMapNavFilterHost">
+        <button type="button" class="btn ghost small gantt-pop-trigger pmap-nav-filter-btn" id="btnPmapFilterPop" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Modo Pessoal">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
           <span>Filtros</span>
           <span class="gantt-pop-count" id="pmapFilterCount" hidden></span>
         </button>
-        <div class="gantt-pop-panel pmap-filter-pop" id="pmapFilterPopPanel" hidden>
-          <div class="gantt-pop-head">
-            <strong>Filtros do Mapa</strong>
-            <button type="button" class="btn ghost small" id="btnPmapClearFilters" hidden>✕ Limpar</button>
-          </div>
-          <div class="gantt-pop-grid">
-            <div class="gantt-pop-field">
-              <span class="gantt-pop-lbl">Data inicial</span>
-              <input type="date" id="pmapDateFrom" aria-label="Data inicial do mapa">
-            </div>
-            <div class="gantt-pop-field">
-              <span class="gantt-pop-lbl">Data final</span>
-              <input type="date" id="pmapDateTo" aria-label="Data final do mapa">
-            </div>
-            <div class="gantt-pop-field span2">
-              <span class="gantt-pop-lbl">Buscar cidade</span>
-              <input type="search" id="pmapCitySearch" placeholder="🔎 Filtrar cidade..." autocomplete="off">
-            </div>
-          </div>
-        </div>
       </div>
     </nav>
 
@@ -269,6 +249,85 @@
       <button class="tab" data-pro-view="pro-checklist" id="tab-pro-checklist" type="button">✅ Checklist</button>
     </nav>
   </header>
+
+  <!-- PAINEL UNIFICADO DE FILTROS DO MODO PESSOAL (POPOVER DESKTOP / DRAWER MOBILE) -->
+  <div class="puf-panel" id="pmapFilterPopPanel" hidden>
+    <div class="puf-head">
+      <strong>🔎 Filtros do Planejamento Pessoal</strong>
+      <button type="button" class="icon-btn" id="btnPufClose" aria-label="Fechar filtros">✕</button>
+    </div>
+    <div class="puf-body">
+      <div class="puf-grid">
+        <label class="puf-field puf-span2">
+          <span>Busca por texto (título / descrição)</span>
+          <input type="search" id="pf-search" placeholder="Buscar evento, hotel, voo, cidade..." autocomplete="off">
+        </label>
+        <label class="puf-field">
+          <span>Ano</span>
+          <select id="pf-year"><option value="">Todos os anos</option></select>
+        </label>
+        <label class="puf-field">
+          <span>Mês</span>
+          <select id="pf-month">
+            <option value="">Todos os meses</option>
+            <option value="01">Janeiro</option><option value="02">Fevereiro</option>
+            <option value="03">Março</option><option value="04">Abril</option>
+            <option value="05">Maio</option><option value="06">Junho</option>
+            <option value="07">Julho</option><option value="08">Agosto</option>
+            <option value="09">Setembro</option><option value="10">Outubro</option>
+            <option value="11">Novembro</option><option value="12">Dezembro</option>
+          </select>
+        </label>
+        <label class="puf-field">
+          <span>Data inicial</span>
+          <input type="date" id="pf-dateFrom" aria-label="Data inicial">
+        </label>
+        <label class="puf-field">
+          <span>Data final</span>
+          <input type="date" id="pf-dateTo" aria-label="Data final">
+        </label>
+        <label class="puf-field">
+          <span>Lista / Status (Quadros)</span>
+          <select id="pf-list"><option value="">Todas as listas</option></select>
+        </label>
+        <label class="puf-field">
+          <span>Tipo de Atividade</span>
+          <select id="pf-type"><option value="">Todos os tipos</option></select>
+        </label>
+        <label class="puf-field">
+          <span>Meio de Locomoção</span>
+          <select id="pf-transport">
+            <option value="">Todos</option>
+            <option value="Voo">✈️ Avião / Voo</option>
+            <option value="Viagem">🚗 Carro</option>
+            <option value="Ônibus">🚌 Ônibus</option>
+            <option value="Trem">🚆 Trem</option>
+            <option value="Navio">🚢 Navio / Cruzeiro</option>
+          </select>
+        </label>
+        <label class="puf-field">
+          <span>Localidade / Cidade</span>
+          <select id="pf-city"><option value="">Todas as cidades</option></select>
+        </label>
+        <label class="puf-field">
+          <span>Pessoas / Participantes</span>
+          <input type="text" id="pf-person" placeholder="Ex: Família, João..." autocomplete="off">
+        </label>
+        <label class="puf-field">
+          <span>Etiquetas / Tags</span>
+          <select id="pf-tag"><option value="">Todas as tags</option></select>
+        </label>
+        <div class="puf-checks puf-span3">
+          <label class="puf-chk"><input type="checkbox" id="pf-onlyTravel"><span>✈️ Somente com viagem</span></label>
+          <label class="puf-chk"><input type="checkbox" id="pf-onlyAttach"><span>📎 Somente com anexos</span></label>
+        </div>
+      </div>
+    </div>
+    <div class="puf-foot">
+      <button type="button" class="btn ghost small" id="btnPmapClearFilters">✕ Limpar filtros</button>
+      <button type="button" class="btn primary small" id="btnPufApply">✓ Aplicar</button>
+    </div>
+  </div>
 
   <main>
     <!-- CONVITES PENDENTES -->
@@ -2794,8 +2853,14 @@
 
       <!-- BLOCO VOO -->
       <div class="flight-only span2 form-grid inner" hidden>
-        <label>Aeroporto / Cidade Origem<input id="f-flightFrom" placeholder="Ex: Brasília (BSB)"></label>
-        <label>Aeroporto / Cidade Destino<input id="f-flightTo" placeholder="Ex: Guarulhos (GRU)"></label>
+        <label class="ac-wrap">Aeroporto / Cidade Origem (Google Maps)
+          <input id="f-flightFrom" placeholder="Ex: Brasília (BSB)" autocomplete="off">
+          <div class="ac-list" id="ac-flightFrom" hidden></div>
+        </label>
+        <label class="ac-wrap">Aeroporto / Cidade Destino (Google Maps)
+          <input id="f-flightTo" placeholder="Ex: Guarulhos (GRU)" autocomplete="off">
+          <div class="ac-list" id="ac-flightTo" hidden></div>
+        </label>
         <label>Companhia / Nº Voo<input id="f-airline" placeholder="Ex: LATAM LA3450"></label>
         <label>Localizador / Reserva<input id="f-bookingRef" placeholder="Ex: XYZ987"></label>
       </div>
@@ -2824,6 +2889,12 @@
         <label><span id="lbl-transitRef">Localizador / Bilhete</span><input id="f-transitRef" placeholder="Código reserva"></label>
         <div class="span2 modal-map-wrap" id="transitMapWrap" hidden></div>
       </div>
+
+      <!-- LOCAL (GOOGLE PLACES) PARA HOSPEDAGEM / PASSEIO / EVENTO / INGRESSO -->
+      <label class="span2 ac-wrap" id="f-locationWrap" hidden>Local / Cidade / Endereço (Google Maps)
+        <input id="f-location" placeholder="Digite cidade, hotel, ponto turístico ou endereço..." autocomplete="off">
+        <div class="ac-list" id="ac-location" hidden></div>
+      </label>
 
       <!-- LOCALIZADOR / CÓDIGO PARA INGRESSO / HOSPEDAGEM / EVENTO -->
       <label class="span2 ref-only" id="f-ticketRefWrap" hidden>Localizador / Código do Ingresso / Reserva
@@ -4217,17 +4288,17 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=54"></script>
-<script src="vehicles.js?v=54"></script>
-<script src="countries.js?v=54"></script>
-<script src="data.js?v=54"></script>
-<script src="maps.js?v=54"></script>
-<script src="calendar.js?v=54"></script>
-<script src="drive.js?v=54"></script>
-<script src="report.js?v=54"></script>
-<script src="api.js?v=54"></script>
-<script src="minutes.js?v=54"></script>
-<script src="pro.js?v=54"></script>
-<script src="app.js?v=54"></script>
+<script src="config.example.js?v=55"></script>
+<script src="vehicles.js?v=55"></script>
+<script src="countries.js?v=55"></script>
+<script src="data.js?v=55"></script>
+<script src="maps.js?v=55"></script>
+<script src="calendar.js?v=55"></script>
+<script src="drive.js?v=55"></script>
+<script src="report.js?v=55"></script>
+<script src="api.js?v=55"></script>
+<script src="minutes.js?v=55"></script>
+<script src="pro.js?v=55"></script>
+<script src="app.js?v=55"></script>
 </body>
 </html>
