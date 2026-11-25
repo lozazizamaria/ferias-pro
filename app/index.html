@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=57">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=57">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=57">
+<link rel="manifest" href="/manifest.webmanifest?v=58">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=58">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=58">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=57">
+<link rel="stylesheet" href="styles.css?v=58">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=57" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=58" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=57" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=58" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -3252,6 +3252,29 @@
   </form>
 </dialog>
 
+<!-- MODAL GENÉRICO DE ENTRADA (SUBSTITUI window.prompt NATIVO) -->
+<dialog id="myplanPromptModal">
+  <form id="myplanPromptForm" method="dialog">
+    <div class="modal-head">
+      <h2 id="mpPromptTitle">Informar valor</h2>
+      <button type="button" class="icon-btn modal-close" id="btnMpPromptClose" aria-label="Fechar">✕</button>
+    </div>
+    <div class="form-grid">
+      <label class="span2"><span id="mpPromptLabel1">Valor</span>
+        <input id="mpPromptInput1" type="text" required autocomplete="off">
+      </label>
+      <label class="span2" id="mpPromptWrap2" hidden><span id="mpPromptLabel2">Descrição</span>
+        <input id="mpPromptInput2" type="text" autocomplete="off">
+      </label>
+    </div>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnMpPromptCancel">Cancelar</button>
+      <button type="submit" class="btn primary" id="btnMpPromptOk">Confirmar</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- MODAL PLANEJAR COM IA (ÁUDIO + IMAGENS + DOCUMENTOS -> NOVA VIAGEM) -->
 <dialog id="aiPlanModal">
   <div class="modal-head">
@@ -4522,17 +4545,19 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.example.js?v=57"></script>
-<script src="vehicles.js?v=57"></script>
-<script src="countries.js?v=57"></script>
-<script src="data.js?v=57"></script>
-<script src="maps.js?v=57"></script>
-<script src="calendar.js?v=57"></script>
-<script src="drive.js?v=57"></script>
-<script src="report.js?v=57"></script>
-<script src="api.js?v=57"></script>
-<script src="minutes.js?v=57"></script>
-<script src="pro.js?v=57"></script>
-<script src="app.js?v=57"></script>
+<script src="shared-utils.js?v=58"></script>
+<script src="config.example.js?v=58"></script>
+<script src="vehicles.js?v=58"></script>
+<script src="countries.js?v=58"></script>
+<script src="data.js?v=58"></script>
+<script src="maps.js?v=58"></script>
+<script src="calendar.js?v=58"></script>
+<script src="drive.js?v=58"></script>
+<script src="report.js?v=58"></script>
+<script src="api.js?v=58"></script>
+<script src="minutes.js?v=58"></script>
+<script src="pro.js?v=58"></script>
+<script src="personal-map.js?v=58"></script>
+<script src="app.js?v=58"></script>
 </body>
 </html>

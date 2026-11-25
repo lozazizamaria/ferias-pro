@@ -1,6 +1,6 @@
 {
   "name": "my-plan",
-  "version": "57.0.0",
+  "version": "58.0.0",
   "description": "My Plan — Planejador inteligente Pessoal e Profissional com Quadro Kanban Trello, Gantt avançado, Fluxo de Caixa, Google Maps, Google Agenda, IA Gemini multimodal e Super Admin.",
   "private": true,
   "engines": {
@@ -10,6 +10,6 @@
     "start": "node server/server.js",
     "dev": "node --watch server/server.js",
     "test": "node --test server/test.mjs",
-    "check": "node --check server/ooxml.js && node --check server/server.js && node --check server/test.mjs && node --check app/data.js && node --check app/calendar.js && node --check app/drive.js && node --check app/report.js && node --check app/api.js && node --check app/minutes.js && node --check app/pro.js && node --check app/app.js && node --check app/sw.js"
+    "check": "node --check server/ooxml.js && node --check server/storage.js && node --check server/server.js && node --check server/test.mjs && node --check app/shared-utils.js && node --check app/data.js && node --check app/calendar.js && node --check app/drive.js && node --check app/report.js && node --check app/api.js && node --check app/minutes.js && node --check app/pro.js && node --check app/personal-map.js && node --check app/app.js && node --check app/sw.js"
   }
 }

@@ -4064,7 +4064,7 @@
     const totalConflicts = people.reduce((s, p) => s + p.conflicts.length, 0);
     const upcomingSorted = entries
       .filter(e => e.end && e.end >= todayIso && !e.done)
-      .sort((a, b) => a.start.localeCompare(b.start));
+      .sort((a, b) => String(a?.start || "").localeCompare(String(b?.start || "")));
 
     return {
       entries,
@@ -6710,8 +6710,14 @@
     const extBadge = $("#renameAttExtBadge");
     if (!dlg || !inp) {
       const { base, ext } = splitFileNameExt(fileName, isLink);
-      const next = prompt(`Renomear arquivo${ext ? ` (extensão ${ext} preservada)` : ""}:`, base);
-      if (next && next.trim() && onConfirm) onConfirm(next.trim() + ext);
+      if (window.myplanPromptDialog) {
+        window.myplanPromptDialog({
+          title: "✏️ Renomear Arquivo",
+          label: `Nome${ext ? ` (extensão ${ext} preservada)` : ""}`,
+          value: base,
+          submitLabel: "Salvar"
+        }).then(next => { if (next && next.trim() && onConfirm) onConfirm(next.trim() + ext); });
+      }
       return;
     }
     const { base, ext } = splitFileNameExt(fileName, isLink);
@@ -10197,8 +10203,13 @@
       };
     }
     if ($("#btnProQuickAddAssignee")) {
-      $("#btnProQuickAddAssignee").onclick = () => {
-        const raw = prompt("Nome do novo responsável:");
+      $("#btnProQuickAddAssignee").onclick = async () => {
+        const raw = await window.myplanPromptDialog?.({
+          title: "👤 Novo Responsável",
+          label: "Nome do responsável",
+          placeholder: "Ex: Maria Silva",
+          submitLabel: "Adicionar"
+        });
         if (!raw || !raw.trim()) return;
         const clean = registerProAssignee(raw, true);
         if (clean) {
@@ -10859,12 +10870,20 @@
       $("#btnProSyncDriveNow").onclick = () => syncGoogleDrive();
     }
     if ($("#btnProAttachLink")) {
-      $("#btnProAttachLink").onclick = () => {
-        const url = prompt("Cole o link do documento, Figma, Drive ou reunião:");
-        if (!url || !url.trim()) return;
-        const cleanUrl = url.trim();
+      $("#btnProAttachLink").onclick = async () => {
+        const res = await window.myplanPromptDialog?.({
+          title: "🔗 Anexar Link ao Cartão",
+          label: "URL do documento, Figma, Drive ou reunião (https://...)",
+          placeholder: "https://...",
+          inputType: "url",
+          secondLabel: "Nome curto do link (opcional)",
+          secondPlaceholder: "Ex: Apresentação Q3",
+          submitLabel: "Anexar Link"
+        });
+        if (!res || !res.value) return;
+        const cleanUrl = res.value.trim();
         if (!/^https?:\/\//i.test(cleanUrl)) return core.toast("Informe um link iniciando com http:// ou https://");
-        const name = prompt("Nome curto do link (opcional):", cleanUrl.replace(/^https?:\/\//, "").slice(0, 32)) || cleanUrl;
+        const name = (res.secondValue || "").trim() || cleanUrl.replace(/^https?:\/\//, "").slice(0, 32) || cleanUrl;
         proModalAttachments.push({ id: core.uid(), isLink: true, fileName: name, url: cleanUrl, uploadedAt: new Date().toISOString() });
         renderProModalAttachments();
       };

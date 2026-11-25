@@ -4,11 +4,16 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import zlib from "node:zlib";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
+const require = createRequire(import.meta.url);
+const pkg = require(path.join(ROOT_DIR, "package.json"));
+const sharedUtils = require(path.join(ROOT_DIR, "app", "shared-utils.js"));
 
 function getFreePort() {
   return new Promise((resolve, reject) => {
@@ -64,12 +69,8 @@ async function apiJson(baseUrl, pathname, opts = {}) {
   return { resp, json, text, setCookie: extractCookies(resp) };
 }
 
-test("My Plan Backend — Segurança, Multi-Usuário, Drive Personal/Pro, Anexos RFC 5987, Export & Flush", async t => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "myplan-test-"));
-  const port = await getFreePort();
-  const baseUrl = `http://127.0.0.1:${port}`;
+function startServerInstance(tmpDir, port, extraEnv = {}) {
   let stderrBuf = "";
-
   const child = spawn(process.execPath, [path.join(ROOT_DIR, "server", "server.js")], {
     cwd: ROOT_DIR,
     env: {
@@ -78,13 +79,14 @@ test("My Plan Backend — Segurança, Multi-Usuário, Drive Personal/Pro, Anexos
       PORT: String(port),
       HOST: "127.0.0.1",
       DATA_DIR: tmpDir,
-      MASTER_KEY: "test_master_key_32_chars_minimum_ok!!"
+      MASTER_KEY: "test_master_key_32_chars_minimum_ok!!",
+      ...extraEnv
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
   child.stderr.on("data", chunk => { stderrBuf += chunk.toString("utf8"); });
 
-  const stopServer = async () => {
+  const stop = async () => {
     if (child.exitCode === null) {
       child.kill("SIGTERM");
       await new Promise(resolve => {
@@ -99,15 +101,49 @@ test("My Plan Backend — Segurança, Multi-Usuário, Drive Personal/Pro, Anexos
       });
     }
   };
+  return { child, stop, getStderr: () => stderrBuf };
+}
+
+test("Unit — Shared Utils (esc, safeCmpIso, sanitizeStyleAttr, sanitizeMinuteHtml) & Zip Bomb Guard", () => {
+  assert.equal(sharedUtils.esc(`<script>"a&b"</script>`), `&lt;script&gt;&quot;a&amp;b&quot;&lt;/script&gt;`);
+  assert.equal(sharedUtils.safeCmpIso(undefined, "2026-01-01") < 0, true);
+  assert.equal(sharedUtils.safeCmpIso(null, null), 0);
+  assert.equal(sharedUtils.safeCmpIso("2026-05-02", "2026-05-01") > 0, true);
+
+  const safeCss = sharedUtils.sanitizeStyleAttr("color: #2563eb; background: url(javascript:alert(1)); font-weight: bold; width: expression(alert(1))");
+  assert.equal(safeCss, "color: #2563eb; font-weight: bold");
+
+  const dirtyHtml = `<p onclick="alert(1)">Ata</p><script>evil()</script><a href="javascript:alert(2)">x</a>`;
+  const cleanHtml = sharedUtils.sanitizeMinuteHtml(dirtyHtml);
+  assert.equal(cleanHtml.includes("<script"), false);
+  assert.equal(cleanHtml.includes("onclick"), false);
+  assert.equal(cleanHtml.includes("javascript:"), false);
+  assert.ok(cleanHtml.includes("Ata"));
+
+  // Zip Bomb guard (maxOutputLength: 2 MB)
+  const bombCompressed = zlib.deflateRawSync(Buffer.alloc(5 * 1024 * 1024, 0x41));
+  assert.throws(
+    () => zlib.inflateRawSync(bombCompressed, { maxOutputLength: 2 * 1024 * 1024 }),
+    err => err && (err.code === "ERR_BUFFER_TOO_LARGE" || /output length|too large|buffer/i.test(err.message))
+  );
+});
+
+test("My Plan Backend (SQLite WAL) — Segurança, CSRF, Multi-Usuário, Drive, Anexos RFC 5987, Export & Reinício", async t => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "myplan-test-sqlite-"));
+  const port = await getFreePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  let srv = startServerInstance(tmpDir, port);
 
   t.after(async () => {
-    await stopServer();
+    await srv.stop();
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   });
 
-  const health = await waitForHealth(baseUrl, child);
+  const health = await waitForHealth(baseUrl, srv.child);
   assert.equal(health.ok, true);
+  assert.equal(health.version, pkg.version);
   assert.equal(health.encryption, "aes-256-gcm");
+  assert.equal(health.storage, "sqlite-wal");
 
   let user1Cookie = "";
   let user2Cookie = "";
@@ -140,7 +176,15 @@ test("My Plan Backend — Segurança, Multi-Usuário, Drive Personal/Pro, Anexos
     user2Cookie = reg2.setCookie;
   });
 
-  await t.test("RBAC bloqueia rotas do Super Admin para usuários comuns", async () => {
+  await t.test("CSRF Origin mismatch retorna 403 e RBAC bloqueia rotas Super Admin", async () => {
+    const csrfBlocked = await apiJson(baseUrl, "/api/trips", {
+      method: "POST",
+      cookie: user1Cookie,
+      headers: { Origin: "https://evil.example.com" },
+      body: { name: "CSRF", mode: "personal", data: { activities: [] } }
+    });
+    assert.equal(csrfBlocked.resp.status, 403);
+
     const unauth = await apiJson(baseUrl, "/api/auth/me");
     assert.equal(unauth.resp.status, 401);
 
@@ -174,6 +218,7 @@ test("My Plan Backend — Segurança, Multi-Usuário, Drive Personal/Pro, Anexos
     const c1 = await apiJson(baseUrl, "/api/trips", {
       method: "POST",
       cookie: user1Cookie,
+      headers: { Origin: baseUrl },
       body: {
         name: "Férias Nordeste",
         mode: "personal",
@@ -285,16 +330,90 @@ test("My Plan Backend — Segurança, Multi-Usuário, Drive Personal/Pro, Anexos
     assert.equal(pptxBuf.subarray(0, 4).toString("hex"), "504b0304");
   });
 
-  await t.test("Coalescência de saveDb grava db.json compacto e íntegro no encerramento", async () => {
+  await t.test("Persistência SQLite WAL sobrevive integralmente a reinício do servidor", async () => {
     await new Promise(r => setTimeout(r, 150));
-    await stopServer();
-    const dbPath = path.join(tmpDir, "db.json");
-    assert.ok(fs.existsSync(dbPath), "db.json deve existir após coalescência");
-    const raw = fs.readFileSync(dbPath, "utf8");
-    assert.equal(raw.includes("\n  "), false, "db.json deve ser serializado em JSON compacto");
-    const parsed = JSON.parse(raw);
-    assert.equal(parsed.trips[proTripId].name, "Operação Sul Atualizada");
-    assert.equal(parsed.attachments[attId].fileName, "Bilhete Renomeado.txt");
-    assert.equal(stderrBuf.trim(), "", `Stderr inesperado do servidor: ${stderrBuf}`);
+    await srv.stop();
+    const sqlitePath = path.join(tmpDir, "db.sqlite");
+    assert.ok(fs.existsSync(sqlitePath), "db.sqlite deve existir no DATA_DIR");
+    assert.equal(srv.getStderr().trim(), "", `Stderr inesperado do servidor: ${srv.getStderr()}`);
+
+    const port2 = await getFreePort();
+    const baseUrl2 = `http://127.0.0.1:${port2}`;
+    srv = startServerInstance(tmpDir, port2);
+    const h2 = await waitForHealth(baseUrl2, srv.child);
+    assert.equal(h2.storage, "sqlite-wal");
+
+    const trips = await apiJson(baseUrl2, "/api/trips", { cookie: user1Cookie });
+    assert.equal(trips.resp.status, 200);
+    const foundPro = (trips.json.ownTrips || []).find(tr => tr.id === proTripId);
+    assert.ok(foundPro, "Projeto profissional deve persistir no SQLite após reinício");
+    assert.equal(foundPro.name, "Operação Sul Atualizada");
+
+    const attDl = await fetch(`${baseUrl2}/api/attachments/${attId}`, { headers: { Cookie: user1Cookie } });
+    assert.equal(attDl.status, 200);
+    assert.ok((attDl.headers.get("content-disposition") || "").includes("Bilhete%20Renomeado.txt"));
   });
+});
+
+test("Storage Fallback JSON -> Migração Automática SQLite WAL & Rate Limit Anti-Spoofing (TRUST_PROXY=0)", async t => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "myplan-test-json-mig-"));
+  const port1 = await getFreePort();
+  const baseUrl1 = `http://127.0.0.1:${port1}`;
+  let srv = startServerInstance(tmpDir, port1, { STORAGE_ENGINE: "json", TRUST_PROXY: "0" });
+
+  t.after(async () => {
+    await srv.stop();
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  });
+
+  const h1 = await waitForHealth(baseUrl1, srv.child);
+  assert.equal(h1.storage, "json-atomic");
+
+  const reg = await apiJson(baseUrl1, "/api/auth/register", {
+    method: "POST",
+    body: { name: "Legado JSON", email: "legacy@example.com", password: "Forte!Password2026" }
+  });
+  assert.equal(reg.resp.status, 201);
+  const cookie = reg.setCookie;
+
+  const tripRes = await apiJson(baseUrl1, "/api/trips", {
+    method: "POST",
+    cookie,
+    body: { name: "Viagem Legada", mode: "personal", data: { activities: [] } }
+  });
+  assert.equal(tripRes.resp.status, 201);
+  const legacyTripId = tripRes.json.trip.id;
+
+  // Rate limit anti-spoofing: X-Forwarded-For falso NÃO deve contornar o limite de login
+  let got429 = false;
+  for (let i = 0; i < 12; i++) {
+    const r = await apiJson(baseUrl1, "/api/auth/login", {
+      method: "POST",
+      headers: { "X-Forwarded-For": `203.0.113.${i + 1}` },
+      body: { email: "legacy@example.com", password: "SenhaErrada!123" }
+    });
+    if (r.resp.status === 429) {
+      got429 = true;
+      break;
+    }
+  }
+  assert.equal(got429, true, "Rate limit deve disparar 429 mesmo rotacionando X-Forwarded-For com TRUST_PROXY=0");
+
+  // Verifica db.json compacto gravado em disco
+  await new Promise(r => setTimeout(r, 150));
+  await srv.stop();
+  const dbJsonPath = path.join(tmpDir, "db.json");
+  assert.ok(fs.existsSync(dbJsonPath), "db.json deve existir no modo json-atomic");
+  assert.equal(fs.readFileSync(dbJsonPath, "utf8").includes("\n  "), false, "db.json deve ser compacto");
+
+  // Reinicia em modo SQLite WAL padrão e valida migração automática de db.json -> db.sqlite
+  const port2 = await getFreePort();
+  const baseUrl2 = `http://127.0.0.1:${port2}`;
+  srv = startServerInstance(tmpDir, port2);
+  const h2 = await waitForHealth(baseUrl2, srv.child);
+  assert.equal(h2.storage, "sqlite-wal");
+
+  const listAfterMig = await apiJson(baseUrl2, "/api/trips", { cookie });
+  assert.equal(listAfterMig.resp.status, 200);
+  assert.ok((listAfterMig.json.ownTrips || []).some(tr => tr.id === legacyTripId && tr.name === "Viagem Legada"));
 });

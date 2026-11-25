@@ -245,14 +245,15 @@
   }
 
   async function gcalFetch(url, token, opts = {}) {
-    const res = await fetch(url, {
+    const fetcher = window.MyPlanUtils?.fetchWithTimeout || ((u, o) => fetch(u, o));
+    const res = await fetcher(url, {
       ...opts,
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         ...(opts.headers || {})
       }
-    });
+    }, 15000);
     if (res.status === 204 || res.status === 404 || res.status === 410) return { status: res.status, data: null };
     const data = await res.json().catch(() => null);
     if (!res.ok) {

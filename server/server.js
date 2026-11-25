@@ -8,6 +8,9 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
 const { buildDocxBuffer, buildPptxBuffer } = require("./ooxml");
+const { createStorage } = require("./storage");
+let APP_VERSION = "58.0.0";
+try { APP_VERSION = String(require("../package.json").version || APP_VERSION); } catch {}
 
 function loadDotEnv() {
   if (process.env.SKIP_DOTENV === "1") return;
@@ -37,6 +40,7 @@ const PORT = parseInt(process.env.PORT || "3080", 10);
 const HOST = process.env.HOST || "127.0.0.1";
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const DB_FILE = process.env.DB_FILE || path.join(DATA_DIR, "db.json");
+const SQLITE_FILE = process.env.SQLITE_FILE || path.join(DATA_DIR, "db.sqlite");
 const LEGACY_STATE_FILE = process.env.DATA_FILE || path.join(DATA_DIR, "state.json");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 const BACKUPS_DIR = path.join(DATA_DIR, "backups");
@@ -176,22 +180,19 @@ function emptyDb() {
   };
 }
 
+let storage = null;
+
 function loadDb() {
   ensureDirs();
   loadMasterKey();
-  try {
-    if (fs.existsSync(DB_FILE)) {
-      const parsed = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-      const merged = Object.assign(emptyDb(), parsed || {});
-      if (!merged.passwordResets || typeof merged.passwordResets !== "object") merged.passwordResets = {};
-      if (!Array.isArray(merged.admins)) merged.admins = [];
-      if (!merged.systemSettings || typeof merged.systemSettings !== "object") merged.systemSettings = {};
-      if (!Array.isArray(merged.auditLogs)) merged.auditLogs = [];
-      if (!merged.meta || typeof merged.meta !== "object") merged.meta = {};
-      return merged;
-    }
-  } catch {}
-  return emptyDb();
+  storage = createStorage({
+    dataDir: DATA_DIR,
+    dbFile: DB_FILE,
+    sqliteFile: SQLITE_FILE,
+    emptyDb,
+    preferredEngine: process.env.STORAGE_ENGINE || ""
+  });
+  return storage.load();
 }
 
 let db = loadDb();
@@ -200,7 +201,6 @@ let dbWrittenVersion = 0;
 let dbDirty = false;
 let dbSaveTimer = null;
 let dbWriteInFlight = Promise.resolve();
-let dbTmpSeq = 0;
 
 function saveDbSync() {
   if (dbSaveTimer) {
@@ -210,10 +210,7 @@ function saveDbSync() {
   ensureDirs();
   dbVersion += 1;
   const targetVersion = dbVersion;
-  const payload = JSON.stringify(db);
-  const tmp = `${DB_FILE}.${process.pid}.${Date.now()}.${++dbTmpSeq}.tmp`;
-  fs.writeFileSync(tmp, payload, "utf8");
-  fs.renameSync(tmp, DB_FILE);
+  storage.saveSync(db);
   dbWrittenVersion = Math.max(dbWrittenVersion, targetVersion);
   dbDirty = false;
 }
@@ -229,14 +226,8 @@ function flushDbAsync() {
       dbDirty = false;
       return;
     }
-    const payload = JSON.stringify(db);
-    const tmp = `${DB_FILE}.${process.pid}.${Date.now()}.${++dbTmpSeq}.tmp`;
-    await fs.promises.writeFile(tmp, payload, "utf8");
-    if (snapVersion <= dbWrittenVersion) {
-      await fs.promises.unlink(tmp).catch(() => {});
-      return;
-    }
-    await fs.promises.rename(tmp, DB_FILE);
+    const written = await storage.saveAsync(db, () => snapVersion <= dbWrittenVersion);
+    if (!written) return;
     dbWrittenVersion = Math.max(dbWrittenVersion, snapVersion);
     if (dbVersion <= dbWrittenVersion) {
       dbDirty = false;
@@ -355,9 +346,49 @@ function parseCookies(req) {
   return out;
 }
 
+function isTrustedProxyAddr(remoteAddr) {
+  if (process.env.TRUST_PROXY === "0") return false;
+  if (process.env.TRUST_PROXY === "1") return true;
+  const r = String(remoteAddr || "").trim().toLowerCase();
+  return r === "127.0.0.1" || r === "::1" || r === "::ffff:127.0.0.1";
+}
+
 function getClientIp(req) {
-  const fwd = String(req?.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
-  return fwd || req?.socket?.remoteAddress || "unknown";
+  const remote = req?.socket?.remoteAddress || "unknown";
+  if (isTrustedProxyAddr(remote)) {
+    const fwd = String(req?.headers?.["x-forwarded-for"] || "").split(",")[0].trim();
+    if (fwd) return fwd;
+  }
+  return remote;
+}
+
+function validateSameOriginMutation(req) {
+  const method = String(req.method || "GET").toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return true;
+  const origin = String(req.headers.origin || "").trim();
+  const referer = String(req.headers.referer || "").trim();
+  if (!origin && !referer) return true;
+  if (origin === "null") return false;
+
+  const allowedHosts = new Set();
+  const directHost = String(req.headers.host || "").split(",")[0].trim().toLowerCase();
+  if (directHost) allowedHosts.add(directHost);
+  if (isTrustedProxyAddr(req?.socket?.remoteAddress)) {
+    const fwdHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim().toLowerCase();
+    if (fwdHost) allowedHosts.add(fwdHost);
+  }
+  try {
+    const baseHost = new URL(getAppBaseUrl(req)).host.toLowerCase();
+    if (baseHost) allowedHosts.add(baseHost);
+  } catch {}
+
+  const candidate = origin || referer;
+  try {
+    const parsedHost = new URL(candidate).host.toLowerCase();
+    return Boolean(parsedHost && allowedHosts.has(parsedHost));
+  } catch {
+    return false;
+  }
 }
 
 function hashSessionToken(rawToken) {
@@ -2293,13 +2324,18 @@ const server = http.createServer(async (req, res) => {
   const pathname = url.pathname;
 
   try {
+    if (pathname.startsWith("/api/") && !validateSameOriginMutation(req)) {
+      return sendJson(res, 403, { ok: false, error: "Origem da requisição não autorizada (CSRF)." });
+    }
+
     /* ---------- HEALTH & CONFIG ---------- */
     if (pathname === "/api/health" && req.method === "GET") {
       const sys = getGlobalConfig();
       return sendJson(res, 200, {
         ok: true,
         mode: "multi-user",
-        version: "27",
+        version: APP_VERSION,
+        storage: storage ? storage.engine : "json-atomic",
         encryption: "aes-256-gcm",
         googleClientId: getServerGoogleClientId(),
         hasGemini: Boolean(sys.geminiKey),
@@ -4531,6 +4567,7 @@ if (typeof schedulerTimer.unref === "function") schedulerTimer.unref();
 const gracefulShutdown = () => {
   if (schedulerTimer) { clearInterval(schedulerTimer); schedulerTimer = null; }
   if (dbDirty) { try { saveDbSync(); } catch {} }
+  if (storage && typeof storage.close === "function") { try { storage.close(); } catch {} }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
 };
@@ -4538,10 +4575,11 @@ process.on("SIGINT", gracefulShutdown);
 process.on("SIGTERM", gracefulShutdown);
 process.on("beforeExit", () => {
   if (dbDirty) { try { saveDbSync(); } catch {} }
+  if (storage && typeof storage.close === "function") { try { storage.close(); } catch {} }
 });
 
 server.listen(PORT, HOST, () => {
   const sys = getGlobalConfig();
   console.log(`My Plan Server ativo em http://${HOST}:${PORT}`);
-  console.log(`DB: ${DB_FILE} | Google OAuth: ${sys.googleClientId ? "Ativo" : "Não configurado"} | AES-256-GCM: Ativo`);
+  console.log(`Storage: ${storage.engine} (${storage.filePath}) | Google OAuth: ${sys.googleClientId ? "Ativo" : "Não configurado"} | AES-256-GCM: Ativo`);
 });

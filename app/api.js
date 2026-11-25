@@ -26,7 +26,10 @@
   }
 
   async function req(url, opts = {}) {
-    const res = await fetch(url, {
+    const isAi = String(url || "").includes("/api/ai/");
+    const timeoutMs = Number(opts.timeoutMs) || (isAi ? 65000 : 25000);
+    const fetcher = window.MyPlanUtils?.fetchWithTimeout || ((u, o) => fetch(u, o));
+    const res = await fetcher(url, {
       credentials: "same-origin",
       cache: "no-store",
       ...opts,
@@ -34,7 +37,7 @@
         ...(opts.body ? { "Content-Type": "application/json" } : {}),
         ...(opts.headers || {})
       }
-    });
+    }, timeoutMs);
     const isOfflineCached = res.headers.get("X-Offline-Cache") === "1";
     let data = null;
     try { data = await res.json(); } catch {}
@@ -519,12 +522,13 @@
   }
 
   async function downloadBinaryExport(endpoint, payload, fallbackFileName) {
-    const res = await fetch(endpoint, {
+    const fetcher = window.MyPlanUtils?.fetchWithTimeout || ((u, o) => fetch(u, o));
+    const res = await fetcher(endpoint, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
-    });
+    }, 45000);
     if (!res.ok) {
       let msg = "Falha ao exportar arquivo.";
       try { const j = await res.json(); msg = j.error || msg; } catch {}
@@ -552,12 +556,13 @@
 
   async function buildMinutesPptxBlob(payload) {
     if (!serverAvailable) throw new Error("Servidor offline para gerar arquivo .pptx.");
-    const res = await fetch("/api/minutes/export-pptx", {
+    const fetcher = window.MyPlanUtils?.fetchWithTimeout || ((u, o) => fetch(u, o));
+    const res = await fetcher("/api/minutes/export-pptx", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
-    });
+    }, 45000);
     if (!res.ok) {
       let msg = "Falha ao gerar apresentação .pptx.";
       try { const j = await res.json(); msg = j.error || msg; } catch {}

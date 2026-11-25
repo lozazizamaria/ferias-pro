@@ -74,139 +74,11 @@
     try { return new Date(s).toLocaleString("pt-BR"); } catch { return s; }
   }
 
-  function sanitizeStyleAttr(rawStyle) {
-    const safeProps = new Set([
-      "color", "background", "background-color", "font-weight", "font-style",
-      "text-decoration", "text-align", "font-size", "font-family",
-      "margin", "margin-top", "margin-bottom", "margin-left", "margin-right",
-      "padding", "padding-top", "padding-bottom", "padding-left", "padding-right",
-      "border", "border-collapse", "width", "max-width", "height"
-    ]);
-    const clean = [];
-    String(rawStyle || "").split(";").forEach(decl => {
-      const idx = decl.indexOf(":");
-      if (idx <= 0) return;
-      const prop = decl.slice(0, idx).trim().toLowerCase();
-      const val = decl.slice(idx + 1).trim();
-      if (!safeProps.has(prop) || !val) return;
-      if (/url\s*\(|expression\s*\(|javascript:|vbscript:|@import|-moz-binding/i.test(val)) return;
-      clean.push(`${prop}: ${val}`);
-    });
-    return clean.join("; ");
-  }
-
   function sanitizeMinuteHtml(rawHtml) {
-    const fallback = "<p><br></p>";
-    const str = String(rawHtml || "").trim();
-    if (!str) return fallback;
-    const DROP_TAGS = new Set([
-      "script", "style", "iframe", "object", "embed", "svg", "math",
-      "form", "button", "textarea", "select", "option", "link", "meta",
-      "base", "noscript", "template", "audio", "video", "source", "track",
-      "frame", "frameset"
-    ]);
-    const ALLOW_TAGS = new Set([
-      "p", "div", "br", "h1", "h2", "h3", "h4", "h5", "h6",
-      "ul", "ol", "li", "b", "strong", "i", "em", "u", "s", "strike", "del",
-      "blockquote", "pre", "code", "hr", "table", "thead", "tbody", "tfoot",
-      "tr", "th", "td", "a", "span", "img", "sub", "sup", "font", "colgroup", "col", "input"
-    ]);
-    const doc = new DOMParser().parseFromString(`<div>${str}</div>`, "text/html");
-    const root = doc.body.firstElementChild;
-    if (!root) return fallback;
-
-    const cleanNode = (node) => {
-      const children = [...node.childNodes];
-      for (const ch of children) {
-        if (ch.nodeType === 8) {
-          ch.remove();
-          continue;
-        }
-        if (ch.nodeType !== 1) continue;
-        const tag = ch.tagName.toLowerCase();
-        if (DROP_TAGS.has(tag)) {
-          ch.remove();
-          continue;
-        }
-        if (tag === "input") {
-          const tp = String(ch.getAttribute("type") || "").toLowerCase();
-          if (tp !== "checkbox") {
-            ch.remove();
-            continue;
-          }
-          const isChecked = ch.hasAttribute("checked");
-          for (const a of [...ch.attributes]) ch.removeAttribute(a.name);
-          ch.setAttribute("type", "checkbox");
-          if (isChecked) ch.setAttribute("checked", "");
-          continue;
-        }
-        if (!ALLOW_TAGS.has(tag)) {
-          cleanNode(ch);
-          while (ch.firstChild) node.insertBefore(ch.firstChild, ch);
-          ch.remove();
-          continue;
-        }
-        for (const attr of [...ch.attributes]) {
-          const name = attr.name.toLowerCase();
-          const val = attr.value;
-          if (name.startsWith("on") || name === "srcdoc" || name === "formaction") {
-            ch.removeAttribute(attr.name);
-            continue;
-          }
-          if (name === "class") {
-            const safeClass = String(val).replace(/[^a-zA-Z0-9_\- ]+/g, "").trim();
-            if (safeClass) ch.setAttribute("class", safeClass);
-            else ch.removeAttribute("class");
-            continue;
-          }
-          if (name === "style") {
-            const safeStyle = sanitizeStyleAttr(val);
-            if (safeStyle) ch.setAttribute("style", safeStyle);
-            else ch.removeAttribute("style");
-            continue;
-          }
-          if (name === "data-pm-open-card" && (tag === "span" || tag === "a")) {
-            const cid = String(val).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
-            if (cid) ch.setAttribute("data-pm-open-card", cid);
-            else ch.removeAttribute("data-pm-open-card");
-            continue;
-          }
-          if (name === "dir" || name === "align" || name === "title") continue;
-          if (tag === "a" && name === "href") {
-            const trimmed = String(val || "").trim();
-            if (/^(https?:\/\/|mailto:|tel:|#)/i.test(trimmed)) ch.setAttribute("href", trimmed);
-            else ch.removeAttribute("href");
-            continue;
-          }
-          if (tag === "a" && name === "target") {
-            if (val === "_blank") {
-              ch.setAttribute("target", "_blank");
-              ch.setAttribute("rel", "noopener noreferrer");
-            } else {
-              ch.removeAttribute("target");
-            }
-            continue;
-          }
-          if (tag === "img" && name === "src") {
-            const trimmed = String(val || "").trim();
-            if (/^(data:image\/(png|jpe?g|gif|webp);base64,|https?:\/\/|\/api\/attachments\/)/i.test(trimmed)) {
-              ch.setAttribute("src", trimmed);
-            } else {
-              ch.removeAttribute("src");
-            }
-            continue;
-          }
-          if (tag === "img" && (name === "alt" || name === "width" || name === "height")) continue;
-          if ((tag === "td" || tag === "th" || tag === "col") && (name === "colspan" || name === "rowspan" || name === "scope")) continue;
-          if (tag === "font" && (name === "color" || name === "face" || name === "size")) continue;
-          ch.removeAttribute(attr.name);
-        }
-        cleanNode(ch);
-      }
-    };
-
-    cleanNode(root);
-    return root.innerHTML.trim() ? root.innerHTML : fallback;
+    if (window.MyPlanUtils?.sanitizeMinuteHtml) {
+      return window.MyPlanUtils.sanitizeMinuteHtml(rawHtml);
+    }
+    return String(rawHtml || "<p><br></p>").trim() || "<p><br></p>";
   }
 
   function normalizeMinute(raw, cardName = "") {
@@ -681,9 +553,13 @@
         };
         if (host.openRenameAttachment) {
           host.openRenameAttachment({ fileName: att.fileName || "Arquivo", isLink: false, onConfirm: doRename });
-        } else {
-          const next = prompt("Novo nome do arquivo:", att.fileName || "Arquivo");
-          if (next) doRename(next);
+        } else if (window.myplanPromptDialog) {
+          window.myplanPromptDialog({
+            title: "✏️ Renomear Anexo",
+            label: "Novo nome do arquivo",
+            value: att.fileName || "Arquivo",
+            submitLabel: "Salvar"
+          }).then(next => { if (next) doRename(next); });
         }
       };
     });
@@ -1603,8 +1479,14 @@
       };
     }
     if ($("#btnPmInsertLink")) {
-      $("#btnPmInsertLink").onclick = () => {
-        const url = prompt("Cole a URL do link (https://...):");
+      $("#btnPmInsertLink").onclick = async () => {
+        const url = await window.myplanPromptDialog?.({
+          title: "🔗 Inserir Link na Ata",
+          label: "URL do link (https://...)",
+          placeholder: "https://...",
+          inputType: "url",
+          submitLabel: "Inserir"
+        });
         if (!url || !/^https?:\/\//i.test(url.trim())) return;
         $("#pm-editor")?.focus();
         document.execCommand("createLink", false, url.trim());

@@ -494,7 +494,8 @@
 
     try {
       const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=pt-BR&q=${encodeURIComponent(q)}`;
-      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      const fetcher = window.MyPlanUtils?.fetchWithTimeout || ((u, o) => fetch(u, o));
+      const res = await fetcher(url, { headers: { Accept: "application/json" } }, 10000);
       if (res.ok) {
         const arr = await res.json();
         if (Array.isArray(arr) && arr[0]) {

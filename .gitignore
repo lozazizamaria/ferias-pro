@@ -4,6 +4,9 @@ backups/
 .master.key
 *.master.key
 *.json.gz
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 .env
 .env.*
 !.env.example
