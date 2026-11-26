@@ -515,6 +515,13 @@
     return r.data;
   }
 
+  async function aiAudioToMinutes(payload) {
+    if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
+    const r = await req("/api/ai/audio-to-minutes", { method: "POST", body: JSON.stringify(payload), timeoutMs: 90000 });
+    if (!r.ok) throw new Error(r.data?.message || r.data?.error || "Falha ao gerar ata a partir do áudio.");
+    return r.data;
+  }
+
   async function aiGenerateSlides(payload) {
     if (!serverAvailable) return { ok: true, usedAi: false, slides: null };
     const r = await req("/api/ai/generate-slides", { method: "POST", body: JSON.stringify(payload) });
@@ -717,6 +724,7 @@
     aiAnalyzeTickets,
     aiSummarizeAttachments,
     aiImproveMinutes,
+    aiAudioToMinutes,
     aiGenerateSlides,
     exportMinutesDocx,
     exportMinutesPptx,

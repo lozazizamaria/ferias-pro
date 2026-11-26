@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=58">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=58">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=58">
+<link rel="manifest" href="/manifest.webmanifest?v=59">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=59">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=59">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=58">
+<link rel="stylesheet" href="styles.css?v=59">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=58" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=59" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=58" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=59" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -1126,6 +1126,7 @@
                   <div class="seg" id="proGanttModeSeg" role="group" aria-label="Modo de visualização">
                     <button type="button" class="active" data-pgmode="gantt">Gantt</button>
                     <button type="button" data-pgmode="timeline">Linha do Tempo</button>
+                    <button type="button" data-pgmode="annual">Calendário Anual</button>
                   </div>
                 </div>
                 <div class="gantt-pop-section">
@@ -1170,6 +1171,7 @@
           <div id="proGantt" class="gantt"></div>
         </div>
         <div id="proTimelineWrap" class="timeline-wrap" hidden></div>
+        <div id="proAnnualWrap" class="pro-annual-wrap" hidden></div>
       </div>
     </section>
 
@@ -3275,6 +3277,52 @@
   </form>
 </dialog>
 
+<!-- MODAL REUNIÃO GOOGLE MEET DO CARTÃO PROFISSIONAL -->
+<dialog id="proMeetModal">
+  <form id="proMeetForm" method="dialog">
+    <div class="modal-head">
+      <h2>📹 Reunião Google Meet</h2>
+      <button type="button" class="icon-btn modal-close" id="btnPmeetClose" aria-label="Fechar">✕</button>
+    </div>
+    <p class="muted small" style="margin:0 0 10px">Salva o link do Meet diretamente em <b>Anexos, Contratos e Links</b> deste cartão (sem duplicar barra no Gantt).</p>
+    <div class="form-grid">
+      <label class="span2">Título da Reunião *
+        <input id="pmeet-title" required placeholder="Ex: Alinhamento Técnico">
+      </label>
+      <label>Data
+        <input type="date" id="pmeet-date">
+      </label>
+      <label>Horário
+        <input type="time" id="pmeet-time">
+      </label>
+      <label class="span2">Local / Observação (opcional)
+        <input id="pmeet-notes" placeholder="Ex: Pauta principal, sala ou observação">
+      </label>
+      <div class="span2">
+        <div class="route-head-row" style="margin-bottom:5px">
+          <label for="pmeet-url" style="font-weight:700;font-size:0.82rem;margin:0">Link da Sala Google Meet *</label>
+          <button type="button" class="btn ghost small" id="btnPmeetCreateNew" title="Abrir meet.google.com/new para gerar nova sala instantânea">📹 Criar nova sala no Google Meet ↗</button>
+        </div>
+        <input type="url" id="pmeet-url" required placeholder="https://meet.google.com/xxx-xxxx-xxx" autocomplete="off" style="width:100%">
+        <div id="pmeetHelperHint" class="muted small" style="margin-top:4px" hidden>✅ Sala aberta em nova aba — copie o link <code>meet.google.com/...</code> da barra do navegador e cole acima.</div>
+      </div>
+    </div>
+
+    <div id="pmeetQuickActions" class="pmeet-quick-bar" hidden>
+      <a id="btnPmeetJoin" class="btn ghost small" target="_blank" rel="noopener">🚪 Entrar na sala</a>
+      <button type="button" class="btn ghost small" id="btnPmeetCopy">📋 Copiar link</button>
+      <button type="button" class="btn ghost small btn-modal-whatsapp" id="btnPmeetWhatsApp">💬 Enviar link no WhatsApp</button>
+      <button type="button" class="btn ghost small" id="btnPmeetOpenMinute">📝 Abrir/Criar Ata desta Reunião</button>
+    </div>
+
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnPmeetCancel">Cancelar</button>
+      <button type="submit" class="btn primary">💾 Salvar Reunião no Cartão</button>
+    </div>
+  </form>
+</dialog>
+
 <!-- MODAL PLANEJAR COM IA (ÁUDIO + IMAGENS + DOCUMENTOS -> NOVA VIAGEM) -->
 <dialog id="aiPlanModal">
   <div class="modal-head">
@@ -3760,6 +3808,10 @@
           <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="3" fill="#ffffff" stroke="#4285F4" stroke-width="2"/><path d="M3 9h18" stroke="#4285F4" stroke-width="2"/><rect x="7" y="2" width="2.2" height="4" rx="1" fill="#EA4335"/><rect x="14.8" y="2" width="2.2" height="4" rx="1" fill="#34A853"/><text x="12" y="18.2" text-anchor="middle" font-size="7.5" font-weight="800" fill="#1d4ed8" font-family="sans-serif">31</text></svg>
           <span>Agenda</span>
         </button>
+        <button type="button" class="btn ghost small btn-modal-google btn-modal-meet" id="btnProHeadMeet" title="Criar ou gerenciar reunião no Google Meet">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="2.5" y="5" width="13.5" height="14" rx="2.5" fill="#00897B"/><path d="M16 9.5l5.5-3.8v12.6L16 14.5z" fill="#00AC47"/><path d="M16 9.5l5.5-3.8v6.3H16z" fill="#FFBA00"/><rect x="2.5" y="13.5" width="5.5" height="5.5" rx="1.2" fill="#0066DA"/><rect x="2.5" y="5" width="5.5" height="5.5" rx="1.2" fill="#EA4335"/></svg>
+          <span>Reunião</span>
+        </button>
         <button type="button" class="btn ghost small btn-modal-google" id="btnProHeadWallet" title="Abrir diretamente na Carteira do Google" hidden>
           <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="3" fill="#34A853"/><rect x="4.5" y="7" width="15" height="4" rx="1.5" fill="#4285F4"/><rect x="4.5" y="9" width="15" height="4" rx="1.5" fill="#FBBC05"/><rect x="4.5" y="11" width="15" height="6" rx="1.5" fill="#EA4335"/></svg>
           <span>Carteira</span>
@@ -4174,6 +4226,7 @@
     </div>
     <div class="pm-topbar-actions">
       <button type="button" class="btn ghost small" id="btnPmFocusMode" title="Modo Foco (ocultar cabeçalho e distrações)">🎯 Foco</button>
+      <button type="button" class="btn ai-pill small pm-rec-btn" id="btnPmRecordAudio" title="Gravar áudio da reunião pelo microfone e gerar Ata Executiva completa com IA">🎙️ Gravar Áudio (Gerar Ata com IA)</button>
       <div class="pm-dd-host">
         <button type="button" class="btn ai-pill small" id="btnPmAiMenu" aria-expanded="false">✨ Melhorar o texto com IA ▾</button>
         <div class="pm-dd-menu" id="pm-aiMenu" hidden>
@@ -4200,6 +4253,24 @@
         </div>
       </div>
       <button type="button" class="icon-btn" id="btnPmClose" aria-label="Fechar editor de ata">✕</button>
+    </div>
+  </div>
+
+  <!-- Barra de Gravação de Áudio com IA (MediaRecorder) -->
+  <div id="pm-audioBar" class="pm-audio-bar" hidden>
+    <div class="pm-audio-left">
+      <span class="pm-rec-dot" id="pm-audioDot" aria-hidden="true"></span>
+      <strong id="pm-audioStatus">Gravando áudio...</strong>
+      <span id="pm-audioTimer" class="pill warn">00:00</span>
+    </div>
+    <div class="pm-audio-right">
+      <select id="pm-audioInsertMode" aria-label="Como inserir o texto gerado pela IA" title="Como inserir a ata gerada">
+        <option value="replace">Substituir (salva versão no Histórico)</option>
+        <option value="append">Adicionar ao final do texto</option>
+      </select>
+      <button type="button" class="btn ghost small" id="btnPmAudioPause">⏸️ Pausar</button>
+      <button type="button" class="btn ghost small" id="btnPmAudioCancel">✕ Cancelar</button>
+      <button type="button" class="btn primary small" id="btnPmAudioFinish">✅ Concluir e Gerar Ata</button>
     </div>
   </div>
 
@@ -4545,19 +4616,20 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="shared-utils.js?v=58"></script>
-<script src="config.example.js?v=58"></script>
-<script src="vehicles.js?v=58"></script>
-<script src="countries.js?v=58"></script>
-<script src="data.js?v=58"></script>
-<script src="maps.js?v=58"></script>
-<script src="calendar.js?v=58"></script>
-<script src="drive.js?v=58"></script>
-<script src="report.js?v=58"></script>
-<script src="api.js?v=58"></script>
-<script src="minutes.js?v=58"></script>
-<script src="pro.js?v=58"></script>
-<script src="personal-map.js?v=58"></script>
-<script src="app.js?v=58"></script>
+<script src="shared-utils.js?v=59"></script>
+<script src="config.example.js?v=59"></script>
+<script src="vehicles.js?v=59"></script>
+<script src="countries.js?v=59"></script>
+<script src="data.js?v=59"></script>
+<script src="maps.js?v=59"></script>
+<script src="calendar.js?v=59"></script>
+<script src="drive.js?v=59"></script>
+<script src="report.js?v=59"></script>
+<script src="api.js?v=59"></script>
+<script src="minutes.js?v=59"></script>
+<script src="pro-annual.js?v=59"></script>
+<script src="pro.js?v=59"></script>
+<script src="personal-map.js?v=59"></script>
+<script src="app.js?v=59"></script>
 </body>
 </html>

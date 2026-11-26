@@ -4228,6 +4228,61 @@ Retorne EXCLUSIVAMENTE um JSON válido no formato:
       }
     }
 
+    if (pathname === "/api/ai/audio-to-minutes" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      if (!creds.geminiKey) {
+        return sendJson(res, 412, { ok: false, error: "GEMINI_NOT_CONFIGURED", message: "Configure sua Gemini API Key em Parâmetros ou na Central de Integrações para gerar Atas por Áudio com IA." });
+      }
+      const body = await readBody(req);
+      const audioPart = parseGeminiMediaPart(body.audio || body);
+      if (!audioPart) {
+        return sendJson(res, 400, { ok: false, error: "Áudio da gravação não enviado ou inválido." });
+      }
+      const cardName = String(body.cardName || "").trim();
+      const curTitle = String(body.title || "").trim();
+      const meetingDate = String(body.meetingDate || "").trim();
+      const participants = Array.isArray(body.participants) ? body.participants.filter(Boolean).join(", ") : "";
+
+      const sysPrompt = `Você é um secretário executivo sênior. Ouça atentamente toda a gravação de áudio da reunião em português do Brasil, transcreva internamente os pontos essenciais e redija uma Ata Executiva completa, clara, fiel ao que foi dito e muito bem estruturada.
+Estruture obrigatoriamente o HTML nas seções:
+- <h2>1. Resumo Executivo / Objetivo</h2> (parágrafo objetivo)
+- <h2>2. Pauta e Assuntos Tratados</h2> (tópicos claros em <ul><li>)
+- <h2>3. Deliberações e Decisões Tomadas</h2> (lista objetiva em <ul><li>)
+- <h2>4. Próximos Passos e Encaminhamentos</h2> (tabela <table><thead><tr><th>Ação / Entrega</th><th>Responsável</th><th>Prazo</th></tr></thead><tbody>...</tbody></table> com responsáveis e prazos se mencionados, ou "—" caso não citados)
+Regras:
+- Retorne EXCLUSIVAMENTE um JSON válido no formato:
+{
+  "title": "Título executivo sugerido e conciso para a ata",
+  "html": "HTML semântico limpo usando apenas <h2>, <h3>, <p>, <ul>, <ol>, <li>, <strong>, <em>, <blockquote>, <table>, <thead>, <tbody>, <tr>, <th>, <td> (NUNCA use <script>, <style> ou classes inventadas).",
+  "summary": "Resumo em 1 frase do conteúdo gerado."
+}`;
+      const ctxLines = [
+        cardName ? `Cartão/Projeto: ${cardName}` : "",
+        curTitle ? `Título atual: ${curTitle}` : "",
+        meetingDate ? `Data/Hora: ${meetingDate}` : "",
+        participants ? `Participantes: ${participants}` : ""
+      ].filter(Boolean).join("\n");
+
+      try {
+        const result = await callGeminiJSON(creds.geminiKey, [
+          { text: `${ctxLines ? ctxLines + "\n\n" : ""}Transcreva e gere a Ata Executiva completa a partir deste áudio gravado:` },
+          audioPart
+        ], sysPrompt);
+        const htmlOut = String(result?.html || "").trim();
+        if (!htmlOut) return sendJson(res, 502, { ok: false, error: "A IA não retornou conteúdo para a ata." });
+        return sendJson(res, 200, {
+          ok: true,
+          title: String(result?.title || "").trim(),
+          html: htmlOut,
+          summary: String(result?.summary || "Ata Executiva gerada a partir do áudio!")
+        });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: err.message || "Falha ao processar áudio com Gemini." });
+      }
+    }
+
     if (pathname === "/api/ai/generate-slides" && req.method === "POST") {
       const auth = getAuthUser(req);
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });

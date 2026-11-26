@@ -1853,10 +1853,11 @@
     const vBtn = $("#btnProGanttViewPop");
     const vLbl = $("#proGanttViewPopLabel");
     const vDot = $("#proGanttViewUnifDot");
-    if (vBtn) vBtn.classList.toggle("has-active", unified);
-    if (vLbl) vLbl.textContent = proGanttMode === "timeline" ? "Timeline" : "Gantt";
+    if (vBtn) vBtn.classList.toggle("has-active", unified || proGanttMode === "annual");
+    if (vLbl) vLbl.textContent = proGanttMode === "annual" ? "Calendário Anual" : (proGanttMode === "timeline" ? "Timeline" : "Gantt");
     if (vDot) vDot.hidden = !unified;
     if ($("#proGanttZoomGroup")) $("#proGanttZoomGroup").hidden = proGanttMode !== "gantt";
+    if ($("#btnProPrintGantt")) $("#btnProPrintGantt").hidden = proGanttMode === "annual";
 
     const roleBadge = $("#proTripRoleBadge");
     if (roleBadge) {
@@ -1883,8 +1884,30 @@
     }
 
     updateProZoomReadout();
+    const annualWrap = $("#proAnnualWrap");
     wrap.hidden = proGanttMode !== "gantt";
     tlWrap.hidden = proGanttMode !== "timeline";
+    if (annualWrap) annualWrap.hidden = proGanttMode !== "annual";
+    if (proGanttMode === "annual") {
+      if (annualWrap && window.MyPlanProAnnual?.render) {
+        window.MyPlanProAnnual.render({
+          container: annualWrap,
+          cards: s,
+          state: core.getState(),
+          projectTitle: core.getActiveTrip()?.name || core.getState()?.title || "My Plan",
+          dateFrom: proDateFrom,
+          dateTo: proDateTo,
+          allTypes: getAllProTypes(),
+          getTypeInfo: t => getProTypeInfo(t),
+          fmtBR: core.fmtBR,
+          esc: core.esc,
+          onOpenCard: cid => openProCardModal(cid),
+          onSavePrefs: msg => core.save(msg),
+          toast: core.toast
+        });
+      }
+      return;
+    }
     if (proGanttMode !== "gantt") return;
 
     const isWeekOnly = proGanttZoom < 22;
@@ -2461,243 +2484,156 @@
   function layoutExplodedPointsPx(groups, toAnchorPx, boundsBox = null, isMobile = false) {
     const anchors = [];
     const items = [];
-    const baseRx = isMobile ? 74 : 104;
-    const baseRy = isMobile ? 42 : 52;
+    const columns = [];
+    const cardH = isMobile ? 32 : 35;
+    const gapY = isMobile ? 7 : 8;
+    const stepY = cardH + gapY;
+    const stemGapX = isMobile ? 36 : 50;
 
-    groups.forEach(g => {
-      const ancPt = toAnchorPx(g);
-      const ax = ancPt.x;
-      const ay = ancPt.y;
-      const sortedCards = g.cards.slice().sort((a, b) =>
-        String(a.start || a.end || "9999-99-99").localeCompare(String(b.start || b.end || "9999-99-99")) ||
-        String(a.name || "").localeCompare(String(b.name || ""))
-      );
+    // 1. Monta uma coluna vertical coesa e ordenada cronologicamente por região/cidade
+    const rawAnchors = groups.map(g => {
+      const pt = toAnchorPx(g);
+      return { g, ax: pt.x, ay: pt.y };
+    });
+    const avgAx = rawAnchors.length ? rawAnchors.reduce((s, r) => s + r.ax, 0) / rawAnchors.length : 0;
+
+    rawAnchors.forEach(({ g, ax, ay }) => {
+      // Ordem cronológica crescente obrigatória; cartões sem data vão para o final da coluna
+      const sortedCards = g.cards.slice().sort((a, b) => {
+        const aHas = Boolean(a && a.start);
+        const bHas = Boolean(b && b.start);
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        if (aHas && bHas) {
+          const cmp = String(a.start).localeCompare(String(b.start));
+          if (cmp !== 0) return cmp;
+        }
+        return String(a?.name || "").localeCompare(String(b?.name || ""), "pt-BR");
+      });
+
       const n = sortedCards.length;
-      const anchorRec = { group: g, ax, ay, hasSpread: n > 1 };
+      const anchorRec = { group: g, ax, ay, hasSpread: true };
       anchors.push(anchorRec);
 
-      // Distribui múltiplos cartões em anéis elípticos concêntricos sem sobreposição inicial
-      let remaining = n;
-      let ringIdx = 0;
-      let cursor = 0;
-      const ringSlots = [];
-      while (remaining > 0) {
-        const cap = Math.min(remaining, 6 + ringIdx * 4);
-        ringSlots.push({ ringIdx, cap, start: cursor });
-        cursor += cap;
-        remaining -= cap;
-        ringIdx++;
+      const metas = sortedCards.map(card => {
+        const meta = createExplodedMissionInnerHTML(card, g, isMobile);
+        const estW = isMobile
+          ? Math.min(168, Math.max(114, Math.ceil(meta.shortName.length * 7.1 + 42)))
+          : Math.min(232, Math.max(150, Math.ceil(meta.shortName.length * 7.5 + 48 + (meta.hasDt ? 52 : 0))));
+        return { card, meta, estW };
+      });
+      const colW = metas.reduce((m, x) => Math.max(m, x.estW), isMobile ? 124 : 162);
+      const colH = n * cardH + Math.max(0, n - 1) * gapY;
+
+      // Escolhe lado único para toda a coluna da cidade (direita por padrão; esquerda se próximo à borda direita)
+      let side = 1;
+      if (boundsBox) {
+        const rightOverflow = (ax + stemGapX + colW) - boundsBox.maxX;
+        const leftOverflow = boundsBox.minX - (ax - stemGapX - colW);
+        if (rightOverflow > 0 && leftOverflow < rightOverflow) side = -1;
+      } else if (rawAnchors.length > 1 && ax > avgAx + 110) {
+        side = -1;
       }
 
-      sortedCards.forEach((card, idx) => {
-        const meta = createExplodedMissionInnerHTML(card, g, isMobile);
-        const w = isMobile
-          ? Math.min(166, Math.max(88, Math.ceil(meta.shortName.length * 7.2 + 40)))
-          : Math.min(244, Math.max(96, Math.ceil(meta.shortName.length * 7.6 + 46 + (meta.hasDt ? 48 : 0))));
-        const h = isMobile ? 31 : 34;
-
-        let sx = ax;
-        let sy = ay;
-        if (n > 1) {
-          const slot = ringSlots.find(s => idx >= s.start && idx < s.start + s.cap) || ringSlots[0];
-          const posInRing = idx - slot.start;
-          const scale = 1 + slot.ringIdx * 0.85;
-          const angleOffset = -Math.PI / 2 + (slot.ringIdx % 2) * (Math.PI / Math.max(1, slot.cap));
-          const theta = angleOffset + (2 * Math.PI * posInRing) / Math.max(1, slot.cap);
-          sx = ax + Math.cos(theta) * baseRx * scale;
-          sy = ay + Math.sin(theta) * baseRy * scale;
-        }
-
-        items.push({
-          card,
-          group: g,
-          anchorRec,
-          meta,
-          ax,
-          ay,
-          x: sx,
-          y: sy,
-          w,
-          h,
-          isMulti: n > 1
-        });
-      });
+      const cx = ax + side * (stemGapX + colW / 2);
+      const cy = ay;
+      columns.push({ group: g, anchorRec, ax, ay, side, w: colW, h: colH, cx, cy, metas });
     });
 
-    // Solver iterativo AABB em espaço de pixels: elimina 100% das colisões dentro e entre cidades vizinhas
-    const padX = isMobile ? 7 : 10;
-    const padY = isMobile ? 7 : 9;
-    const hubRadius = isMobile ? 16 : 18;
+    // 2. Resolver colisões entre colunas de regiões vizinhas mantendo cada região como bloco vertical íntegro
+    const colPadX = isMobile ? 12 : 16;
+    const colPadY = isMobile ? 12 : 16;
 
-    const clampItem = (A) => {
+    const clampCol = col => {
       if (!boundsBox) return;
-      const loX = boundsBox.minX + A.w / 2;
-      const hiX = boundsBox.maxX - A.w / 2;
-      const loY = boundsBox.minY + A.h / 2;
-      const hiY = boundsBox.maxY - A.h / 2;
-      if (hiX >= loX) A.x = Math.max(loX, Math.min(hiX, A.x));
-      if (hiY >= loY) A.y = Math.max(loY, Math.min(hiY, A.y));
+      const loX = boundsBox.minX + col.w / 2;
+      const hiX = boundsBox.maxX - col.w / 2;
+      const loY = boundsBox.minY + col.h / 2;
+      const hiY = boundsBox.maxY - col.h / 2;
+      if (hiX >= loX) col.cx = Math.max(loX, Math.min(hiX, col.cx));
+      if (hiY >= loY) col.cy = Math.max(loY, Math.min(hiY, col.cy));
     };
 
-    const getActiveHubs = () => anchors.filter(anc =>
-      anc.group.cards.length > 1 ||
-      items.some(it => it.anchorRec === anc && Math.hypot(it.x - anc.ax, it.y - anc.ay) > 4)
-    );
+    const colOverlapArea = (A, B) => {
+      const ox = (A.w + B.w) / 2 + colPadX - Math.abs(A.cx - B.cx);
+      const oy = (A.h + B.h) / 2 + colPadY - Math.abs(A.cy - B.cy);
+      return (ox > 0 && oy > 0) ? ox * oy : 0;
+    };
 
-    for (let iter = 0; iter < 120; iter++) {
-      let movedAny = false;
-
-      // 1. Repulsão pílula vs pílula (ciente das bordas quando limitado a boundsBox)
-      for (let i = 0; i < items.length; i++) {
-        const A = items[i];
-        for (let j = i + 1; j < items.length; j++) {
-          const B = items[j];
-          const dx = B.x - A.x;
-          const dy = B.y - A.y;
-          const minDx = (A.w + B.w) / 2 + padX;
-          const minDy = (A.h + B.h) / 2 + padY;
-          const ovX = minDx - Math.abs(dx);
-          const ovY = minDy - Math.abs(dy);
-          if (ovX > 0 && ovY > 0) {
-            movedAny = true;
-            if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
-              const ang = ((i * 7 + j * 13) % 12) * (Math.PI / 6);
-              A.x -= Math.cos(ang) * 16;
-              A.y -= Math.sin(ang) * 12;
-              B.x += Math.cos(ang) * 16;
-              B.y += Math.sin(ang) * 12;
-            } else {
-              const nearYWall = boundsBox && (
-                A.y <= boundsBox.minY + A.h / 2 + 2 || A.y >= boundsBox.maxY - A.h / 2 - 2 ||
-                B.y <= boundsBox.minY + B.h / 2 + 2 || B.y >= boundsBox.maxY - B.h / 2 - 2
-              );
-              const nearXWall = boundsBox && (
-                A.x <= boundsBox.minX + A.w / 2 + 2 || A.x >= boundsBox.maxX - A.w / 2 - 2 ||
-                B.x <= boundsBox.minX + B.w / 2 + 2 || B.x >= boundsBox.maxX - B.w / 2 - 2
-              );
-              const preferX = (nearYWall && !nearXWall) ? true : ((nearXWall && !nearYWall) ? false : (ovX / minDx <= ovY / minDy));
-              if (preferX) {
-                const sx = dx >= 0 ? 1 : -1;
-                const push = ovX * 0.54;
-                A.x -= sx * push;
-                B.x += sx * push;
-              } else {
-                const sy = dy >= 0 ? 1 : -1;
-                const push = ovY * 0.54;
-                A.y -= sy * push;
-                B.y += sy * push;
-              }
-            }
-          }
+    // Primeiro tenta inverter lado (direita <-> esquerda) se isso reduzir colisão com colunas vizinhas
+    for (let i = 0; i < columns.length; i++) {
+      const A = columns[i];
+      const curPen = columns.reduce((s, B, j) => s + (j === i ? 0 : colOverlapArea(A, B)), 0);
+      if (curPen > 0) {
+        const origSide = A.side;
+        const origCx = A.cx;
+        A.side = -origSide;
+        A.cx = A.ax + A.side * (stemGapX + A.w / 2);
+        clampCol(A);
+        const nextPen = columns.reduce((s, B, j) => s + (j === i ? 0 : colOverlapArea(A, B)), 0);
+        if (nextPen >= curPen) {
+          A.side = origSide;
+          A.cx = origCx;
         }
-      }
-
-      // 2. Repulsão pílula vs nós centrais de cidades (evita tampar qualquer ponto hub)
-      const activeHubs = getActiveHubs();
-      for (let hIdx = 0; hIdx < activeHubs.length; hIdx++) {
-        const hub = activeHubs[hIdx];
-        for (let i = 0; i < items.length; i++) {
-          const A = items[i];
-          const dx = A.x - hub.ax;
-          const dy = A.y - hub.ay;
-          const minDx = A.w / 2 + hubRadius;
-          const minDy = A.h / 2 + hubRadius;
-          const ovX = minDx - Math.abs(dx);
-          const ovY = minDy - Math.abs(dy);
-          if (ovX > 0 && ovY > 0) {
-            movedAny = true;
-            if (ovX / minDx <= ovY / minDy) {
-              A.x += (dx >= 0 ? 1 : -1) * (ovX * 0.78 + 1);
-            } else {
-              A.y += (dy >= 0 ? 1 : -1) * (ovY * 0.78 + 1);
-            }
-          }
-        }
-      }
-
-      // 3. Elástico suave mantendo missões próximas de suas cidades (apenas nas 40 primeiras passagens)
-      if (iter < 40) {
-        for (let i = 0; i < items.length; i++) {
-          const A = items[i];
-          const dist = Math.hypot(A.x - A.ax, A.y - A.ay);
-          const minPullDist = A.isMulti ? (isMobile ? 48 : 64) : 0;
-          if (dist > minPullDist + 6) {
-            const k = A.isMulti ? 0.02 : 0.032;
-            A.x += (A.ax - A.x) * k;
-            A.y += (A.ay - A.y) * k;
-          }
-        }
-      }
-
-      if (boundsBox) {
-        for (let i = 0; i < items.length; i++) clampItem(items[i]);
-      }
-
-      if (!movedAny && iter >= 42) break;
-    }
-
-    // 4. Garantia estrita final em container limitado (Fallback SVG): busca em espiral por vaga 100% livre
-    if (boundsBox) {
-      const calcPenalty = (idx, cx, cy, activeHubs) => {
-        const A = items[idx];
-        let pen = 0;
-        for (let j = 0; j < items.length; j++) {
-          if (j === idx) continue;
-          const B = items[j];
-          const ox = (A.w + B.w) / 2 + 4 - Math.abs(cx - B.x);
-          const oy = (A.h + B.h) / 2 + 4 - Math.abs(cy - B.y);
-          if (ox > 0 && oy > 0) pen += ox * oy;
-        }
-        for (let h = 0; h < activeHubs.length; h++) {
-          const hub = activeHubs[h];
-          const ox = A.w / 2 + 14 - Math.abs(cx - hub.ax);
-          const oy = A.h / 2 + 14 - Math.abs(cy - hub.ay);
-          if (ox > 0 && oy > 0) pen += ox * oy * 1.2;
-        }
-        return pen;
-      };
-
-      for (let pass = 0; pass < 3; pass++) {
-        const activeHubs = getActiveHubs();
-        let fixed = false;
-        for (let i = 0; i < items.length; i++) {
-          const A = items[i];
-          const curPen = calcPenalty(i, A.x, A.y, activeHubs);
-          if (curPen <= 0) continue;
-          const loX = boundsBox.minX + A.w / 2;
-          const hiX = boundsBox.maxX - A.w / 2;
-          const loY = boundsBox.minY + A.h / 2;
-          const hiY = boundsBox.maxY - A.h / 2;
-          let bestX = A.x, bestY = A.y, bestPen = curPen, bestDist = Infinity;
-          for (let r = 20; r <= 320; r += 18) {
-            for (let a = 0; a < 24; a++) {
-              const ang = (a * Math.PI * 2) / 24;
-              const cx = hiX >= loX ? Math.max(loX, Math.min(hiX, A.ax + Math.cos(ang) * r)) : A.x;
-              const cy = hiY >= loY ? Math.max(loY, Math.min(hiY, A.ay + Math.sin(ang) * r)) : A.y;
-              const pen = calcPenalty(i, cx, cy, activeHubs);
-              const dist = Math.hypot(cx - A.ax, cy - A.ay);
-              if (pen < bestPen || (pen === 0 && bestPen === 0 && dist < bestDist)) {
-                bestPen = pen;
-                bestX = cx;
-                bestY = cy;
-                bestDist = dist;
-              }
-            }
-            if (bestPen === 0) break;
-          }
-          if (bestPen < curPen) {
-            A.x = bestX;
-            A.y = bestY;
-            fixed = true;
-          }
-        }
-        if (!fixed) break;
       }
     }
 
-    items.forEach(it => {
-      it.movedPx = Math.hypot(it.x - it.ax, it.y - it.ay);
-      if (it.movedPx > 4) it.anchorRec.hasSpread = true;
+    // Repulsão rígida entre colunas vizinhas (nunca separa cartões da mesma cidade)
+    for (let iter = 0; iter < 60; iter++) {
+      let moved = false;
+      for (let i = 0; i < columns.length; i++) {
+        const A = columns[i];
+        for (let j = i + 1; j < columns.length; j++) {
+          const B = columns[j];
+          const dx = B.cx - A.cx;
+          const dy = B.cy - A.cy;
+          const minDx = (A.w + B.w) / 2 + colPadX;
+          const minDy = (A.h + B.h) / 2 + colPadY;
+          const ovX = minDx - Math.abs(dx);
+          const ovY = minDy - Math.abs(dy);
+          if (ovX > 0 && ovY > 0) {
+            moved = true;
+            if (ovY / minDy <= ovX / minDx) {
+              const sy = dy >= 0 ? 1 : -1;
+              const push = ovY * 0.54;
+              A.cy -= sy * push;
+              B.cy += sy * push;
+            } else {
+              const sx = dx >= 0 ? 1 : -1;
+              const push = ovX * 0.54;
+              A.cx -= sx * push;
+              B.cx += sx * push;
+            }
+          }
+        }
+      }
+      columns.forEach(clampCol);
+      if (!moved) break;
+    }
+
+    // 3. Emitir cada cartão alinhado verticalmente em coluna centralizada no eixo da região
+    columns.forEach(col => {
+      const topCenterY = col.cy - col.h / 2 + cardH / 2;
+      col.metas.forEach((m, idx) => {
+        const y = topCenterY + idx * stepY;
+        const x = col.cx;
+        const movedPx = Math.hypot(x - col.ax, y - col.ay);
+        items.push({
+          card: m.card,
+          group: col.group,
+          anchorRec: col.anchorRec,
+          meta: m.meta,
+          ax: col.ax,
+          ay: col.ay,
+          x,
+          y,
+          w: col.w,
+          h: cardH,
+          uniformW: col.w,
+          side: col.side,
+          isMulti: col.metas.length > 1,
+          movedPx
+        });
+      });
     });
 
     return { anchors, items };
@@ -3060,8 +2996,9 @@
       const pillsHtml = items.map(it => {
         const isAct = it.card.id === proMapActiveCardId ? " is-active" : "";
         const cCol = it.group.cityColor || it.meta.tagCol;
+        const uW = it.uniformW ? `width:${it.uniformW}px;` : "";
         return `<div class="pro-map-tag-group" style="position:absolute;left:${it.x.toFixed(1)}px;top:${it.y.toFixed(1)}px;transform:translate(-50%,-50%);z-index:${isAct ? 9 : 6}">
-          <button type="button" class="pro-map-marker-pill pro-map-marker-pill--mission${isAct}" data-map-card-id="${core.esc(it.card.id)}" style="--tag-c:${core.esc(cCol)}" title="${core.esc(it.meta.tooltip)}">
+          <button type="button" class="pro-map-marker-pill pro-map-marker-pill--mission${isAct}" data-map-card-id="${core.esc(it.card.id)}" style="--tag-c:${core.esc(cCol)};${uW}" title="${core.esc(it.meta.tooltip)}">
             ${it.meta.html}
           </button>
         </div>`;
@@ -3678,6 +3615,7 @@
       btn.className = `pro-map-marker-pill pro-map-marker-pill--mission${isAct ? " is-active" : ""}`;
       btn.dataset.mapCardId = it.card.id;
       btn.style.setProperty("--tag-c", cityCol);
+      if (it.uniformW) btn.style.width = `${it.uniformW}px`;
       btn.innerHTML = it.meta.html;
       btn.title = it.meta.tooltip;
       btn.onclick = (ev) => {
@@ -8007,6 +7945,41 @@
     });
   }
 
+  function buildMeetWhatsAppUrl({ title, date, time, url }) {
+    const cleanTitle = String(title || $("#pc-name")?.value || "Reunião Google Meet").trim();
+    const cleanUrl = String(url || "").trim();
+    const parts = [`*${cleanTitle}*`];
+    const dtFmt = fmtDateShortPt(date);
+    if (dtFmt && time) parts.push(`📅 ${dtFmt} às ${String(time).slice(0, 5)}`);
+    else if (dtFmt) parts.push(`📅 ${dtFmt}`);
+    else if (time) parts.push(`🕐 ${String(time).slice(0, 5)}`);
+    if (cleanUrl) parts.push(`📹 Google Meet: ${cleanUrl}`);
+    return `https://wa.me/?text=${encodeURIComponent(parts.join("\n\n"))}`;
+  }
+
+  function openMinuteForMeet({ title, date, time, url }) {
+    if (!editingProCardId) {
+      core.toast("💾 Salve o cartão primeiro para abrir/criar a Ata vinculada.");
+      return;
+    }
+    const cleanUrl = String(url || "").trim();
+    const ctx = findProCardContext(editingProCardId);
+    const existingList = Array.isArray(ctx?.activity?.minutes) ? ctx.activity.minutes : [];
+    const matched = cleanUrl ? existingList.find(m => String(m?.location || "").trim() === cleanUrl) : null;
+    if (matched && window.MyPlanMinutes?.openMinuteEditor) {
+      window.MyPlanMinutes.openMinuteEditor(editingProCardId, matched.id);
+      return;
+    }
+    if (window.MyPlanMinutes?.createNewMinuteForCard) {
+      const mDate = date ? `${date}T${(time || "09:00").slice(0, 5)}` : "";
+      window.MyPlanMinutes.createNewMinuteForCard(editingProCardId, {
+        title: title ? `Ata - ${title}` : "",
+        meetingDate: mDate,
+        location: cleanUrl
+      });
+    }
+  }
+
   function renderProModalAttachments() {
     const box = $("#pc-attachList");
     const aiReadBtn = $("#btnProCardAiReadAttachments");
@@ -8019,13 +7992,65 @@
     }
     box.innerHTML = proModalAttachments.map((att, idx) => {
       const href = att.isLink ? att.url : window.FeriasApi.attachmentHref(att);
+      const isMeet = Boolean(att.isMeet || (att.isLink && /meet\.google\.com/i.test(String(att.url || ""))));
+      if (isMeet) {
+        const dtFmt = fmtDateShortPt(att.meetDate);
+        const dtBadge = dtFmt
+          ? `${dtFmt}${att.meetTime ? ` às ${String(att.meetTime).slice(0, 5)}` : ""}`
+          : (att.meetTime ? String(att.meetTime).slice(0, 5) : "");
+        return `<div class="attach-chip is-meet">
+          <div class="attach-meet-main">
+            <a href="${core.esc(href)}" target="_blank" rel="noopener" title="Entrar na sala Google Meet">📹 <b>${core.esc(att.fileName || "Reunião Google Meet")}</b></a>
+            ${dtBadge ? `<span class="attach-meet-meta">📅 ${core.esc(dtBadge)}</span>` : ""}
+          </div>
+          <div class="attach-meet-actions">
+            <button type="button" class="icon-btn" data-patt-copy="${idx}" title="Copiar link do Meet" aria-label="Copiar link do Meet">📋</button>
+            <button type="button" class="icon-btn" data-patt-wa="${idx}" title="Enviar link no WhatsApp" aria-label="Enviar link no WhatsApp">💬</button>
+            <button type="button" class="icon-btn" data-patt-min="${idx}" title="Abrir/Criar Ata desta Reunião" aria-label="Abrir ou criar ata desta reunião">📝</button>
+            <button type="button" class="icon-btn" data-patt-ren="${idx}" title="Renomear" aria-label="Renomear">✏️</button>
+            <button type="button" class="icon-btn" data-patt-del="${idx}" title="Remover" aria-label="Remover">✕</button>
+          </div>
+        </div>`;
+      }
       const ico = att.isLink ? "🔗" : (String(att.mimeType || "").includes("pdf") ? "📕" : "📄");
       return `<div class="attach-chip">
         <a href="${core.esc(href)}" target="_blank" rel="noopener">${ico} ${core.esc(att.fileName || att.url || "Anexo")}</a>
-        <button type="button" class="icon-btn" data-patt-ren="${idx}" title="Renomear">✏️</button>
-        <button type="button" class="icon-btn" data-patt-del="${idx}" title="Remover">✕</button>
+        <button type="button" class="icon-btn" data-patt-ren="${idx}" title="Renomear" aria-label="Renomear">✏️</button>
+        <button type="button" class="icon-btn" data-patt-del="${idx}" title="Remover" aria-label="Remover">✕</button>
       </div>`;
     }).join("");
+    box.querySelectorAll("[data-patt-copy]").forEach(b => {
+      b.onclick = async () => {
+        const att = proModalAttachments[parseInt(b.dataset.pattCopy, 10)];
+        if (!att?.url) return;
+        try { await navigator.clipboard.writeText(att.url); core.toast("📋 Link do Google Meet copiado!"); }
+        catch { core.toast("🔗 " + att.url); }
+      };
+    });
+    box.querySelectorAll("[data-patt-wa]").forEach(b => {
+      b.onclick = () => {
+        const att = proModalAttachments[parseInt(b.dataset.pattWa, 10)];
+        if (!att) return;
+        window.open(buildMeetWhatsAppUrl({
+          title: att.fileName,
+          date: att.meetDate || $("#pc-start")?.value || "",
+          time: att.meetTime || $("#pc-startTime")?.value || "",
+          url: att.url
+        }), "_blank", "noopener");
+      };
+    });
+    box.querySelectorAll("[data-patt-min]").forEach(b => {
+      b.onclick = () => {
+        const att = proModalAttachments[parseInt(b.dataset.pattMin, 10)];
+        if (!att) return;
+        openMinuteForMeet({
+          title: att.fileName,
+          date: att.meetDate || $("#pc-start")?.value || "",
+          time: att.meetTime || $("#pc-startTime")?.value || "",
+          url: att.url
+        });
+      };
+    });
     box.querySelectorAll("[data-patt-ren]").forEach(b => {
       b.onclick = () => {
         const idx = parseInt(b.dataset.pattRen, 10);
@@ -10896,6 +10921,103 @@
         const cols = targetTrip?.data?.columns || getMergedColumns();
         a.columnTitle = cols.find(c => c.id === a.columnId)?.title || "";
         await core.syncSingleActivityToCalendar(a, targetTrip);
+      };
+    }
+
+    // Botão Reunião (Google Meet) no topo do cartão Profissional
+    const syncMeetQuickActions = () => {
+      const urlVal = ($("#pmeet-url")?.value || "").trim();
+      const bar = $("#pmeetQuickActions");
+      const joinEl = $("#btnPmeetJoin");
+      const valid = /^https?:\/\//i.test(urlVal);
+      if (bar) bar.hidden = !valid;
+      if (joinEl && valid) joinEl.href = urlVal;
+    };
+    if ($("#btnProHeadMeet")) {
+      $("#btnProHeadMeet").onclick = () => {
+        const dlg = $("#proMeetModal");
+        if (!dlg) return;
+        const existingMeet = proModalAttachments.find(a => a && (a.isMeet || /meet\.google\.com/i.test(String(a.url || ""))));
+        const cardTitle = ($("#pc-name")?.value || "").trim() || "Reunião";
+        if ($("#pmeet-title")) $("#pmeet-title").value = existingMeet?.fileName || cardTitle;
+        if ($("#pmeet-date")) $("#pmeet-date").value = existingMeet?.meetDate || $("#pc-start")?.value || "";
+        if ($("#pmeet-time")) $("#pmeet-time").value = existingMeet?.meetTime || $("#pc-startTime")?.value || "";
+        if ($("#pmeet-notes")) $("#pmeet-notes").value = existingMeet?.meetNotes || $("#pc-location")?.value || "";
+        if ($("#pmeet-url")) $("#pmeet-url").value = existingMeet?.url || $("#pc-meetingLink")?.value || "";
+        if ($("#pmeetHelperHint")) $("#pmeetHelperHint").hidden = true;
+        syncMeetQuickActions();
+        dlg.showModal();
+      };
+    }
+    if ($("#pmeet-url")) $("#pmeet-url").oninput = syncMeetQuickActions;
+    if ($("#btnPmeetClose")) $("#btnPmeetClose").onclick = () => $("#proMeetModal")?.close();
+    if ($("#btnPmeetCancel")) $("#btnPmeetCancel").onclick = () => $("#proMeetModal")?.close();
+    if ($("#btnPmeetCreateNew")) {
+      $("#btnPmeetCreateNew").onclick = () => {
+        window.open("https://meet.google.com/new", "_blank", "noopener");
+        if ($("#pmeetHelperHint")) $("#pmeetHelperHint").hidden = false;
+        setTimeout(() => $("#pmeet-url")?.focus(), 80);
+      };
+    }
+    if ($("#btnPmeetCopy")) {
+      $("#btnPmeetCopy").onclick = async () => {
+        const u = ($("#pmeet-url")?.value || "").trim();
+        if (!u) return;
+        try { await navigator.clipboard.writeText(u); core.toast("📋 Link do Google Meet copiado!"); }
+        catch { core.toast("🔗 " + u); }
+      };
+    }
+    if ($("#btnPmeetWhatsApp")) {
+      $("#btnPmeetWhatsApp").onclick = () => {
+        const u = ($("#pmeet-url")?.value || "").trim();
+        if (!u) return core.toast("⚠️ Informe o link do Google Meet primeiro.");
+        window.open(buildMeetWhatsAppUrl({
+          title: $("#pmeet-title")?.value,
+          date: $("#pmeet-date")?.value,
+          time: $("#pmeet-time")?.value,
+          url: u
+        }), "_blank", "noopener");
+      };
+    }
+    if ($("#btnPmeetOpenMinute")) {
+      $("#btnPmeetOpenMinute").onclick = () => {
+        const u = ($("#pmeet-url")?.value || "").trim();
+        $("#proMeetModal")?.close();
+        openMinuteForMeet({
+          title: $("#pmeet-title")?.value,
+          date: $("#pmeet-date")?.value,
+          time: $("#pmeet-time")?.value,
+          url: u
+        });
+      };
+    }
+    if ($("#proMeetForm")) {
+      $("#proMeetForm").onsubmit = e => {
+        e.preventDefault();
+        const title = ($("#pmeet-title")?.value || "").trim() || "Reunião Google Meet";
+        const date = ($("#pmeet-date")?.value || "").trim();
+        const time = ($("#pmeet-time")?.value || "").trim();
+        const notes = ($("#pmeet-notes")?.value || "").trim();
+        const url = ($("#pmeet-url")?.value || "").trim();
+        if (!/^https?:\/\//i.test(url)) return core.toast("⚠️ Informe um link válido iniciando com https://");
+        if ($("#pc-meetingLink")) $("#pc-meetingLink").value = url;
+        const idx = proModalAttachments.findIndex(a => a && (a.isMeet || /meet\.google\.com/i.test(String(a.url || ""))));
+        const rec = {
+          id: idx >= 0 ? proModalAttachments[idx].id : core.uid(),
+          isLink: true,
+          isMeet: true,
+          fileName: title,
+          url,
+          meetDate: date,
+          meetTime: time,
+          meetNotes: notes,
+          uploadedAt: new Date().toISOString()
+        };
+        if (idx >= 0) proModalAttachments[idx] = rec;
+        else proModalAttachments.unshift(rec);
+        renderProModalAttachments();
+        $("#proMeetModal")?.close();
+        core.toast("📹 Reunião Google Meet vinculada aos Anexos/Links do cartão!");
       };
     }
     if ($("#btnProHeadWallet")) {

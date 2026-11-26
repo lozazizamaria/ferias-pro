@@ -336,7 +336,7 @@
   }
 
   /* ---------- ABRIR / CRIAR ATA NO EDITOR EM TELA CHEIA ---------- */
-  async function createNewMinuteForCard(cardId) {
+  async function createNewMinuteForCard(cardId, preset = null) {
     if (!host) return;
     const ctx = host.findCardContext(cardId);
     if (!ctx) return toast("⚠️ Salve o cartão primeiro antes de criar uma Ata de Reunião.");
@@ -347,11 +347,12 @@
       ? a.assigneesList.map(e => e.name).filter(Boolean)
       : (a.assignee ? [a.assignee] : []);
     const numSuffix = a.minutes.length ? ` #${a.minutes.length + 1}` : "";
+    const p = preset && typeof preset === "object" ? preset : {};
     const min = normalizeMinute({
       id: uid(),
-      title: `Ata - ${a.name || "Reunião"}${numSuffix}`,
-      meetingDate: `${a.start || host.core.fmtISO(new Date())}T${(a.startTime || "09:00").slice(0, 5)}`,
-      location: a.meetingLink || a.location || "",
+      title: String(p.title || "").trim() || `Ata - ${a.name || "Reunião"}${numSuffix}`,
+      meetingDate: String(p.meetingDate || "").trim() || `${a.start || host.core.fmtISO(new Date())}T${(a.startTime || "09:00").slice(0, 5)}`,
+      location: String(p.location || "").trim() || a.meetingLink || a.location || "",
       participants: asgs,
       html: TEMPLATES.executive()
     }, a.name);
@@ -739,6 +740,175 @@
       }
       if ($("#pmqc-due")) $("#pmqc-due").value = ctx.card.end || host.core.fmtISO(new Date());
       $("#proMinuteQuickCardModal")?.showModal();
+    }
+  }
+
+  /* ---------- GRAVAR ÁUDIO COM IA -> ATA EXECUTIVA COMPLETA ---------- */
+  let pmAudioRecorder = null;
+  let pmAudioStream = null;
+  let pmAudioChunks = [];
+  let pmAudioTimer = null;
+  let pmAudioElapsedSec = 0;
+  let pmAudioPaused = false;
+  let pmAudioCanceled = false;
+
+  function fmtRecTimer(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function resetPmAudioUI() {
+    clearInterval(pmAudioTimer);
+    pmAudioTimer = null;
+    pmAudioElapsedSec = 0;
+    pmAudioPaused = false;
+    if (pmAudioStream) {
+      try { pmAudioStream.getTracks().forEach(t => t.stop()); } catch {}
+      pmAudioStream = null;
+    }
+    pmAudioRecorder = null;
+    pmAudioChunks = [];
+    if ($("#pm-audioBar")) $("#pm-audioBar").hidden = true;
+    if ($("#pm-audioDot")) $("#pm-audioDot").classList.remove("is-paused");
+    if ($("#pm-audioTimer")) $("#pm-audioTimer").textContent = "00:00";
+    if ($("#btnPmAudioPause")) $("#btnPmAudioPause").textContent = "⏸️ Pausar";
+    if ($("#btnPmAudioFinish")) {
+      $("#btnPmAudioFinish").disabled = false;
+      $("#btnPmAudioFinish").textContent = "✅ Concluir e Gerar Ata";
+    }
+    if ($("#btnPmRecordAudio")) $("#btnPmRecordAudio").disabled = false;
+  }
+
+  function cancelPmAudioRecording(silent = false) {
+    pmAudioCanceled = true;
+    if (pmAudioRecorder && pmAudioRecorder.state !== "inactive") {
+      try { pmAudioRecorder.stop(); } catch {}
+    }
+    resetPmAudioUI();
+    if (!silent) toast("🎙️ Gravação de áudio cancelada.");
+  }
+
+  async function startPmAudioRecording() {
+    if (pmAudioRecorder && pmAudioRecorder.state !== "inactive") return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      return toast("⚠️ Seu navegador não suporta gravação de áudio pelo microfone.");
+    }
+    try {
+      pmAudioCanceled = false;
+      pmAudioChunks = [];
+      pmAudioElapsedSec = 0;
+      pmAudioPaused = false;
+      pmAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = host?.core?.pickSupportedAudioMime?.() || "";
+      pmAudioRecorder = mimeType ? new MediaRecorder(pmAudioStream, { mimeType }) : new MediaRecorder(pmAudioStream);
+      pmAudioRecorder.ondataavailable = e => {
+        if (e.data && e.data.size > 0) pmAudioChunks.push(e.data);
+      };
+      pmAudioRecorder.start(500);
+      if ($("#pm-audioBar")) $("#pm-audioBar").hidden = false;
+      if ($("#pm-audioStatus")) $("#pm-audioStatus").textContent = "Gravando áudio da reunião...";
+      if ($("#pm-audioTimer")) $("#pm-audioTimer").textContent = "00:00";
+      if ($("#btnPmRecordAudio")) $("#btnPmRecordAudio").disabled = true;
+      pmAudioTimer = setInterval(() => {
+        if (!pmAudioPaused) {
+          pmAudioElapsedSec++;
+          if ($("#pm-audioTimer")) $("#pm-audioTimer").textContent = fmtRecTimer(pmAudioElapsedSec);
+        }
+      }, 1000);
+    } catch (err) {
+      resetPmAudioUI();
+      toast("❌ Não foi possível acessar o microfone: " + (err.message || err));
+    }
+  }
+
+  function togglePausePmAudio() {
+    if (!pmAudioRecorder) return;
+    try {
+      if (pmAudioRecorder.state === "recording") {
+        pmAudioRecorder.pause();
+        pmAudioPaused = true;
+        if ($("#btnPmAudioPause")) $("#btnPmAudioPause").textContent = "▶️ Retomar";
+        if ($("#pm-audioStatus")) $("#pm-audioStatus").textContent = "Gravação pausada";
+        if ($("#pm-audioDot")) $("#pm-audioDot").classList.add("is-paused");
+      } else if (pmAudioRecorder.state === "paused") {
+        pmAudioRecorder.resume();
+        pmAudioPaused = false;
+        if ($("#btnPmAudioPause")) $("#btnPmAudioPause").textContent = "⏸️ Pausar";
+        if ($("#pm-audioStatus")) $("#pm-audioStatus").textContent = "Gravando áudio da reunião...";
+        if ($("#pm-audioDot")) $("#pm-audioDot").classList.remove("is-paused");
+      }
+    } catch {}
+  }
+
+  async function finishPmAudioAndGenerate() {
+    if (!pmAudioRecorder || pmAudioRecorder.state === "inactive") return;
+    const finishBtn = $("#btnPmAudioFinish");
+    const statusEl = $("#pm-audioStatus");
+    if (finishBtn) { finishBtn.disabled = true; finishBtn.textContent = "⏳ Gerando Ata com IA..."; }
+    if (statusEl) statusEl.textContent = "Transcrevendo e redigindo Ata Executiva com Gemini...";
+    clearInterval(pmAudioTimer);
+    pmAudioTimer = null;
+
+    const mime = pmAudioRecorder.mimeType || "audio/webm";
+    const blob = await new Promise(resolve => {
+      pmAudioRecorder.onstop = () => resolve(new Blob(pmAudioChunks, { type: mime }));
+      try { pmAudioRecorder.stop(); } catch { resolve(new Blob(pmAudioChunks, { type: mime })); }
+    });
+    if (pmAudioStream) {
+      try { pmAudioStream.getTracks().forEach(t => t.stop()); } catch {}
+      pmAudioStream = null;
+    }
+    if (pmAudioCanceled || !blob.size) {
+      resetPmAudioUI();
+      return;
+    }
+
+    try {
+      const dataBase64 = await new Promise((resolve, reject) => {
+        const rd = new FileReader();
+        rd.onload = () => resolve(String(rd.result || ""));
+        rd.onerror = reject;
+        rd.readAsDataURL(blob);
+      });
+      const ctx = getActiveContext();
+      const res = await window.FeriasApi.aiAudioToMinutes({
+        audio: { dataBase64, mimeType: mime },
+        cardName: ctx?.card?.name || "",
+        title: $("#pm-title")?.value || ctx?.minute?.title || "",
+        meetingDate: $("#pm-meetingDate")?.value || "",
+        participants: ctx?.minute?.participants || []
+      });
+
+      const ed = $("#pm-editor");
+      if (res && res.html && ed) {
+        const existingText = (ed.innerText || "").trim();
+        const insertMode = $("#pm-audioInsertMode")?.value || "replace";
+        if (existingText && ctx?.minute) {
+          pushVersionSnapshot(ctx.minute, "Antes da Ata por Áudio (IA)");
+        }
+        const cleanHtml = sanitizeMinuteHtml(res.html);
+        if (insertMode === "append" && existingText) {
+          ed.innerHTML = sanitizeMinuteHtml(`${ed.innerHTML}<hr>${cleanHtml}`);
+        } else {
+          ed.innerHTML = cleanHtml;
+        }
+        const titleInp = $("#pm-title");
+        if (titleInp && res.title) {
+          const curT = titleInp.value.trim();
+          if (!curT || /^Nova Ata/i.test(curT) || /^Ata - /i.test(curT)) {
+            titleInp.value = res.title;
+          }
+        }
+        if (ctx?.minute) pushVersionSnapshot(ctx.minute, "🎙️ Ata gerada por Áudio (IA)");
+        updateWordCount();
+        scheduleAutoSave(true);
+        toast(`🎙️ ${res.summary || "Ata Executiva gerada com sucesso a partir do áudio!"}`);
+      }
+    } catch (err) {
+      toast("❌ " + (err.message || "Falha ao gerar ata a partir do áudio."));
+    } finally {
+      resetPmAudioUI();
     }
   }
 
@@ -1620,7 +1790,12 @@
       };
     }
 
-    // Dropdown IA + Histórico + Slides + Exportar
+    // Dropdown IA + Gravar Áudio + Histórico + Slides + Exportar
+    if ($("#btnPmRecordAudio")) $("#btnPmRecordAudio").onclick = () => startPmAudioRecording();
+    if ($("#btnPmAudioPause")) $("#btnPmAudioPause").onclick = () => togglePausePmAudio();
+    if ($("#btnPmAudioCancel")) $("#btnPmAudioCancel").onclick = () => cancelPmAudioRecording(false);
+    if ($("#btnPmAudioFinish")) $("#btnPmAudioFinish").onclick = () => finishPmAudioAndGenerate();
+    $("#proMinuteEditorModal")?.addEventListener("close", () => cancelPmAudioRecording(true));
     if ($("#btnPmAiMenu")) {
       $("#btnPmAiMenu").onclick = e => {
         e.stopPropagation();

@@ -302,6 +302,13 @@ test("My Plan Backend (SQLite WAL) — Segurança, CSRF, Multi-Usuário, Drive, 
       body: { cardTitle: "Teste", attachments: [] }
     });
     assert.equal(summarizeEmpty.resp.status, 400);
+
+    const audioMinEmpty = await apiJson(baseUrl, "/api/ai/audio-to-minutes", {
+      method: "POST",
+      cookie: user1Cookie,
+      body: { cardName: "Reunião", title: "Ata" }
+    });
+    assert.equal(audioMinEmpty.resp.status, 400);
   });
 
   await t.test("Exportadores DOCX e PPTX geram ZIP válido (PK\\x03\\x04)", async () => {
