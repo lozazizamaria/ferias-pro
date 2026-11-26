@@ -94,10 +94,17 @@
         const wCount = FULL_YEAR_WEEKS_PER_MONTH[m];
         const weeks = [];
         for (let i = 0; i < wCount; i++) weeks.push(wCursor++);
+        const daysInMonth = new Date(year, m + 1, 0).getDate();
+        const days = [];
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dow = new Date(year, m, d).getDay();
+          days.push({ num: d, isWeekend: dow === 0 || dow === 6 });
+        }
         months.push({
           label: MONTHS_PT[m],
           shaded: m % 2 === 0,
-          weeks
+          weeks,
+          days
         });
       }
       return {
@@ -132,18 +139,22 @@
       const segEnd = mLast > rEnd ? rEnd : mLast;
       const weekNums = [];
       const seen = new Set();
+      const days = [];
       for (let dt = new Date(segStart); dt <= segEnd; dt.setDate(dt.getDate() + 1)) {
         const wn = getIsoWeekNumber(dt);
         if (!seen.has(wn)) {
           seen.add(wn);
           weekNums.push(wn);
         }
+        const dow = dt.getDay();
+        days.push({ num: dt.getDate(), isWeekend: dow === 0 || dow === 6 });
       }
       if (!weekNums.length) weekNums.push(getIsoWeekNumber(segStart));
       months.push({
         label: multiYear ? `${MONTHS_PT[m]}/${String(y).slice(-2)}` : MONTHS_PT[m],
         shaded: idx % 2 === 0,
-        weeks: weekNums
+        weeks: weekNums,
+        days
       });
       curMonth.setMonth(curMonth.getMonth() + 1);
       idx++;
@@ -246,30 +257,38 @@
       if (!Array.isArray(st.params.personalAnnualTypeOrder)) st.params.personalAnnualTypeOrder = [];
       if (!Array.isArray(st.params.personalAnnualHiddenTypes)) st.params.personalAnnualHiddenTypes = [];
       if (!Array.isArray(st.params.personalAnnualHiddenCards)) st.params.personalAnnualHiddenCards = [];
+      if (typeof st.params.personalAnnualShowDays !== "boolean") st.params.personalAnnualShowDays = false;
       return {
         get order() { return st.params.personalAnnualTypeOrder; },
         set order(v) { st.params.personalAnnualTypeOrder = v; },
         get hiddenTypes() { return st.params.personalAnnualHiddenTypes; },
         set hiddenTypes(v) { st.params.personalAnnualHiddenTypes = v; },
         get hiddenCards() { return st.params.personalAnnualHiddenCards; },
-        set hiddenCards(v) { st.params.personalAnnualHiddenCards = v; }
+        set hiddenCards(v) { st.params.personalAnnualHiddenCards = v; },
+        get showDays() { return Boolean(st.params.personalAnnualShowDays); },
+        set showDays(v) { st.params.personalAnnualShowDays = Boolean(v); }
       };
     }
     if (!Array.isArray(st.params.annualTypeOrder)) st.params.annualTypeOrder = [];
     if (!Array.isArray(st.params.annualHiddenTypes)) st.params.annualHiddenTypes = [];
     if (!Array.isArray(st.params.annualHiddenCards)) st.params.annualHiddenCards = [];
+    if (typeof st.params.annualShowDays !== "boolean") st.params.annualShowDays = false;
     return {
       get order() { return st.params.annualTypeOrder; },
       set order(v) { st.params.annualTypeOrder = v; },
       get hiddenTypes() { return st.params.annualHiddenTypes; },
       set hiddenTypes(v) { st.params.annualHiddenTypes = v; },
       get hiddenCards() { return st.params.annualHiddenCards; },
-      set hiddenCards(v) { st.params.annualHiddenCards = v; }
+      set hiddenCards(v) { st.params.annualHiddenCards = v; },
+      get showDays() { return Boolean(st.params.annualShowDays); },
+      set showDays(v) { st.params.annualShowDays = Boolean(v); }
     };
   }
 
   function renderAnnualCanvas(model, scale = 3) {
-    const gridW = 1140;
+    const showDays = Boolean(model.showDays);
+    const gridW = showDays ? Math.max(1140, Math.round(model.period.totalDays * 14)) : 1140;
+    const effScale = gridW > 2800 ? 2 : scale;
     const railW = 46;
     const padOuter = 18;
     const totalW = padOuter * 2 + railW + gridW;
@@ -277,7 +296,8 @@
     const hdrYearH = 28;
     const hdrMonthH = 22;
     const hdrWeekH = 20;
-    const hdrTotalH = hdrYearH + hdrMonthH + hdrWeekH;
+    const hdrDayH = showDays ? 18 : 0;
+    const hdrTotalH = hdrYearH + hdrMonthH + hdrWeekH + hdrDayH;
     const laneGap = 14;
     const rowH = 24;
     const rowGap = 6;
@@ -293,10 +313,10 @@
     const totalH = padOuter * 2 + hdrTotalH + laneLayouts.reduce((s, l) => s + laneGap + l.h, 0) + (laneLayouts.length ? 0 : 72);
 
     const canvas = document.createElement("canvas");
-    canvas.width = Math.round(totalW * scale);
-    canvas.height = Math.round(totalH * scale);
+    canvas.width = Math.round(totalW * effScale);
+    canvas.height = Math.round(totalH * effScale);
     const ctx = canvas.getContext("2d");
-    ctx.scale(scale, scale);
+    ctx.scale(effScale, effScale);
 
     // Fundo branco puro executivo
     ctx.fillStyle = "#ffffff";
@@ -319,7 +339,7 @@
       ctx.restore();
     };
 
-    // 1. Cabeçalho ANO / Meses intercalados / Semanas
+    // 1. Cabeçalho ANO / Meses intercalados / Semanas (+ Dias opcional)
     const hx = padOuter;
     const hy = padOuter;
     const gx = hx + railW;
@@ -331,14 +351,17 @@
     ctx.textBaseline = "middle";
     ctx.fillText(model.period.title, gx + gridW / 2, hy + hdrYearH / 2);
 
-    // Meses & semanas
+    // Meses, semanas e (opcionalmente) dias do mês
     const weekW = gridW / Math.max(1, model.period.totalWeeks);
+    const dayW = gridW / Math.max(1, model.period.totalDays);
     let wkCursor = 0;
+    let dayCursor = 0;
     model.period.months.forEach(mo => {
-      const mx = gx + wkCursor * weekW;
-      const mw = mo.weeks.length * weekW;
+      const mDays = Array.isArray(mo.days) ? mo.days : [];
+      const mx = showDays ? (gx + dayCursor * dayW) : (gx + wkCursor * weekW);
+      const mw = showDays ? (mDays.length * dayW) : (mo.weeks.length * weekW);
       ctx.fillStyle = mo.shaded ? "#d1d5db" : "#ffffff";
-      ctx.fillRect(mx, hy + hdrYearH, mw, hdrMonthH + hdrWeekH);
+      ctx.fillRect(mx, hy + hdrYearH, mw, hdrMonthH + hdrWeekH + hdrDayH);
 
       ctx.fillStyle = "#0f172a";
       ctx.font = "700 11px Outfit, Arial, sans-serif";
@@ -346,12 +369,46 @@
       ctx.textBaseline = "middle";
       ctx.fillText(mo.label, mx + mw / 2, hy + hdrYearH + hdrMonthH / 2);
 
+      const mWkW = mw / Math.max(1, mo.weeks.length);
       ctx.font = "600 10px Outfit, Arial, sans-serif";
       mo.weeks.forEach((wn, wi) => {
-        const wx = mx + wi * weekW;
-        ctx.fillText(String(wn), wx + weekW / 2, hy + hdrYearH + hdrMonthH + hdrWeekH / 2);
+        const wx = mx + wi * mWkW;
+        ctx.fillText(String(wn), wx + mWkW / 2, hy + hdrYearH + hdrMonthH + hdrWeekH / 2);
       });
+
+      if (showDays && mDays.length) {
+        const dayY = hy + hdrYearH + hdrMonthH + hdrWeekH;
+        ctx.strokeStyle = "rgba(15, 23, 42, 0.14)";
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.moveTo(mx, dayY);
+        ctx.lineTo(mx + mw, dayY);
+        ctx.stroke();
+
+        mDays.forEach((dObj, di) => {
+          const dx = mx + di * dayW;
+          if (dObj.isWeekend) {
+            ctx.fillStyle = "rgba(15, 23, 42, 0.08)";
+            ctx.fillRect(dx, dayY, dayW, hdrDayH);
+          }
+          if (di > 0) {
+            ctx.strokeStyle = "rgba(15, 23, 42, 0.09)";
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(dx, dayY);
+            ctx.lineTo(dx, dayY + hdrDayH);
+            ctx.stroke();
+          }
+          ctx.fillStyle = dObj.isWeekend ? "#475569" : "#0f172a";
+          ctx.font = "600 8.5px Outfit, Arial, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(String(dObj.num), dx + dayW / 2, dayY + hdrDayH / 2 + 0.5);
+        });
+      }
+
       wkCursor += mo.weeks.length;
+      dayCursor += mDays.length;
     });
 
     // Rótulo vertical ANO e borda nítida do cabeçalho
@@ -572,7 +629,10 @@
     const hiddenPresentCards = cardsInPeriod.filter(c => hiddenCardsSet.has(c.id));
     const totalHiddenCount = hiddenPresentTypes.length + hiddenPresentCards.length;
 
-    const gridRefPx = Math.max(780, Math.min(1260, (container.clientWidth || 1140) - 82));
+    const showDays = Boolean(prefs.showDays);
+    const sheetMinWidth = showDays ? Math.max(960, 46 + period.totalDays * 14) : 960;
+    const baseGridPx = Math.max(780, Math.min(1260, (container.clientWidth || 1140) - 82));
+    const gridRefPx = showDays ? Math.max(baseGridPx, period.totalDays * 14) : baseGridPx;
     const getTypeColor = tId => getTypeInfo(tId).color || "#2563eb";
 
     const lanes = visibleTypeIds.map(tId => {
@@ -589,15 +649,21 @@
     lastModelByScope[sc] = {
       projectTitle: projectTitle || state?.title || "My Plan",
       period,
-      lanes
+      lanes,
+      showDays
     };
 
     const monthsHeaderHtml = period.months.map(mo => {
-      const flexSpan = mo.weeks.length;
+      const mDays = Array.isArray(mo.days) ? mo.days : [];
+      const flexSpan = showDays ? Math.max(1, mDays.length) : mo.weeks.length;
       const wksHtml = mo.weeks.map(w => `<span class="pa-wk-num">${w}</span>`).join("");
+      const daysHtml = showDays
+        ? `<div class="pa-days-row">${mDays.map(d => `<span class="pa-day-num${d.isWeekend ? " is-wknd" : ""}">${d.num}</span>`).join("")}</div>`
+        : "";
       return `<div class="pa-month-col${mo.shaded ? " is-shaded" : ""}" style="flex:${flexSpan} 0 0">
         <div class="pa-month-lbl">${esc(mo.label)}</div>
         <div class="pa-weeks-row">${wksHtml}</div>
+        ${daysHtml}
       </div>`;
     }).join("");
 
@@ -651,6 +717,10 @@
             </select>
             <button type="button" class="btn ghost small icon-compact" id="${btnPrefix}NextYear" data-pa-role="nextYear" ${!period.isFullYear ? "disabled" : ""} aria-label="Próximo ano">▶</button>
           </div>
+          <label class="pa-days-toggle" title="Exibir ou ocultar os dias do mês no cabeçalho do Calendário Anual">
+            <input type="checkbox" id="${idPrefix}ShowDays" data-pa-role="showDays" ${showDays ? "checked" : ""}>
+            <span>Mostrar dias do mês</span>
+          </label>
           ${!period.isFullYear ? `<span class="pill" style="font-size:0.72rem">Período filtrado: ${esc(period.title)}</span>` : ""}
           ${totalHiddenCount > 0 ? `<button type="button" class="btn ghost small" id="${btnPrefix}RestoreHidden" data-pa-role="restoreHidden" title="Restaurar categorias e cartões ocultos nesta visualização">👁️ Restaurar ocultos (${totalHiddenCount})</button>` : ""}
         </div>
@@ -666,7 +736,7 @@
       </div>
 
       <div class="pa-sheet-scroll">
-        <div class="pa-sheet" id="${idPrefix}ExecutiveSheet">
+        <div class="pa-sheet${showDays ? " is-show-days" : ""}" id="${idPrefix}ExecutiveSheet"${showDays ? ` style="min-width:${sheetMinWidth}px"` : ""}>
           <div class="pa-header-box">
             <div class="pa-rail pa-rail-ano"><span class="pa-rail-lbl">ANO</span></div>
             <div class="pa-header-main">
@@ -680,6 +750,14 @@
     `;
 
     // Eventos da barra superior
+    const showDaysChk = container.querySelector("[data-pa-role='showDays']");
+    if (showDaysChk) {
+      showDaysChk.onchange = () => {
+        prefs.showDays = Boolean(showDaysChk.checked);
+        render({ scope: sc, container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
+        onSavePrefs?.(prefs.showDays ? "📅 Dias do mês exibidos no Calendário Anual!" : "📅 Dias do mês ocultados no Calendário Anual.");
+      };
+    }
     const yrSel = container.querySelector("[data-pa-role='yearSelect']");
     if (yrSel) {
       yrSel.onchange = () => {

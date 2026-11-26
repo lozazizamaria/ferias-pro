@@ -9444,6 +9444,31 @@ body.dark .puf-panel {
   align-items: center;
   gap: 4px;
 }
+.pa-days-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  line-height: 1.2;
+}
+.pa-days-toggle:hover {
+  border-color: var(--accent, #2563eb);
+}
+.pa-days-toggle input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent, #2563eb);
+  cursor: pointer;
+}
 .pa-year-nav select {
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -9595,6 +9620,30 @@ body.dark .puf-panel {
   font-weight: 600;
   color: #0f172a;
   line-height: 1.25;
+}
+.pa-days-row {
+  display: flex;
+  width: 100%;
+  border-top: 1px solid rgba(15, 23, 42, 0.14);
+  margin-top: 2px;
+}
+.pa-day-num {
+  flex: 1 0 0;
+  min-width: 0;
+  text-align: center;
+  font-size: 0.56rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.45;
+  border-left: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 1px 0;
+}
+.pa-day-num:first-child {
+  border-left: none;
+}
+.pa-day-num.is-wknd {
+  background: rgba(15, 23, 42, 0.08);
+  color: #475569;
 }
 .pa-lane-grid {
   display: flex;
