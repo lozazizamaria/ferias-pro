@@ -2104,10 +2104,44 @@ function renderUnifiedCardSubBadges(a) {
   return `${modePill} ${calBadge}${confBadge ? " " + confBadge : ""}`;
 }
 
+const PERSONAL_ANNUAL_TYPE_COLORS = {
+  Viagem: "#2563eb",
+  Voo: "#0ea5e9",
+  Trem: "#0d9488",
+  "Ônibus": "#f59e0b",
+  Navio: "#1d4ed8",
+  Hospedagem: "#10b981",
+  Ingresso: "#8b5cf6",
+  Evento: "#e11d48",
+  Passeio: "#db2777",
+  Restaurante: "#f97316",
+  "Período": "#7c3aed",
+  Outro: "#64748b"
+};
+
+function getPersonalAnnualTypeInfo(typeKey) {
+  const dict = window.ACTIVITY_TYPES || {};
+  const found = dict[typeKey];
+  if (found) {
+    return {
+      id: found.id,
+      short: found.short || found.id,
+      color: PERSONAL_ANNUAL_TYPE_COLORS[found.id] || "#2563eb"
+    };
+  }
+  if (window.PRO_ACTIVITY_TYPES && window.PRO_ACTIVITY_TYPES[typeKey]) {
+    const p = window.PRO_ACTIVITY_TYPES[typeKey];
+    return { id: p.id, short: p.short || p.id, color: p.color || "#4f46e5" };
+  }
+  const fallbackId = String(typeKey || "Outro");
+  return { id: fallbackId, short: fallbackId, color: PERSONAL_ANNUAL_TYPE_COLORS[fallbackId] || "#64748b" };
+}
+
 function renderGantt(allSorted) {
   const g = $("#gantt");
   const wrap = $("#ganttWrap");
   const tlWrap = $("#timelineWrap");
+  const annualWrap = $("#personalAnnualWrap");
   const trips = getSelectedTrips();
   const multiTrip = trips.length > 1;
 
@@ -2116,10 +2150,11 @@ function renderGantt(allSorted) {
   const vBtn = $("#btnGanttViewPop");
   const vLbl = $("#ganttViewPopLabel");
   const vDot = $("#ganttViewUnifDot");
-  if (vBtn) vBtn.classList.toggle("has-active", ganttUnifiedMode);
-  if (vLbl) vLbl.textContent = ganttMode === "timeline" ? "Timeline" : "Gantt";
+  if (vBtn) vBtn.classList.toggle("has-active", ganttUnifiedMode || ganttMode === "annual");
+  if (vLbl) vLbl.textContent = ganttMode === "annual" ? "Calendário Anual" : (ganttMode === "timeline" ? "Timeline" : "Gantt");
   if (vDot) vDot.hidden = !ganttUnifiedMode;
   if ($("#ganttZoomGroup")) $("#ganttZoomGroup").hidden = ganttMode !== "gantt";
+  if ($("#btnPrintGantt")) $("#btnPrintGantt").hidden = ganttMode === "annual";
 
   const roleBadge = $("#tripRoleBadge");
   if (roleBadge) {
@@ -2146,7 +2181,42 @@ function renderGantt(allSorted) {
 
   wrap.hidden = ganttMode !== "gantt";
   tlWrap.hidden = ganttMode !== "timeline";
+  if (annualWrap) annualWrap.hidden = ganttMode !== "annual";
   updateGanttZoomReadout();
+  if (ganttMode === "annual") {
+    if (annualWrap && window.MyPlanProAnnual?.render) {
+      const puf = typeof personalUnifiedFilter !== "undefined" ? personalUnifiedFilter : {};
+      const effFrom = personalDateFrom || puf.dateFrom || "";
+      const effTo = personalDateTo || puf.dateTo || "";
+      if (!effFrom && !effTo && puf.year && Number.isFinite(Number(puf.year))) {
+        window.MyPlanProAnnual.setYear(Number(puf.year), "personal");
+      }
+      window.MyPlanProAnnual.render({
+        scope: "personal",
+        container: annualWrap,
+        cards: s,
+        state,
+        projectTitle: activeTrip?.name || state?.title || "My Plan",
+        dateFrom: effFrom,
+        dateTo: effTo,
+        allTypes: Object.values(window.ACTIVITY_TYPES || {}),
+        getTypeInfo: getPersonalAnnualTypeInfo,
+        fmtBR,
+        esc,
+        onOpenCard: cid => {
+          const hit = (s || []).find(x => x && x.id === cid);
+          if (hit && hit._unifiedMode === "professional" && window.MyPlanPro) {
+            window.MyPlanPro.openProCardModal(cid);
+          } else {
+            openModal(cid);
+          }
+        },
+        onSavePrefs: msg => save(msg),
+        toast
+      });
+    }
+    return;
+  }
   if (ganttMode !== "gantt") return;
 
   const isWeekOnly = ganttZoom < 22;
@@ -7909,6 +7979,10 @@ function buildPrintGanttParams(fromISO, toISO) {
 
 $("#btnPrintGantt").onclick = () => {
   const filtered = ganttUnifiedMode ? getUnifiedFilteredItems().filtered : applyPersonalFilters(sorted());
+  if (ganttMode === "annual" && window.MyPlanProAnnual?.exportAnnualPdfLandscape) {
+    window.MyPlanProAnnual.exportAnnualPdfLandscape(toast, "personal");
+    return;
+  }
   if (ganttMode === "timeline") {
     window.FeriasReport.printTimelinePdf(state, filtered, reportHelpers(), { isPro: false });
     return;
@@ -10772,7 +10846,7 @@ function renderPersonalBoard() {
 
 window.addEventListener("resize", () => {
   if (appMode === "professional" && window.MyPlanPro) window.MyPlanPro.renderProGantt();
-  else if (ganttMode === "gantt") renderGantt(sorted());
+  else if (ganttMode === "gantt" || ganttMode === "annual") renderGantt(sorted());
 });
 
 boot();

@@ -7,9 +7,25 @@
   const MONTHS_PT = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
   const FULL_YEAR_WEEKS_PER_MONTH = [4, 4, 5, 4, 4, 5, 4, 5, 4, 4, 5, 4]; // soma = 52 semanas
 
-  let selectedYear = new Date().getFullYear();
-  let lastModel = null;
+  const DEFAULT_YEAR = new Date().getFullYear();
+  const selectedYearByScope = { pro: DEFAULT_YEAR, personal: DEFAULT_YEAR };
+  const lastModelByScope = { pro: null, personal: null };
   let measureCtx = null;
+
+  function normScope(scope) {
+    return scope === "personal" ? "personal" : "pro";
+  }
+
+  function getSelectedYear(scope) {
+    const k = normScope(scope);
+    if (!Number.isFinite(selectedYearByScope[k])) selectedYearByScope[k] = DEFAULT_YEAR;
+    return selectedYearByScope[k];
+  }
+
+  function setSelectedYear(y, scope) {
+    const k = normScope(scope);
+    if (Number.isFinite(Number(y))) selectedYearByScope[k] = Number(y);
+  }
 
   function getMeasureCtx() {
     if (!measureCtx && typeof document !== "undefined") {
@@ -170,7 +186,7 @@
       const barPx = Math.max(14, (widthPct / 100) * gridWidthPx);
       const endPx = startPx + barPx;
 
-      const label = String(card.name || "Sem título").trim();
+      const label = String(card.name || card.title || "Sem título").trim();
       const textW = measureTextPx(label);
       const fitsInside = barPx >= textW + 10;
       const effectiveEndPx = fitsInside ? endPx : (endPx + 6 + textW + 8);
@@ -224,12 +240,32 @@
     return rows;
   }
 
-  function ensureAnnualPrefs(st) {
+  function ensureAnnualPrefs(st, scope = "pro") {
     st.params = st.params || {};
+    if (normScope(scope) === "personal") {
+      if (!Array.isArray(st.params.personalAnnualTypeOrder)) st.params.personalAnnualTypeOrder = [];
+      if (!Array.isArray(st.params.personalAnnualHiddenTypes)) st.params.personalAnnualHiddenTypes = [];
+      if (!Array.isArray(st.params.personalAnnualHiddenCards)) st.params.personalAnnualHiddenCards = [];
+      return {
+        get order() { return st.params.personalAnnualTypeOrder; },
+        set order(v) { st.params.personalAnnualTypeOrder = v; },
+        get hiddenTypes() { return st.params.personalAnnualHiddenTypes; },
+        set hiddenTypes(v) { st.params.personalAnnualHiddenTypes = v; },
+        get hiddenCards() { return st.params.personalAnnualHiddenCards; },
+        set hiddenCards(v) { st.params.personalAnnualHiddenCards = v; }
+      };
+    }
     if (!Array.isArray(st.params.annualTypeOrder)) st.params.annualTypeOrder = [];
     if (!Array.isArray(st.params.annualHiddenTypes)) st.params.annualHiddenTypes = [];
     if (!Array.isArray(st.params.annualHiddenCards)) st.params.annualHiddenCards = [];
-    return st.params;
+    return {
+      get order() { return st.params.annualTypeOrder; },
+      set order(v) { st.params.annualTypeOrder = v; },
+      get hiddenTypes() { return st.params.annualHiddenTypes; },
+      set hiddenTypes(v) { st.params.annualHiddenTypes = v; },
+      get hiddenCards() { return st.params.annualHiddenCards; },
+      set hiddenCards(v) { st.params.annualHiddenCards = v; }
+    };
   }
 
   function renderAnnualCanvas(model, scale = 3) {
@@ -388,15 +424,16 @@
     return canvas;
   }
 
-  function exportAnnualPng(toast) {
-    if (!lastModel) return;
+  function exportAnnualPng(toast, scope = "pro") {
+    const model = lastModelByScope[normScope(scope)];
+    if (!model) return;
     try {
-      const canvas = renderAnnualCanvas(lastModel, 3);
+      const canvas = renderAnnualCanvas(model, 3);
       const url = canvas.toDataURL("image/png");
       const a = document.createElement("a");
       a.href = url;
-      const safeTitle = String(lastModel.projectTitle || "Calendario_Anual").replace(/[^\w\-]+/g, "_").slice(0, 48);
-      a.download = `${safeTitle}_${lastModel.period.year}.png`;
+      const safeTitle = String(model.projectTitle || "Calendario_Anual").replace(/[^\w\-]+/g, "_").slice(0, 48);
+      a.download = `${safeTitle}_${model.period.year}.png`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -406,10 +443,11 @@
     }
   }
 
-  function exportAnnualPdfLandscape(toast) {
-    if (!lastModel) return;
+  function exportAnnualPdfLandscape(toast, scope = "pro") {
+    const model = lastModelByScope[normScope(scope)];
+    if (!model) return;
     try {
-      const canvas = renderAnnualCanvas(lastModel, 3);
+      const canvas = renderAnnualCanvas(model, 3);
       const dataUrl = canvas.toDataURL("image/png");
       const win = window.open("", "_blank");
       if (!win) {
@@ -417,7 +455,7 @@
         return;
       }
       const esc = window.MyPlanUtils?.esc || (s => String(s || ""));
-      const docTitle = `${lastModel.projectTitle || "My Plan"} — Calendário Anual ${lastModel.period.title}`;
+      const docTitle = `${model.projectTitle || "My Plan"} — Calendário Anual ${model.period.title}`;
       win.document.write(`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -470,6 +508,7 @@
   }
 
   function render({
+    scope = "pro",
     container,
     cards,
     state,
@@ -485,7 +524,11 @@
     toast
   }) {
     if (!container) return;
-    const prefs = ensureAnnualPrefs(state);
+    const sc = normScope(scope);
+    const idPrefix = sc === "personal" ? "personalPa" : "pa";
+    const btnPrefix = sc === "personal" ? "btnPersonalPa" : "btnPa";
+    const prefs = ensureAnnualPrefs(state, sc);
+    const selectedYear = getSelectedYear(sc);
 
     // Anos disponíveis (ano corrente ±3 + anos presentes nos cartões)
     const curYear = new Date().getFullYear();
@@ -499,8 +542,8 @@
     const sortedYears = [...yearsSet].sort((a, b) => a - b);
 
     const period = buildPeriodModel(selectedYear, dateFrom, dateTo);
-    const hiddenTypesSet = new Set(prefs.annualHiddenTypes);
-    const hiddenCardsSet = new Set(prefs.annualHiddenCards);
+    const hiddenTypesSet = new Set(prefs.hiddenTypes);
+    const hiddenCardsSet = new Set(prefs.hiddenCards);
 
     // Agrupar cartões por Tipo de Cartão
     const byType = new Map();
@@ -521,8 +564,8 @@
     // Determinar ordem das categorias (apenas tipos com eventos no período OU já ordenados com eventos)
     const presentTypeIds = [...byType.keys()];
     const baseOrder = [
-      ...prefs.annualTypeOrder.filter(id => presentTypeIds.includes(id)),
-      ...presentTypeIds.filter(id => !prefs.annualTypeOrder.includes(id))
+      ...prefs.order.filter(id => presentTypeIds.includes(id)),
+      ...presentTypeIds.filter(id => !prefs.order.includes(id))
     ];
     const visibleTypeIds = baseOrder.filter(id => !hiddenTypesSet.has(id));
     const hiddenPresentTypes = baseOrder.filter(id => hiddenTypesSet.has(id));
@@ -543,7 +586,7 @@
       };
     });
 
-    lastModel = {
+    lastModelByScope[sc] = {
       projectTitle: projectTitle || state?.title || "My Plan",
       period,
       lanes
@@ -602,28 +645,28 @@
       <div class="pa-topbar annual-no-export">
         <div class="pa-topbar-left">
           <div class="pa-year-nav" ${!period.isFullYear ? 'title="Período personalizado ativo nos Filtros (limpe De/Até para navegar por ano)"' : ""}>
-            <button type="button" class="btn ghost small icon-compact" id="btnPaPrevYear" ${!period.isFullYear ? "disabled" : ""} aria-label="Ano anterior">◀</button>
-            <select id="paYearSelect" aria-label="Selecionar ano" ${!period.isFullYear ? "disabled" : ""}>
+            <button type="button" class="btn ghost small icon-compact" id="${btnPrefix}PrevYear" data-pa-role="prevYear" ${!period.isFullYear ? "disabled" : ""} aria-label="Ano anterior">◀</button>
+            <select id="${idPrefix}YearSelect" data-pa-role="yearSelect" aria-label="Selecionar ano" ${!period.isFullYear ? "disabled" : ""}>
               ${sortedYears.map(y => `<option value="${y}" ${y === selectedYear ? "selected" : ""}>${y}</option>`).join("")}
             </select>
-            <button type="button" class="btn ghost small icon-compact" id="btnPaNextYear" ${!period.isFullYear ? "disabled" : ""} aria-label="Próximo ano">▶</button>
+            <button type="button" class="btn ghost small icon-compact" id="${btnPrefix}NextYear" data-pa-role="nextYear" ${!period.isFullYear ? "disabled" : ""} aria-label="Próximo ano">▶</button>
           </div>
           ${!period.isFullYear ? `<span class="pill" style="font-size:0.72rem">Período filtrado: ${esc(period.title)}</span>` : ""}
-          ${totalHiddenCount > 0 ? `<button type="button" class="btn ghost small" id="btnPaRestoreHidden" title="Restaurar categorias e cartões ocultos nesta visualização">👁️ Restaurar ocultos (${totalHiddenCount})</button>` : ""}
+          ${totalHiddenCount > 0 ? `<button type="button" class="btn ghost small" id="${btnPrefix}RestoreHidden" data-pa-role="restoreHidden" title="Restaurar categorias e cartões ocultos nesta visualização">👁️ Restaurar ocultos (${totalHiddenCount})</button>` : ""}
         </div>
         <div class="pa-topbar-right">
           <div class="pm-dd-host">
-            <button type="button" class="btn primary small" id="btnPaExportMenu" aria-expanded="false">🖨️ Imprimir ▾</button>
-            <div class="pm-dd-menu pa-export-menu" id="paExportMenu" hidden>
-              <button type="button" id="btnPaExportPng">🖼️ Baixar como Imagem (.png alta resolução)</button>
-              <button type="button" id="btnPaExportPdf">📄 Imprimir / Baixar em PDF (Horizontal)</button>
+            <button type="button" class="btn primary small" id="${btnPrefix}ExportMenu" data-pa-role="exportMenuBtn" aria-expanded="false">🖨️ Imprimir ▾</button>
+            <div class="pm-dd-menu pa-export-menu" id="${idPrefix}ExportMenu" data-pa-role="exportMenu" hidden>
+              <button type="button" id="${btnPrefix}ExportPng" data-pa-role="exportPng">🖼️ Baixar como Imagem (.png alta resolução)</button>
+              <button type="button" id="${btnPrefix}ExportPdf" data-pa-role="exportPdf">📄 Imprimir / Baixar em PDF (Horizontal)</button>
             </div>
           </div>
         </div>
       </div>
 
       <div class="pa-sheet-scroll">
-        <div class="pa-sheet" id="paExecutiveSheet">
+        <div class="pa-sheet" id="${idPrefix}ExecutiveSheet">
           <div class="pa-header-box">
             <div class="pa-rail pa-rail-ano"><span class="pa-rail-lbl">ANO</span></div>
             <div class="pa-header-main">
@@ -637,39 +680,39 @@
     `;
 
     // Eventos da barra superior
-    const yrSel = container.querySelector("#paYearSelect");
+    const yrSel = container.querySelector("[data-pa-role='yearSelect']");
     if (yrSel) {
       yrSel.onchange = () => {
-        selectedYear = parseInt(yrSel.value, 10) || curYear;
-        render({ container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
+        setSelectedYear(parseInt(yrSel.value, 10) || curYear, sc);
+        render({ scope: sc, container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
       };
     }
-    const prevBtn = container.querySelector("#btnPaPrevYear");
+    const prevBtn = container.querySelector("[data-pa-role='prevYear']");
     if (prevBtn) {
       prevBtn.onclick = () => {
-        selectedYear -= 1;
-        render({ container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
+        setSelectedYear(getSelectedYear(sc) - 1, sc);
+        render({ scope: sc, container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
       };
     }
-    const nextBtn = container.querySelector("#btnPaNextYear");
+    const nextBtn = container.querySelector("[data-pa-role='nextYear']");
     if (nextBtn) {
       nextBtn.onclick = () => {
-        selectedYear += 1;
-        render({ container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
+        setSelectedYear(getSelectedYear(sc) + 1, sc);
+        render({ scope: sc, container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
       };
     }
-    const restoreBtn = container.querySelector("#btnPaRestoreHidden");
+    const restoreBtn = container.querySelector("[data-pa-role='restoreHidden']");
     if (restoreBtn) {
       restoreBtn.onclick = () => {
-        prefs.annualHiddenTypes = [];
-        prefs.annualHiddenCards = [];
+        prefs.hiddenTypes = [];
+        prefs.hiddenCards = [];
         onSavePrefs?.("👁️ Todos os itens ocultos restaurados no Calendário Anual!");
       };
     }
 
     // Menu Imprimir / Exportar
-    const expBtn = container.querySelector("#btnPaExportMenu");
-    const expMenu = container.querySelector("#paExportMenu");
+    const expBtn = container.querySelector("[data-pa-role='exportMenuBtn']");
+    const expMenu = container.querySelector("[data-pa-role='exportMenu']");
     if (expBtn && expMenu) {
       expBtn.onclick = e => {
         e.stopPropagation();
@@ -685,10 +728,10 @@
         }
       });
     }
-    const pngBtn = container.querySelector("#btnPaExportPng");
-    if (pngBtn) pngBtn.onclick = () => { if (expMenu) expMenu.hidden = true; exportAnnualPng(toast); };
-    const pdfBtn = container.querySelector("#btnPaExportPdf");
-    if (pdfBtn) pdfBtn.onclick = () => { if (expMenu) expMenu.hidden = true; exportAnnualPdfLandscape(toast); };
+    const pngBtn = container.querySelector("[data-pa-role='exportPng']");
+    if (pngBtn) pngBtn.onclick = () => { if (expMenu) expMenu.hidden = true; exportAnnualPng(toast, sc); };
+    const pdfBtn = container.querySelector("[data-pa-role='exportPdf']");
+    if (pdfBtn) pdfBtn.onclick = () => { if (expMenu) expMenu.hidden = true; exportAnnualPdfLandscape(toast, sc); };
 
     // Reordenar / ocultar categorias e cartões
     container.querySelectorAll("[data-pa-move]").forEach(btn => {
@@ -702,7 +745,7 @@
         if (idx < 0 || target < 0 || target >= order.length) return;
         const [moved] = order.splice(idx, 1);
         order.splice(target, 0, moved);
-        prefs.annualTypeOrder = [...order, ...hiddenPresentTypes];
+        prefs.order = [...order, ...hiddenPresentTypes];
         onSavePrefs?.("↕️ Ordem das categorias atualizada!");
       };
     });
@@ -711,7 +754,7 @@
       btn.onclick = e => {
         e.stopPropagation();
         const tId = btn.dataset.paHideType;
-        if (!prefs.annualHiddenTypes.includes(tId)) prefs.annualHiddenTypes.push(tId);
+        if (!prefs.hiddenTypes.includes(tId)) prefs.hiddenTypes.push(tId);
         onSavePrefs?.("👁️ Categoria ocultada no Calendário Anual.");
       };
     });
@@ -720,7 +763,7 @@
       btn.onclick = e => {
         e.stopPropagation();
         const cid = btn.dataset.paHideCard;
-        if (!prefs.annualHiddenCards.includes(cid)) prefs.annualHiddenCards.push(cid);
+        if (!prefs.hiddenCards.includes(cid)) prefs.hiddenCards.push(cid);
         onSavePrefs?.("👁️ Atividade ocultada apenas no Calendário Anual.");
       };
     });
@@ -738,7 +781,7 @@
     render,
     exportAnnualPng,
     exportAnnualPdfLandscape,
-    setYear: y => { if (Number.isFinite(Number(y))) selectedYear = Number(y); },
-    getYear: () => selectedYear
+    setYear: (y, scope = "pro") => setSelectedYear(y, scope),
+    getYear: (scope = "pro") => getSelectedYear(scope)
   };
 })();
