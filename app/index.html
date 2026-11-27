@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=61">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=61">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=61">
+<link rel="manifest" href="/manifest.webmanifest?v=62">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=62">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=62">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=61">
+<link rel="stylesheet" href="styles.css?v=62">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=61" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=62" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=61" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=62" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -857,22 +857,82 @@
       </div>
     </section>
 
-    <!-- CHECKLIST (COM ARRASTAR PRIORIDADE) -->
+    <!-- CHECKLIST (VISÃO GLOBAL DE TODOS OS ITENS DOS CARTÕES + ARRASTAR PRIORIDADE) -->
     <section class="view" id="view-checklist">
       <div class="card">
-        <div class="card-head">
-          <h2>Checklist <span id="checkProgress" class="pill"></span></h2>
-          <div class="inline-actions">
-            <select id="filterChecklist" aria-label="Filtrar checklist">
-              <option value="">Todos</option>
-              <option value="Pendente">Pendentes</option>
-              <option value="Em andamento">Em andamento</option>
-              <option value="Concluído">Concluídos</option>
+        <div class="card-head chk-global-head">
+          <h2>Checklist <span id="checkProgress" data-chk-progress class="pill"></span></h2>
+          <div class="inline-actions chk-toolbar-actions">
+            <div class="gantt-pop-host">
+              <button type="button" class="btn ghost small gantt-pop-trigger" id="btnChkFilterPop" data-chk-filter-btn aria-expanded="false" aria-controls="chkFilterPopPanel" title="Filtros do Checklist">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                <span>Filtros</span>
+                <span class="gantt-pop-count" id="chkFilterCount" data-chk-filter-count hidden></span>
+              </button>
+              <div class="gantt-pop-panel chk-filter-panel" id="chkFilterPopPanel" data-chk-filter-panel hidden>
+                <div class="gantt-pop-head">
+                  <strong>Filtros do Checklist</strong>
+                  <button type="button" class="btn ghost small" id="btnChkClearFilters" data-chk-clear-filters hidden>✕ Limpar</button>
+                </div>
+                <div class="gantt-pop-grid">
+                  <div class="gantt-pop-field span2">
+                    <span class="gantt-pop-lbl">Buscar</span>
+                    <input type="search" id="chkFilterSearch" data-chk-f="search" placeholder="🔎 Buscar item, cartão ou nota...">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Status</span>
+                    <select id="chkFilterStatus" data-chk-f="status" aria-label="Filtrar status">
+                      <option value="">Todos</option>
+                      <option value="pending">Pendentes</option>
+                      <option value="done">Concluídos</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Prioridade</span>
+                    <select id="chkFilterPrio" data-chk-f="prio" aria-label="Filtrar prioridade">
+                      <option value="">Todas</option>
+                      <option value="Alta">🔴 Alta</option>
+                      <option value="Média">🟡 Média</option>
+                      <option value="Baixa">🟢 Baixa</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tipo de Cartão</span>
+                    <select id="chkFilterType" data-chk-f="type" aria-label="Filtrar tipo de cartão"><option value="">Todos os tipos</option></select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Lista</span>
+                    <select id="chkFilterList" data-chk-f="list" aria-label="Filtrar lista"><option value="">Todas as listas</option></select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tags</span>
+                    <select id="chkFilterTag" data-chk-f="tag" aria-label="Filtrar tags"><option value="">Todas as tags</option></select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">De</span>
+                    <input type="date" id="chkFilterDateFrom" data-chk-f="dateFrom" aria-label="Data inicial">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Até</span>
+                    <input type="date" id="chkFilterDateTo" data-chk-f="dateTo" aria-label="Data final">
+                  </div>
+                </div>
+              </div>
+            </div>
+            <select id="chkSortSelect" data-chk-sort class="chk-sort-select" aria-label="Ordenar checklist">
+              <option value="manual">↕️ Prioridade (Manual)</option>
+              <option value="prio_desc">🔴 Prioridade (Alta → Baixa)</option>
+              <option value="prio_asc">🟢 Prioridade (Baixa → Alta)</option>
+              <option value="date_asc">📅 Data (Mais próxima)</option>
+              <option value="date_desc">📅 Data (Mais distante)</option>
+              <option value="type_asc">🏷️ Tipo de Cartão</option>
+              <option value="card_asc">🗂️ Cartão de Origem</option>
+              <option value="status_pending">☑️ Status (Pendentes primeiro)</option>
             </select>
             <button class="btn primary small" id="btnAddCheck" type="button">➕ Item</button>
           </div>
         </div>
-        <div class="progress"><div id="checkBar"></div></div>
+        <div class="progress"><div id="checkBar" data-chk-bar></div></div>
         <div class="table-wrap desktop-table-wrap"><table id="checkTable"></table></div>
         <div id="mobileCheckCards" class="mobile-cards"></div>
       </div>
@@ -2712,22 +2772,86 @@
       </div>
     </section>
 
-    <!-- MODO PROFISSIONAL: CHECKLIST EXECUTIVO -->
+    <!-- MODO PROFISSIONAL: CHECKLIST EXECUTIVO (VISÃO GLOBAL DE TODOS OS CARTÕES) -->
     <section class="view" id="view-pro-checklist">
       <div class="card">
-        <div class="card-head">
-          <h2>Checklist Executivo <span id="proCheckProgress" class="pill"></span></h2>
-          <div class="inline-actions">
-            <select id="proFilterChecklist" aria-label="Filtrar checklist profissional">
-              <option value="">Todos</option>
-              <option value="Pendente">Pendentes</option>
-              <option value="Em andamento">Em andamento</option>
-              <option value="Concluído">Concluídos</option>
+        <div class="card-head chk-global-head">
+          <h2>Checklist Executivo <span id="proCheckProgress" data-chk-progress class="pill"></span></h2>
+          <div class="inline-actions chk-toolbar-actions">
+            <div class="gantt-pop-host">
+              <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProChkFilterPop" data-chk-filter-btn aria-expanded="false" aria-controls="proChkFilterPopPanel" title="Filtros do Checklist Executivo">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                <span>Filtros</span>
+                <span class="gantt-pop-count" id="proChkFilterCount" data-chk-filter-count hidden></span>
+              </button>
+              <div class="gantt-pop-panel chk-filter-panel" id="proChkFilterPopPanel" data-chk-filter-panel hidden>
+                <div class="gantt-pop-head">
+                  <strong>Filtros do Checklist</strong>
+                  <button type="button" class="btn ghost small" id="btnProChkClearFilters" data-chk-clear-filters hidden>✕ Limpar</button>
+                </div>
+                <div class="gantt-pop-grid">
+                  <div class="gantt-pop-field span2">
+                    <span class="gantt-pop-lbl">Buscar</span>
+                    <input type="search" id="proChkFilterSearch" data-chk-f="search" placeholder="🔎 Buscar item, cartão, responsável ou nota...">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Status</span>
+                    <select id="proChkFilterStatus" data-chk-f="status" aria-label="Filtrar status">
+                      <option value="">Todos</option>
+                      <option value="pending">Pendentes</option>
+                      <option value="done">Concluídos</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Prioridade</span>
+                    <select id="proChkFilterPrio" data-chk-f="prio" aria-label="Filtrar prioridade">
+                      <option value="">Todas</option>
+                      <option value="Alta">🔴 Alta</option>
+                      <option value="Média">🟡 Média</option>
+                      <option value="Baixa">🟢 Baixa</option>
+                    </select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tipo de Cartão</span>
+                    <select id="proChkFilterType" data-chk-f="type" aria-label="Filtrar tipo de cartão"><option value="">Todos os tipos</option></select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Lista</span>
+                    <select id="proChkFilterList" data-chk-f="list" aria-label="Filtrar lista"><option value="">Todas as listas</option></select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Responsável</span>
+                    <select id="proChkFilterAssignee" data-chk-f="assignee" aria-label="Filtrar responsável"><option value="">Todos os responsáveis</option></select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Tags</span>
+                    <select id="proChkFilterTag" data-chk-f="tag" aria-label="Filtrar tags"><option value="">Todas as tags</option></select>
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">De</span>
+                    <input type="date" id="proChkFilterDateFrom" data-chk-f="dateFrom" aria-label="Data inicial">
+                  </div>
+                  <div class="gantt-pop-field">
+                    <span class="gantt-pop-lbl">Até</span>
+                    <input type="date" id="proChkFilterDateTo" data-chk-f="dateTo" aria-label="Data final">
+                  </div>
+                </div>
+              </div>
+            </div>
+            <select id="proChkSortSelect" data-chk-sort class="chk-sort-select" aria-label="Ordenar checklist profissional">
+              <option value="manual">↕️ Prioridade (Manual)</option>
+              <option value="prio_desc">🔴 Prioridade (Alta → Baixa)</option>
+              <option value="prio_asc">🟢 Prioridade (Baixa → Alta)</option>
+              <option value="date_asc">📅 Data (Mais próxima)</option>
+              <option value="date_desc">📅 Data (Mais distante)</option>
+              <option value="type_asc">🏷️ Tipo de Cartão</option>
+              <option value="card_asc">🗂️ Cartão de Origem</option>
+              <option value="status_pending">☑️ Status (Pendentes primeiro)</option>
             </select>
             <button class="btn primary small" id="btnProAddCheck" type="button">➕ Item</button>
           </div>
         </div>
-        <div class="progress"><div id="proCheckBar"></div></div>
+        <div class="progress"><div id="proCheckBar" data-chk-bar></div></div>
         <div class="table-wrap desktop-table-wrap"><table id="proCheckTable"></table></div>
         <div id="proMobileCheckCards" class="mobile-cards"></div>
       </div>
@@ -2836,6 +2960,8 @@
         </button>
       </div>
     </div>
+
+    <div id="actPromoteBanner" class="chk-promote-banner" hidden></div>
 
     <!-- BLOCO DE PREENCHIMENTO COM IA (IGUAL AO PROFISSIONAL) -->
     <div class="modal-ai-strip" id="modalAiStrip">
@@ -3821,6 +3947,8 @@
       </div>
     </div>
 
+    <div id="proPromoteBanner" class="chk-promote-banner" hidden></div>
+
     <!-- IA GEMINI NO CARTÃO PROFISSIONAL -->
     <div class="modal-ai-strip" id="proCardAiStrip">
       <div class="modal-ai-top">
@@ -4618,20 +4746,21 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="shared-utils.js?v=61"></script>
-<script src="config.example.js?v=61"></script>
-<script src="vehicles.js?v=61"></script>
-<script src="countries.js?v=61"></script>
-<script src="data.js?v=61"></script>
-<script src="maps.js?v=61"></script>
-<script src="calendar.js?v=61"></script>
-<script src="drive.js?v=61"></script>
-<script src="report.js?v=61"></script>
-<script src="api.js?v=61"></script>
-<script src="minutes.js?v=61"></script>
-<script src="pro-annual.js?v=61"></script>
-<script src="pro.js?v=61"></script>
-<script src="personal-map.js?v=61"></script>
-<script src="app.js?v=61"></script>
+<script src="shared-utils.js?v=62"></script>
+<script src="config.example.js?v=62"></script>
+<script src="vehicles.js?v=62"></script>
+<script src="countries.js?v=62"></script>
+<script src="data.js?v=62"></script>
+<script src="maps.js?v=62"></script>
+<script src="calendar.js?v=62"></script>
+<script src="drive.js?v=62"></script>
+<script src="report.js?v=62"></script>
+<script src="api.js?v=62"></script>
+<script src="minutes.js?v=62"></script>
+<script src="pro-annual.js?v=62"></script>
+<script src="checklists.js?v=62"></script>
+<script src="pro.js?v=62"></script>
+<script src="personal-map.js?v=62"></script>
+<script src="app.js?v=62"></script>
 </body>
 </html>

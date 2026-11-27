@@ -3925,124 +3925,115 @@ function moveChecklistStep(id, delta) {
   save("↕️ Ordem atualizada");
 }
 
+let personalPendingPromoteSubtask = null;
+
+function startPromotePersonalSubtask({ cardId, cardName, subtaskId, subtaskIdx, text }) {
+  const cleanText = String(text || "").trim();
+  if (!cleanText) return toast("O item do checklist está vazio.");
+  const dlg = $("#modal");
+  let srcCardId = cardId || editing || "";
+  let srcCardName = cardName || $("#f-name")?.value?.trim() || "Cartão original";
+  let srcTripRef = editingTripRef || activeTrip;
+
+  if (dlg && dlg.open) {
+    if (editing) {
+      const ctx = findActivityContext(editing);
+      if (ctx?.activity) {
+        ctx.activity.subtasks = clone(modalSubtasks);
+        srcTripRef = ctx.trip || srcTripRef;
+        srcCardName = ctx.activity.name || srcCardName;
+      }
+    }
+    personalModalSaving = true;
+    dlg.close();
+    personalModalSaving = false;
+  } else if (srcCardId) {
+    const ctx = findActivityContext(srcCardId);
+    if (ctx) {
+      srcTripRef = ctx.trip || srcTripRef;
+      srcCardName = ctx.activity?.name || srcCardName;
+    }
+  }
+
+  const pending = {
+    sourceCardId: srcCardId,
+    sourceTripRef: srcTripRef,
+    sourceCardName: srcCardName,
+    subtaskId: subtaskId || "",
+    subtaskIdx: Number.isInteger(subtaskIdx) ? subtaskIdx : -1,
+    text: cleanText
+  };
+  openModal(null);
+  personalPendingPromoteSubtask = pending;
+  if ($("#f-name")) $("#f-name").value = cleanText;
+  const banner = $("#actPromoteBanner");
+  if (banner) {
+    banner.innerHTML = `<span>↗️ Convertendo item do checklist de <b>${esc(srcCardName)}</b> em novo cartão — o item será removido do cartão original ao salvar.</span>`;
+    banner.hidden = false;
+  }
+  personalModalInitialSnap = getPersonalModalSnapshot();
+}
+
+function completePromotePersonalSubtask(savedTargetTrip) {
+  if (!personalPendingPromoteSubtask) return false;
+  const info = personalPendingPromoteSubtask;
+  personalPendingPromoteSubtask = null;
+  const banner = $("#actPromoteBanner");
+  if (banner) { banner.hidden = true; banner.innerHTML = ""; }
+  if (!info.sourceCardId) return false;
+  const ctx = findActivityContext(info.sourceCardId);
+  const srcAct = ctx?.activity || (info.sourceTripRef?.data?.activities || []).find(x => x.id === info.sourceCardId);
+  if (!srcAct || !Array.isArray(srcAct.subtasks)) return false;
+
+  const before = srcAct.subtasks.length;
+  if (info.subtaskId) {
+    srcAct.subtasks = srcAct.subtasks.filter(s => s.id !== info.subtaskId);
+  }
+  if (srcAct.subtasks.length === before && info.text) {
+    const idx = srcAct.subtasks.findIndex(s => String(s.text || "").trim() === info.text);
+    if (idx >= 0) srcAct.subtasks.splice(idx, 1);
+  }
+  if (srcAct.subtasks.length !== before) {
+    const srcTrip = ctx?.trip || info.sourceTripRef;
+    if (srcTrip && savedTargetTrip && srcTrip.id !== savedTargetTrip.id) {
+      saveTripRecord(srcTrip, "", true);
+    }
+    return true;
+  }
+  return false;
+}
+
 function renderChecklist() {
-  const L = state.checklist;
-  const done = L.filter(c => c.status === "Concluído").length;
-  $("#checkProgress").textContent = `${done}/${L.length}`;
-  $("#checkBar").style.width = `${L.length ? (done / L.length * 100) : 0}%`;
+  const rootEl = $("#view-checklist");
+  if (!rootEl || !window.MyPlanChecklists?.renderGlobalChecklist) return;
+  const acts = sorted();
+  const cols = ensurePersonalBoardColumns();
+  const allTags = getAllAvailableTags(acts);
 
-  const items = checklistFilter ? L.filter(c => c.status === checklistFilter) : L;
-  const sel = (c, f, opts) => `<td class="ed"><select data-c="${c.id}" data-f="${f}">${opts.map(o => `<option ${o === c[f] ? "selected" : ""}>${o}</option>`).join("")}</select></td>`;
-  const inp = (c, f, cls = "") => `<td class="ed ${cls}"><input data-c="${c.id}" data-f="${f}" value="${esc(c[f])}"></td>`;
-
-  let h = `<thead><tr><th title="Arrastar">↕</th><th>✓</th><th>#</th><th>Categoria</th><th>Item</th><th>Prioridade</th><th>Status</th><th>Notas</th><th>Ações</th></tr></thead><tbody>`;
-  items.forEach((c, i) => {
-    h += `<tr class="chk-row ${c.status === "Concluído" ? "done" : ""}" draggable="true" data-dragid="${c.id}">
-      <td style="width:28px"><span class="drag-handle" title="Arraste para reordenar prioridade">⋮⋮</span></td>
-      <td><input type="checkbox" data-chk="${c.id}" ${c.status === "Concluído" ? "checked" : ""}></td>
-      <td>${i + 1}</td>
-      ${inp(c, "cat")}${inp(c, "item", "wide itm")}
-      ${sel(c, "prio", ["Alta", "Média", "Baixa"])}
-      ${sel(c, "status", ["Pendente", "Em andamento", "Concluído"])}
-      ${inp(c, "notes", "wide")}
-      <td>
-        <button type="button" class="icon-btn" data-cmove="${c.id}:-1" title="Subir prioridade">▲</button>
-        <button type="button" class="icon-btn" data-cmove="${c.id}:1" title="Descer prioridade">▼</button>
-        <button type="button" class="icon-btn" data-cedit="${c.id}" title="Editar">✏️</button>
-        <button type="button" class="icon-btn" data-cdel="${c.id}" title="Excluir">🗑️</button>
-      </td>
-    </tr>`;
+  window.MyPlanChecklists.renderGlobalChecklist({
+    scope: "personal",
+    rootEl,
+    activities: acts,
+    manualChecklist: state.checklist || [],
+    allTypes: Object.values(window.ACTIVITY_TYPES || {}),
+    allLists: cols,
+    allAssignees: [],
+    allTags,
+    getTypeInfo: getPersonalAnnualTypeInfo,
+    getListName: card => (cols.find(c => c.id === card.personalColId)?.title || ""),
+    getAssignees: () => [],
+    fmtBR,
+    onOpenCard: cid => openModal(cid),
+    onPromoteSubtask: info => startPromotePersonalSubtask(info),
+    onEditManual: id => openCheckModal(id),
+    onDeleteManual: id => {
+      const it = (state.checklist || []).find(x => x.id === id);
+      if (!confirm(`Excluir o item "${it?.item || "selecionado"}" do checklist?`)) return;
+      state.checklist = (state.checklist || []).filter(x => x.id !== id);
+      save("🗑️ Item removido");
+    },
+    onSave: msg => save(msg)
   });
-  const tb = $("#checkTable");
-  tb.innerHTML = h + "</tbody>";
-
-  let draggingId = null;
-  const bindDnD = (container, selector) => {
-    container.querySelectorAll(selector).forEach(row => {
-      row.addEventListener("dragstart", ev => {
-        draggingId = row.dataset.dragid;
-        row.classList.add("dragging-row");
-        if (ev.dataTransfer) {
-          ev.dataTransfer.effectAllowed = "move";
-          ev.dataTransfer.setData("text/plain", draggingId);
-        }
-      });
-      row.addEventListener("dragover", ev => {
-        ev.preventDefault();
-        if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
-        if (draggingId && draggingId !== row.dataset.dragid) row.classList.add("drag-over");
-      });
-      row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
-      row.addEventListener("drop", ev => {
-        ev.preventDefault();
-        row.classList.remove("drag-over");
-        const from = draggingId || (ev.dataTransfer ? ev.dataTransfer.getData("text/plain") : "");
-        const to = row.dataset.dragid;
-        draggingId = null;
-        if (from && to && from !== to) reorderChecklistItems(from, to);
-      });
-      row.addEventListener("dragend", () => {
-        draggingId = null;
-        container.querySelectorAll(selector).forEach(r => r.classList.remove("dragging-row", "drag-over"));
-      });
-    });
-  };
-
-  const bindEvents = root => {
-    root.querySelectorAll("[data-f]").forEach(el => {
-      el.onchange = () => { state.checklist.find(x => x.id === el.dataset.c)[el.dataset.f] = el.value; save(); };
-    });
-    root.querySelectorAll("[data-chk]").forEach(el => {
-      el.onchange = () => {
-        state.checklist.find(x => x.id === el.dataset.chk).status = el.checked ? "Concluído" : "Pendente";
-        save(el.checked ? "✅ Item concluído!" : "");
-      };
-    });
-    root.querySelectorAll("[data-cmove]").forEach(b => {
-      b.onclick = () => {
-        const [cid, d] = b.dataset.cmove.split(":");
-        moveChecklistStep(cid, parseInt(d, 10));
-      };
-    });
-    root.querySelectorAll("[data-cedit]").forEach(b => {
-      b.onclick = () => openCheckModal(b.dataset.cedit);
-    });
-    root.querySelectorAll("[data-cdel]").forEach(b => {
-      b.onclick = () => {
-        const it = (state.checklist || []).find(x => x.id === b.dataset.cdel);
-        if (!confirm(`Excluir o item "${it?.item || "selecionado"}" do checklist?`)) return;
-        state.checklist = state.checklist.filter(x => x.id !== b.dataset.cdel);
-        save("🗑️ Item removido");
-      };
-    });
-  };
-  bindEvents(tb);
-  bindDnD(tb, "tr.chk-row[data-dragid]");
-
-  const mc = $("#mobileCheckCards");
-  mc.innerHTML = items.map(c => `
-    <div class="m-card" draggable="true" data-dragid="${c.id}">
-      <div class="m-card-head">
-        <label style="display:flex;align-items:center;gap:8px;font-weight:700">
-          <span class="drag-handle" title="Arraste para reordenar">⋮⋮</span>
-          <input type="checkbox" data-chk="${c.id}" ${c.status === "Concluído" ? "checked" : ""}>
-          <span>${esc(c.item)}</span>
-        </label>
-        <div class="inline-actions">
-          <button type="button" class="icon-btn" data-cmove="${c.id}:-1" title="Subir">▲</button>
-          <button type="button" class="icon-btn" data-cmove="${c.id}:1" title="Descer">▼</button>
-          <button type="button" class="icon-btn" data-cedit="${c.id}" title="Editar">✏️</button>
-          <button type="button" class="icon-btn" data-cdel="${c.id}" title="Excluir">🗑️</button>
-        </div>
-      </div>
-      <div class="m-card-grid">
-        <div><span class="muted">Cat.:</span> ${esc(c.cat)}</div>
-        <div><span class="muted">Prioridade:</span> ${esc(c.prio)} · ${esc(c.status)}</div>
-      </div>
-      ${c.notes ? `<div class="muted small">${esc(c.notes)}</div>` : ""}
-    </div>`).join("") || `<p class="muted">Nenhum item nesta categoria.</p>`;
-  bindEvents(mc);
-  bindDnD(mc, ".m-card[data-dragid]");
 }
 
 let editingCheckId = null;
@@ -7498,10 +7489,13 @@ $("#form").onsubmit = async e => {
     const proCard = convertPersonalActivityToProCard({ ...a, id: editing || modalDraftId || uid() }, targetProTrip);
     if (!Array.isArray(targetProTrip.data.activities)) targetProTrip.data.activities = [];
     targetProTrip.data.activities.push(proCard);
+    const promotedPro = completePromotePersonalSubtask(targetProTrip);
     personalModalSaving = true;
     personalModalTempAttIds = [];
     $("#modal").close();
-    saveTripRecord(targetProTrip, `💼 Migrado para Profissional ("${targetProTrip.data.title || targetProTrip.name}")!`);
+    saveTripRecord(targetProTrip, promotedPro
+      ? "✅ Novo cartão criado em Profissional e item removido do checklist original!"
+      : `💼 Migrado para Profissional ("${targetProTrip.data.title || targetProTrip.name}")!`);
     return;
   }
 
@@ -7556,10 +7550,13 @@ $("#form").onsubmit = async e => {
   } else {
     tgtData.activities.push({ id: modalDraftId || uid(), ...a });
   }
+  const promoted = completePromotePersonalSubtask(targetTrip);
   personalModalSaving = true;
   personalModalTempAttIds = [];
   $("#modal").close();
-  saveTripRecord(targetTrip, editing ? "✔️ Atividade atualizada" : "➕ Atividade adicionada");
+  saveTripRecord(targetTrip, promoted
+    ? "✅ Novo cartão criado e item removido do checklist original!"
+    : (editing ? "✔️ Atividade atualizada" : "➕ Atividade adicionada"));
 };
 
 $("#btnDelete").onclick = () => {
@@ -8945,7 +8942,16 @@ if ($("#actAiTextInput")) {
   });
 }
 if ($("#modal")) {
-  $("#modal").addEventListener("close", () => stopActAiRecording(true));
+  $("#modal").addEventListener("close", () => {
+    stopActAiRecording(true);
+    const dlg = $("#modal");
+    if (dlg && dlg.open) return;
+    if (!personalModalSaving) {
+      personalPendingPromoteSubtask = null;
+    }
+    const pb = $("#actPromoteBanner");
+    if (pb) { pb.hidden = true; pb.innerHTML = ""; }
+  });
 }
 
 /* ---------- MODAL PLANEJAR COM IA (ÁUDIO TRANSCRITO + MÚLTIPLAS IMAGENS + DOCUMENTOS) ---------- */
@@ -10009,7 +10015,7 @@ $("#btnProfileSendWa").onclick = async () => {
 
 /* ---------- BUSCA, CHECKLIST MODAL, MENU E BACKUP ---------- */
 $("#search").oninput = () => renderTable(sorted(), totals());
-$("#filterChecklist").onchange = e => { checklistFilter = e.target.value; renderChecklist(); };
+if ($("#filterChecklist")) $("#filterChecklist").onchange = e => { checklistFilter = e.target.value; renderChecklist(); };
 $("#btnAddScenario").onclick = () => { state.scenarios.push({ id: uid(), name: "Novo cenário", kmL: state.vehicle.hevKmL }); save("➕ Cenário adicionado"); };
 $("#btnAddCheck").onclick = () => openCheckModal();
 $("#btnCloseCheckModal").onclick = $("#btnCheckCancel").onclick = () => $("#checkModal").close();
@@ -10289,9 +10295,11 @@ function renderPersonalModalSubtasks() {
     return;
   }
   listEl.innerHTML = modalSubtasks.map((st, idx) => `
-    <div class="pro-subtask-row ${st.done ? "done" : ""}">
+    <div class="pro-subtask-row ${st.done ? "done" : ""}" data-psub-row="${idx}">
+      <span class="drag-handle subtask-drag-handle" title="Arraste para reordenar">⋮⋮</span>
       <input type="checkbox" data-psub-chk="${idx}" ${st.done ? "checked" : ""}>
-      <input type="text" data-psub-txt="${idx}" value="${esc(st.text || "")}" aria-label="Item do checklist">
+      <input type="text" class="pro-subtask-txt" data-psub-txt="${idx}" value="${esc(st.text || "")}" aria-label="Item do checklist">
+      <button type="button" class="icon-btn subtask-promote-btn" data-psub-promote="${idx}" title="Transformar em cartão" aria-label="Transformar em cartão">↗️</button>
       <button type="button" class="icon-btn" data-psub-del="${idx}" title="Remover item">✕</button>
     </div>`).join("");
   listEl.querySelectorAll("[data-psub-chk]").forEach(cb => {
@@ -10307,6 +10315,23 @@ function renderPersonalModalSubtasks() {
       if (modalSubtasks[i]) modalSubtasks[i].text = inp.value.trim();
     };
   });
+  listEl.querySelectorAll("[data-psub-promote]").forEach(btn => {
+    btn.onclick = () => {
+      const i = parseInt(btn.dataset.psubPromote, 10);
+      const sub = modalSubtasks[i];
+      if (!sub) return;
+      const txtInput = listEl.querySelector(`[data-psub-txt="${i}"]`);
+      const liveText = (txtInput ? txtInput.value : sub.text || "").trim();
+      if (liveText) sub.text = liveText;
+      startPromotePersonalSubtask({
+        cardId: editing || "",
+        cardName: $("#f-name")?.value?.trim() || "Cartão",
+        subtaskId: sub.id || "",
+        subtaskIdx: i,
+        text: sub.text
+      });
+    };
+  });
   listEl.querySelectorAll("[data-psub-del]").forEach(btn => {
     btn.onclick = () => {
       const i = parseInt(btn.dataset.psubDel, 10);
@@ -10314,6 +10339,13 @@ function renderPersonalModalSubtasks() {
       renderPersonalModalSubtasks();
     };
   });
+  if (modalSubtasks.length > 1 && window.MyPlanChecklists?.bindDragReorder) {
+    window.MyPlanChecklists.bindDragReorder(listEl, ".pro-subtask-row", ".subtask-drag-handle", (fromIdx, toIdx) => {
+      const [moved] = modalSubtasks.splice(fromIdx, 1);
+      modalSubtasks.splice(toIdx, 0, moved);
+      renderPersonalModalSubtasks();
+    });
+  }
 }
 
 function renderPersonalModalTravelTickets() {

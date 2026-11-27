@@ -114,6 +114,7 @@
   let proModalInitialSnapshot = "";
   let proModalForceClose = false;
   let proModalSubtasks = [];
+  let proPendingPromoteSubtask = null;
   let proModalLabels = [];
   let proModalCoverColor = "";
   let proModalTagsMsel = null;
@@ -456,7 +457,14 @@
         ? a.minutes.map(m => (window.MyPlanMinutes?.normalizeMinute ? window.MyPlanMinutes.normalizeMinute(m, a.name) : m))
         : [];
       a.subtasks = Array.isArray(a.subtasks)
-        ? a.subtasks.map(st => ({ id: st?.id || core.uid(), text: String(st?.text || "").trim(), done: Boolean(st?.done) })).filter(st => st.text)
+        ? a.subtasks.map(st => ({
+            id: st?.id || core.uid(),
+            text: String(st?.text || "").trim(),
+            done: Boolean(st?.done),
+            prio: ["Alta", "Média", "Baixa"].includes(st?.prio) ? st.prio : "Média",
+            ...(st?.dueDate ? { dueDate: String(st.dueDate).slice(0, 10) } : {}),
+            ...(Number.isFinite(Number(st?.globalOrder)) ? { globalOrder: Number(st.globalOrder) } : {})
+          })).filter(st => st.text)
         : [];
       const tInfo = getProTypeInfo(a.type, merged);
       if (!["income", "expense", "none"].includes(a.finDirection)) {
@@ -7763,144 +7771,126 @@
     renderProDriveParams(st);
   }
 
-  /* ---------- 7. CHECKLIST EXECUTIVO ---------- */
+  /* ---------- 7. CHECKLIST EXECUTIVO (VISÃO GLOBAL DE TODOS OS CARTÕES) ---------- */
+  function startPromoteProSubtask({ cardId, cardName, subtaskId, subtaskIdx, text }) {
+    const cleanText = String(text || "").trim();
+    if (!cleanText) return core.toast("O item do checklist está vazio.");
+    const dlg = $("#proCardModal");
+    let srcCardId = cardId || editingProCardId || "";
+    let srcCardName = cardName || $("#pc-name")?.value?.trim() || "Cartão original";
+    let srcTripRef = editingProTripRef || core.getActiveTrip();
+
+    if (dlg && dlg.open) {
+      if (editingProCardId) {
+        const ctx = findProCardContext(editingProCardId);
+        if (ctx?.activity) {
+          ctx.activity.subtasks = core.clone(proModalSubtasks);
+          srcTripRef = ctx.trip || srcTripRef;
+          srcCardName = ctx.activity.name || srcCardName;
+        }
+      }
+      proModalForceClose = true;
+      dlg.close();
+    } else if (srcCardId) {
+      const ctx = findProCardContext(srcCardId);
+      if (ctx) {
+        srcTripRef = ctx.trip || srcTripRef;
+        srcCardName = ctx.activity?.name || srcCardName;
+      }
+    }
+
+    const pending = {
+      sourceCardId: srcCardId,
+      sourceTripRef: srcTripRef,
+      sourceCardName: srcCardName,
+      subtaskId: subtaskId || "",
+      subtaskIdx: Number.isInteger(subtaskIdx) ? subtaskIdx : -1,
+      text: cleanText
+    };
+    openProCardModal(null);
+    proPendingPromoteSubtask = pending;
+    if ($("#pc-name")) $("#pc-name").value = cleanText;
+    const banner = $("#proPromoteBanner");
+    if (banner) {
+      banner.innerHTML = `<span>↗️ Convertendo item do checklist de <b>${core.esc(srcCardName)}</b> em novo cartão — o item será removido do cartão original ao salvar.</span>`;
+      banner.hidden = false;
+    }
+    proModalInitialSnapshot = JSON.stringify(readProCardForm());
+  }
+
+  function completePromoteProSubtask(savedTargetTrip) {
+    if (!proPendingPromoteSubtask) return false;
+    const info = proPendingPromoteSubtask;
+    proPendingPromoteSubtask = null;
+    const banner = $("#proPromoteBanner");
+    if (banner) { banner.hidden = true; banner.innerHTML = ""; }
+    if (!info.sourceCardId) return false;
+    const ctx = findProCardContext(info.sourceCardId);
+    const srcAct = ctx?.activity || (info.sourceTripRef?.data?.activities || []).find(x => x.id === info.sourceCardId);
+    if (!srcAct || !Array.isArray(srcAct.subtasks)) return false;
+
+    const before = srcAct.subtasks.length;
+    if (info.subtaskId) {
+      srcAct.subtasks = srcAct.subtasks.filter(s => s.id !== info.subtaskId);
+    }
+    if (srcAct.subtasks.length === before && info.text) {
+      const idx = srcAct.subtasks.findIndex(s => String(s.text || "").trim() === info.text);
+      if (idx >= 0) srcAct.subtasks.splice(idx, 1);
+    }
+    if (srcAct.subtasks.length !== before) {
+      if (srcAct.subtasks.length > 0) {
+        srcAct.progress = Math.round(srcAct.subtasks.filter(s => s.done).length / srcAct.subtasks.length * 100 / 5) * 5;
+      }
+      const srcTrip = ctx?.trip || info.sourceTripRef;
+      if (srcTrip && savedTargetTrip && srcTrip.id !== savedTargetTrip.id) {
+        core.saveTripRecord(srcTrip, "", true);
+      }
+      return true;
+    }
+    return false;
+  }
+
   function renderProChecklist() {
     const st = core.getState();
-    const L = st.checklist || [];
-    const done = L.filter(c => c.status === "Concluído").length;
-    if ($("#proCheckProgress")) $("#proCheckProgress").textContent = `${done}/${L.length}`;
-    if ($("#proCheckBar")) $("#proCheckBar").style.width = `${L.length ? (done / L.length * 100) : 0}%`;
+    const rootEl = $("#view-pro-checklist");
+    if (!rootEl || !window.MyPlanChecklists?.renderGlobalChecklist) return;
+    const acts = getProSortedActivities();
+    const cols = getMergedColumns();
+    const allTags = [...new Set(acts.flatMap(a => Array.isArray(a.tags) ? a.tags : []).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const allAssignees = [...new Set([
+      ...(Array.isArray(st.assignees) ? st.assignees : []),
+      ...acts.flatMap(a => getCardAssigneesList(a).map(x => x.name))
+    ].filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
 
-    const items = proCheckFilter ? L.filter(c => c.status === proCheckFilter) : L;
-    const sel = (c, f, opts) => `<td class="ed"><select data-pc="${c.id}" data-f="${f}">${opts.map(o => `<option ${o === c[f] ? "selected" : ""}>${o}</option>`).join("")}</select></td>`;
-    const inp = (c, f, cls = "") => `<td class="ed ${cls}"><input data-pc="${c.id}" data-f="${f}" value="${core.esc(c[f])}"></td>`;
-
-    const tb = $("#proCheckTable");
-    if (tb) {
-      let h = `<thead><tr><th title="Arrastar">↕</th><th>✓</th><th>#</th><th>Categoria</th><th>Item</th><th>Prioridade</th><th>Status</th><th>Notas</th><th>Ações</th></tr></thead><tbody>`;
-      items.forEach((c, i) => {
-        h += `<tr class="chk-row ${c.status === "Concluído" ? "done" : ""}" draggable="true" data-dragid="${c.id}">
-          <td style="width:28px"><span class="drag-handle" title="Arraste para reordenar">⋮⋮</span></td>
-          <td><input type="checkbox" data-pchk="${c.id}" ${c.status === "Concluído" ? "checked" : ""}></td>
-          <td>${i + 1}</td>
-          ${inp(c, "cat")}${inp(c, "item", "wide itm")}
-          ${sel(c, "prio", ["Alta", "Média", "Baixa"])}
-          ${sel(c, "status", ["Pendente", "Em andamento", "Concluído"])}
-          ${inp(c, "notes", "wide")}
-          <td>
-            <button type="button" class="icon-btn" data-pcmove="${c.id}:-1" title="Subir">▲</button>
-            <button type="button" class="icon-btn" data-pcmove="${c.id}:1" title="Descer">▼</button>
-            <button type="button" class="icon-btn" data-pcedit="${c.id}" title="Editar">✏️</button>
-            <button type="button" class="icon-btn" data-pcdel="${c.id}" title="Excluir">🗑️</button>
-          </td>
-        </tr>`;
-      });
-      tb.innerHTML = h + "</tbody>";
-    }
-
-    const mc = $("#proMobileCheckCards");
-    if (mc) {
-      mc.innerHTML = items.map(c => `
-        <div class="m-card" draggable="true" data-dragid="${c.id}">
-          <div class="m-card-head">
-            <label style="display:flex;align-items:center;gap:8px;font-weight:700">
-              <span class="drag-handle">⋮⋮</span>
-              <input type="checkbox" data-pchk="${c.id}" ${c.status === "Concluído" ? "checked" : ""}>
-              <span>${core.esc(c.item)}</span>
-            </label>
-            <div class="inline-actions">
-              <button type="button" class="icon-btn" data-pcmove="${c.id}:-1">▲</button>
-              <button type="button" class="icon-btn" data-pcmove="${c.id}:1">▼</button>
-              <button type="button" class="icon-btn" data-pcedit="${c.id}">✏️</button>
-              <button type="button" class="icon-btn" data-pcdel="${c.id}">🗑️</button>
-            </div>
-          </div>
-          <div class="m-card-grid">
-            <div><span class="muted">Cat.:</span> ${core.esc(c.cat)}</div>
-            <div><span class="muted">Prioridade:</span> ${core.esc(c.prio)} · ${core.esc(c.status)}</div>
-          </div>
-          ${c.notes ? `<div class="muted small">${core.esc(c.notes)}</div>` : ""}
-        </div>`).join("") || `<p class="muted">Nenhum item nesta categoria.</p>`;
-    }
-
-    const bindRoot = root => {
-      if (!root) return;
-      root.querySelectorAll("[data-f]").forEach(el => {
-        el.onchange = () => { const it = st.checklist.find(x => x.id === el.dataset.pc); if (it) { it[el.dataset.f] = el.value; core.save(); } };
-      });
-      root.querySelectorAll("[data-pchk]").forEach(el => {
-        el.onchange = () => {
-          const it = st.checklist.find(x => x.id === el.dataset.pchk);
-          if (it) { it.status = el.checked ? "Concluído" : "Pendente"; core.save(el.checked ? "✅ Item concluído!" : ""); }
-        };
-      });
-      root.querySelectorAll("[data-pcmove]").forEach(b => {
-        b.onclick = () => {
-          const [cid, deltaStr] = b.dataset.pcmove.split(":");
-          const idx = st.checklist.findIndex(x => x.id === cid);
-          const next = idx + parseInt(deltaStr, 10);
-          if (idx >= 0 && next >= 0 && next < st.checklist.length) {
-            const [m] = st.checklist.splice(idx, 1);
-            st.checklist.splice(next, 0, m);
-            core.save("↕️ Ordem atualizada");
-          }
-        };
-      });
-      root.querySelectorAll("[data-pcedit]").forEach(b => { b.onclick = () => core.openCheckModal(b.dataset.pcedit); });
-      root.querySelectorAll("[data-pcdel]").forEach(b => {
-        b.onclick = () => {
-          const it = (st.checklist || []).find(x => x.id === b.dataset.pcdel);
-          if (!confirm(`Excluir o item "${it?.item || "selecionado"}" do checklist?`)) return;
-          st.checklist = st.checklist.filter(x => x.id !== b.dataset.pcdel);
-          core.save("🗑️ Item removido do checklist");
-        };
-      });
-    };
-    let draggingId = null;
-    const bindDnD = (container, selector) => {
-      if (!container) return;
-      container.querySelectorAll(selector).forEach(row => {
-        row.addEventListener("dragstart", ev => {
-          draggingId = row.dataset.dragid;
-          row.classList.add("dragging-row");
-          if (ev.dataTransfer) {
-            ev.dataTransfer.effectAllowed = "move";
-            ev.dataTransfer.setData("text/plain", draggingId);
-          }
-        });
-        row.addEventListener("dragover", ev => {
-          ev.preventDefault();
-          if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
-          if (draggingId && draggingId !== row.dataset.dragid) row.classList.add("drag-over");
-        });
-        row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
-        row.addEventListener("drop", ev => {
-          ev.preventDefault();
-          row.classList.remove("drag-over");
-          const from = draggingId || (ev.dataTransfer ? ev.dataTransfer.getData("text/plain") : "");
-          const to = row.dataset.dragid;
-          draggingId = null;
-          if (from && to && from !== to) {
-            const fromIdx = st.checklist.findIndex(x => x.id === from);
-            const toIdx = st.checklist.findIndex(x => x.id === to);
-            if (fromIdx >= 0 && toIdx >= 0) {
-              const [moved] = st.checklist.splice(fromIdx, 1);
-              st.checklist.splice(toIdx, 0, moved);
-              core.save("↕️ Ordem de prioridade atualizada");
-            }
-          }
-        });
-        row.addEventListener("dragend", () => {
-          draggingId = null;
-          container.querySelectorAll(selector).forEach(r => r.classList.remove("dragging-row", "drag-over"));
-        });
-      });
-    };
-
-    bindRoot(tb);
-    bindRoot(mc);
-    bindDnD(tb, "tr.chk-row[data-dragid]");
-    bindDnD(mc, ".m-card[data-dragid]");
+    window.MyPlanChecklists.renderGlobalChecklist({
+      scope: "pro",
+      rootEl,
+      activities: acts,
+      manualChecklist: st.checklist || [],
+      allTypes: Object.values(getAllProTypes()),
+      allLists: cols,
+      allAssignees,
+      allTags,
+      getTypeInfo: t => getProTypeInfo(t),
+      getListName: card => (cols.find(c => c.id === card.columnId)?.title || ""),
+      getAssignees: card => getCardAssigneesList(card).map(x => x.name).filter(Boolean),
+      fmtBR: core.fmtBR,
+      onOpenCard: cid => openProCardModal(cid),
+      onPromoteSubtask: info => startPromoteProSubtask(info),
+      onEditManual: id => core.openCheckModal(id),
+      onDeleteManual: id => {
+        const it = (st.checklist || []).find(x => x.id === id);
+        if (!confirm(`Excluir o item "${it?.item || "selecionado"}" do checklist?`)) return;
+        st.checklist = (st.checklist || []).filter(x => x.id !== id);
+        core.save("🗑️ Item removido do checklist");
+      },
+      onSyncCardProgress: card => {
+        if (card && Array.isArray(card.subtasks) && card.subtasks.length > 0) {
+          card.progress = Math.round(card.subtasks.filter(s => s.done).length / card.subtasks.length * 100 / 5) * 5;
+        }
+      },
+      onSave: msg => core.save(msg)
+    });
   }
 
   /* ---------- MODAL DE CARTÃO ESTILO TRELLO ---------- */
@@ -7913,12 +7903,18 @@
     if (progEl) progEl.textContent = total ? `(${done}/${total})` : "";
     if (barEl) barEl.style.width = `${total ? (done / total * 100) : 0}%`;
     if (!listEl) return;
+    if (!total) {
+      listEl.innerHTML = `<div class="muted small">Nenhuma subtarefa ainda.</div>`;
+      return;
+    }
     listEl.innerHTML = proModalSubtasks.map((st, idx) => `
-      <div class="pro-subtask-row ${st.done ? "done" : ""}">
+      <div class="pro-subtask-row ${st.done ? "done" : ""}" data-sub-row="${idx}">
+        <span class="drag-handle subtask-drag-handle" title="Arraste para reordenar">⋮⋮</span>
         <input type="checkbox" data-sub-idx="${idx}" ${st.done ? "checked" : ""}>
-        <span>${core.esc(st.text)}</span>
+        <input type="text" class="pro-subtask-txt" data-sub-txt="${idx}" value="${core.esc(st.text || "")}" aria-label="Item do checklist">
+        <button type="button" class="icon-btn subtask-promote-btn" data-sub-promote="${idx}" title="Transformar em cartão" aria-label="Transformar em cartão">↗️</button>
         <button type="button" class="icon-btn" data-sub-del="${idx}" title="Remover subtarefa">✕</button>
-      </div>`).join("") || `<div class="muted small">Nenhuma subtarefa ainda.</div>`;
+      </div>`).join("");
 
     listEl.querySelectorAll("[data-sub-idx]").forEach(cb => {
       cb.onchange = () => {
@@ -7934,6 +7930,29 @@
         }
       };
     });
+    listEl.querySelectorAll("[data-sub-txt]").forEach(inp => {
+      inp.onchange = () => {
+        const i = parseInt(inp.dataset.subTxt, 10);
+        if (proModalSubtasks[i]) proModalSubtasks[i].text = inp.value.trim();
+      };
+    });
+    listEl.querySelectorAll("[data-sub-promote]").forEach(btn => {
+      btn.onclick = () => {
+        const i = parseInt(btn.dataset.subPromote, 10);
+        const sub = proModalSubtasks[i];
+        if (!sub) return;
+        const txtInput = listEl.querySelector(`[data-sub-txt="${i}"]`);
+        const liveText = (txtInput ? txtInput.value : sub.text || "").trim();
+        if (liveText) sub.text = liveText;
+        startPromoteProSubtask({
+          cardId: editingProCardId || "",
+          cardName: $("#pc-name")?.value?.trim() || "Cartão",
+          subtaskId: sub.id || "",
+          subtaskIdx: i,
+          text: sub.text
+        });
+      };
+    });
     listEl.querySelectorAll("[data-sub-del]").forEach(btn => {
       btn.onclick = () => {
         const idx = parseInt(btn.dataset.subDel, 10);
@@ -7943,6 +7962,13 @@
         renderProModalSubtasks();
       };
     });
+    if (proModalSubtasks.length > 1 && window.MyPlanChecklists?.bindDragReorder) {
+      window.MyPlanChecklists.bindDragReorder(listEl, ".pro-subtask-row", ".subtask-drag-handle", (fromIdx, toIdx) => {
+        const [moved] = proModalSubtasks.splice(fromIdx, 1);
+        proModalSubtasks.splice(toIdx, 0, moved);
+        renderProModalSubtasks();
+      });
+    }
   }
 
   function buildMeetWhatsAppUrl({ title, date, time, url }) {
@@ -10404,7 +10430,16 @@
           requestCloseProCardModal();
         }
       });
-      $("#proCardModal").addEventListener("close", () => stopProAiRecording(true));
+      $("#proCardModal").addEventListener("close", () => {
+        stopProAiRecording(true);
+        const dlg = $("#proCardModal");
+        if (dlg && dlg.open) return;
+        if (!proModalSaved) {
+          proPendingPromoteSubtask = null;
+        }
+        const pb = $("#proPromoteBanner");
+        if (pb) { pb.hidden = true; pb.innerHTML = ""; }
+      });
     }
     if ($("#btnProUnsavedDiscard")) {
       $("#btnProUnsavedDiscard").onclick = () => {
@@ -11102,13 +11137,16 @@
           }
           if (!Array.isArray(targetPersonalTrip.data.activities)) targetPersonalTrip.data.activities = [];
           targetPersonalTrip.data.activities.push(converted);
+          const promotedPers = completePromoteProSubtask(targetPersonalTrip);
           proModalSaved = true;
           proModalTempUploadIds = [];
           $("#proCardModal").close();
           if (editingProCardId && sourceTrip && sourceTrip.id !== targetPersonalTrip.id) {
             await core.saveTripRecord(sourceTrip, "");
           }
-          await core.saveTripRecord(targetPersonalTrip, `🌴 Cartão migrado para Pessoal ("${targetPersonalTrip.data?.title || targetPersonalTrip.name}")!`);
+          await core.saveTripRecord(targetPersonalTrip, promotedPers
+            ? `✅ Novo cartão criado em Pessoal e item removido do checklist original!`
+            : `🌴 Cartão migrado para Pessoal ("${targetPersonalTrip.data?.title || targetPersonalTrip.name}")!`);
           return;
         }
 
@@ -11166,10 +11204,13 @@
           data.order = tgtData.activities.filter(x => x.columnId === data.columnId).length;
           tgtData.activities.push({ id: proModalDraftId || core.uid(), ...data });
         }
+        const promoted = completePromoteProSubtask(targetTrip);
         proModalSaved = true;
         proModalTempUploadIds = [];
         $("#proCardModal").close();
-        core.saveTripRecord(targetTrip, editingProCardId ? "💾 Cartão atualizado!" : "🗂️ Cartão adicionado!");
+        core.saveTripRecord(targetTrip, promoted
+          ? "✅ Novo cartão criado e item removido do checklist original!"
+          : (editingProCardId ? "💾 Cartão atualizado!" : "🗂️ Cartão adicionado!"));
       };
     }
 
