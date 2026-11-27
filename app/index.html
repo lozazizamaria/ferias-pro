@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=62">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=62">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=62">
+<link rel="manifest" href="/manifest.webmanifest?v=63">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=63">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=63">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=62">
+<link rel="stylesheet" href="styles.css?v=63">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=62" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=63" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=62" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=63" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -553,6 +553,12 @@
 
     <!-- FINANCEIRO (LINHA DO TEMPO DIÁRIA, GRÁFICOS E CONTROLE REAL) -->
     <section class="view" id="view-finance">
+      <div class="fin-subtabs" id="finSubtabs" role="tablist" aria-label="Sub-abas do Financeiro Pessoal">
+        <button type="button" class="fin-subtab active" role="tab" aria-selected="true" data-fin-sub="overview" id="btnFinSubOverview">💰 Resumo &amp; Gastos</button>
+        <button type="button" class="fin-subtab" role="tab" aria-selected="false" data-fin-sub="splitwise" id="btnFinSubSplitwise">🤝 Dividir Custos <span class="pill" id="swPendingBadge" hidden></span></button>
+      </div>
+
+      <div id="finOverviewPane">
       <div class="view-filter-bar" aria-label="Filtros do financeiro">
         <span class="vf-title" title="Filtros"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
         <div id="finTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no financeiro"></div>
@@ -654,6 +660,9 @@
         </div>
         <div id="finTimelineList" class="fin-timeline-list"></div>
       </div>
+      </div>
+
+      <div id="finSplitwisePane" class="sw-pane" hidden></div>
     </section>
 
     <!-- TABELA -->
@@ -2963,37 +2972,57 @@
 
     <div id="actPromoteBanner" class="chk-promote-banner" hidden></div>
 
-    <!-- BLOCO DE PREENCHIMENTO COM IA (IGUAL AO PROFISSIONAL) -->
-    <div class="modal-ai-strip" id="modalAiStrip">
-      <div class="modal-ai-top">
-        <span>✨ Preencher com IA (áudio, print ou descrição)</span>
-        <div class="inline-actions">
-          <button type="button" class="btn ai-pill small" id="btnActAiUpload">📷 Imagem</button>
-          <button type="button" class="btn ghost small" id="btnActAiPdf">📄 PDF</button>
-          <button type="button" class="btn ghost small" id="btnActAiAudio">🎙️ Áudio</button>
-          <button type="button" class="btn ghost small" id="btnActAiText">✍️ Descrever</button>
-          <input type="file" id="actAiFile" accept="image/*,audio/*,.pdf" hidden>
-        </div>
-      </div>
-      <div class="modal-ai-text-row" id="actAiTextRow" hidden>
-        <input type="text" id="actAiTextInput" placeholder="Ex: Voo LATAM Brasília para Maceió dia 15/01/2027 por R$ 1.850 reserva ABC123">
-        <button type="button" class="btn primary small" id="btnActAiTextRun">✨ Preencher</button>
-      </div>
-      <div class="modal-ai-status" id="actAiStatus" role="status" aria-live="polite" hidden></div>
+    <!-- PASSO 1 (MOBILE-FIRST): SELETOR RÁPIDO DE TIPO / LOCOMOÇÃO EM 1 TOQUE -->
+    <div class="pmob-type-chips-wrap" id="f-typeQuickWrap">
+      <div class="pmob-type-chips" id="f-typeQuickChips" role="radiogroup" aria-label="Tipo de atividade rápido"></div>
     </div>
 
-    <div class="pro-card-modal-grid">
-      <!-- COLUNA ESQUERDA: NOME, DESCRIÇÃO, CAMPOS ADAPTATIVOS, CHECKLIST E ANEXOS -->
+    <!-- BLOCO DE PREENCHIMENTO COM IA (ACORDEÃO NO MOBILE) -->
+    <details class="pmob-acc pmob-acc-ai" id="pmobAccAi" open>
+      <summary class="pmob-acc-sum">
+        <span>✨ Preencher com IA <small class="muted">(Áudio, Print, PDF)</small></span>
+      </summary>
+      <div class="pmob-acc-body">
+        <div class="modal-ai-strip" id="modalAiStrip">
+          <div class="modal-ai-top">
+            <span>✨ Preencher com IA (áudio, print ou descrição)</span>
+            <div class="inline-actions">
+              <button type="button" class="btn ai-pill small" id="btnActAiUpload">📷 Imagem</button>
+              <button type="button" class="btn ghost small" id="btnActAiPdf">📄 PDF</button>
+              <button type="button" class="btn ghost small" id="btnActAiAudio">🎙️ Áudio</button>
+              <button type="button" class="btn ghost small" id="btnActAiText">✍️ Descrever</button>
+              <input type="file" id="actAiFile" accept="image/*,audio/*,.pdf" hidden>
+            </div>
+          </div>
+          <div class="modal-ai-text-row" id="actAiTextRow" hidden>
+            <input type="text" id="actAiTextInput" placeholder="Ex: Voo LATAM Brasília para Maceió dia 15/01/2027 por R$ 1.850 reserva ABC123">
+            <button type="button" class="btn primary small" id="btnActAiTextRun">✨ Preencher</button>
+          </div>
+          <div class="modal-ai-status" id="actAiStatus" role="status" aria-live="polite" hidden></div>
+        </div>
+      </div>
+    </details>
+
+    <div class="pro-card-modal-grid pmob-modal-grid">
+      <!-- COLUNA ESQUERDA: TÍTULO, DATAS, LOCAL/ROTA, CHECKLIST E ANEXOS -->
       <div class="pro-card-main-col">
-        <label class="pro-field-stack">
+        <label class="pro-field-stack pmob-title-field">
           <span>Nome / Título do cartão *</span>
           <input name="name" id="f-name" required placeholder="Ex: Viagem SP, Voo BSB-FLN, Cruzeiro Santos, Jogo Mané Garrincha...">
         </label>
 
-        <label class="pro-field-stack">
-          <span>Descrição / Observações</span>
-          <textarea name="notes" id="f-notes" rows="4" placeholder="Detalhes, roteiro, observações, links ou anotações..."></textarea>
-        </label>
+        <!-- PASSO 2: QUANDO (DATAS LADO A LADO EM 2 COLUNAS COMPACTAS) -->
+        <div class="pmob-dates-row">
+          <label><span id="lbl-start">Início</span><input type="date" name="start" id="f-start" required></label>
+          <div class="field-box arrival-date-box">
+            <label for="f-end"><span id="lbl-end">Fim</span></label>
+            <input type="date" name="end" id="f-end">
+            <label class="diff-arrival-toggle" id="f-diffArrivalWrap" hidden>
+              <input type="checkbox" id="f-diffArrival">
+              <span>Data da chegada diferente</span>
+            </label>
+          </div>
+        </div>
 
         <!-- CAMPOS ADAPTATIVOS DO MODO PESSOAL (VOO, CARRO, TREM/ÔNIBUS/NAVIO, LOCAL, VALORES) -->
         <div class="form-grid">
@@ -3136,84 +3165,102 @@
           </div>
         </div>
 
-        <!-- CHECKLIST DO CARTÃO PESSOAL -->
-        <div class="pro-subtasks-box" id="f-subtasksBox">
-          <div class="route-head-row">
-            <span class="route-title">☑️ Checklist do Cartão <small class="muted" id="f-subtasksProgress"></small></span>
-          </div>
-          <div class="progress" style="margin:6px 0 8px"><div id="f-subtasksBar"></div></div>
-          <div id="f-subtasksList" class="pro-subtasks-list"></div>
-          <div class="key-input-row" style="margin-top:8px">
-            <input type="text" id="f-newSubtask" placeholder="Adicionar item ao checklist... (Enter)">
-            <button type="button" class="btn ghost small" id="btnActAddSubtask">➕ Adicionar</button>
-          </div>
-        </div>
-
-        <!-- ANEXOS, CONTRATOS & LINKS -->
-        <div class="attach-box">
-          <div class="route-head-row">
-            <span class="route-title">📎 Anexos, Contratos &amp; Links</span>
-            <div class="inline-actions">
-              <button type="button" class="btn ghost small" id="btnAttachFile">📄 Anexar arquivo</button>
-              <button type="button" class="btn ghost small" id="btnAttachLink">🔗 Link</button>
+        <!-- CHECKLIST DO CARTÃO PESSOAL (ACORDEÃO NO MOBILE) -->
+        <details class="pmob-acc" id="pmobAccChecklist" open>
+          <summary class="pmob-acc-sum">
+            <span>📋 Checklist do Cartão</span>
+            <span class="pill pmob-acc-badge" id="pmobAccChkBadge">0</span>
+          </summary>
+          <div class="pmob-acc-body">
+            <div class="pro-subtasks-box" id="f-subtasksBox">
+              <div class="route-head-row">
+                <span class="route-title">☑️ Checklist do Cartão <small class="muted" id="f-subtasksProgress"></small></span>
+              </div>
+              <div class="progress" style="margin:6px 0 8px"><div id="f-subtasksBar"></div></div>
+              <div id="f-subtasksList" class="pro-subtasks-list"></div>
+              <div class="key-input-row" style="margin-top:8px">
+                <input type="text" id="f-newSubtask" placeholder="Adicionar item ao checklist... (Enter)">
+                <button type="button" class="btn ghost small" id="btnActAddSubtask">➕ Adicionar</button>
+              </div>
             </div>
           </div>
-          <div class="pro-attach-ai-bar" style="margin-top:8px">
-            <button type="button" class="btn ai-pill small" id="btnActAiReadAttachments" disabled title="Lê o conteúdo dos anexos com IA e insere um resumo estruturado na Descrição">✨ Ler anexos com IA e inserir na Descrição</button>
+        </details>
+
+        <!-- ANEXOS, CONTRATOS & LINKS (ACORDEÃO NO MOBILE) -->
+        <details class="pmob-acc" id="pmobAccAttach" open>
+          <summary class="pmob-acc-sum">
+            <span>📎 Anexos, Links e Contratos</span>
+            <span class="pill pmob-acc-badge" id="pmobAccAttachBadge">0</span>
+          </summary>
+          <div class="pmob-acc-body">
+            <div class="attach-box">
+              <div class="route-head-row">
+                <span class="route-title">📎 Anexos, Contratos &amp; Links</span>
+                <div class="inline-actions">
+                  <button type="button" class="btn ghost small" id="btnAttachFile">📄 Anexar arquivo</button>
+                  <button type="button" class="btn ghost small" id="btnAttachLink">🔗 Link</button>
+                </div>
+              </div>
+              <div class="pro-attach-ai-bar" style="margin-top:8px">
+                <button type="button" class="btn ai-pill small" id="btnActAiReadAttachments" disabled title="Lê o conteúdo dos anexos com IA e insere um resumo estruturado na Descrição">✨ Ler anexos com IA e inserir na Descrição</button>
+              </div>
+              <div id="f-aiReadStatus" class="modal-ai-status" role="status" aria-live="polite" hidden style="margin-top:6px"></div>
+              <input type="file" id="f-attachInput" multiple hidden>
+              <div id="f-attachLoading" class="modal-ai-status is-loading" role="status" aria-live="polite" hidden style="margin-top:8px">
+                <span class="ai-spinner" aria-hidden="true"></span>
+                <span id="f-attachLoadingText">Carregando arquivo...</span>
+              </div>
+              <div id="modalAttachList" class="attach-list"></div>
+            </div>
           </div>
-          <div id="f-aiReadStatus" class="modal-ai-status" role="status" aria-live="polite" hidden style="margin-top:6px"></div>
-          <input type="file" id="f-attachInput" multiple hidden>
-          <div id="f-attachLoading" class="modal-ai-status is-loading" role="status" aria-live="polite" hidden style="margin-top:8px">
-            <span class="ai-spinner" aria-hidden="true"></span>
-            <span id="f-attachLoadingText">Carregando arquivo...</span>
-          </div>
-          <div id="modalAttachList" class="attach-list"></div>
-        </div>
+        </details>
       </div>
 
-      <!-- COLUNA DIREITA: LISTA, TIPO, DATAS, TAGS, DETALHES DA VIAGEM E ATAS -->
+      <!-- COLUNA DIREITA: ORGANIZAÇÃO (ACORDEÃO NO MOBILE), DETALHES DA VIAGEM E ATAS -->
       <div class="pro-card-side-col">
-        <div class="pro-side-card">
-          <div class="form-grid">
-            <label class="span2">Lista (Coluna nos Quadros)
-              <div class="pro-type-picker-row">
-                <select id="f-personalCol" aria-label="Lista nos Quadros"></select>
-                <button type="button" class="btn ghost small icon-compact" id="btnActQuickAddCol" title="Criar nova lista">+</button>
-                <button type="button" class="btn ghost small icon-compact" id="btnActQuickEditCol" title="Editar lista selecionada">✏️</button>
+        <details class="pmob-acc" id="pmobAccOrg" open>
+          <summary class="pmob-acc-sum">
+            <span>⚙️ Organização <small class="muted">(Lista, Tipo, Tags, Perfil, Descrição)</small></span>
+          </summary>
+          <div class="pmob-acc-body">
+            <div class="pro-side-card">
+              <div class="form-grid">
+                <label class="span2">Lista (Coluna nos Quadros)
+                  <div class="pro-type-picker-row">
+                    <select id="f-personalCol" aria-label="Lista nos Quadros"></select>
+                    <button type="button" class="btn ghost small icon-compact" id="btnActQuickAddCol" title="Criar nova lista">+</button>
+                    <button type="button" class="btn ghost small icon-compact" id="btnActQuickEditCol" title="Editar lista selecionada">✏️</button>
+                  </div>
+                </label>
+                <label class="span2">Tipo de atividade / meio de locomoção
+                  <div class="pro-type-picker-row">
+                    <select name="type" id="f-type"></select>
+                    <button type="button" class="btn ghost small icon-compact" id="btnActQuickAddType" title="Adicionar novo tipo personalizado">+</button>
+                  </div>
+                </label>
+                <div class="field-box modal-tags-field span2">
+                  <label for="f-tagsTrigger">Tags</label>
+                  <div id="modalTagsHost" class="msel-host" aria-label="Tags da atividade"></div>
+                </div>
+                <div class="field-box" id="f-targetModeWrap">
+                  <label for="f-targetMode">Perfil / Modo</label>
+                  <select id="f-targetMode" aria-label="Mudar perfil da atividade">
+                    <option value="personal">🌴 Manter em Pessoal</option>
+                    <option value="professional">💼 Mudar para Profissional</option>
+                  </select>
+                </div>
+                <div class="field-box" id="f-targetTripWrap">
+                  <label for="f-targetTrip">Calendário / Evento destino</label>
+                  <select id="f-targetTrip" aria-label="Associar ao evento"></select>
+                </div>
+                <label class="pro-field-stack span2">
+                  <span>Descrição / Observações</span>
+                  <textarea name="notes" id="f-notes" rows="4" placeholder="Detalhes, roteiro, observações, links ou anotações..."></textarea>
+                </label>
               </div>
-            </label>
-            <label class="span2">Tipo de atividade / meio de locomoção
-              <div class="pro-type-picker-row">
-                <select name="type" id="f-type"></select>
-                <button type="button" class="btn ghost small icon-compact" id="btnActQuickAddType" title="Adicionar novo tipo personalizado">+</button>
-              </div>
-            </label>
-            <label><span id="lbl-start">Início</span><input type="date" name="start" id="f-start" required></label>
-            <div class="field-box arrival-date-box">
-              <label for="f-end"><span id="lbl-end">Fim</span></label>
-              <input type="date" name="end" id="f-end">
-              <label class="diff-arrival-toggle" id="f-diffArrivalWrap" hidden>
-                <input type="checkbox" id="f-diffArrival">
-                <span>Data da chegada diferente</span>
-              </label>
-            </div>
-            <div class="field-box modal-tags-field span2">
-              <label for="f-tagsTrigger">Tags</label>
-              <div id="modalTagsHost" class="msel-host" aria-label="Tags da atividade"></div>
-            </div>
-            <div class="field-box" id="f-targetModeWrap">
-              <label for="f-targetMode">Perfil / Modo</label>
-              <select id="f-targetMode" aria-label="Mudar perfil da atividade">
-                <option value="personal">🌴 Manter em Pessoal</option>
-                <option value="professional">💼 Mudar para Profissional</option>
-              </select>
-            </div>
-            <div class="field-box" id="f-targetTripWrap">
-              <label for="f-targetTrip">Calendário / Evento destino</label>
-              <select id="f-targetTrip" aria-label="Associar ao evento"></select>
             </div>
           </div>
-        </div>
+        </details>
 
         <!-- DETALHES DA VIAGEM (SEM CAMPOS FINANCEIROS MILITARES) -->
         <details class="pro-travel-details-box" id="f-travelDetailsBox">
@@ -3259,12 +3306,12 @@
       </div>
     </div>
 
-    <div class="modal-actions">
+    <div class="modal-actions pmob-sticky-actions">
       <button type="button" class="btn danger-ghost" id="btnDelete">🗑️ Excluir</button>
       <button type="button" class="btn ghost" id="btnActArchive" hidden>📦 Arquivar Cartão</button>
       <span class="spacer"></span>
       <button type="button" class="btn ghost" id="btnCancel">Cancelar</button>
-      <button type="submit" class="btn primary" id="btnSave">Salvar Cartão</button>
+      <button type="submit" class="btn primary" id="btnSave">💾 Salvar Cartão</button>
     </div>
   </form>
 </dialog>
@@ -3291,6 +3338,107 @@
       <button type="submit" class="btn primary">💾 Salvar Lista</button>
     </div>
   </form>
+</dialog>
+
+<!-- MODAIS SPLITWISE (DIVISÃO DE CUSTOS + PIX QR CODE — MODO PESSOAL) -->
+<dialog id="swParticipantModal">
+  <form id="swParticipantForm" method="dialog">
+    <div class="modal-head">
+      <h2 id="swPartModalTitle">Novo Participante</h2>
+      <button type="button" class="icon-btn modal-close" id="btnSwpClose" aria-label="Fechar">✕</button>
+    </div>
+    <div class="form-grid">
+      <label class="span2">Nome do Participante *
+        <input id="swp-name" required placeholder="Ex: João, Maria, Casal Silva...">
+      </label>
+      <label class="span2">Chave Pix (opcional — CPF/CNPJ, E-mail, Telefone ou Aleatória)
+        <input id="swp-pixKey" placeholder="Ex: joao@email.com ou +5561999999999">
+      </label>
+      <label>Titular Pix (opcional)
+        <input id="swp-pixName" maxlength="25" placeholder="Nome no banco (até 25 chars)">
+      </label>
+      <label>Cidade (padrão BR Code)
+        <input id="swp-pixCity" maxlength="15" placeholder="Ex: BRASILIA">
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn danger-ghost" id="btnSwpDelete" hidden>🗑️ Remover</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnSwpCancel">Cancelar</button>
+      <button type="submit" class="btn primary">💾 Salvar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="swExpenseModal" class="sw-exp-dialog">
+  <form id="swExpenseForm" method="dialog">
+    <div class="modal-head">
+      <h2 id="swExpModalTitle">Nova Despesa</h2>
+      <button type="button" class="icon-btn modal-close" id="btnSweClose" aria-label="Fechar">✕</button>
+    </div>
+    <div class="form-grid">
+      <label class="span2">Descrição da despesa *
+        <input id="swe-desc" required placeholder="Ex: Jantar em Gramado, Gasolina, Airbnb...">
+      </label>
+      <label>Valor total (R$) *
+        <input id="swe-amount" type="text" inputmode="decimal" required placeholder="0,00">
+      </label>
+      <label>Data
+        <input id="swe-date" type="date">
+      </label>
+      <label class="span2">Categoria
+        <select id="swe-cat"></select>
+      </label>
+    </div>
+
+    <div class="sw-modal-block">
+      <div class="sw-block-head">
+        <strong>💳 Quem pagou?</strong>
+        <label class="sw-inline-chk"><input type="checkbox" id="swe-multiPayer"><span>Múltiplos pagadores</span></label>
+      </div>
+      <div id="swe-payersHost"></div>
+    </div>
+
+    <div class="sw-modal-block">
+      <div class="sw-block-head">
+        <strong>⚖️ Como dividir</strong>
+      </div>
+      <div class="seg sw-split-tabs" id="swe-splitTabs" role="group" aria-label="Modo de divisão">
+        <button type="button" class="active" data-sw-mode="equal">Igualmente</button>
+        <button type="button" data-sw-mode="exact">Valores (R$)</button>
+        <button type="button" data-sw-mode="percent">Porcentagem (%)</button>
+        <button type="button" data-sw-mode="shares">Cotas</button>
+      </div>
+      <div id="swe-splitHost" class="sw-split-list"></div>
+      <div id="swe-validation" class="sw-val-status" role="status" aria-live="polite"></div>
+    </div>
+
+    <div class="modal-actions pmob-sticky-actions">
+      <button type="button" class="btn danger-ghost" id="btnSweDelete" hidden>🗑️ Excluir</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnSweCancel">Cancelar</button>
+      <button type="submit" class="btn primary">💾 Salvar Despesa</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="swPixModal" class="sw-pix-dialog">
+  <div class="modal-head">
+    <h2>📱 Pagar com Pix</h2>
+    <button type="button" class="icon-btn modal-close" id="btnSwPixClose" aria-label="Fechar">✕</button>
+  </div>
+  <div class="sw-pix-body">
+    <div id="swPixSummary" class="sw-pix-summary"></div>
+    <div id="swPixQrHost" class="sw-pix-qr-box"></div>
+    <label class="pro-field-stack" style="width:100%">
+      <span>Pix Copia e Cola (EMV BR Code)</span>
+      <textarea id="swPixCode" rows="3" readonly></textarea>
+    </label>
+    <div class="sw-pix-actions">
+      <button type="button" class="btn primary" id="btnSwPixCopy">📋 Copiar Pix Copia e Cola</button>
+      <a class="btn ghost" id="btnSwPixWhatsApp" target="_blank" rel="noopener">💬 Enviar no WhatsApp</a>
+    </div>
+  </div>
 </dialog>
 
 <!-- MODAL ATA / REGISTRO RÁPIDO DO CARTÃO PESSOAL -->
@@ -4746,21 +4894,22 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="shared-utils.js?v=62"></script>
-<script src="config.example.js?v=62"></script>
-<script src="vehicles.js?v=62"></script>
-<script src="countries.js?v=62"></script>
-<script src="data.js?v=62"></script>
-<script src="maps.js?v=62"></script>
-<script src="calendar.js?v=62"></script>
-<script src="drive.js?v=62"></script>
-<script src="report.js?v=62"></script>
-<script src="api.js?v=62"></script>
-<script src="minutes.js?v=62"></script>
-<script src="pro-annual.js?v=62"></script>
-<script src="checklists.js?v=62"></script>
-<script src="pro.js?v=62"></script>
-<script src="personal-map.js?v=62"></script>
-<script src="app.js?v=62"></script>
+<script src="shared-utils.js?v=63"></script>
+<script src="config.example.js?v=63"></script>
+<script src="vehicles.js?v=63"></script>
+<script src="countries.js?v=63"></script>
+<script src="data.js?v=63"></script>
+<script src="maps.js?v=63"></script>
+<script src="calendar.js?v=63"></script>
+<script src="drive.js?v=63"></script>
+<script src="report.js?v=63"></script>
+<script src="api.js?v=63"></script>
+<script src="minutes.js?v=63"></script>
+<script src="pro-annual.js?v=63"></script>
+<script src="checklists.js?v=63"></script>
+<script src="pro.js?v=63"></script>
+<script src="personal-map.js?v=63"></script>
+<script src="splitwise.js?v=63"></script>
+<script src="app.js?v=63"></script>
 </body>
 </html>

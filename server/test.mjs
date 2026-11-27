@@ -5,6 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
+import vm from "node:vm";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -423,4 +424,64 @@ test("Storage Fallback JSON -> Migração Automática SQLite WAL & Rate Limit An
   const listAfterMig = await apiJson(baseUrl2, "/api/trips", { cookie });
   assert.equal(listAfterMig.resp.status, 200);
   assert.ok((listAfterMig.json.ownTrips || []).some(tr => tr.id === legacyTripId && tr.name === "Viagem Legada"));
+});
+
+test("Unit — Splitwise (Integer Cents, Greedy Min-Cash-Flow, Pix EMV BR Code CRC16 & QR SVG)", async () => {
+  const swSrc = fs.readFileSync(path.join(ROOT_DIR, "app", "splitwise.js"), "utf8");
+  const sandbox = { window: {}, TextEncoder, Uint8Array, Int8Array, Map, Set, Math, Date, Number, String, Array, Object, Boolean, Infinity, encodeURIComponent };
+  vm.createContext(sandbox);
+  vm.runInContext(swSrc, sandbox);
+  const SW = sandbox.window.MyPlanSplitwise;
+  assert.ok(SW, "MyPlanSplitwise deve estar exposto em window");
+
+  // 1. Aritmética segura em centavos (zero erro de ponto flutuante: R$ 100,00 / 3 = 33,34 + 33,33 + 33,33)
+  assert.equal(SW.parseMoneyToCents("1.234,56"), 123456);
+  assert.equal(SW.parseMoneyToCents("145,50"), 14550);
+  const parts = [
+    { id: "p1", name: "Ana", pixKey: "ana@example.com", pixName: "ANA SILVA", pixCity: "BRASILIA" },
+    { id: "p2", name: "Bruno", pixKey: "" },
+    { id: "p3", name: "Carlos", pixKey: "" }
+  ];
+  const eqSplits = SW.computeExpenseSplits({
+    amountCents: 10000,
+    splitMode: "equal",
+    shares: parts.map(p => ({ participantId: p.id, included: true }))
+  }, parts);
+  assert.equal(eqSplits.reduce((s, x) => s + x.amountCents, 0), 10000, "Soma exata em centavos para divisão por 3");
+  assert.deepEqual(eqSplits.map(x => x.amountCents), [3334, 3333, 3333]);
+
+  // 2. Divisão por cotas (2:1:1 em R$ 400,00 -> 200, 100, 100)
+  const shareSplits = SW.computeExpenseSplits({
+    amountCents: 40000,
+    splitMode: "shares",
+    shares: [
+      { participantId: "p1", weight: 2 },
+      { participantId: "p2", weight: 1 },
+      { participantId: "p3", weight: 1 }
+    ]
+  }, parts);
+  assert.deepEqual(shareSplits.map(x => x.amountCents), [20000, 10000, 10000]);
+
+  // 3. Simplificação de dívidas (Greedy Min-Cash-Flow)
+  const ledger = SW.computeLedgerAndSettlements({
+    participants: parts,
+    expenses: [
+      { id: "e1", desc: "Hotel", amountCents: 30000, payers: [{ participantId: "p1", amountCents: 30000 }], splitMode: "equal", shares: parts.map(p => ({ participantId: p.id, included: true })) },
+      { id: "e2", desc: "Jantar", amountCents: 6000, payers: [{ participantId: "p2", amountCents: 6000 }], splitMode: "equal", shares: parts.map(p => ({ participantId: p.id, included: true })) }
+    ],
+    settlements: []
+  });
+  assert.equal(ledger.totalGroupCents, 36000);
+  // Ana pagou 300, deve 120 -> +180; Bruno pagou 60, deve 120 -> -60; Carlos pagou 0, deve 120 -> -120
+  assert.equal(ledger.transfers.length, 2);
+  assert.equal(ledger.transfers.reduce((s, tr) => s + tr.amountCents, 0), 18000);
+
+  // 4. Pix EMV BR Code com CRC16-CCITT válido e QR SVG gerado localmente
+  const brCode = SW.buildPixBrCode({ key: "ana@example.com", name: "Ana Silva", city: "Brasília", amountCents: 14550, txid: "MYPLAN01" });
+  assert.ok(brCode.startsWith("000201"), "BR Code inicia com 000201");
+  assert.ok(brCode.includes("br.gov.bcb.pix"), "BR Code contém GUI oficial do BCB");
+  assert.ok(brCode.includes("5406145.50"), "BR Code contém valor exato 145.50");
+  assert.equal(brCode.slice(-4), SW.crc16Ccitt(brCode.slice(0, -4)), "CRC16-CCITT confere");
+  const svg = SW.renderQrSvg(brCode, 200);
+  assert.ok(svg.startsWith("<svg") && svg.includes("<path d=\"M"), "QR Code SVG gerado localmente sem dependências");
 });

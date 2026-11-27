@@ -136,6 +136,12 @@ function migrateState(raw) {
     savingsGoal: Math.max(0, Number(rawFin.savingsGoal) || 0),
     dailyRecords: rawFin.dailyRecords && typeof rawFin.dailyRecords === "object" ? clone(rawFin.dailyRecords) : {}
   };
+  const rawSw = s.splitwise && typeof s.splitwise === "object" ? s.splitwise : {};
+  merged.splitwise = {
+    participants: Array.isArray(rawSw.participants) ? clone(rawSw.participants) : [],
+    expenses: Array.isArray(rawSw.expenses) ? clone(rawSw.expenses) : [],
+    settlements: Array.isArray(rawSw.settlements) ? clone(rawSw.settlements) : []
+  };
   return merged;
 }
 
@@ -3002,7 +3008,68 @@ function computeFinancialTimeline(s, t) {
   };
 }
 
+let personalFinSubtab = "overview";
+
+function renderPersonalSplitwise() {
+  const pane = $("#finSplitwisePane");
+  const over = $("#finOverviewPane");
+  const badge = $("#swPendingBadge");
+  if (over) over.hidden = personalFinSubtab !== "overview";
+  if (pane) pane.hidden = personalFinSubtab !== "splitwise";
+  if ($("#finSubtabs")) {
+    $("#finSubtabs").querySelectorAll("[data-fin-sub]").forEach(btn => {
+      const act = btn.dataset.finSub === personalFinSubtab;
+      btn.classList.toggle("active", act);
+      btn.setAttribute("aria-selected", String(act));
+    });
+  }
+  if (!window.MyPlanSplitwise) return;
+  const sw = window.MyPlanSplitwise.ensureSplitwiseState(state);
+  const ledger = window.MyPlanSplitwise.computeLedgerAndSettlements(sw);
+  if (badge) {
+    badge.textContent = ledger.transfers.length ? String(ledger.transfers.length) : "";
+    badge.hidden = !ledger.transfers.length;
+  }
+  if (pane && personalFinSubtab === "splitwise") {
+    window.MyPlanSplitwise.renderSplitwiseView({
+      container: pane,
+      state,
+      tripTitle: activeTrip?.name || state?.title || "My Plan",
+      fmtBR,
+      onSave: msg => save(msg),
+      toast
+    });
+  }
+}
+
+function bindPersonalSplitwiseUI() {
+  const tabs = $("#finSubtabs");
+  if (tabs && !tabs.dataset.boundSw) {
+    tabs.dataset.boundSw = "1";
+    tabs.querySelectorAll("[data-fin-sub]").forEach(btn => {
+      btn.onclick = () => {
+        personalFinSubtab = btn.dataset.finSub || "overview";
+        renderPersonalSplitwise();
+      };
+    });
+  }
+  const wireClose = (btnId, dlgId) => {
+    const b = $(btnId);
+    if (b && !b.dataset.boundSw) {
+      b.dataset.boundSw = "1";
+      b.onclick = () => $(dlgId)?.close();
+    }
+  };
+  wireClose("#btnSwpClose", "#swParticipantModal");
+  wireClose("#btnSwpCancel", "#swParticipantModal");
+  wireClose("#btnSweClose", "#swExpenseModal");
+  wireClose("#btnSweCancel", "#swExpenseModal");
+  wireClose("#btnSwPixClose", "#swPixModal");
+}
+
 function renderFinance(s, t) {
+  bindPersonalSplitwiseUI();
+  renderPersonalSplitwise();
   const kpisEl = $("#finKpis");
   if (!kpisEl) return;
 
@@ -4182,6 +4249,8 @@ function renderTicketRows() {
 function renderModalAttachments() {
   const list = $("#modalAttachList");
   const aiBtn = $("#btnActAiReadAttachments");
+  const accBadge = $("#pmobAccAttachBadge");
+  if (accBadge) accBadge.textContent = String(modalAttachments.length);
   if (aiBtn) aiBtn.disabled = (modalAttachments.length + (Array.isArray(modalTravelTickets) ? modalTravelTickets.length : 0)) === 0;
   if (!list) return;
   if (!modalAttachments.length) {
@@ -4691,6 +4760,8 @@ window.openModal = function (idOrOpts) {
   renderTicketRows();
   refreshTagSelectors([], modalDraftTags);
   toggleTrip();
+  renderPersonalTypeQuickChips($("#f-type")?.value || a.type || "Viagem");
+  syncPersonalModalAccordions();
   updateModalMapsUI();
   renderModalAttachments();
   updateModalPreview();
@@ -4700,6 +4771,57 @@ window.openModal = function (idOrOpts) {
   personalModalInitialSnap = getPersonalModalSnapshot();
   $("#modal").showModal();
 };
+
+const PERSONAL_QUICK_CHIP_META = [
+  { id: "Voo", emoji: "✈️", short: "Avião" },
+  { id: "Viagem", emoji: "🚗", short: "Carro" },
+  { id: "Hospedagem", emoji: "🏨", short: "Hospedagem" },
+  { id: "Passeio", emoji: "🎢", short: "Passeio" },
+  { id: "Evento", emoji: "★", short: "Evento" },
+  { id: "Restaurante", emoji: "🍽️", short: "Restaurante" },
+  { id: "Ingresso", emoji: "🎟️", short: "Ingresso" },
+  { id: "Trem", emoji: "🚂", short: "Trem" },
+  { id: "Ônibus", emoji: "🚌", short: "Ônibus" },
+  { id: "Navio", emoji: "🚢", short: "Navio" },
+  { id: "Período", emoji: "■", short: "Período" },
+  { id: "Outro", emoji: "📌", short: "Outro" }
+];
+
+function renderPersonalTypeQuickChips(activeType) {
+  const host = $("#f-typeQuickChips");
+  const sel = $("#f-type");
+  if (!host || !sel) return;
+  const cur = activeType || sel.value || "Viagem";
+  const known = new Set(PERSONAL_QUICK_CHIP_META.map(x => x.id));
+  const extraOpts = [...sel.options]
+    .filter(o => o.value && !known.has(o.value))
+    .map(o => ({ id: o.value, emoji: "🏷️", short: o.textContent.replace(/^[^\wÀ-ÿ]+/u, "").trim() || o.value }));
+  const list = [...PERSONAL_QUICK_CHIP_META, ...extraOpts];
+  host.innerHTML = list.map(it => {
+    const active = it.id === cur;
+    return `<button type="button" class="pmob-type-chip${active ? " active" : ""}" role="radio" aria-checked="${active}" data-quick-type="${esc(it.id)}">
+      <span class="pmob-chip-ico" aria-hidden="true">${it.emoji}</span>
+      <span>${esc(it.short)}</span>
+    </button>`;
+  }).join("");
+  host.querySelectorAll("[data-quick-type]").forEach(btn => {
+    btn.onclick = () => {
+      const next = btn.dataset.quickType;
+      if (!next || sel.value === next) return;
+      sel.value = next;
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      renderPersonalTypeQuickChips(next);
+    };
+  });
+}
+
+function syncPersonalModalAccordions() {
+  const isDesktop = window.innerWidth >= 768;
+  ["#pmobAccAi", "#pmobAccChecklist", "#pmobAccAttach", "#pmobAccOrg"].forEach(s => {
+    const el = $(s);
+    if (el) el.open = isDesktop;
+  });
+}
 
 function syncTravelArrivalUI() {
   const t = $("#f-type")?.value || "Viagem";
@@ -4745,6 +4867,7 @@ function syncTravelArrivalUI() {
 
 function toggleTrip() {
   const t = $("#f-type").value;
+  renderPersonalTypeQuickChips(t);
   const isTransit = isTransitOrShip(t);
   const isShip = t === "Navio";
   $(".trip-only").hidden = t !== "Viagem";
@@ -10288,6 +10411,8 @@ function renderPersonalModalSubtasks() {
   const doneCnt = modalSubtasks.filter(s => s.done).length;
   const total = modalSubtasks.length;
   if (progEl) progEl.textContent = total ? `(${doneCnt}/${total})` : "";
+  const accChkBadge = $("#pmobAccChkBadge");
+  if (accChkBadge) accChkBadge.textContent = total ? `${doneCnt}/${total}` : "0";
   if (barEl) barEl.style.width = `${total ? Math.round((doneCnt / total) * 100) : 0}%`;
   if (!listEl) return;
   if (!total) {
