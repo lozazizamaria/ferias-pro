@@ -1314,6 +1314,8 @@ function render(allSortedOpt) {
   renderTimeline(s);
   renderDashboard(filtered, t);
   renderFinance(filtered, t);
+  renderPersonalSplitwise();
+  applyPersonalHiddenMenus();
   renderTable(s, totals(undefined, s));
   renderParams();
   renderChecklist();
@@ -3008,21 +3010,77 @@ function computeFinancialTimeline(s, t) {
   };
 }
 
-let personalFinSubtab = "overview";
+const PERSONAL_MENU_DEFS = [
+  { id: "gantt", tabId: "tab-gantt", label: "📅 Cronograma" },
+  { id: "personal-map", tabId: "tab-map", label: "🗺️ Mapa" },
+  { id: "dashboard", tabId: "tab-dashboard", label: "📊 Dashboard" },
+  { id: "finance", tabId: "tab-finance", label: "💰 Financeiro" },
+  { id: "splitwise", tabId: "tab-splitwise", label: "🤝 Dividir Despesas" },
+  { id: "personal-board", tabId: "tab-personal-board", label: "🗂️ Quadros" },
+  { id: "table", tabId: "tab-table", label: "🧾 Tabela" },
+  { id: "checklist", tabId: "tab-checklist", label: "✅ Checklist" }
+];
+
+function applyPersonalHiddenMenus() {
+  if (appMode === "professional") return;
+  const hidden = new Set(Array.isArray(state?.params?.hiddenMenus) ? state.params.hiddenMenus : []);
+  let activeHidden = false;
+  PERSONAL_MENU_DEFS.forEach(m => {
+    const btn = document.getElementById(m.tabId);
+    if (!btn) return;
+    const isHid = hidden.has(m.id);
+    btn.hidden = isHid;
+    if (isHid && btn.classList.contains("active")) activeHidden = true;
+  });
+  if (activeHidden) {
+    const firstVis = PERSONAL_MENU_DEFS.find(m => !hidden.has(m.id));
+    if (firstVis) document.getElementById(firstVis.tabId)?.click();
+  }
+}
+
+function renderPersonalVisibleMenusManager() {
+  const host = $("#personalVisibleMenusManager");
+  if (!host) return;
+  const hidden = new Set(Array.isArray(state?.params?.hiddenMenus) ? state.params.hiddenMenus : []);
+  host.innerHTML = PERSONAL_MENU_DEFS.map(m => `
+    <label class="pro-toggle-item">
+      <input type="checkbox" data-pmenu-vis="${esc(m.id)}" ${hidden.has(m.id) ? "" : "checked"}>
+      <span>${esc(m.label)}</span>
+    </label>
+  `).join("");
+  host.querySelectorAll("[data-pmenu-vis]").forEach(cb => {
+    cb.onchange = () => {
+      if (!state.params) state.params = {};
+      const nextHidden = new Set(Array.isArray(state.params.hiddenMenus) ? state.params.hiddenMenus : []);
+      if (cb.checked) nextHidden.delete(cb.dataset.pmenuVis);
+      else {
+        const visibleCount = PERSONAL_MENU_DEFS.length - nextHidden.size;
+        if (visibleCount <= 1) {
+          cb.checked = true;
+          return toast("Mantenha pelo menos 1 menu visível.");
+        }
+        nextHidden.add(cb.dataset.pmenuVis);
+      }
+      state.params.hiddenMenus = [...nextHidden];
+      applyPersonalHiddenMenus();
+      save("👁️ Visibilidade dos menus atualizada!");
+    };
+  });
+}
+
+function getPersonalActivityCostCents(a) {
+  if (!a) return 0;
+  let total = Math.max(0, Number(a.extraCost) || 0);
+  if (a.type === "Viagem" && a.includeRouteCost !== false) {
+    total += Math.max(0, Number(a.toll) || 0);
+  }
+  return Math.round(total * 100);
+}
 
 function renderPersonalSplitwise() {
-  const pane = $("#finSplitwisePane");
-  const over = $("#finOverviewPane");
-  const badge = $("#swPendingBadge");
-  if (over) over.hidden = personalFinSubtab !== "overview";
-  if (pane) pane.hidden = personalFinSubtab !== "splitwise";
-  if ($("#finSubtabs")) {
-    $("#finSubtabs").querySelectorAll("[data-fin-sub]").forEach(btn => {
-      const act = btn.dataset.finSub === personalFinSubtab;
-      btn.classList.toggle("active", act);
-      btn.setAttribute("aria-selected", String(act));
-    });
-  }
+  bindPersonalSplitwiseUI();
+  const host = $("#personalSplitwiseHost");
+  const badge = $("#swTabBadge");
   if (!window.MyPlanSplitwise) return;
   const sw = window.MyPlanSplitwise.ensureSplitwiseState(state);
   const ledger = window.MyPlanSplitwise.computeLedgerAndSettlements(sw);
@@ -3030,11 +3088,14 @@ function renderPersonalSplitwise() {
     badge.textContent = ledger.transfers.length ? String(ledger.transfers.length) : "";
     badge.hidden = !ledger.transfers.length;
   }
-  if (pane && personalFinSubtab === "splitwise") {
+  if (host) {
     window.MyPlanSplitwise.renderSplitwiseView({
-      container: pane,
+      container: host,
       state,
+      tripId: activeTrip?.id || "",
       tripTitle: activeTrip?.name || state?.title || "My Plan",
+      activities: sorted(),
+      getActivityCostCents: getPersonalActivityCostCents,
       fmtBR,
       onSave: msg => save(msg),
       toast
@@ -3043,16 +3104,6 @@ function renderPersonalSplitwise() {
 }
 
 function bindPersonalSplitwiseUI() {
-  const tabs = $("#finSubtabs");
-  if (tabs && !tabs.dataset.boundSw) {
-    tabs.dataset.boundSw = "1";
-    tabs.querySelectorAll("[data-fin-sub]").forEach(btn => {
-      btn.onclick = () => {
-        personalFinSubtab = btn.dataset.finSub || "overview";
-        renderPersonalSplitwise();
-      };
-    });
-  }
   const wireClose = (btnId, dlgId) => {
     const b = $(btnId);
     if (b && !b.dataset.boundSw) {
@@ -3065,11 +3116,57 @@ function bindPersonalSplitwiseUI() {
   wireClose("#btnSweClose", "#swExpenseModal");
   wireClose("#btnSweCancel", "#swExpenseModal");
   wireClose("#btnSwPixClose", "#swPixModal");
+  wireClose("#btnSwImpClose", "#swImportCardsModal");
+  wireClose("#btnSwImpCancel", "#swImportCardsModal");
+  wireClose("#btnSwInvClose", "#swInviteModal");
+}
+
+async function openPublicSplitwiseGuestMode(token) {
+  bindPersonalSplitwiseUI();
+  const overlay = $("#publicSplitwiseOverlay");
+  const titleEl = $("#pubSwTitle");
+  const host = $("#pubSwHost");
+  const refBtn = $("#btnPubSwRefresh");
+  if ($("#authScreen")) $("#authScreen").hidden = true;
+  if ($("#appShell")) $("#appShell").hidden = true;
+  if (overlay) overlay.hidden = false;
+
+  const loadAndRender = async () => {
+    try {
+      const data = await window.FeriasApi.getPublicSplitwise(token);
+      if (titleEl) titleEl.textContent = data.tripTitle || "Dividir Despesas";
+      const guestState = { title: data.tripTitle, splitwise: data.splitwise };
+      window.MyPlanSplitwise.renderSplitwiseView({
+        container: host,
+        state: guestState,
+        tripTitle: data.tripTitle || "My Plan",
+        guestMode: true,
+        fmtBR,
+        toast,
+        onGuestAction: async (payload, okMsg) => {
+          try {
+            const upd = await window.FeriasApi.postPublicSplitwiseAction(token, payload);
+            guestState.splitwise = upd.splitwise;
+            toast(okMsg || "✔️ Salvo!");
+            await loadAndRender();
+          } catch (err) {
+            toast("❌ " + (err.message || err));
+          }
+        }
+      });
+    } catch (err) {
+      if (titleEl) titleEl.textContent = "Convite indisponível";
+      if (host) {
+        host.innerHTML = `<div class="card"><p class="muted" style="text-align:center;padding:24px">🚫 ${esc(err.message || "Este link de convite é inválido ou foi revogado pelo organizador.")}</p></div>`;
+      }
+    }
+  };
+  if (refBtn) refBtn.onclick = () => loadAndRender();
+  await loadAndRender();
 }
 
 function renderFinance(s, t) {
   bindPersonalSplitwiseUI();
-  renderPersonalSplitwise();
   const kpisEl = $("#finKpis");
   if (!kpisEl) return;
 
@@ -3730,6 +3827,7 @@ const AUTO_PARAM_DEFS = [
 ];
 
 function renderParams() {
+  renderPersonalVisibleMenusManager();
   const pmNote = $("#paramsMultiNote");
   if (pmNote) {
     if (isMultiTripMode()) {
@@ -4307,6 +4405,207 @@ function renderModalAttachments() {
   });
 }
 
+let modalCardSplitConfig = { payerId: "", splitMode: "equal", shares: [] };
+let modalCardSplitExpanded = false;
+
+function initModalCardSplitConfig(a) {
+  const sw = window.MyPlanSplitwise?.ensureSplitwiseState ? window.MyPlanSplitwise.ensureSplitwiseState(state) : { participants: [], expenses: [] };
+  const linkedExp = a?.id ? (sw.expenses || []).find(e => e.sourceActivityId === a.id) : null;
+  const src = a?.splitConfig || (linkedExp ? {
+    payerId: linkedExp.payers?.[0]?.participantId || "",
+    splitMode: linkedExp.splitMode || "equal",
+    shares: linkedExp.shares || []
+  } : null);
+  modalCardSplitConfig = {
+    payerId: src?.payerId || "",
+    splitMode: src?.splitMode || "equal",
+    shares: Array.isArray(src?.shares) ? clone(src.shares) : []
+  };
+  modalCardSplitExpanded = false;
+  const panel = $("#f-cardSplitPanel");
+  const expBtn = $("#btnCardSplitExpand");
+  if (panel) panel.hidden = true;
+  if (expBtn) expBtn.setAttribute("aria-expanded", "false");
+}
+
+function renderCardSplitProgressive(costCents) {
+  const box = $("#f-cardSplitBox");
+  if (!box || !window.MyPlanSplitwise) return;
+  const total = Math.max(0, Math.round(Number(costCents) || 0));
+  if (total <= 0) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const SW = window.MyPlanSplitwise;
+  const sw = SW.ensureSplitwiseState(state);
+  const parts = sw.participants || [];
+  const payerSel = $("#f-cardSplitPayer");
+  const addPartBtn = $("#btnCardSplitAddPart");
+  const expBtn = $("#btnCardSplitExpand");
+  const panel = $("#f-cardSplitPanel");
+  const tabs = $("#f-cardSplitTabs");
+  const rowsHost = $("#f-cardSplitRows");
+  const valEl = $("#f-cardSplitVal");
+
+  if (payerSel) {
+    payerSel.innerHTML = `<option value="">Não dividir (pessoal)</option>` +
+      parts.map(p => `<option value="${esc(p.id)}"${p.id === modalCardSplitConfig.payerId ? " selected" : ""}>${esc(p.name)}</option>`).join("");
+    payerSel.onchange = () => {
+      modalCardSplitConfig.payerId = payerSel.value || "";
+      renderCardSplitProgressive(total);
+    };
+  }
+  if (addPartBtn && !addPartBtn.dataset.boundCsw) {
+    addPartBtn.dataset.boundCsw = "1";
+    addPartBtn.onclick = () => {
+      const name = prompt("Nome do novo participante para dividir custos:");
+      if (!name || !name.trim()) return;
+      const newP = { id: "sw_" + Math.random().toString(36).slice(2, 9), name: name.trim(), pixKey: "", pixName: "", pixCity: "" };
+      sw.participants.push(newP);
+      modalCardSplitConfig.payerId = newP.id;
+      toast(`👤 "${newP.name}" adicionado ao grupo!`);
+      renderCardSplitProgressive(getPersonalActivityCostCents(readForm()));
+    };
+  }
+  if (expBtn && !expBtn.dataset.boundCsw) {
+    expBtn.dataset.boundCsw = "1";
+    expBtn.onclick = () => {
+      modalCardSplitExpanded = !modalCardSplitExpanded;
+      if (panel) panel.hidden = !modalCardSplitExpanded;
+      expBtn.setAttribute("aria-expanded", String(modalCardSplitExpanded));
+      if (modalCardSplitExpanded) renderCardSplitProgressive(getPersonalActivityCostCents(readForm()));
+    };
+  }
+  if (tabs && !tabs.dataset.boundCsw) {
+    tabs.dataset.boundCsw = "1";
+    tabs.querySelectorAll("button").forEach(b => {
+      b.onclick = () => {
+        modalCardSplitConfig.splitMode = b.dataset.cswMode || "equal";
+        renderCardSplitProgressive(getPersonalActivityCostCents(readForm()));
+      };
+    });
+  }
+  if (!panel || panel.hidden) return;
+
+  if (!parts.length) {
+    rowsHost.innerHTML = `<div class="muted small" style="padding:6px">Clique em <b>➕</b> acima para adicionar participantes ao grupo.</div>`;
+    if (valEl) { valEl.className = "sw-val-status is-warn"; valEl.textContent = "Adicione ao menos 1 participante para dividir esta despesa."; }
+    return;
+  }
+
+  // Garantir entrada em shares para cada participante
+  const shMap = new Map((modalCardSplitConfig.shares || []).map(s => [s.participantId, s]));
+  modalCardSplitConfig.shares = parts.map(p => {
+    const prev = shMap.get(p.id);
+    return {
+      participantId: p.id,
+      included: prev ? prev.included !== false : true,
+      amountCents: prev ? (prev.amountCents || 0) : 0,
+      percent: prev ? (Number(prev.percent) || 0) : (Math.round(10000 / parts.length) / 100),
+      weight: prev ? (Number(prev.weight) || 0) : 1
+    };
+  });
+
+  const mode = modalCardSplitConfig.splitMode || "equal";
+  tabs.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.cswMode === mode));
+
+  const updateCardVal = () => {
+    let ok = true;
+    let msg = "✅ Divisão sincronizada automaticamente com Dividir Despesas.";
+    if (!modalCardSplitConfig.payerId) {
+      ok = false;
+      msg = "Selecione quem pagou acima para ativar a divisão.";
+    } else if (mode === "equal") {
+      if (!modalCardSplitConfig.shares.some(s => s.included)) { ok = false; msg = "Marque ao menos 1 participante."; }
+    } else if (mode === "exact") {
+      const sum = modalCardSplitConfig.shares.reduce((s, x) => s + (x.amountCents || 0), 0);
+      if (sum !== total) { ok = false; msg = `Soma atual: ${SW.formatCents(sum)} (total: ${SW.formatCents(total)}).`; }
+    } else if (mode === "percent") {
+      const sum = Math.round(modalCardSplitConfig.shares.reduce((s, x) => s + (Number(x.percent) || 0), 0) * 100) / 100;
+      if (Math.abs(sum - 100) > 0.01) { ok = false; msg = `Soma atual: ${sum.toFixed(2)}% (precisa somar 100%).`; }
+    } else if (mode === "shares") {
+      const sumW = modalCardSplitConfig.shares.reduce((s, x) => s + (Number(x.weight) || 0), 0);
+      if (sumW <= 0) { ok = false; msg = "Informe pelo menos 1 cota > 0."; }
+    }
+    if (valEl) {
+      valEl.className = `sw-val-status ${ok ? "is-ok" : "is-warn"}`;
+      valEl.textContent = (ok ? "" : "⚠️ ") + msg;
+    }
+  };
+
+  const preview = SW.computeExpenseSplits({ amountCents: total, splitMode: mode, shares: modalCardSplitConfig.shares }, parts);
+  const pMap = new Map(preview.map(x => [x.participantId, x.amountCents]));
+
+  if (mode === "equal") {
+    rowsHost.innerHTML = modalCardSplitConfig.shares.map(sh => {
+      const p = parts.find(x => x.id === sh.participantId);
+      return `<label class="sw-split-row sw-split-check">
+        <input type="checkbox" data-csw-eq="${esc(sh.participantId)}" ${sh.included ? "checked" : ""}>
+        <span class="sw-split-name">${esc(p?.name || "")}</span>
+        <span class="sw-split-calc">${esc(SW.formatCents(pMap.get(sh.participantId) || 0))}</span>
+      </label>`;
+    }).join("");
+    rowsHost.querySelectorAll("[data-csw-eq]").forEach(cb => {
+      cb.onchange = () => {
+        const hit = modalCardSplitConfig.shares.find(s => s.participantId === cb.dataset.cswEq);
+        if (hit) hit.included = cb.checked;
+        renderCardSplitProgressive(total);
+      };
+    });
+  } else if (mode === "exact") {
+    rowsHost.innerHTML = modalCardSplitConfig.shares.map(sh => {
+      const p = parts.find(x => x.id === sh.participantId);
+      return `<div class="sw-split-row">
+        <span class="sw-split-name">${esc(p?.name || "")}</span>
+        <div class="sw-num-wrap"><span>R$</span><input type="text" inputmode="decimal" data-csw-ex="${esc(sh.participantId)}" value="${esc((sh.amountCents / 100).toFixed(2).replace(".", ","))}"></div>
+      </div>`;
+    }).join("");
+    rowsHost.querySelectorAll("[data-csw-ex]").forEach(inp => {
+      inp.oninput = () => {
+        const hit = modalCardSplitConfig.shares.find(s => s.participantId === inp.dataset.cswEx);
+        if (hit) hit.amountCents = SW.parseMoneyToCents(inp.value);
+        updateCardVal();
+      };
+    });
+  } else if (mode === "percent") {
+    rowsHost.innerHTML = modalCardSplitConfig.shares.map(sh => {
+      const p = parts.find(x => x.id === sh.participantId);
+      return `<div class="sw-split-row">
+        <span class="sw-split-name">${esc(p?.name || "")} <small class="muted" data-csw-calc="${esc(sh.participantId)}">(${esc(SW.formatCents(pMap.get(sh.participantId) || 0))})</small></span>
+        <div class="sw-num-wrap"><input type="number" step="0.01" min="0" max="100" data-csw-pct="${esc(sh.participantId)}" value="${esc(String(sh.percent))}"><span>%</span></div>
+      </div>`;
+    }).join("");
+    rowsHost.querySelectorAll("[data-csw-pct]").forEach(inp => {
+      inp.oninput = () => {
+        const hit = modalCardSplitConfig.shares.find(s => s.participantId === inp.dataset.cswPct);
+        if (hit) hit.percent = Math.max(0, Number(inp.value) || 0);
+        const live = SW.computeExpenseSplits({ amountCents: total, splitMode: "percent", shares: modalCardSplitConfig.shares }, parts);
+        live.forEach(x => { const el = rowsHost.querySelector(`[data-csw-calc="${x.participantId}"]`); if (el) el.textContent = `(${SW.formatCents(x.amountCents)})`; });
+        updateCardVal();
+      };
+    });
+  } else {
+    rowsHost.innerHTML = modalCardSplitConfig.shares.map(sh => {
+      const p = parts.find(x => x.id === sh.participantId);
+      return `<div class="sw-split-row">
+        <span class="sw-split-name">${esc(p?.name || "")} <small class="muted" data-csw-calc="${esc(sh.participantId)}">(${esc(SW.formatCents(pMap.get(sh.participantId) || 0))})</small></span>
+        <div class="sw-num-wrap"><input type="number" step="0.5" min="0" data-csw-sh="${esc(sh.participantId)}" value="${esc(String(sh.weight))}"><span>cota(s)</span></div>
+      </div>`;
+    }).join("");
+    rowsHost.querySelectorAll("[data-csw-sh]").forEach(inp => {
+      inp.oninput = () => {
+        const hit = modalCardSplitConfig.shares.find(s => s.participantId === inp.dataset.cswSh);
+        if (hit) hit.weight = Math.max(0, Number(inp.value) || 0);
+        const live = SW.computeExpenseSplits({ amountCents: total, splitMode: "shares", shares: modalCardSplitConfig.shares }, parts);
+        live.forEach(x => { const el = rowsHost.querySelector(`[data-csw-calc="${x.participantId}"]`); if (el) el.textContent = `(${SW.formatCents(x.amountCents)})`; });
+        updateCardVal();
+      };
+    });
+  }
+  updateCardVal();
+}
+
 function updateModalPreview() {
   const a = readForm();
   const box = $("#modalTripCalcPreview");
@@ -4315,6 +4614,7 @@ function updateModalPreview() {
   const totQty = modalTickets.reduce((s, r) => s + ((Number(r.unitPrice) > 0 && Number(r.qty) > 0) ? Number(r.qty) : 0), 0);
   const badge = $("#ticketsTotalBadge");
   if (badge) badge.textContent = `Total: ${money(a.extraCost)}${totQty > 0 ? ` (${totQty} un.)` : ""}`;
+  renderCardSplitProgressive(getPersonalActivityCostCents(a));
   if ($("#calRemLabel")) $("#calRemLabel").textContent = state.params.calendarReminderTime || "09:00";
   if ($("#btnCalLink")) $("#btnCalLink").href = window.FeriasCalendar.buildGoogleCalendarTemplateUrl(a, state.title, "personal");
 
@@ -4757,6 +5057,7 @@ window.openModal = function (idOrOpts) {
   if ($("#actAiTextInput")) $("#actAiTextInput").value = "";
 
   renderModalQrBadge();
+  initModalCardSplitConfig(a);
   renderTicketRows();
   refreshTagSelectors([], modalDraftTags);
   toggleTrip();
@@ -4987,6 +5288,7 @@ function readForm() {
     segments: clone(modalTravelSegments || [])
   };
   a.minutes = clone(modalMinutes || []);
+  a.splitConfig = modalCardSplitConfig?.payerId ? clone(modalCardSplitConfig) : null;
   if (editing) {
     const prevAct = findActivityContext(editing)?.activity;
     if (prevAct?.archived) {
@@ -5004,6 +5306,9 @@ function delActivity(id) {
   if (ctx.trip?.role === "viewer") return toast("👁️ Viagem compartilhada somente para visualização.");
   const tgtData = ctx.data || state;
   tgtData.activities = tgtData.activities.filter(x => x.id !== id);
+  if (tgtData.splitwise && Array.isArray(tgtData.splitwise.expenses)) {
+    tgtData.splitwise.expenses = tgtData.splitwise.expenses.filter(e => e.sourceActivityId !== id);
+  }
   saveTripRecord(ctx.trip, "🗑️ Excluído");
 }
 
@@ -5890,6 +6195,11 @@ function updateSyncBadge(info) {
 async function boot() {
   document.documentElement.setAttribute("data-mode", appMode);
   initTheme();
+  const swInviteToken = new URLSearchParams(window.location.search).get("splitwiseInvite");
+  if (swInviteToken && window.MyPlanSplitwise && window.FeriasApi?.getPublicSplitwise) {
+    await openPublicSplitwiseGuestMode(swInviteToken);
+    return;
+  }
   initPasswordToggles();
   populateTypeSelectors();
   if (window.MyPlanPro) {
@@ -7664,14 +7974,20 @@ $("#form").onsubmit = async e => {
     return;
   }
 
+  let savedCardObj = null;
   if (editing) {
     const o = tgtData.activities.find(x => x.id === editing);
     if (o) {
       for (const k of ["from", "to", "km", "drive", "stops", "stopTime", "toll", "charges", "airline", "bookingRef", "includeRouteCost", "startTime", "qrPayload", "qrFormat", "tags"]) delete o[k];
       Object.assign(o, a);
+      savedCardObj = o;
     }
   } else {
-    tgtData.activities.push({ id: modalDraftId || uid(), ...a });
+    savedCardObj = { id: modalDraftId || uid(), ...a };
+    tgtData.activities.push(savedCardObj);
+  }
+  if (savedCardObj && window.MyPlanSplitwise?.syncActivityToSplitwise) {
+    window.MyPlanSplitwise.syncActivityToSplitwise(savedCardObj, tgtData, getPersonalActivityCostCents(savedCardObj));
   }
   const promoted = completePromotePersonalSubtask(targetTrip);
   personalModalSaving = true;

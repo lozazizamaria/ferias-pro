@@ -10606,3 +10606,148 @@ body.dark .puf-panel {
     justify-content: center;
   }
 }
+
+/* ==========================================================================
+   v64 — Splitwise Menu Principal, Importar Cartões, Convite WhatsApp & Card Progressivo
+   ========================================================================== */
+.sw-tab-badge {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  margin-left: 4px;
+}
+.sw-linked-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--accent, #2563eb);
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.sw-imp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 290px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.sw-imp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+}
+.sw-imp-row.is-linked {
+  opacity: 0.68;
+  cursor: default;
+}
+.sw-imp-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sw-imp-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  white-space: nowrap;
+}
+.sw-inv-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sw-inv-danger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* Exibição progressiva do Splitwise dentro do Modal de Cartão Pessoal */
+.card-split-box {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.card-split-bar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.card-split-payer-lbl {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 170px;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.card-split-payer-lbl select {
+  width: 100%;
+}
+.card-split-panel {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* Overlay Público de Convidado (?splitwiseInvite=TOKEN) */
+.pub-sw-overlay {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+}
+.pub-sw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 18px;
+  background: var(--panel, var(--card));
+  border-bottom: 1px solid var(--border);
+}
+.pub-sw-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pub-sw-brand h1 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.pub-sw-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.14);
+  color: var(--accent, #2563eb);
+}
+.pub-sw-main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px;
+}

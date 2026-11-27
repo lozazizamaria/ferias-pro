@@ -10,12 +10,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=63">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=63">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=63">
+<link rel="manifest" href="/manifest.webmanifest?v=64">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=64">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=64">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=63">
+<link rel="stylesheet" href="styles.css?v=64">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +27,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=63" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=64" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -132,7 +132,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=63" alt="" width="30" height="30" class="brand-logo-img">
+            <img src="icons/icon.svg?v=64" alt="" width="30" height="30" class="brand-logo-img">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -224,6 +224,7 @@
       <button class="tab" data-view="personal-map" id="tab-map" type="button">🗺️ Mapa</button>
       <button class="tab" data-view="dashboard" id="tab-dashboard" type="button">📊 Dashboard</button>
       <button class="tab" data-view="finance" id="tab-finance" type="button">💰 Financeiro</button>
+      <button class="tab" data-view="splitwise" id="tab-splitwise" type="button">🤝 Dividir Despesas <span class="pill sw-tab-badge" id="swTabBadge" hidden></span></button>
       <button class="tab" data-view="personal-board" id="tab-personal-board" type="button">🗂️ Quadros</button>
       <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
       <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
@@ -553,12 +554,6 @@
 
     <!-- FINANCEIRO (LINHA DO TEMPO DIÁRIA, GRÁFICOS E CONTROLE REAL) -->
     <section class="view" id="view-finance">
-      <div class="fin-subtabs" id="finSubtabs" role="tablist" aria-label="Sub-abas do Financeiro Pessoal">
-        <button type="button" class="fin-subtab active" role="tab" aria-selected="true" data-fin-sub="overview" id="btnFinSubOverview">💰 Resumo &amp; Gastos</button>
-        <button type="button" class="fin-subtab" role="tab" aria-selected="false" data-fin-sub="splitwise" id="btnFinSubSplitwise">🤝 Dividir Custos <span class="pill" id="swPendingBadge" hidden></span></button>
-      </div>
-
-      <div id="finOverviewPane">
       <div class="view-filter-bar" aria-label="Filtros do financeiro">
         <span class="vf-title" title="Filtros"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
         <div id="finTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no financeiro"></div>
@@ -660,9 +655,11 @@
         </div>
         <div id="finTimelineList" class="fin-timeline-list"></div>
       </div>
-      </div>
+    </section>
 
-      <div id="finSplitwisePane" class="sw-pane" hidden></div>
+    <!-- DIVIDIR DESPESAS (MODO PESSOAL — ESTILO SPLITWISE + PIX QR CODE + CONVITE WHATSAPP) -->
+    <section class="view" id="view-splitwise">
+      <div id="personalSplitwiseHost" class="sw-pane"></div>
     </section>
 
     <!-- TABELA -->
@@ -862,6 +859,15 @@
           </div>
           <div id="scenarios"></div>
           <p class="muted small">*Total = Gasolina + Pedágios + Recargas elétricas das viagens de carro.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>👁️ Menus Visíveis (Modo Pessoal)</h2>
+            <span class="muted small">Oculte abas que não for usar</span>
+          </div>
+          <p class="muted small" style="margin-top:0">Ative ou desative os menus exibidos na barra superior do Modo Pessoal:</p>
+          <div id="personalVisibleMenusManager" class="pro-toggles-grid"></div>
         </div>
       </div>
     </section>
@@ -3162,6 +3168,30 @@
               </div>
             </div>
             <div id="ticketsRows" class="tickets-rows"></div>
+
+            <!-- EXIBIÇÃO PROGRESSIVA SPLITWISE (OCULTO SE VALOR = 0) -->
+            <div id="f-cardSplitBox" class="card-split-box" hidden>
+              <div class="card-split-bar">
+                <label class="card-split-payer-lbl">
+                  <span>💳 Quem pagou?</span>
+                  <select id="f-cardSplitPayer" aria-label="Quem pagou esta despesa">
+                    <option value="">Não dividir (pessoal)</option>
+                  </select>
+                </label>
+                <button type="button" class="btn ghost small" id="btnCardSplitAddPart" title="Adicionar participante ao grupo">➕</button>
+                <button type="button" class="btn ghost small card-split-expand-btn" id="btnCardSplitExpand" aria-expanded="false">⚖️ Dividir custo ▾</button>
+              </div>
+              <div id="f-cardSplitPanel" class="card-split-panel" hidden>
+                <div class="seg sw-split-tabs" id="f-cardSplitTabs" role="group" aria-label="Modo de divisão no cartão">
+                  <button type="button" class="active" data-csw-mode="equal">Igualmente</button>
+                  <button type="button" data-csw-mode="exact">Valores (R$)</button>
+                  <button type="button" data-csw-mode="percent">Porcentagem (%)</button>
+                  <button type="button" data-csw-mode="shares">Cotas</button>
+                </div>
+                <div id="f-cardSplitRows" class="sw-split-list"></div>
+                <div id="f-cardSplitVal" class="sw-val-status" role="status" aria-live="polite"></div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3440,6 +3470,77 @@
     </div>
   </div>
 </dialog>
+
+<!-- MODAL IMPORTAR DESPESAS DO CALENDÁRIO / CARTÕES PARA O SPLITWISE -->
+<dialog id="swImportCardsModal" class="sw-exp-dialog">
+  <form id="swImportCardsForm" method="dialog">
+    <div class="modal-head">
+      <h2>📅 Importar Despesas dos Cartões</h2>
+      <button type="button" class="icon-btn modal-close" id="btnSwImpClose" aria-label="Fechar">✕</button>
+    </div>
+    <p class="muted small" style="margin-top:0">Selecione cartões/eventos do projeto com valor cadastrado para incluí-los na divisão de custos sem duplicar valores.</p>
+    <div class="form-grid" style="margin-bottom:10px">
+      <label class="span2">Buscar cartão ou evento
+        <input type="search" id="swImpSearch" placeholder="🔎 Buscar hotel, passagem, ingresso, passeio...">
+      </label>
+      <label class="span2">Pagador padrão para os selecionados
+        <select id="swImpPayer"></select>
+      </label>
+    </div>
+    <div id="swImpList" class="sw-imp-list"></div>
+    <div class="modal-actions pmob-sticky-actions">
+      <span class="muted small" id="swImpCountInfo">0 selecionado(s)</span>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnSwImpCancel">Cancelar</button>
+      <button type="submit" class="btn primary" id="btnSwImpSubmit">➕ Importar Selecionados</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- MODAL CONVIDAR PARTICIPANTES VIA WHATSAPP (LINK EXCLUSIVO DO PROJETO) -->
+<dialog id="swInviteModal" class="sw-pix-dialog">
+  <div class="modal-head">
+    <h2>💬 Convidar para Dividir Despesas</h2>
+    <button type="button" class="icon-btn modal-close" id="btnSwInvClose" aria-label="Fechar">✕</button>
+  </div>
+  <div class="sw-inv-body">
+    <p class="muted small" style="margin:0">Gere um link seguro restrito <b>apenas ao Dividir Despesas deste projeto</b>. Convidados podem ver os gastos, lançar despesas e consultar os acertos/Pix sem acessar seus outros projetos ou dados privados.</p>
+    <div id="swInvStatus" class="sw-inv-status"></div>
+    <div id="swInvLinkWrap" hidden style="width:100%">
+      <label class="pro-field-stack" style="width:100%">
+        <span>Link exclusivo de convite</span>
+        <input type="text" id="swInvLinkInput" readonly>
+      </label>
+      <div class="sw-pix-actions" style="margin-top:10px">
+        <a class="btn primary" id="btnSwInvWhatsApp" target="_blank" rel="noopener">💬 Convidar via WhatsApp</a>
+        <button type="button" class="btn ghost" id="btnSwInvCopy">📋 Copiar link</button>
+      </div>
+      <div class="sw-inv-danger-row">
+        <button type="button" class="btn ghost small" id="btnSwInvRegen">🔄 Gerar novo link</button>
+        <button type="button" class="btn danger-ghost small" id="btnSwInvRevoke">🚫 Revogar acesso</button>
+      </div>
+    </div>
+    <div id="swInvCreateWrap" style="width:100%">
+      <button type="button" class="btn primary" id="btnSwInvGenerate" style="width:100%">🔗 Gerar Link de Convite Seguro</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- OVERLAY PÚBLICO DE CONVIDADO SPLITWISE (?splitwiseInvite=TOKEN) -->
+<div id="publicSplitwiseOverlay" class="pub-sw-overlay" hidden>
+  <header class="pub-sw-header">
+    <div class="pub-sw-brand">
+      <span class="pub-sw-badge">🤝 Dividir Despesas · Convidado</span>
+      <h1 id="pubSwTitle">Carregando projeto...</h1>
+    </div>
+    <div class="inline-actions">
+      <button type="button" class="btn ghost small" id="btnPubSwRefresh">🔄 Atualizar</button>
+    </div>
+  </header>
+  <main class="pub-sw-main">
+    <div id="pubSwHost" class="sw-pane"></div>
+  </main>
+</div>
 
 <!-- MODAL ATA / REGISTRO RÁPIDO DO CARTÃO PESSOAL -->
 <dialog id="personalMinuteModal">
@@ -4894,22 +4995,22 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="shared-utils.js?v=63"></script>
-<script src="config.example.js?v=63"></script>
-<script src="vehicles.js?v=63"></script>
-<script src="countries.js?v=63"></script>
-<script src="data.js?v=63"></script>
-<script src="maps.js?v=63"></script>
-<script src="calendar.js?v=63"></script>
-<script src="drive.js?v=63"></script>
-<script src="report.js?v=63"></script>
-<script src="api.js?v=63"></script>
-<script src="minutes.js?v=63"></script>
-<script src="pro-annual.js?v=63"></script>
-<script src="checklists.js?v=63"></script>
-<script src="pro.js?v=63"></script>
-<script src="personal-map.js?v=63"></script>
-<script src="splitwise.js?v=63"></script>
-<script src="app.js?v=63"></script>
+<script src="shared-utils.js?v=64"></script>
+<script src="config.example.js?v=64"></script>
+<script src="vehicles.js?v=64"></script>
+<script src="countries.js?v=64"></script>
+<script src="data.js?v=64"></script>
+<script src="maps.js?v=64"></script>
+<script src="calendar.js?v=64"></script>
+<script src="drive.js?v=64"></script>
+<script src="report.js?v=64"></script>
+<script src="api.js?v=64"></script>
+<script src="minutes.js?v=64"></script>
+<script src="pro-annual.js?v=64"></script>
+<script src="checklists.js?v=64"></script>
+<script src="pro.js?v=64"></script>
+<script src="personal-map.js?v=64"></script>
+<script src="splitwise.js?v=64"></script>
+<script src="app.js?v=64"></script>
 </body>
 </html>

@@ -633,7 +633,7 @@
     if (!dlg.open) dlg.showModal();
   }
 
-  function openParticipantModal({ sw, participant, onSave, toast }) {
+  function openParticipantModal({ sw, participant, guestMode = false, onGuestAction, onSave, toast }) {
     const dlg = document.getElementById("swParticipantModal");
     if (!dlg) return;
     const isEdit = Boolean(participant);
@@ -649,7 +649,7 @@
     holderIn.value = participant?.pixName || "";
     cityIn.value = participant?.pixCity || "";
     if (delBtn) {
-      delBtn.hidden = !isEdit;
+      delBtn.hidden = !isEdit || guestMode;
       delBtn.onclick = () => {
         if (!participant) return;
         const used = sw.expenses.some(e =>
@@ -664,7 +664,7 @@
     }
 
     const form = document.getElementById("swParticipantForm");
-    form.onsubmit = e => {
+    form.onsubmit = async e => {
       e.preventDefault();
       const name = nameIn.value.trim();
       if (!name) return toast?.("Informe o nome do participante.");
@@ -675,6 +675,11 @@
         pixName: holderIn.value.trim(),
         pixCity: cityIn.value.trim()
       };
+      if (guestMode && onGuestAction) {
+        dlg.close();
+        await onGuestAction({ action: "save_participant", participant: data }, isEdit ? "✔️ Participante atualizado!" : "👤 Participante adicionado!");
+        return;
+      }
       if (isEdit) {
         const idx = sw.participants.findIndex(p => p.id === participant.id);
         if (idx >= 0) sw.participants[idx] = data;
@@ -688,7 +693,7 @@
     setTimeout(() => nameIn.focus(), 40);
   }
 
-  function openExpenseModal({ sw, expense, onSave, toast }) {
+  function openExpenseModal({ sw, expense, guestMode = false, onGuestAction, onSave, toast }) {
     const dlg = document.getElementById("swExpenseModal");
     if (!dlg) return;
     if (!sw.participants.length) {
@@ -909,7 +914,7 @@
     });
 
     if (delBtn) {
-      delBtn.hidden = !isEdit;
+      delBtn.hidden = !isEdit || guestMode;
       delBtn.onclick = () => {
         if (!expense || !confirm(`Excluir a despesa "${expense.desc}"?`)) return;
         sw.expenses = sw.expenses.filter(x => x.id !== expense.id);
@@ -919,7 +924,7 @@
     }
 
     const form = document.getElementById("swExpenseForm");
-    form.onsubmit = e => {
+    form.onsubmit = async e => {
       e.preventDefault();
       if (!updateValidation()) return toast?.("Ajuste os valores antes de salvar.");
       const desc = descIn.value.trim();
@@ -943,6 +948,7 @@
 
       const rec = {
         id: expense?.id || uid(),
+        ...(expense?.sourceActivityId ? { sourceActivityId: expense.sourceActivityId } : {}),
         desc,
         amountCents: totalCents,
         date: dateIn.value || new Date().toISOString().slice(0, 10),
@@ -951,6 +957,12 @@
         splitMode,
         shares
       };
+
+      if (guestMode && onGuestAction) {
+        dlg.close();
+        await onGuestAction({ action: "save_expense", expense: rec }, isEdit ? "✔️ Despesa atualizada!" : "💸 Despesa adicionada!");
+        return;
+      }
 
       if (isEdit) {
         const idx = sw.expenses.findIndex(x => x.id === expense.id);
@@ -968,7 +980,246 @@
     setTimeout(() => descIn.focus(), 40);
   }
 
-  function renderSplitwiseView({ container, state, tripTitle, fmtBR, onSave, toast }) {
+  /* ========================================================================
+     6. IMPORTAR DESPESAS DO CALENDÁRIO / CARTÕES + CONVITE WHATSAPP + SYNC
+     ======================================================================== */
+  function mapActivityTypeToSwCat(type) {
+    switch (type) {
+      case "Hospedagem": return "Hospedagem";
+      case "Voo": return "Voos & Passagens";
+      case "Viagem": case "Trem": case "Ônibus": case "Navio": return "Transporte / Combustível";
+      case "Restaurante": return "Alimentação";
+      case "Passeio": case "Ingresso": case "Evento": return "Passeios & Ingressos";
+      default: return "Outros";
+    }
+  }
+
+  function syncActivityToSplitwise(act, state, costCents) {
+    if (!act || !state) return;
+    const sw = ensureSplitwiseState(state);
+    const cfg = act.splitConfig;
+    const existingIdx = sw.expenses.findIndex(e => e.sourceActivityId === act.id);
+    const total = Math.max(0, Math.round(Number(costCents) || 0));
+
+    if (!cfg || !cfg.payerId || total <= 0) {
+      if (existingIdx >= 0 && (!cfg || !cfg.payerId || total <= 0)) {
+        sw.expenses.splice(existingIdx, 1);
+      }
+      return;
+    }
+
+    const validIds = new Set(sw.participants.map(p => p.id));
+    if (!validIds.has(cfg.payerId)) return;
+
+    const splitMode = ["equal", "exact", "percent", "shares"].includes(cfg.splitMode) ? cfg.splitMode : "equal";
+    const shares = sw.participants.map(p => {
+      const found = (Array.isArray(cfg.shares) ? cfg.shares : []).find(s => s.participantId === p.id);
+      return {
+        participantId: p.id,
+        included: found ? found.included !== false : true,
+        amountCents: found ? Math.max(0, Math.round(Number(found.amountCents) || 0)) : 0,
+        percent: found ? Math.max(0, Number(found.percent) || 0) : (Math.round(10000 / Math.max(1, sw.participants.length)) / 100),
+        weight: found ? Math.max(0, Number(found.weight) || 0) : 1
+      };
+    });
+
+    const rec = {
+      id: existingIdx >= 0 ? sw.expenses[existingIdx].id : uid(),
+      sourceActivityId: act.id,
+      desc: act.name || "Despesa do cartão",
+      amountCents: total,
+      date: act.start || new Date().toISOString().slice(0, 10),
+      cat: mapActivityTypeToSwCat(act.type),
+      payers: [{ participantId: cfg.payerId, amountCents: total }],
+      splitMode,
+      shares
+    };
+    if (existingIdx >= 0) sw.expenses[existingIdx] = rec;
+    else sw.expenses.unshift(rec);
+  }
+
+  function openImportCardsModal({ sw, activities, getActivityCostCents, fmtBR, onSave, toast }) {
+    const dlg = document.getElementById("swImportCardsModal");
+    if (!dlg) return;
+    if (!sw.participants.length) {
+      toast?.("Adicione pelo menos 1 participante antes de importar despesas dos cartões.");
+      return;
+    }
+    const searchIn = document.getElementById("swImpSearch");
+    const payerSel = document.getElementById("swImpPayer");
+    const listEl = document.getElementById("swImpList");
+    const cntEl = document.getElementById("swImpCountInfo");
+    const form = document.getElementById("swImportCardsForm");
+
+    payerSel.innerHTML = sw.participants.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+    searchIn.value = "";
+
+    const linkedSet = new Set(sw.expenses.map(e => e.sourceActivityId).filter(Boolean));
+    const candidates = (activities || [])
+      .filter(a => a && !a.archived)
+      .map(a => ({ act: a, costCents: Math.max(0, Math.round(Number(getActivityCostCents?.(a) || 0))) }))
+      .filter(x => x.costCents > 0);
+
+    const selected = new Set();
+    const renderList = () => {
+      const q = searchIn.value.trim().toLowerCase();
+      const filtered = q
+        ? candidates.filter(x => `${x.act.name || ""} ${x.act.type || ""} ${x.act.notes || ""}`.toLowerCase().includes(q))
+        : candidates;
+      if (!filtered.length) {
+        listEl.innerHTML = `<div class="muted small" style="padding:14px;text-align:center">${candidates.length ? "Nenhum cartão encontrado para esta busca." : "Nenhum cartão/evento com valor cadastrado neste projeto."}</div>`;
+      } else {
+        listEl.innerHTML = filtered.map(({ act, costCents }) => {
+          const already = linkedSet.has(act.id);
+          const checked = selected.has(act.id);
+          const dt = act.start && fmtBR ? fmtBR(act.start) : (act.start || "");
+          return `<label class="sw-imp-row${already ? " is-linked" : ""}">
+            <input type="checkbox" data-sw-imp-id="${esc(act.id)}" ${already ? "disabled checked" : (checked ? "checked" : "")}>
+            <div class="sw-imp-info">
+              <strong>${esc(act.name || "Sem título")}</strong>
+              <span class="muted small">${esc(act.type || "Evento")}${dt ? ` · ${esc(dt)}` : ""}</span>
+            </div>
+            <div class="sw-imp-right">
+              <strong>${esc(formatCents(costCents))}</strong>
+              ${already ? `<span class="sw-pix-tag">✅ Vinculado</span>` : ""}
+            </div>
+          </label>`;
+        }).join("");
+        listEl.querySelectorAll("[data-sw-imp-id]").forEach(cb => {
+          cb.onchange = () => {
+            if (cb.checked) selected.add(cb.dataset.swImpId);
+            else selected.delete(cb.dataset.swImpId);
+            cntEl.textContent = `${selected.size} selecionado(s)`;
+          };
+        });
+      }
+      cntEl.textContent = `${selected.size} selecionado(s)`;
+    };
+
+    searchIn.oninput = renderList;
+    form.onsubmit = e => {
+      e.preventDefault();
+      if (!selected.size) return toast?.("Selecione ao menos um cartão para importar.");
+      const payerId = payerSel.value || sw.participants[0].id;
+      let added = 0;
+      candidates.forEach(({ act, costCents }) => {
+        if (!selected.has(act.id) || linkedSet.has(act.id)) return;
+        const shares = sw.participants.map(p => ({ participantId: p.id, included: true, amountCents: 0, percent: 0, weight: 1 }));
+        sw.expenses.unshift({
+          id: uid(),
+          sourceActivityId: act.id,
+          desc: act.name || "Despesa do cartão",
+          amountCents: costCents,
+          date: act.start || new Date().toISOString().slice(0, 10),
+          cat: mapActivityTypeToSwCat(act.type),
+          payers: [{ participantId: payerId, amountCents: costCents }],
+          splitMode: "equal",
+          shares
+        });
+        act.splitConfig = { payerId, splitMode: "equal", shares };
+        added++;
+      });
+      dlg.close();
+      onSave?.(`📅 ${added} despesa(s) importada(s) dos cartões para a divisão!`);
+    };
+
+    renderList();
+    if (!dlg.open) dlg.showModal();
+  }
+
+  async function openInviteModal({ tripId, tripTitle, toast }) {
+    const dlg = document.getElementById("swInviteModal");
+    if (!dlg) return;
+    if (!tripId || !window.FeriasApi?.isServer?.()) {
+      toast?.("Conecte-se ao servidor para gerar um link de convite seguro.");
+      return;
+    }
+    const statusEl = document.getElementById("swInvStatus");
+    const linkWrap = document.getElementById("swInvLinkWrap");
+    const createWrap = document.getElementById("swInvCreateWrap");
+    const linkInput = document.getElementById("swInvLinkInput");
+    const waBtn = document.getElementById("btnSwInvWhatsApp");
+    const copyBtn = document.getElementById("btnSwInvCopy");
+    const genBtn = document.getElementById("btnSwInvGenerate");
+    const regenBtn = document.getElementById("btnSwInvRegen");
+    const revokeBtn = document.getElementById("btnSwInvRevoke");
+
+    const applyInviteState = data => {
+      const active = Boolean(data && data.active && data.token);
+      if (active) {
+        const url = `${window.location.origin}/?splitwiseInvite=${encodeURIComponent(data.token)}`;
+        linkInput.value = url;
+        const msg = `🤝 *Convite — Dividir Despesas*\n\nVocê foi convidado(a) para acompanhar e dividir os gastos de *${tripTitle || "nosso planejamento"}*:\n\n${url}\n\nPelo link você pode ver os gastos, lançar suas despesas e consultar os acertos/Pix.`;
+        waBtn.href = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+        statusEl.innerHTML = `<span class="sw-pix-tag">🟢 Link ativo — restrito apenas ao Dividir Despesas deste projeto</span>`;
+        linkWrap.hidden = false;
+        createWrap.hidden = true;
+      } else {
+        linkInput.value = "";
+        statusEl.innerHTML = `<span class="sw-pix-tag is-empty">⚪ Nenhum link ativo no momento</span>`;
+        linkWrap.hidden = true;
+        createWrap.hidden = false;
+      }
+    };
+
+    statusEl.innerHTML = `<span class="muted small">Consultando status do convite...</span>`;
+    linkWrap.hidden = true;
+    createWrap.hidden = true;
+    if (!dlg.open) dlg.showModal();
+
+    try {
+      const res = await window.FeriasApi.getSplitwiseInvite(tripId);
+      applyInviteState(res);
+    } catch (err) {
+      statusEl.innerHTML = `<span class="muted small">❌ ${esc(err.message || err)}</span>`;
+      createWrap.hidden = false;
+    }
+
+    genBtn.onclick = async () => {
+      try {
+        const res = await window.FeriasApi.createSplitwiseInvite(tripId, false);
+        applyInviteState(res);
+        toast?.("🔗 Link de convite gerado!");
+      } catch (err) { toast?.("❌ " + (err.message || err)); }
+    };
+    regenBtn.onclick = async () => {
+      if (!confirm("Gerar um novo link invalidará o link anterior. Continuar?")) return;
+      try {
+        const res = await window.FeriasApi.createSplitwiseInvite(tripId, true);
+        applyInviteState(res);
+        toast?.("🔄 Novo link gerado!");
+      } catch (err) { toast?.("❌ " + (err.message || err)); }
+    };
+    revokeBtn.onclick = async () => {
+      if (!confirm("Revogar o link encerrará imediatamente o acesso externo ao Dividir Despesas deste projeto. Confirmar?")) return;
+      try {
+        const res = await window.FeriasApi.revokeSplitwiseInvite(tripId);
+        applyInviteState(res);
+        toast?.("🚫 Link de convite revogado!");
+      } catch (err) { toast?.("❌ " + (err.message || err)); }
+    };
+    copyBtn.onclick = async () => {
+      try { await navigator.clipboard.writeText(linkInput.value); }
+      catch { linkInput.select(); document.execCommand("copy"); }
+      copyBtn.textContent = "✅ Copiado!";
+      toast?.("📋 Link de convite copiado!");
+      setTimeout(() => { copyBtn.textContent = "📋 Copiar link"; }, 2000);
+    };
+  }
+
+  function renderSplitwiseView({
+    container,
+    state,
+    tripId = "",
+    tripTitle = "",
+    activities = [],
+    getActivityCostCents = null,
+    guestMode = false,
+    onGuestAction = null,
+    fmtBR,
+    onSave,
+    toast
+  }) {
     if (!container || !state) return;
     const sw = ensureSplitwiseState(state);
     const ledger = computeLedgerAndSettlements(sw);
@@ -1027,7 +1278,7 @@
             </div>
           </div>`;
         }).join("")
-      : `<div class="sw-all-settled">🎉 ${sw.expenses.length ? "Todas as contas estão quitadas! Nenhuma transferência pendente." : "Lance despesas abaixo para gerar a proposta automática de acertos."}</div>`;
+      : `<div class="sw-all-settled">🎉 ${sw.expenses.length ? "Todas as contas estão quitadas! Nenhuma transferência pendente." : "Lance despesas abaixo ou importe dos cartões para gerar a proposta automática de acertos."}</div>`;
 
     const modeLabels = { equal: "Igualmente", exact: "Valores exatos", percent: "Porcentagem", shares: "Cotas" };
     const expensesHtml = sw.expenses.length
@@ -1036,9 +1287,10 @@
             const p = pById.get(py.participantId);
             return p ? (exp.payers.length > 1 ? `${p.name} (${formatCents(py.amountCents)})` : p.name) : "—";
           }).join(", ");
+          const linkedBadge = exp.sourceActivityId ? `<span class="sw-linked-chip" title="Sincronizado com o cartão do calendário">📅 Cartão</span>` : "";
           return `<div class="sw-exp-row" data-sw-edit-exp="${esc(exp.id)}" role="button" tabindex="0">
             <div class="sw-exp-main">
-              <div class="sw-exp-title">${esc(exp.desc)}</div>
+              <div class="sw-exp-title">${esc(exp.desc)} ${linkedBadge}</div>
               <div class="sw-exp-meta muted small">
                 <span>📅 ${esc(fmtDate(exp.date))}</span> ·
                 <span>🏷️ ${esc(exp.cat || "Outros")}</span> ·
@@ -1064,7 +1316,7 @@
             const to = pById.get(st.toId)?.name || "Participante";
             return `<div class="sw-history-row">
               <span>✅ <b>${esc(from)}</b> pagou <b>${esc(formatCents(st.amountCents))}</b> para <b>${esc(to)}</b> <small class="muted">(${esc(fmtDate(st.date))})</small></span>
-              <button type="button" class="icon-btn" data-sw-undo-settle="${esc(st.id)}" title="Desfazer quitação">↩️</button>
+              ${guestMode ? "" : `<button type="button" class="icon-btn" data-sw-undo-settle="${esc(st.id)}" title="Desfazer quitação">↩️</button>`}
             </div>`;
           }).join("")}</div>
         </div>`
@@ -1081,7 +1333,9 @@
         <div class="card-head">
           <h2>👥 Participantes &amp; Chaves Pix</h2>
           <div class="inline-actions">
+            ${!guestMode && tripId ? `<button type="button" class="btn ghost small" id="btnSwInviteWhatsApp">💬 Convidar via WhatsApp</button>` : ""}
             <button type="button" class="btn ghost small" id="btnSwAddParticipant">➕ Participante</button>
+            ${!guestMode ? `<button type="button" class="btn ghost small" id="btnSwImportCards" ${sw.participants.length ? "" : "disabled"}>📅 Importar dos Cartões</button>` : ""}
             <button type="button" class="btn primary small" id="btnSwAddExpense" ${sw.participants.length ? "" : "disabled"}>💸 + Nova Despesa</button>
           </div>
         </div>
@@ -1099,7 +1353,10 @@
       <div class="card sw-section-card">
         <div class="card-head">
           <h2>🧾 Despesas do Grupo <span class="pill">${sw.expenses.length}</span></h2>
-          <button type="button" class="btn primary small" id="btnSwAddExpense2" ${sw.participants.length ? "" : "disabled"}>➕ Nova Despesa</button>
+          <div class="inline-actions">
+            ${!guestMode ? `<button type="button" class="btn ghost small" id="btnSwImportCards2" ${sw.participants.length ? "" : "disabled"}>📅 Selecionar dos Cartões</button>` : ""}
+            <button type="button" class="btn primary small" id="btnSwAddExpense2" ${sw.participants.length ? "" : "disabled"}>➕ Nova Despesa</button>
+          </div>
         </div>
         <div class="sw-expenses-list">${expensesHtml}</div>
       </div>
@@ -1108,25 +1365,33 @@
     `;
 
     // Bindings
+    const invBtn = container.querySelector("#btnSwInviteWhatsApp");
+    if (invBtn) invBtn.onclick = () => openInviteModal({ tripId, tripTitle, toast });
+
     const addPartBtn = container.querySelector("#btnSwAddParticipant");
-    if (addPartBtn) addPartBtn.onclick = () => openParticipantModal({ sw, participant: null, onSave, toast });
+    if (addPartBtn) addPartBtn.onclick = () => openParticipantModal({ sw, participant: null, guestMode, onGuestAction, onSave, toast });
+
+    ["#btnSwImportCards", "#btnSwImportCards2"].forEach(s => {
+      const b = container.querySelector(s);
+      if (b) b.onclick = () => openImportCardsModal({ sw, activities, getActivityCostCents, fmtBR, onSave, toast });
+    });
 
     ["#btnSwAddExpense", "#btnSwAddExpense2"].forEach(s => {
       const b = container.querySelector(s);
-      if (b) b.onclick = () => openExpenseModal({ sw, expense: null, onSave, toast });
+      if (b) b.onclick = () => openExpenseModal({ sw, expense: null, guestMode, onGuestAction, onSave, toast });
     });
 
     container.querySelectorAll("[data-sw-edit-part]").forEach(el => {
       el.onclick = () => {
         const p = pById.get(el.dataset.swEditPart);
-        if (p) openParticipantModal({ sw, participant: p, onSave, toast });
+        if (p) openParticipantModal({ sw, participant: p, guestMode, onGuestAction, onSave, toast });
       };
     });
 
     container.querySelectorAll("[data-sw-edit-exp]").forEach(el => {
       el.onclick = () => {
         const exp = sw.expenses.find(x => x.id === el.dataset.swEditExp);
-        if (exp) openExpenseModal({ sw, expense: exp, onSave, toast });
+        if (exp) openExpenseModal({ sw, expense: exp, guestMode, onGuestAction, onSave, toast });
       };
     });
 
@@ -1141,19 +1406,24 @@
     });
 
     container.querySelectorAll("[data-sw-settle]").forEach(btn => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         const tr = ledger.transfers[parseInt(btn.dataset.swSettle, 10)];
         if (!tr) return;
         const from = pById.get(tr.fromId);
         const to = pById.get(tr.toId);
         if (!from || !to) return;
-        sw.settlements.unshift({
+        const settlement = {
           id: uid(),
           fromId: tr.fromId,
           toId: tr.toId,
           amountCents: tr.amountCents,
           date: new Date().toISOString().slice(0, 10)
-        });
+        };
+        if (guestMode && onGuestAction) {
+          await onGuestAction({ action: "settle", settlement }, `✅ Quitado: ${from.name} pagou ${formatCents(tr.amountCents)} para ${to.name}!`);
+          return;
+        }
+        sw.settlements.unshift(settlement);
         onSave?.(`✅ Quitado: ${from.name} pagou ${formatCents(tr.amountCents)} para ${to.name}!`);
       };
     });
@@ -1176,6 +1446,7 @@
     buildPixBrCode,
     renderQrSvg,
     ensureSplitwiseState,
+    syncActivityToSplitwise,
     renderSplitwiseView
   };
 })();

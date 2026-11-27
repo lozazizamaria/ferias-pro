@@ -3322,6 +3322,167 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 201, { ok: true, trip: db.trips[tripId] });
     }
 
+    // ---------- CONVITE SEGURO SPLITWISE (MODO PESSOAL — ACESSO RESTRITO AO PROJETO) ----------
+    const swInviteMatch = pathname.match(/^\/api\/trips\/([a-zA-Z0-9_]+)\/splitwise-invite$/);
+    if (swInviteMatch) {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const trip = db.trips[swInviteMatch[1]];
+      if (!trip) return sendJson(res, 404, { ok: false, error: "Planejamento não encontrado." });
+      if (getTripMode(trip) === "professional") {
+        return sendJson(res, 400, { ok: false, error: "Convite de Dividir Despesas é exclusivo do Modo Pessoal." });
+      }
+      const access = getTripAccess(trip, auth.user);
+      if (!access) return sendJson(res, 403, { ok: false, error: "Sem permissão neste planejamento." });
+
+      if (req.method === "GET") {
+        const token = String(trip.splitwiseInviteToken || "");
+        return sendJson(res, 200, { ok: true, active: Boolean(token), token, createdAt: trip.splitwiseInviteCreatedAt || 0 });
+      }
+      if (access !== "owner" && access !== "editor") {
+        return sendJson(res, 403, { ok: false, error: "Apenas proprietário ou editor pode gerenciar o link de convite." });
+      }
+      if (req.method === "POST") {
+        const body = await readBody(req).catch(() => ({}));
+        const regenerate = Boolean(body && body.regenerate);
+        if (!trip.splitwiseInviteToken || regenerate) {
+          trip.splitwiseInviteToken = crypto.randomBytes(24).toString("base64url");
+          trip.splitwiseInviteCreatedAt = Date.now();
+          trip.updatedAt = Date.now();
+          saveDb();
+        }
+        return sendJson(res, 200, { ok: true, active: true, token: trip.splitwiseInviteToken, createdAt: trip.splitwiseInviteCreatedAt || 0 });
+      }
+      if (req.method === "DELETE") {
+        trip.splitwiseInviteToken = "";
+        trip.splitwiseInviteCreatedAt = 0;
+        trip.updatedAt = Date.now();
+        saveDb();
+        return sendJson(res, 200, { ok: true, active: false, token: "" });
+      }
+    }
+
+    const swPubMatch = pathname.match(/^\/api\/public\/splitwise\/([A-Za-z0-9_-]{16,64})(\/action)?$/);
+    if (swPubMatch) {
+      const reqToken = swPubMatch[1];
+      const isAction = Boolean(swPubMatch[2]);
+      const ip = getClientIp(req);
+      const rl = checkRateLimit(`swpub:${ip}`, 90, 10 * 60 * 1000);
+      if (!rl.allowed) return sendJson(res, 429, { ok: false, error: "Muitas solicitações. Aguarde alguns instantes." });
+
+      const tokenBuf = Buffer.from(reqToken, "utf8");
+      const matchedTrip = Object.values(db.trips).find(t => {
+        if (!t || getTripMode(t) === "professional") return false;
+        const cand = String(t.splitwiseInviteToken || "");
+        if (!cand || cand.length !== reqToken.length) return false;
+        try { return crypto.timingSafeEqual(Buffer.from(cand, "utf8"), tokenBuf); } catch { return false; }
+      });
+      if (!matchedTrip) {
+        return sendJson(res, 404, { ok: false, error: "Link de convite inválido ou revogado." });
+      }
+      if (!matchedTrip.data || typeof matchedTrip.data !== "object") matchedTrip.data = { activities: [] };
+      if (!matchedTrip.data.splitwise || typeof matchedTrip.data.splitwise !== "object") {
+        matchedTrip.data.splitwise = { participants: [], expenses: [], settlements: [] };
+      }
+      const sw = matchedTrip.data.splitwise;
+      if (!Array.isArray(sw.participants)) sw.participants = [];
+      if (!Array.isArray(sw.expenses)) sw.expenses = [];
+      if (!Array.isArray(sw.settlements)) sw.settlements = [];
+
+      if (!isAction && req.method === "GET") {
+        return sendJson(res, 200, {
+          ok: true,
+          tripTitle: matchedTrip.data.title || matchedTrip.name || "Viagem",
+          splitwise: {
+            participants: sw.participants,
+            expenses: sw.expenses,
+            settlements: sw.settlements
+          }
+        });
+      }
+
+      if (isAction && req.method === "POST") {
+        const body = await readBody(req);
+        const kind = String(body.action || "");
+        if (kind === "save_participant") {
+          const p = body.participant || {};
+          const name = String(p.name || "").trim().slice(0, 60);
+          if (!name) return sendJson(res, 400, { ok: false, error: "Nome do participante obrigatório." });
+          const clean = {
+            id: String(p.id || uid("swp_")).slice(0, 48),
+            name,
+            pixKey: String(p.pixKey || "").trim().slice(0, 100),
+            pixName: String(p.pixName || "").trim().slice(0, 25),
+            pixCity: String(p.pixCity || "").trim().slice(0, 15)
+          };
+          const idx = sw.participants.findIndex(x => x.id === clean.id);
+          if (idx >= 0) sw.participants[idx] = clean;
+          else sw.participants.push(clean);
+        } else if (kind === "save_expense") {
+          const exp = body.expense || {};
+          const desc = String(exp.desc || "").trim().slice(0, 120);
+          const amountCents = Math.max(0, Math.round(Number(exp.amountCents) || 0));
+          if (!desc || amountCents <= 0) return sendJson(res, 400, { ok: false, error: "Descrição e valor obrigatórios." });
+          const validPIds = new Set(sw.participants.map(x => x.id));
+          const payers = (Array.isArray(exp.payers) ? exp.payers : [])
+            .filter(py => py && validPIds.has(py.participantId))
+            .map(py => ({ participantId: py.participantId, amountCents: Math.max(0, Math.round(Number(py.amountCents) || 0)) }))
+            .filter(py => py.amountCents > 0);
+          if (!payers.length) return sendJson(res, 400, { ok: false, error: "Informe quem pagou." });
+          const splitMode = ["equal", "exact", "percent", "shares"].includes(exp.splitMode) ? exp.splitMode : "equal";
+          const shares = (Array.isArray(exp.shares) ? exp.shares : [])
+            .filter(sh => sh && validPIds.has(sh.participantId))
+            .map(sh => ({
+              participantId: sh.participantId,
+              included: sh.included !== false,
+              amountCents: Math.max(0, Math.round(Number(sh.amountCents) || 0)),
+              percent: Math.max(0, Number(sh.percent) || 0),
+              weight: Math.max(0, Number(sh.weight) || 0)
+            }));
+          const cleanExp = {
+            id: String(exp.id || uid("swe_")).slice(0, 48),
+            desc,
+            amountCents,
+            date: String(exp.date || new Date().toISOString().slice(0, 10)).slice(0, 10),
+            cat: String(exp.cat || "Outros").slice(0, 40),
+            payers,
+            splitMode,
+            shares
+          };
+          const idx = sw.expenses.findIndex(x => x.id === cleanExp.id);
+          if (idx >= 0) sw.expenses[idx] = { ...sw.expenses[idx], ...cleanExp };
+          else sw.expenses.unshift(cleanExp);
+        } else if (kind === "settle") {
+          const s = body.settlement || {};
+          const amountCents = Math.max(0, Math.round(Number(s.amountCents) || 0));
+          if (!s.fromId || !s.toId || amountCents <= 0) {
+            return sendJson(res, 400, { ok: false, error: "Dados de quitação inválidos." });
+          }
+          sw.settlements.unshift({
+            id: uid("sws_"),
+            fromId: String(s.fromId).slice(0, 48),
+            toId: String(s.toId).slice(0, 48),
+            amountCents,
+            date: String(s.date || new Date().toISOString().slice(0, 10)).slice(0, 10)
+          });
+        } else {
+          return sendJson(res, 400, { ok: false, error: "Ação não suportada." });
+        }
+        matchedTrip.updatedAt = Date.now();
+        matchedTrip.revision = (matchedTrip.revision || 1) + 1;
+        saveDb();
+        return sendJson(res, 200, {
+          ok: true,
+          tripTitle: matchedTrip.data.title || matchedTrip.name || "Viagem",
+          splitwise: {
+            participants: sw.participants,
+            expenses: sw.expenses,
+            settlements: sw.settlements
+          }
+        });
+      }
+    }
+
     const tripMatch = pathname.match(/^\/api\/trips\/([a-zA-Z0-9_]+)$/);
     if (tripMatch) {
       const auth = getAuthUser(req);

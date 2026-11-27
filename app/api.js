@@ -674,6 +674,45 @@
     else localStorage.removeItem(key);
   }
 
+  async function getSplitwiseInvite(tripId) {
+    if (!serverAvailable || !tripId) return { ok: false, active: false, token: "" };
+    const r = await req(`/api/trips/${encodeURIComponent(tripId)}/splitwise-invite`);
+    if (!r.ok) throw new Error(r.data?.error || "Falha ao consultar link de convite.");
+    return r.data;
+  }
+
+  async function createSplitwiseInvite(tripId, regenerate = false) {
+    if (!serverAvailable || !tripId) throw new Error("Servidor offline para gerar link de convite.");
+    const r = await req(`/api/trips/${encodeURIComponent(tripId)}/splitwise-invite`, {
+      method: "POST",
+      body: JSON.stringify({ regenerate: Boolean(regenerate) })
+    });
+    if (!r.ok) throw new Error(r.data?.error || "Falha ao gerar link de convite.");
+    return r.data;
+  }
+
+  async function revokeSplitwiseInvite(tripId) {
+    if (!serverAvailable || !tripId) throw new Error("Servidor offline para revogar link.");
+    const r = await req(`/api/trips/${encodeURIComponent(tripId)}/splitwise-invite`, { method: "DELETE" });
+    if (!r.ok) throw new Error(r.data?.error || "Falha ao revogar link de convite.");
+    return r.data;
+  }
+
+  async function getPublicSplitwise(token) {
+    const r = await req(`/api/public/splitwise/${encodeURIComponent(token)}`);
+    if (!r.ok) throw new Error(r.data?.error || "Convite inválido ou revogado.");
+    return r.data;
+  }
+
+  async function postPublicSplitwiseAction(token, payload) {
+    const r = await req(`/api/public/splitwise/${encodeURIComponent(token)}/action`, {
+      method: "POST",
+      body: JSON.stringify(payload || {})
+    });
+    if (!r.ok) throw new Error(r.data?.error || "Não foi possível salvar a alteração.");
+    return r.data;
+  }
+
   window.FeriasApi = {
     initServer,
     login,
@@ -747,6 +786,11 @@
       hasEmailSender: Boolean(serverCaps.hasEmailSender)
     }),
     getGoogleClientId: () => (currentUser?.integrations?.googleClientId || googleClientId || ""),
-    getUser: () => currentUser
+    getUser: () => currentUser,
+    getSplitwiseInvite,
+    createSplitwiseInvite,
+    revokeSplitwiseInvite,
+    getPublicSplitwise,
+    postPublicSplitwiseAction
   };
 })();

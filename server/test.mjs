@@ -485,3 +485,67 @@ test("Unit — Splitwise (Integer Cents, Greedy Min-Cash-Flow, Pix EMV BR Code C
   const svg = SW.renderQrSvg(brCode, 200);
   assert.ok(svg.startsWith("<svg") && svg.includes("<path d=\"M"), "QR Code SVG gerado localmente sem dependências");
 });
+
+test("Splitwise Public Invite — Token isolado, lançamento convidado e revogação", async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "myplan-swinv-"));
+  const port = await getFreePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const srv = startServerInstance(tmpDir, port);
+
+  t.after(async () => {
+    await srv.stop();
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  });
+
+  await waitForHealth(baseUrl, srv.child);
+  const reg = await apiJson(baseUrl, "/api/auth/register", {
+    method: "POST",
+    body: { name: "Dono Viagem", email: "dono@example.com", password: "Forte!Password2026" }
+  });
+  assert.equal(reg.resp.status, 201);
+  const cookie = reg.setCookie;
+
+  const tripRes = await apiJson(baseUrl, "/api/trips", {
+    method: "POST",
+    cookie,
+    body: {
+      name: "Gramado Amigos",
+      mode: "personal",
+      data: {
+        title: "Gramado Amigos",
+        activities: [{ id: "priv1", name: "Segredo Privado", start: "2026-12-10", notes: "NAO EXPOR" }],
+        splitwise: { participants: [{ id: "p1", name: "Ana", pixKey: "ana@pix.com" }], expenses: [], settlements: [] }
+      }
+    }
+  });
+  assert.equal(tripRes.resp.status, 201);
+  const tripId = tripRes.json.trip.id;
+
+  // Gerar token de convite
+  const invRes = await apiJson(baseUrl, `/api/trips/${tripId}/splitwise-invite`, { method: "POST", cookie, body: {} });
+  assert.equal(invRes.resp.status, 200);
+  assert.equal(invRes.json.active, true);
+  const token = invRes.json.token;
+  assert.ok(token.length >= 24);
+
+  // Acesso público SEM cookie: retorna APENAS splitwise (zero vazamento de atividades privadas ou e-mail)
+  const pubGet = await apiJson(baseUrl, `/api/public/splitwise/${token}`);
+  assert.equal(pubGet.resp.status, 200);
+  assert.equal(pubGet.json.tripTitle, "Gramado Amigos");
+  assert.equal(pubGet.json.activities, undefined, "Não deve expor atividades privadas");
+  assert.equal(JSON.stringify(pubGet.json).includes("Segredo Privado"), false, "Não deve vazar dados privados");
+
+  // Convidado adiciona participante e despesa
+  const addP = await apiJson(baseUrl, `/api/public/splitwise/${token}/action`, {
+    method: "POST",
+    body: { action: "save_participant", participant: { id: "p2", name: "Bruno", pixKey: "" } }
+  });
+  assert.equal(addP.resp.status, 200);
+  assert.equal(addP.json.splitwise.participants.length, 2);
+
+  // Revogar convite -> acesso público imediatamente bloqueado (404)
+  const revRes = await apiJson(baseUrl, `/api/trips/${tripId}/splitwise-invite`, { method: "DELETE", cookie });
+  assert.equal(revRes.resp.status, 200);
+  const afterRev = await apiJson(baseUrl, `/api/public/splitwise/${token}`);
+  assert.equal(afterRev.resp.status, 404);
+});
