@@ -3040,6 +3040,7 @@ const server = http.createServer(async (req, res) => {
           id: t.id,
           name: t.name,
           mode: getTripMode(t),
+          isExample: Boolean(t.data?.isExample),
           role: "owner",
           ownerName: user.name,
           ownerEmail: user.email,
@@ -3061,6 +3062,7 @@ const server = http.createServer(async (req, res) => {
             id: t.id,
             name: t.name,
             mode: getTripMode(t),
+            isExample: Boolean(t.data?.isExample),
             role: s.role || "editor",
             shareId: s.id,
             ownerName: owner ? owner.name : "Usuário",
@@ -3083,6 +3085,7 @@ const server = http.createServer(async (req, res) => {
             tripId: t.id,
             tripName: t.name,
             mode: getTripMode(t),
+            isExample: Boolean(t.data?.isExample),
             role: s.role || "editor",
             ownerName: owner ? owner.name : "Usuário",
             ownerEmail: owner ? owner.email : "",
@@ -3497,7 +3500,7 @@ const server = http.createServer(async (req, res) => {
       const user = auth.user;
 
       const ownFull = Object.values(db.trips)
-        .filter(t => t.ownerId === user.id && getTripMode(t) === "personal")
+        .filter(t => t.ownerId === user.id && getTripMode(t) === "personal" && !t.data?.isExample)
         .map(t => ({
           id: t.id,
           name: t.name,
@@ -3512,7 +3515,7 @@ const server = http.createServer(async (req, res) => {
         .filter(s => s.status === "accepted" && (s.targetUserId === user.id || s.targetEmail === user.email))
         .map(s => {
           const t = db.trips[s.tripId];
-          if (!t || getTripMode(t) !== "personal") return null;
+          if (!t || getTripMode(t) !== "personal" || t.data?.isExample) return null;
           const owner = db.users[t.ownerId];
           return {
             id: t.id,
@@ -4717,6 +4720,90 @@ Retorne EXCLUSIVAMENTE JSON:
         return sendJson(res, 200, { ok: true, usedAi: Boolean(slides), slides });
       } catch {
         return sendJson(res, 200, { ok: true, usedAi: false, slides: null });
+      }
+    }
+
+    if (pathname === "/api/ai/travel-journey" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const creds = getEffectiveCredentials(auth.user);
+      const body = await readBody(req);
+      const toneRaw = String(body.tone || "inspirador").toLowerCase().trim();
+      const tone = ["inspirador", "divertido", "minimalista"].includes(toneRaw) ? toneRaw : "inspirador";
+      const sIn = (body.summary && typeof body.summary === "object") ? body.summary : {};
+
+      // Privacidade estrita: whitelist exclusivamente de campos não-financeiros
+      const cleanSummary = {
+        projectTitle: String(sIn.projectTitle || "Minha Viagem").slice(0, 120),
+        startIso: String(sIn.startIso || "").slice(0, 16),
+        endIso: String(sIn.endIso || "").slice(0, 16),
+        totalDays: Math.max(0, Math.min(999, Number(sIn.totalDays) || 0)),
+        cities: Array.isArray(sIn.cities) ? sIn.cities.map(c => String(c || "").slice(0, 60)).filter(Boolean).slice(0, 24) : [],
+        countries: Array.isArray(sIn.countries) ? sIn.countries.map(c => String(c || "").slice(0, 60)).filter(Boolean).slice(0, 12) : [],
+        continents: Array.isArray(sIn.continents) ? sIn.continents.map(c => String(c || "").slice(0, 60)).filter(Boolean).slice(0, 7) : [],
+        flightsCount: Math.max(0, Math.min(99, Number(sIn.flightsCount) || 0)),
+        roadLegsCount: Math.max(0, Math.min(99, Number(sIn.roadLegsCount) || 0)),
+        totalKm: Math.max(0, Math.min(999999, Math.round(Number(sIn.totalKm) || 0))),
+        highlights: Array.isArray(sIn.highlights)
+          ? sIn.highlights.slice(0, 16).map(h => ({
+              date: String(h?.date || "").slice(0, 20),
+              city: String(h?.city || "").slice(0, 60),
+              title: String(h?.title || "").slice(0, 100),
+              type: String(h?.type || "").slice(0, 30)
+            }))
+          : []
+      };
+
+      if (!creds.geminiKey) {
+        return sendJson(res, 200, { ok: true, usedAi: false, tone, journey: null });
+      }
+
+      const toneGuide = tone === "divertido"
+        ? "Tom DIVERTIDO e LEVE: bem-humorado, caloroso, vibrante, como um amigo empolgado contando os melhores momentos para a família e redes sociais (pode usar poucos emojis com bom gosto)."
+        : (tone === "minimalista"
+          ? "Tom MINIMALISTA e EDITORIAL: elegante, limpo, poético e direto, estilo revista Kinfolk / Monocle, frases curtas e sofisticadas, sem exageros."
+          : "Tom INSPIRADOR e CELEBRATÓRIO: positivo, envolvente e memorável, estilo Spotify Wrapped / cartão-postal moderno que desperta encantamento e orgulho da jornada.");
+
+      const sysJourney = `Você é um diretor criativo especialista em narrativas de viagem em português do Brasil (pt-BR).
+A partir do resumo de roteiro fornecido, crie um "marketing positivo da viagem" para compartilhar com família, amigos e redes sociais.
+REGRAS INVIOLÁVEIS:
+1. ${toneGuide}
+2. PRIVACIDADE ABSOLUTA: JAMAIS mencione dinheiro, custos, orçamento, preços, moedas ou despesas.
+3. Retorne EXCLUSIVAMENTE JSON válido no formato exato abaixo:
+{
+  "headline": "Título / manchete inspiradora e marcante com no máximo 58 caracteres",
+  "tagline": "Subtítulo curto (até 85 caracteres) conectando a essência do roteiro",
+  "narrative": "Narrativa positiva de 2 a 3 frases curtas (máximo 290 caracteres) celebrando os lugares, estradas, voos e experiências",
+  "stopNotes": [
+    { "city": "Nome da Cidade", "highlight": "Frase curta (até 90 caracteres) destacando o melhor dessa parada" }
+  ],
+  "shareCaption": "Legenda pronta e cativante para WhatsApp ou Instagram (até 260 caracteres, sem valores financeiros)"
+}`;
+
+      try {
+        const resAi = await callGeminiJSON(creds.geminiKey, [{
+          text: `Resumo da viagem (sem dados financeiros):\n${JSON.stringify(cleanSummary, null, 2)}`
+        }], sysJourney);
+        const headline = String(resAi?.headline || "").trim().slice(0, 90);
+        const narrative = String(resAi?.narrative || "").trim().slice(0, 420);
+        if (!headline || !narrative) {
+          return sendJson(res, 200, { ok: true, usedAi: false, tone, journey: null });
+        }
+        const journey = {
+          headline,
+          tagline: String(resAi?.tagline || "").trim().slice(0, 140),
+          narrative,
+          stopNotes: Array.isArray(resAi?.stopNotes)
+            ? resAi.stopNotes.slice(0, 16).map(sn => ({
+                city: String(sn?.city || "").trim().slice(0, 60),
+                highlight: String(sn?.highlight || "").trim().slice(0, 140)
+              })).filter(sn => sn.city && sn.highlight)
+            : [],
+          shareCaption: String(resAi?.shareCaption || "").trim().slice(0, 380)
+        };
+        return sendJson(res, 200, { ok: true, usedAi: true, tone, journey });
+      } catch {
+        return sendJson(res, 200, { ok: true, usedAi: false, tone, journey: null });
       }
     }
 

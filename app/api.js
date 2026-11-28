@@ -620,6 +620,16 @@
     return r.data;
   }
 
+  async function aiGenerateTravelJourney(summary, tone = "inspirador") {
+    if (!serverAvailable) return { ok: true, usedAi: false, tone, journey: null };
+    const r = await req("/api/ai/travel-journey", {
+      method: "POST",
+      body: JSON.stringify({ summary: summary || {}, tone })
+    });
+    if (!r.ok) return { ok: true, usedAi: false, tone, journey: null };
+    return r.data;
+  }
+
   async function createPkpassUrl(activity, tripName) {
     if (!serverAvailable) throw new Error("Servidor offline.");
     const r = await req("/api/wallet/pkpass", { method: "POST", body: JSON.stringify({ activity, tripName }) });
@@ -655,6 +665,7 @@
       id: t.id,
       name: t.name,
       mode: (t.mode === "professional" || t.data?.mode === "professional") ? "professional" : "personal",
+      isExample: Boolean(t.data?.isExample),
       role: "owner",
       updatedAt: t.updatedAt || 0,
       revision: t.revision || 1,
@@ -796,6 +807,7 @@
     aiImproveMinutes,
     aiAudioToMinutes,
     aiGenerateSlides,
+    aiGenerateTravelJourney,
     exportMinutesDocx,
     exportMinutesPptx,
     buildMinutesPptxBlob,

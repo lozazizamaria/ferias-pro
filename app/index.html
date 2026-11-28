@@ -11,12 +11,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=67">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=67">
-<link rel="icon" id="appFaviconLink" type="image/svg+xml" href="/icons/icon.svg?v=67">
+<link rel="manifest" href="/manifest.webmanifest?v=68">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=68">
+<link rel="icon" id="appFaviconLink" type="image/svg+xml" href="/icons/icon.svg?v=68">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=67">
+<link rel="stylesheet" href="styles.css?v=68">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -28,7 +28,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=67" alt="" width="30" height="30" class="brand-logo-img" id="authBrandLogoImg">
+          <img src="icons/icon.svg?v=68" alt="" width="30" height="30" class="brand-logo-img" id="authBrandLogoImg">
         </span>
         <h1 id="authBrandName">My Plan</h1>
       </div>
@@ -133,7 +133,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" id="appBrandLogoWrap" aria-hidden="true">
-            <img src="icons/icon.svg?v=67" alt="" width="30" height="30" class="brand-logo-img" id="appBrandLogoImg">
+            <img src="icons/icon.svg?v=68" alt="" width="30" height="30" class="brand-logo-img" id="appBrandLogoImg">
           </span>
           <h1 id="appBrand"><span id="appBrandName">My Plan</span> <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
           <button type="button" class="btn ghost icon-only sb-collapse-btn" id="btnSidebarCollapse" title="Recolher/expandir barra lateral" aria-label="Recolher ou expandir barra lateral" aria-expanded="true">
@@ -465,9 +465,21 @@
     </div>
   </div>
 
-  <main>
+  <main id="appMainScroll">
     <!-- CONVITES PENDENTES -->
     <div id="invitesBanner" class="invites-banner" hidden></div>
+
+    <!-- BANNER DISCRETO: MODO EXEMPLO ISOLADO (EXCLUSIVO MODO PESSOAL) -->
+    <div id="personalExampleBanner" class="example-trip-banner" hidden role="status" aria-live="polite">
+      <div class="ex-banner-left">
+        <span class="ex-banner-pill">🧪 Modo Exemplo (Isolado)</span>
+        <span class="ex-banner-msg">Edite livremente para explorar todos os recursos — nunca se mistura aos seus outros calendários.</span>
+      </div>
+      <div class="ex-banner-actions">
+        <button type="button" class="btn ghost small" id="btnRestoreExampleTrip" title="Restaurar o roteiro Europa 2027 ao estado original">↺ Restaurar exemplo original</button>
+        <button type="button" class="btn danger-ghost small" id="btnDeleteExampleTrip" title="Excluir este projeto de exemplo">🗑️ Excluir exemplo</button>
+      </div>
+    </div>
 
     <!-- MAPA PESSOAL (SINCRONIZADO COM A BARRA DE CIDADES DO GANTT) -->
     <section class="view" id="view-personal-map">
@@ -481,6 +493,7 @@
           <button type="button" class="btn ghost small puf-quick-clear" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
         </div>
         <div class="puf-active-chips" data-puf-chips></div>
+        <button type="button" class="btn ai-pill small journey-open-btn" id="btnMapJourney" data-open-journey title="Gerar resumo visual compartilhável da viagem com IA">✨ Jornada da Viagem</button>
       </div>
       <div class="pmap-hero-grid">
         <div class="card pmap-canvas-card">
@@ -604,6 +617,7 @@
 
             <div class="gantt-toolbar-right">
               <span class="pill gantt-shared-pill" id="tripRoleBadge" hidden>Compartilhada</span>
+              <button type="button" class="btn ai-pill small journey-open-btn" id="btnGanttJourney" data-open-journey title="Gerar resumo visual compartilhável da viagem com IA">✨ <span class="hide-sm">Jornada da Viagem</span></button>
               <button type="button" class="btn ghost small gantt-print-btn" id="btnPrintGantt" title="Imprimir / PDF">🖨️<span class="gantt-pdf-lbl"> PDF</span></button>
               <button type="button" class="btn ghost small gantt-fs-btn" id="btnGanttFullscreen" title="Ampliar Gantt em tela inteira" aria-pressed="false">⛶</button>
               <button type="button" class="btn primary small btn-add-event-gantt" id="btnAddEventGantt" title="Adicionar evento ou viagem">
@@ -5308,28 +5322,91 @@
   </div>
 </dialog>
 
+<!-- MODAL: JORNADA DA VIAGEM COM IA (EXCLUSIVO MODO PESSOAL — RESUMO COMPARTILHÁVEL) -->
+<dialog id="travelJourneyModal" class="journey-dialog" closedby="any" aria-labelledby="journeyModalTitle">
+  <div class="journey-head">
+    <div>
+      <h2 id="journeyModalTitle">✨ Jornada da Viagem</h2>
+      <p class="muted small" id="journeyAiSourceBadge">Preparando resumo visual compartilhável...</p>
+    </div>
+    <button type="button" class="icon-btn modal-close" id="btnCloseJourneyModal" aria-label="Fechar Jornada da Viagem">✕</button>
+  </div>
+
+  <div class="journey-controls-bar">
+    <div class="journey-tablist" id="journeyFormatTablist" role="tablist" aria-label="Formato de exportação da Jornada">
+      <button type="button" role="tab" id="journeyTabStory" data-jfmt="story" aria-selected="true">📱 Stories (9:16)</button>
+      <button type="button" role="tab" id="journeyTabTimeline" data-jfmt="timeline" aria-selected="false">🗺️ Resumo &amp; PDF</button>
+    </div>
+
+    <div class="journey-style-controls">
+      <div class="journey-pill-group" role="group" aria-label="Tom do texto da IA">
+        <button type="button" class="journey-tone-btn" data-jtone="inspirador" aria-pressed="true">✨ Inspirador</button>
+        <button type="button" class="journey-tone-btn" data-jtone="divertido" aria-pressed="false">😄 Divertido</button>
+        <button type="button" class="journey-tone-btn" data-jtone="minimalista" aria-pressed="false">🤍 Minimalista</button>
+      </div>
+      <div class="journey-pill-group" role="group" aria-label="Paleta visual do cartão">
+        <button type="button" class="journey-theme-btn" data-jtheme="aurora" aria-pressed="true" title="Tema Aurora">🌌</button>
+        <button type="button" class="journey-theme-btn" data-jtheme="sunset" aria-pressed="false" title="Tema Mediterrâneo">🌅</button>
+        <button type="button" class="journey-theme-btn" data-jtheme="ocean" aria-pressed="false" title="Tema Oceano">🌊</button>
+      </div>
+      <button type="button" class="btn ghost small" id="btnJourneyRegenerate" title="Regenerar título e narrativa com IA">🔄 Regenerar</button>
+    </div>
+  </div>
+
+  <div id="journeyLoadingBar" class="journey-loading-bar" hidden>
+    <span class="ai-spinner" aria-hidden="true"></span>
+    <span>Criando manchete e narrativa positiva com Gemini IA...</span>
+  </div>
+
+  <div class="journey-privacy-note">
+    <span>🔒 Privacidade por padrão: nenhum valor financeiro, gasto ou dado do Splitwise é exibido neste resumo.</span>
+  </div>
+
+  <div id="journeyPanelStory" role="tabpanel" aria-labelledby="journeyTabStory">
+    <div class="journey-stage is-story">
+      <img id="journeyStoryPreviewImg" class="journey-preview-img is-story" alt="Pré-visualização do Card Vertical 9:16 para Stories e Status">
+    </div>
+    <div class="journey-actions-foot">
+      <button type="button" class="btn primary" id="btnJourneyDownloadStory">⬇️ Baixar Imagem (PNG Alta Resolução)</button>
+      <button type="button" class="btn ai-pill" id="btnJourneyShareStory">📤 Compartilhar</button>
+    </div>
+  </div>
+
+  <div id="journeyPanelTimeline" role="tabpanel" aria-labelledby="journeyTabTimeline" hidden>
+    <div class="journey-stage is-timeline">
+      <img id="journeyTimelinePreviewImg" class="journey-preview-img is-timeline" alt="Pré-visualização do Resumo Horizontal da Jornada com linha do tempo">
+    </div>
+    <div class="journey-actions-foot">
+      <button type="button" class="btn primary" id="btnJourneyDownloadTimeline">🖼️ Baixar PNG Horizontal</button>
+      <button type="button" class="btn ghost" id="btnJourneyExportPdf">📄 Baixar / Imprimir PDF</button>
+      <button type="button" class="btn wa-pill" id="btnJourneyShareWa">💬 Enviar no WhatsApp</button>
+    </div>
+  </div>
+</dialog>
+
 <div id="sbFloatingTooltip" class="sb-floating-tooltip" hidden role="tooltip"></div>
 
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="shared-utils.js?v=67"></script>
-<script src="config.example.js?v=67"></script>
-<script src="vehicles.js?v=67"></script>
-<script src="countries.js?v=67"></script>
-<script src="data.js?v=67"></script>
-<script src="maps.js?v=67"></script>
-<script src="calendar.js?v=67"></script>
-<script src="drive.js?v=67"></script>
-<script src="report.js?v=67"></script>
-<script src="api.js?v=67"></script>
-<script src="minutes.js?v=67"></script>
-<script src="pro-annual.js?v=67"></script>
-<script src="checklists.js?v=67"></script>
-<script src="pro.js?v=67"></script>
-<script src="personal-map.js?v=67"></script>
-<script src="splitwise.js?v=67"></script>
-<script src="app.js?v=67"></script>
+<script src="shared-utils.js?v=68"></script>
+<script src="config.example.js?v=68"></script>
+<script src="vehicles.js?v=68"></script>
+<script src="countries.js?v=68"></script>
+<script src="data.js?v=68"></script>
+<script src="maps.js?v=68"></script>
+<script src="calendar.js?v=68"></script>
+<script src="drive.js?v=68"></script>
+<script src="report.js?v=68"></script>
+<script src="api.js?v=68"></script>
+<script src="minutes.js?v=68"></script>
+<script src="pro-annual.js?v=68"></script>
+<script src="checklists.js?v=68"></script>
+<script src="pro.js?v=68"></script>
+<script src="personal-map.js?v=68"></script>
+<script src="splitwise.js?v=68"></script>
+<script src="journey.js?v=68"></script>
+<script src="app.js?v=68"></script>
 </body>
 </html>

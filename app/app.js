@@ -104,14 +104,28 @@ function getTypeInfo(type) {
   };
 }
 
+function isExampleTrip(t) {
+  return Boolean(t && (t.isExample === true || t.data?.isExample === true));
+}
+
 function migrateState(raw) {
   const def = clone(window.DEFAULT_DATA);
   const s = raw && typeof raw === "object" ? raw : {};
   const merged = {
+    mode: s.mode === "professional" ? "professional" : "personal",
+    isExample: Boolean(s.isExample),
     title: s.title || def.title,
     customTags: Array.isArray(s.customTags)
       ? [...new Set(s.customTags.map(t => String(t || "").trim()).filter(Boolean))]
       : [],
+    personalColumns: Array.isArray(s.personalColumns) && s.personalColumns.length
+      ? clone(s.personalColumns)
+      : clone(def.personalColumns || [
+          { id: "pcol_assuntos", title: "Assuntos", color: "#64748b" },
+          { id: "pcol_plan",     title: "Planejando", color: "#0284c7" },
+          { id: "pcol_conf",     title: "Reservado / Confirmado", color: "#2563eb" },
+          { id: "pcol_done",     title: "Concluído", color: "#10b981" }
+        ]),
     vehicle: Object.assign({}, def.vehicle, s.vehicle || {}),
     params: Object.assign({}, def.params, s.params || {}),
     scenarios: Array.isArray(s.scenarios) && s.scenarios.length ? s.scenarios : def.scenarios,
@@ -1841,6 +1855,18 @@ function buildCommandPaletteItems(query) {
     }
   ];
 
+  if (!isPro && window.MyPlanJourney?.openModal) {
+    items.unshift({
+      group: "Ações rápidas",
+      ico: "✨",
+      title: "Jornada da Viagem com IA",
+      sub: "Resumo visual compartilhável (Stories 9:16 e PDF horizontal, sem valores)",
+      kbd: "",
+      hay: "jornada viagem ia resumo stories instagram whatsapp pdf compartilhar wrapped",
+      run: () => window.MyPlanJourney.openModal({ state, activeTrip, toast })
+    });
+  }
+
   // 2. Navegação (Abas + Calendário Anual)
   const navTargets = isPro
     ? [
@@ -2975,6 +3001,7 @@ function populateTypeSelectors() {
 /* ---------- RENDER ---------- */
 function render(allSortedOpt) {
   applyCurrentAppearance();
+  renderExampleBanner();
   if (appMode === "professional" && window.MyPlanPro) {
     window.MyPlanPro.renderAll();
     return;
@@ -3283,18 +3310,28 @@ function getUnifiedTripsStorageKey() {
 
 function getAllUnifiedTripEntries() {
   const byId = new Map();
+  const exampleIds = new Set();
+  const trackExample = t => { if (t?.id && isExampleTrip(t)) exampleIds.add(t.id); };
+  (tripsCache.ownTrips || []).forEach(trackExample);
+  (tripsCache.sharedTrips || []).forEach(trackExample);
+  loadedTripsMap.forEach(trackExample);
+
   const upsert = (id, patch) => {
-    if (!id) return;
+    if (!id || exampleIds.has(id)) return;
     const prev = byId.get(id) || {};
     byId.set(id, { ...prev, ...patch, id });
   };
-  (tripsCache.ownTrips || []).forEach(t => upsert(t.id, {
-    name: t.name,
-    mode: getTripMode(t),
-    role: "owner",
-    ownerName: t.ownerName || ""
-  }));
+  (tripsCache.ownTrips || []).forEach(t => {
+    if (isExampleTrip(t)) return;
+    upsert(t.id, {
+      name: t.name,
+      mode: getTripMode(t),
+      role: "owner",
+      ownerName: t.ownerName || ""
+    });
+  });
   (tripsCache.sharedTrips || []).forEach(t => {
+    if (isExampleTrip(t)) return;
     const prev = byId.get(t.id);
     if (prev?.role === "owner") return;
     upsert(t.id, {
@@ -3305,7 +3342,7 @@ function getAllUnifiedTripEntries() {
     });
   });
   loadedTripsMap.forEach(tr => {
-    if (!tr || !tr.id) return;
+    if (!tr || !tr.id || isExampleTrip(tr)) return;
     const prev = byId.get(tr.id);
     const r = prev?.role || tr.role || "owner";
     upsert(tr.id, {
@@ -3384,7 +3421,7 @@ function buildUnifiedItems() {
   [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])].forEach(t => metaIndex.set(t.id, t));
 
   loadedTripsMap.forEach(tr => {
-    if (!tr || seenTripIds.has(tr.id) || !selectedIds.has(tr.id)) return;
+    if (!tr || isExampleTrip(tr) || seenTripIds.has(tr.id) || !selectedIds.has(tr.id)) return;
     seenTripIds.add(tr.id);
     orderedTrips.push(tr);
   });
@@ -7181,7 +7218,7 @@ function renderTripDropdown() {
   const own = (tripsCache.ownTrips || []).filter(t => getTripMode(t) === appMode);
   const shared = (tripsCache.sharedTrips || []).filter(t => getTripMode(t) === appMode);
   const items = [
-    ...own.map(t => ({ id: t.id, label: t.name, group: isPro ? "Meus Projetos" : "Minhas Férias" })),
+    ...own.map(t => ({ id: t.id, label: isExampleTrip(t) ? `🧪 ${t.name}` : t.name, group: isPro ? "Meus Projetos" : "Minhas Férias" })),
     ...shared.map(t => ({ id: t.id, label: `👥 ${t.name} (${t.ownerName})`, group: isPro ? "Compartilhados comigo" : "Compartilhadas comigo" }))
   ];
   if (!tripMultiMsel) {
@@ -7198,6 +7235,22 @@ function renderTripDropdown() {
       },
       isHighlighted: sel => sel.length > 1,
       onChange(ids) {
+        if (ids.length > 1) {
+          const allKnown = [...(tripsCache.ownTrips || []), ...(tripsCache.sharedTrips || [])];
+          const isExId = id => isExampleTrip(allKnown.find(x => x.id === id) || loadedTripsMap.get(id));
+          const exIds = ids.filter(isExId);
+          const realIds = ids.filter(id => !isExId(id));
+          if (exIds.length && realIds.length) {
+            const newlyCheckedEx = exIds.find(id => !selectedTripIds.includes(id));
+            if (newlyCheckedEx) {
+              toast("🧪 Projeto de Exemplo aberto de forma isolada (não se mistura a outros calendários).");
+              openTripsByIds([newlyCheckedEx], newlyCheckedEx);
+              return;
+            }
+            openTripsByIds(realIds, realIds[0]);
+            return;
+          }
+        }
         openTripsByIds(ids);
       }
     });
@@ -7513,8 +7566,19 @@ async function openTripsByIds(tripIds, preferredPrimaryId) {
   });
   if (!loaded.length) return;
 
-  selectedTripIds = loaded.map(t => t.id);
-  const primary = loaded.find(t => t.id === preferredPrimaryId) || loaded[0];
+  // Isolamento obrigatório: projeto isExample nunca se mistura com outros calendários
+  const prefObj = loaded.find(t => t.id === preferredPrimaryId) || loaded[0];
+  let isolated = loaded;
+  if (loaded.length > 1) {
+    if (isExampleTrip(prefObj)) isolated = [prefObj];
+    else {
+      const reals = loaded.filter(t => !isExampleTrip(t));
+      isolated = reals.length ? reals : [prefObj];
+    }
+  }
+
+  selectedTripIds = isolated.map(t => t.id);
+  const primary = isolated.find(t => t.id === preferredPrimaryId) || isolated[0];
   activeTrip = primary;
   state = primary.data;
   window.FeriasApi.setActiveTripId(primary.id, appMode);
@@ -7548,12 +7612,24 @@ async function refreshTripsAndLoad(preferredTripId) {
       const initialPro = clone(window.createDefaultProData ? window.createDefaultProData() : window.PRO_DEFAULT_DATA);
       created = await window.FeriasApi.createTrip(initialPro.title || "Roadmap & Entregas Profissionais", initialPro, "", "professional");
     } else {
-      let initialData = clone(window.DEFAULT_DATA);
-      try {
-        const leg = localStorage.getItem(LEGACY_KEY_1) || localStorage.getItem(LEGACY_KEY_2);
-        if (leg) initialData = migrateState(JSON.parse(leg));
-      } catch {}
-      created = await window.FeriasApi.createTrip(initialData.title || "Férias Final de Ano 2026", initialData, window.FeriasMaps.getKey(), "personal");
+      const exDelKey = curUser ? `myplan-example-deleted-${curUser.id}` : "myplan-example-deleted-local";
+      let deletedExample = false;
+      try { deletedExample = localStorage.getItem(exDelKey) === "1"; } catch {}
+      let initialData = deletedExample && window.createBlankTripData
+        ? window.createBlankTripData("Meu Planejamento")
+        : clone(window.createDefaultPersonalExampleData ? window.createDefaultPersonalExampleData() : window.DEFAULT_DATA);
+      if (!deletedExample) {
+        try {
+          const leg = localStorage.getItem(LEGACY_KEY_1) || localStorage.getItem(LEGACY_KEY_2);
+          if (leg) initialData = migrateState(JSON.parse(leg));
+        } catch {}
+      }
+      created = await window.FeriasApi.createTrip(
+        initialData.title || "Férias Europa 2027 (Exemplo)",
+        initialData,
+        window.FeriasMaps.getKey(),
+        "personal"
+      );
     }
     if (bootKey) { try { localStorage.setItem(bootKey, "1"); } catch {} }
     tripsCache = await window.FeriasApi.listTrips();
@@ -13725,5 +13801,67 @@ window.addEventListener("resize", () => {
   else if (ganttMode === "gantt" || ganttMode === "annual") renderGantt(sorted());
 });
 
+function renderExampleBanner() {
+  const banner = $("#personalExampleBanner");
+  if (!banner) return;
+  const show = appMode === "personal" && Boolean(state?.isExample || activeTrip?.isExample);
+  banner.hidden = !show;
+  if (!banner.dataset.boundExBanner) {
+    banner.dataset.boundExBanner = "1";
+    const btnRestore = $("#btnRestoreExampleTrip");
+    if (btnRestore) {
+      btnRestore.onclick = async () => {
+        if (!activeTrip || appMode !== "personal") return;
+        if (!confirm("Restaurar o projeto de exemplo \"Férias Europa 2027 (Exemplo)\" ao estado original? Suas edições neste exemplo serão substituídas.")) return;
+        const fresh = migrateState(window.createDefaultPersonalExampleData ? window.createDefaultPersonalExampleData() : clone(window.DEFAULT_DATA));
+        fresh.isExample = true;
+        state = fresh;
+        activeTrip.data = fresh;
+        activeTrip.isExample = true;
+        activeTrip.name = fresh.title;
+        if (window.FeriasApi?.renameTrip) {
+          try { await window.FeriasApi.renameTrip(activeTrip.id, fresh.title); } catch {}
+        }
+        await saveTripRecord(activeTrip, "↺ Projeto de exemplo Europa 2027 restaurado ao original!");
+        renderTripDropdown();
+        updateContextBar();
+      };
+    }
+    const btnDelete = $("#btnDeleteExampleTrip");
+    if (btnDelete) {
+      btnDelete.onclick = async () => {
+        if (!activeTrip || appMode !== "personal") return;
+        if (!confirm(`Excluir o projeto de exemplo "${activeTrip.name}"? Você poderá criar seus próprios planejamentos normalmente.`)) return;
+        const delId = activeTrip.id;
+        const curUser = window.FeriasApi?.getUser?.();
+        const exDelKey = curUser ? `myplan-example-deleted-${curUser.id}` : "myplan-example-deleted-local";
+        try { localStorage.setItem(exDelKey, "1"); } catch {}
+        try {
+          await window.FeriasApi.deleteTrip(delId);
+          loadedTripsMap.delete(delId);
+          selectedTripIds = selectedTripIds.filter(id => id !== delId);
+          toast("🗑️ Projeto de exemplo excluído.");
+          await refreshTripsAndLoad();
+        } catch (err) {
+          toast("❌ " + (err.message || "Falha ao excluir projeto de exemplo."));
+        }
+      };
+    }
+  }
+}
+
+function bindPersonalJourneyButtons() {
+  document.querySelectorAll("[data-open-journey]").forEach(btn => {
+    if (btn.dataset.boundJourney) return;
+    btn.dataset.boundJourney = "1";
+    btn.onclick = () => {
+      if (appMode !== "personal") return;
+      if (!window.MyPlanJourney?.openModal) return toast("⚠️ Módulo Jornada da Viagem indisponível.");
+      window.MyPlanJourney.openModal({ state, activeTrip, toast });
+    };
+  });
+}
+
 boot();
 bindPersonalCardProFeatures();
+bindPersonalJourneyButtons();

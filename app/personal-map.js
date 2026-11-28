@@ -675,11 +675,14 @@ function renderPersonalMapSvgFallback(canvas, cityPoints, legSegments = []) {
   const markersSvg = pts.map((p, i) => {
     const labelTxt = p.days ? `${p.city} • ${p.days}d` : p.city;
     const pillW = Math.max(66, labelTxt.length * 6.5 + 16);
+    const flipLeft = (p.x + 17 + pillW) > (W - 10);
+    const rx = flipLeft ? Math.max(6, p.x - 17 - pillW) : (p.x + 17);
+    const tx = rx + 8;
     return `<g>
       <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="13" fill="${p.hex}" stroke="#ffffff" stroke-width="2.5"/>
       <text x="${p.x.toFixed(1)}" y="${(p.y + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">${i + 1}</text>
-      <rect x="${(p.x + 17).toFixed(1)}" y="${(p.y - 11).toFixed(1)}" width="${pillW.toFixed(1)}" height="22" rx="11" fill="rgba(255,255,255,0.94)" stroke="rgba(15,23,42,0.16)" stroke-width="1"/>
-      <text x="${(p.x + 25).toFixed(1)}" y="${(p.y + 4).toFixed(1)}" font-size="11" font-weight="700" fill="#0f172a">${esc(labelTxt)}</text>
+      <rect x="${rx.toFixed(1)}" y="${(p.y - 11).toFixed(1)}" width="${pillW.toFixed(1)}" height="22" rx="11" fill="rgba(255,255,255,0.94)" stroke="rgba(15,23,42,0.16)" stroke-width="1"/>
+      <text x="${tx.toFixed(1)}" y="${(p.y + 4).toFixed(1)}" font-size="11" font-weight="700" fill="#0f172a">${esc(labelTxt)}</text>
     </g>`;
   }).join("");
   canvas.innerHTML = `<div style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:10px">
@@ -898,15 +901,48 @@ async function renderPersonalMap() {
     }
   }
 
-  // 4. Geocodificar cidades em ordem cronológica e desenhar Mapa + Rota Completa
-  const geocodeCity = async city => {
-    if (window.FeriasMaps?.geocodeLocation) {
-      const g = await window.FeriasMaps.geocodeLocation(city).catch(() => null);
-      if (g && isFinite(g.lat) && isFinite(g.lng)) return g;
-    }
+  // 4. Geocodificar cidades em ordem cronológica (priorizando coordenadas já salvas nos cartões) e desenhar Mapa + Rota Completa
+  const embeddedCoordByKey = new Map();
+  const regEmbeddedCoord = (rawPlace, lat, lng) => {
+    if (!rawPlace) return;
+    const la = Number(lat), lo = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(lo) || (la === 0 && lo === 0)) return;
+    const k = normCityKey(rawPlace);
+    if (k && !embeddedCoordByKey.has(k)) embeddedCoordByKey.set(k, { lat: la, lng: lo });
+  };
+  acts.forEach(a => {
+    regEmbeddedCoord(a.from, a.fromLat, a.fromLng);
+    regEmbeddedCoord(a.to, a.toLat, a.toLng);
+    regEmbeddedCoord(a.location || a.city, a.locationLat, a.locationLng);
+  });
+
+  const EXTRA_CITY_COORDS = {
+    "sao paulo": { lat: -23.5505, lng: -46.6333 },
+    brasilia: { lat: -15.7975, lng: -47.8919 },
+    lisboa: { lat: 38.7223, lng: -9.1393 },
+    obidos: { lat: 39.3606, lng: -9.1567 },
+    porto: { lat: 41.1579, lng: -8.6291 },
+    salamanca: { lat: 40.9701, lng: -5.6635 },
+    madrid: { lat: 40.4168, lng: -3.7038 },
+    roma: { lat: 41.9028, lng: 12.4964 },
+    siena: { lat: 43.3188, lng: 11.3308 },
+    florenca: { lat: 43.7696, lng: 11.2558 },
+    veneza: { lat: 45.4408, lng: 12.3155 },
+    verona: { lat: 45.4384, lng: 10.9916 },
+    milao: { lat: 45.4642, lng: 9.1900 }
+  };
+
+  const geocodeCity = async (city, keyOpt = "") => {
+    const k = keyOpt || normCityKey(city);
+    if (k && embeddedCoordByKey.has(k)) return embeddedCoordByKey.get(k);
+    if (k && EXTRA_CITY_COORDS[k]) return EXTRA_CITY_COORDS[k];
     if (window.FeriasMaps?.lookupBuiltinLocation) {
       const b = window.FeriasMaps.lookupBuiltinLocation(city);
       if (b && isFinite(b.lat) && isFinite(b.lng)) return b;
+    }
+    if (window.FeriasMaps?.geocodeLocation) {
+      const g = await window.FeriasMaps.geocodeLocation(city).catch(() => null);
+      if (g && isFinite(g.lat) && isFinite(g.lng)) return g;
     }
     return null;
   };
@@ -914,7 +950,7 @@ async function renderPersonalMap() {
   const routeCoords = [];
   const cityCoordByKey = new Map();
   for (const stop of routeSequence) {
-    const coords = await geocodeCity(stop.city);
+    const coords = await geocodeCity(stop.city, stop.key);
     if (seq !== pmapRenderSeq) return;
     if (coords) {
       const stay = cityDaysMap.get(stop.key);

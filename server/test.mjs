@@ -659,3 +659,90 @@ test("Appearance Preferences API — Paletas, Ordem de Menus e Sanitização de 
     assert.equal(ssrf.resp.status, 400, `SSRF deveria bloquear ${blockedUrl}`);
   }
 });
+
+test("Personal Example Isolation (isExample) & Travel Journey AI Endpoint (v68)", async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "myplan-v68-"));
+  const port = await getFreePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const srv = startServerInstance(tmpDir, port);
+
+  t.after(async () => {
+    await srv.stop();
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  });
+
+  await waitForHealth(baseUrl, srv.child);
+
+  const reg = await apiJson(baseUrl, "/api/auth/register", {
+    method: "POST",
+    body: { name: "Viajante", email: "viajante68@example.com", password: "Forte!Password2027" }
+  });
+  assert.equal(reg.resp.status, 201);
+  const cookie = reg.setCookie;
+
+  // Criar projeto de exemplo isolado + projeto real
+  const exTrip = await apiJson(baseUrl, "/api/trips", {
+    method: "POST",
+    cookie,
+    body: {
+      name: "Férias Europa 2027 (Exemplo)",
+      mode: "personal",
+      data: { mode: "personal", isExample: true, title: "Férias Europa 2027 (Exemplo)", activities: [] }
+    }
+  });
+  assert.equal(exTrip.resp.status, 201);
+
+  const realTrip = await apiJson(baseUrl, "/api/trips", {
+    method: "POST",
+    cookie,
+    body: {
+      name: "Viagem Real 2027",
+      mode: "personal",
+      data: { mode: "personal", isExample: false, title: "Viagem Real 2027", activities: [] }
+    }
+  });
+  assert.equal(realTrip.resp.status, 201);
+
+  // GET /api/trips sinaliza isExample corretamente
+  const listRes = await apiJson(baseUrl, "/api/trips", { cookie });
+  assert.equal(listRes.resp.status, 200);
+  const foundEx = listRes.json.ownTrips.find(x => x.id === exTrip.json.trip.id);
+  const foundReal = listRes.json.ownTrips.find(x => x.id === realTrip.json.trip.id);
+  assert.equal(foundEx.isExample, true);
+  assert.equal(foundReal.isExample, false);
+
+  // GET /api/crossings exclui estritamente projetos de exemplo (isExample: true)
+  const crossRes = await apiJson(baseUrl, "/api/crossings", { cookie });
+  assert.equal(crossRes.resp.status, 200);
+  assert.equal(crossRes.json.trips.some(x => x.id === exTrip.json.trip.id), false);
+  assert.equal(crossRes.json.trips.some(x => x.id === realTrip.json.trip.id), true);
+
+  // POST /api/ai/travel-journey exige autenticação e responde limpo sem chave Gemini
+  const unauthJ = await apiJson(baseUrl, "/api/ai/travel-journey", {
+    method: "POST",
+    body: { tone: "inspirador", summary: { projectTitle: "Europa 2027" } }
+  });
+  assert.equal(unauthJ.resp.status, 401);
+
+  const jRes = await apiJson(baseUrl, "/api/ai/travel-journey", {
+    method: "POST",
+    cookie,
+    body: {
+      tone: "divertido",
+      summary: {
+        projectTitle: "Férias Europa 2027",
+        totalDays: 24,
+        cities: ["São Paulo", "Lisboa", "Porto", "Madrid", "Roma", "Florença", "Veneza", "Milão"],
+        countries: ["Brasil", "Portugal", "Espanha", "Itália"],
+        continents: ["América do Sul", "Europa"],
+        flightsCount: 3,
+        roadLegsCount: 5,
+        totalKm: 20465
+      }
+    }
+  });
+  assert.equal(jRes.resp.status, 200);
+  assert.equal(jRes.json.ok, true);
+  assert.equal(jRes.json.tone, "divertido");
+  assert.equal(jRes.json.usedAi, false);
+});
