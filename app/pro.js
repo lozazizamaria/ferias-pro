@@ -5302,6 +5302,21 @@
     const viewEl = $("#view-pro-control");
     if (!viewEl) return;
 
+    const isBrMil = window.MyPlanI18n ? window.MyPlanI18n.isBrazilianMilitaryEnabled() : true;
+    const i18n = window.MyPlanI18n;
+    const ctrlTitleEl = $("#proControlTableTitle");
+    const ctrlSubEl = $("#proControlTableSub");
+    if (ctrlTitleEl) {
+      ctrlTitleEl.textContent = isBrMil
+        ? "📋 Controle de Viagens & Financeiro"
+        : (i18n?.t("pro.controlTitle", null, "📋 Executive Operations & Travel Control") || "📋 Executive Operations & Travel Control");
+    }
+    if (ctrlSubEl) {
+      ctrlSubEl.innerHTML = isBrMil
+        ? "Clique em <b>Diária</b>, <b>Grat. Rep.</b> ou <b>Comissionamento</b> para definir o recebimento (cálculo pelas datas de Ida/Volta) — ou clique na viagem para editar"
+        : esc(i18n?.t("pro.controlSubUniversal", null, "Track business trips, travel allowances (Per Diem), corporate expenses and project milestones") || "Track business trips, travel allowances (Per Diem), corporate expenses and project milestones");
+    }
+
     const st = core.getState();
     const cfg = getTravelFinanceConfig(st);
     const cards = filteredCardsOpt || applyProUnifiedFilters(getProSortedActivities());
@@ -5438,7 +5453,7 @@
       if (!rows.length) {
         emptyEl.hidden = false;
         const canSwitchLoc = proControlScope === "travels" && fallbackLocCount > 0;
-        emptyEl.innerHTML = `
+        emptyEl.innerHTML = isBrMil ? `
           <div class="pro-travels-empty-inner">
             <div style="font-size:2rem">📋</div>
             <h3>Nenhuma viagem encontrada para o controle financeiro</h3>
@@ -5451,6 +5466,15 @@
               ${canSwitchLoc ? `<button type="button" class="btn primary small" id="btnProControlSwitchLoc">📍 Ver todos com Local (${fallbackLocCount})</button>` : ""}
               <button type="button" class="btn ghost small" id="btnProControlEmptyParams">⚙️ Configurar Postos &amp; Soldos</button>
               <button type="button" class="btn ghost small" id="btnProControlEmptyAdd">➕ Novo Cartão</button>
+            </div>
+          </div>` : `
+          <div class="pro-travels-empty-inner">
+            <div style="font-size:2rem">💼</div>
+            <h3>${core.esc(i18n?.t("pro.businessTrips", null, "Business Trips") || "Business Trips")}</h3>
+            <p class="muted small">${core.esc(i18n?.t("pro.controlSubUniversal", null, "Track business trips, travel allowances (Per Diem), corporate expenses and project milestones"))}</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:4px">
+              ${canSwitchLoc ? `<button type="button" class="btn primary small" id="btnProControlSwitchLoc">📍 ${core.esc(i18n?.t("common.all", null, "All"))} (${fallbackLocCount})</button>` : ""}
+              <button type="button" class="btn primary small" id="btnProControlEmptyAdd">➕ ${core.esc(i18n?.t("nav.addCard", null, "Card"))}</button>
             </div>
           </div>`;
         if ($("#btnProControlSwitchLoc", emptyEl)) {
@@ -5471,15 +5495,20 @@
       }
     }
 
-    // 4.2 Cards de KPIs (5 KPIs)
+    // 4.2 Cards de KPIs
     const kpisEl = $("#proControlKpis");
     if (kpisEl) {
-      const kpis = [
+      const kpis = isBrMil ? [
         ["Total de Viagens", String(uniqueCardIds.size), `${rows.length} lançamento(s) · ${countComissRows} comiss.`, "#38bdf8"],
         ["Total de Dias Fora", `${sumDiasFora}d`, `${core.num(sumDiariasQty, 1)} diárias em ${countDiariaRows} lanç.`, "#f59e0b"],
         ["Total em Diárias", core.money(sumDiariasVal), `${countDiariaRows} ${countDiariaRows === 1 ? "lançamento" : "lançamentos"} (isento IR)`, "#10b981"],
         ["Grat. Representação", core.money(sumGratLiq), `Líquido · Bruto: ${core.money(sumGratBruta)} (${countGratRows})`, "#a855f7"],
         ["Total Geral Recebido", core.money(sumTotalGeral), "Diárias + Grat. Rep. Líquida", "#22d3ee"]
+      ] : [
+        [i18n?.t("pro.businessTrips", null, "Business Trips") || "Business Trips", String(uniqueCardIds.size), `${rows.length}`, "#38bdf8"],
+        [i18n?.t("common.days", null, "Days") || "Days", `${sumDiasFora}d`, i18n?.t("pro.travelers", null, "Team Travelers") || "Team Travelers", "#f59e0b"],
+        [i18n?.t("pro.perDiem", null, "Travel Allowance / Per Diem") || "Travel Allowance / Per Diem", core.money(sumDiariasVal), `${countDiariaRows}`, "#10b981"],
+        [i18n?.t("pro.corporateExpenses", null, "Corporate Expenses") || "Corporate Expenses", core.money(sumTotalGeral), i18n?.t("pro.execOps", null, "Executive Operations") || "Executive Operations", "#22d3ee"]
       ];
       kpisEl.innerHTML = kpis.map(([lbl, val, sub, col]) => `
         <div class="kpi pro-map-kpi-card pro-travels-kpi" style="--c:${core.esc(col)}">
@@ -5513,19 +5542,29 @@
     const tblEl = $("#proControlTable");
     if (tblEl) {
       const arrow = col => proControlTableSort.col === col ? (proControlTableSort.dir === "asc" ? " ▲" : " ▼") : "";
-      tblEl.innerHTML = `
-        <thead>
-          <tr>
+      const curSym = i18n?.getCurrencySymbol?.() || "R$";
+      const thHeaders = isBrMil ? `
             <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="person">Pessoa${arrow("person")}</button></th>
             <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="name">Viagem / Evento${arrow("name")}</button></th>
             <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="city">Localidade${arrow("city")}</button></th>
             <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="evstart">Data Evento${arrow("evstart")}</button></th>
             <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="start">Ida e Volta${arrow("start")}</button></th>
             <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="days">Dias${arrow("days")}</button></th>
-            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="diaria">Diária (R$)${arrow("diaria")}</button></th>
-            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="grat">Grat. Rep. (R$)${arrow("grat")}</button></th>
-            <th style="text-align:center">Comiss.</th>
-          </tr>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="diaria">Diária (${core.esc(curSym)})${arrow("diaria")}</button></th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="grat">Grat. Rep. (${core.esc(curSym)})${arrow("grat")}</button></th>
+            <th style="text-align:center">Comiss.</th>` : `
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="person">${core.esc(i18n?.t("pro.travelers", null, "Team Travelers"))}${arrow("person")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="name">${core.esc(i18n?.t("pro.projectMilestones", null, "Project Milestones"))}${arrow("name")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="city">${core.esc(i18n?.t("filters.city", null, "Location"))}${arrow("city")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="evstart">${core.esc(i18n?.t("filters.dateFrom", null, "Start Date"))}${arrow("evstart")}</button></th>
+            <th><button type="button" class="pro-map-sort-th" data-ctrl-sort="start">${core.esc(i18n?.t("pro.businessTrips", null, "Business Trips"))}${arrow("start")}</button></th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="days">${core.esc(i18n?.t("common.days", null, "Days"))}${arrow("days")}</button></th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="diaria">${core.esc(i18n?.t("pro.perDiem", null, "Per Diem"))} (${core.esc(curSym)})${arrow("diaria")}</button></th>
+            <th class="num"><button type="button" class="pro-map-sort-th" data-ctrl-sort="grat">${core.esc(i18n?.t("pro.corporateExpenses", null, "Expenses"))} (${core.esc(curSym)})${arrow("grat")}</button></th>
+            <th style="text-align:center">✓</th>`;
+      tblEl.innerHTML = `
+        <thead>
+          <tr>${thHeaders}</tr>
         </thead>
         <tbody>
           ${sortedRows.map(r => {

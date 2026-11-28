@@ -11,12 +11,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=69">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=69">
-<link rel="icon" id="appFaviconLink" type="image/svg+xml" href="/icons/icon.svg?v=69">
+<link rel="manifest" href="/manifest.webmanifest?v=70">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=70">
+<link rel="icon" id="appFaviconLink" type="image/svg+xml" href="/icons/icon.svg?v=70">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=69">
+<link rel="stylesheet" href="styles.css?v=70">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -28,47 +28,50 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=69" alt="" width="30" height="30" class="brand-logo-img" id="authBrandLogoImg">
+          <img src="icons/icon.svg?v=70" alt="" width="30" height="30" class="brand-logo-img" id="authBrandLogoImg">
         </span>
         <h1 id="authBrandName">My Plan</h1>
       </div>
       <div class="auth-top-actions">
-        <a href="/como-usar.html" class="btn ghost small btn-learn-more" title="Conheça todos os recursos do My Plan">📖 Saiba mais</a>
+        <button type="button" class="btn ghost small i18n-lang-trigger" id="authLangBtn" data-i18n-lang-btn title="Change Language" aria-label="Language">
+          <span aria-hidden="true">🌐</span> <span data-lang-code>EN</span>
+        </button>
+        <a href="/como-usar.html" class="btn ghost small btn-learn-more" data-i18n="auth.learnMore" title="Conheça todos os recursos do My Plan">📖 Saiba mais</a>
         <button type="button" class="btn ghost icon-only" id="authThemeBtn" title="Alternar Dia/Noite">☀️</button>
       </div>
     </div>
 
     <div id="authLoginPanel">
       <div class="seg auth-tabs" id="authModeTabs">
-        <button type="button" class="active" data-amode="login">Entrar</button>
-        <button type="button" data-amode="register">Criar conta</button>
+        <button type="button" class="active" data-amode="login" data-i18n="auth.loginTab">Entrar</button>
+        <button type="button" data-amode="register" data-i18n="auth.registerTab">Criar conta</button>
       </div>
 
       <form id="authForm" class="auth-form">
-        <label id="authNameWrap" hidden>Seu nome
-          <input type="text" id="authName" placeholder="Ex: Maria" autocomplete="name">
+        <label id="authNameWrap" hidden><span data-i18n="auth.nameLabel">Seu nome</span>
+          <input type="text" id="authName" placeholder="Ex: Maria" data-i18n-placeholder="auth.namePlaceholder" autocomplete="name">
         </label>
-        <label>E-mail
-          <input type="email" id="authEmail" required placeholder="seu@email.com" autocomplete="email">
+        <label><span data-i18n="auth.emailLabel">E-mail</span>
+          <input type="email" id="authEmail" required placeholder="seu@email.com" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="email">
         </label>
         <div class="auth-field">
-          <label for="authPassword">Senha</label>
+          <label for="authPassword" data-i18n="auth.passwordLabel">Senha</label>
           <div class="password-wrap">
-            <input type="password" id="authPassword" required minlength="6" placeholder="Digite sua senha" autocomplete="current-password">
+            <input type="password" id="authPassword" required minlength="6" placeholder="Digite sua senha" data-i18n-placeholder="auth.passwordPlaceholder" autocomplete="current-password">
             <button type="button" class="pw-toggle" data-pw-target="authPassword" aria-label="Mostrar senha" aria-pressed="false" title="Mostrar ou ocultar senha">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
           </div>
           <div id="authPwChecklist" class="pw-rules" hidden></div>
           <div id="authForgotRow" class="auth-forgot-row">
-            <button type="button" class="link-btn" id="btnForgotPassword">Esqueci minha senha</button>
+            <button type="button" class="link-btn" id="btnForgotPassword" data-i18n="auth.forgotLink">Esqueci minha senha</button>
           </div>
         </div>
         <div id="authError" class="auth-error" hidden></div>
-        <button type="submit" class="btn primary auth-submit" id="authSubmitBtn">Entrar</button>
+        <button type="submit" class="btn primary auth-submit" id="authSubmitBtn" data-i18n="auth.loginBtn">Entrar</button>
       </form>
 
-      <div class="auth-divider"><span>ou</span></div>
+      <div class="auth-divider"><span data-i18n="auth.or">ou</span></div>
       <div id="googleBtnWrap" class="google-btn-wrap"></div>
       <button type="button" id="btnGoogleLoginFallback" class="btn google-signin-btn">
         <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
@@ -77,7 +80,7 @@
           <path fill="#FBBC05" d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14z"/>
           <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96z"/>
         </svg>
-        <span>Entrar com o Google</span>
+        <span data-i18n="auth.googleBtn">Entrar com o Google</span>
       </button>
       <p id="googleConfigHint" class="muted small auth-hint" hidden>Login com Google requer <code>GOOGLE_CLIENT_ID</code> configurado nas integrações ou no servidor.</p>
     </div>
@@ -133,9 +136,9 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" id="appBrandLogoWrap" aria-hidden="true">
-            <img src="icons/icon.svg?v=69" alt="" width="30" height="30" class="brand-logo-img" id="appBrandLogoImg">
+            <img src="icons/icon.svg?v=70" alt="" width="30" height="30" class="brand-logo-img" id="appBrandLogoImg">
           </span>
-          <h1 id="appBrand"><span id="appBrandName">My Plan</span> <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
+          <h1 id="appBrand"><span id="appBrandName">My Plan</span> <span class="brand-mode-tag" id="brandModeTag" data-i18n="nav.modePersonal">Pessoal</span></h1>
           <button type="button" class="btn ghost icon-only sb-collapse-btn" id="btnSidebarCollapse" title="Recolher/expandir barra lateral" aria-label="Recolher ou expandir barra lateral" aria-expanded="true">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>
           </button>
@@ -151,7 +154,7 @@
 
       <div class="global-search-wrap" id="globalCardSearchWrap">
         <span class="global-search-ico" aria-hidden="true">🔎</span>
-        <input type="search" id="globalCardSearchInput" placeholder="Buscar cartão... (Ctrl+K)" autocomplete="off" aria-label="Buscar cartão em todo o sistema">
+        <input type="search" id="globalCardSearchInput" placeholder="Buscar cartão... (Ctrl+K)" data-i18n-placeholder="nav.searchCardPlaceholder" autocomplete="off" aria-label="Buscar cartão em todo o sistema">
         <button type="button" class="cmdk-kbd-hint" id="btnCmdkHint" title="Abrir Command Palette (Ctrl+K)" aria-label="Abrir paleta de comandos (Ctrl+K)">Ctrl K</button>
         <button type="button" class="global-search-close" id="btnMobileSearchClose" aria-label="Fechar busca" title="Fechar busca">✕</button>
         <div class="global-search-dd" id="globalCardSearchDropdown" hidden role="listbox"></div>
@@ -159,7 +162,7 @@
 
       <button type="button" class="sb-cmdk-btn" id="btnSidebarCmdk" data-sb-tip="Buscar ou comandos (Ctrl+K)" title="Buscar ou executar comando (Ctrl+K)" aria-label="Buscar ou executar comando (Ctrl+K)">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <span class="sb-cmdk-label">Buscar...</span>
+        <span class="sb-cmdk-label" data-i18n="common.search">Buscar...</span>
         <kbd class="sb-cmdk-kbd">Ctrl K</kbd>
       </button>
 
@@ -168,108 +171,117 @@
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/></svg>
         </button>
         <button type="button" class="btn ghost small btn-learn-more mode-switch-btn" id="btnModeSwitch" data-sb-tip="Alternar modo Pessoal / Profissional" title="Alternar entre Modo Pessoal e Modo Profissional">
-          <span class="mode-switch-full">Mudar para Profissional</span>
-          <span class="mode-switch-short">Pro</span>
+          <span class="mode-switch-full" data-i18n="nav.switchToPro">Mudar para Profissional</span>
+          <span class="mode-switch-short" data-i18n="nav.proShort">Pro</span>
         </button>
         <button class="btn ghost icon-only mobile-search-trigger" id="btnMobileSearchToggle" type="button" title="Buscar cartão" aria-label="Buscar cartão" aria-expanded="false" aria-controls="globalCardSearchWrap">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         </button>
+        <button type="button" class="btn ghost small i18n-lang-trigger top-lang-btn" id="btnTopLang" data-i18n-lang-btn data-sb-tip="Idioma / Language" title="Alterar Idioma / Change Language" aria-label="Language">
+          <span aria-hidden="true">🌐</span>
+          <span class="lang-code-pill" data-lang-code>EN</span>
+        </button>
         <button class="btn ghost small invite-pill" id="btnPendingInvites" type="button" hidden>📩 <span id="inviteCount">0</span></button>
-        <a class="btn ghost small btn-learn-more" id="btnTopLearnMore" href="/como-usar.html" data-sb-tip="Saiba mais" title="Conheça todas as funções e saiba como usar o aplicativo">📖 <span class="hide-sm">Saiba mais</span></a>
-        <button class="btn ai-pill small" id="btnAiPlan" type="button" data-sb-tip="Planejar com IA" title="Planejar com IA (Áudio, Imagens e Texto)">✨ <span class="hide-sm">IA</span></button>
+        <a class="btn ghost small btn-learn-more" id="btnTopLearnMore" href="/como-usar.html" data-sb-tip="Saiba mais" title="Conheça todas as funções e saiba como usar o aplicativo">📖 <span class="hide-sm" data-i18n="nav.learnMore">Saiba mais</span></a>
+        <button class="btn ai-pill small" id="btnAiPlan" type="button" data-sb-tip="Planejar com IA" title="Planejar com IA (Áudio, Imagens e Texto)">✨ <span class="hide-sm" data-i18n="nav.ai">IA</span></button>
         <button class="btn ghost sync-pill sync-dot-only" id="syncBadge" type="button" data-sb-tip="Status da sincronização" title="Sincronizado com a nuvem" aria-label="Status da sincronização">
           <span class="sync-dot" aria-hidden="true"></span>
-          <span class="sync-text" id="syncText" hidden>Sincronizado</span>
+          <span class="sync-text" id="syncText" hidden data-i18n="common.synced">Sincronizado</span>
         </button>
         <button class="btn ghost icon-only theme-toggle-mini" id="btnTheme" type="button" data-sb-tip="Alternar Dia / Noite" title="Alternar modo Dia / Noite" aria-label="Alternar tema Dia/Noite">
           <span id="themeIcon" aria-hidden="true">☀️</span>
         </button>
         <button class="btn primary small btn-add-top" id="btnAdd" type="button" data-sb-tip="Novo Cartão / Evento (N)" title="Adicionar evento ou atividade (Atalho: N)">
           <svg class="plus-ico" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
-          <span class="btn-text" id="btnAddLabel">Evento</span>
+          <span class="btn-text" id="btnAddLabel" data-i18n="nav.addEvent">Evento</span>
         </button>
         <button class="btn ghost small btn-add-minute-top" id="btnAddMinuteTop" type="button" data-sb-tip="Nova Ata" title="Criar nova Ata de Reunião" hidden>
           <svg class="plus-ico" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
-          <span class="btn-text">Ata</span>
+          <span class="btn-text" data-i18n="nav.addMinute">Ata</span>
         </button>
         <div class="dropdown">
           <button class="btn ghost small" id="btnMenu" type="button" data-sb-tip="Mais opções" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções">⋯</button>
           <div class="menu" id="menu">
             <div class="menu-user" id="menuUserInfo"></div>
-            <div class="menu-sync-row" id="menuSyncStatus">🟢 Sincronizado na nuvem</div>
+            <div class="menu-sync-row" id="menuSyncStatus" data-i18n="common.syncedCloud">🟢 Sincronizado na nuvem</div>
             <hr>
-            <button type="button" id="btnMenuParams" class="menu-item-featured">⚙️ Configurações</button>
-            <button type="button" id="btnPrintReport">🖨️ Imprimir relatório completo</button>
+            <button type="button" id="btnMenuParams" class="menu-item-featured" data-i18n="nav.menu.settings">⚙️ Configurações</button>
+            <button type="button" id="btnPrintReport" data-i18n="nav.menu.printReport">🖨️ Imprimir relatório completo</button>
             <button type="button" id="btnMenuProfile" class="menu-icon-row">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.8 3.6-6 8-6s8 2.2 8 6"/></svg>
-              <span>Meu Perfil &amp; Credenciais</span>
+              <span data-i18n="nav.menu.profile">Meu Perfil &amp; Credenciais</span>
             </button>
             <button type="button" id="btnShareTrip" class="menu-icon-row">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="3.5"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.25a3.5 3.5 0 0 1 0 6.5"/></svg>
-              <span id="btnShareTripLabel">Compartilhar viagem</span>
+              <span id="btnShareTripLabel" data-i18n="nav.menu.shareTrip">Compartilhar viagem</span>
             </button>
-            <button type="button" id="btnMenuCrossings" hidden>🔀 Cruzamentos de Viagens</button>
-            <button type="button" id="btnMenuAdmin" hidden>🛡️ Admin (Super Painel)</button>
-            <button type="button" id="btnMenuAllCards">📋 Mostrar todos os cartões</button>
-            <button type="button" id="btnMenuArchivedCards">📦 Mostrar cartões arquivados</button>
+            <button type="button" id="btnMenuCrossings" hidden data-i18n="nav.menu.crossings">🔀 Cruzamentos de Viagens</button>
+            <button type="button" id="btnMenuAdmin" hidden data-i18n="nav.menu.admin">🛡️ Admin (Super Painel)</button>
+            <button type="button" id="btnMenuAllCards" data-i18n="nav.menu.allCards">📋 Mostrar todos os cartões</button>
+            <button type="button" id="btnMenuArchivedCards" data-i18n="nav.menu.archivedCards">📦 Mostrar cartões arquivados</button>
             <button type="button" id="btnMenuSyncDrive" class="menu-icon-row">
               <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><polygon points="8,3 16,3 22,14 14,14" fill="#FBBC05"/><polygon points="2,14 8,3 12,10 6,21" fill="#34A853"/><polygon points="6,21 10,14 22,14 18,21" fill="#4285F4"/></svg>
-              <span>Atualizar Google Drive</span>
+              <span data-i18n="nav.menu.syncDrive">Atualizar Google Drive</span>
             </button>
-            <button type="button" id="btnMenuWhatsApp">💬 Compartilhar no WhatsApp</button>
-            <button type="button" id="btnMenuCalendarAll">📅 Enviar p/ Google Agenda</button>
-            <a href="/como-usar.html" class="menu-link">📖 Como utilizar o My Plan</a>
+            <button type="button" id="btnMenuWhatsApp" data-i18n="nav.menu.whatsapp">💬 Compartilhar no WhatsApp</button>
+            <button type="button" id="btnMenuCalendarAll" data-i18n="nav.menu.calendarAll">📅 Enviar p/ Google Agenda</button>
+            <a href="/como-usar.html" class="menu-link" data-i18n="nav.menu.howToUse">📖 Como utilizar o My Plan</a>
             <hr>
-            <button type="button" id="btnMenuInstall" hidden>📲 Instalar aplicativo My Plan</button>
-            <button type="button" id="btnMenuAiPlan">✨ Planejar com IA (Áudio/Imagens)</button>
-            <button type="button" id="btnMenuImportCalImg">🖼️ Importar calendário por imagem (IA)</button>
-            <button type="button" id="btnExportIcs">📆 Baixar Agenda (.ics)</button>
-            <button type="button" id="btnExportXlsx">⬇️ Exportar Excel (.xlsx)</button>
-            <button type="button" id="btnExportJson">💾 Backup (.json)</button>
-            <button type="button" id="btnImportJson">📂 Restaurar backup</button>
-            <button type="button" id="btnImportXlsx">📥 Importar planilha original</button>
+            <button type="button" id="btnMenuInstall" hidden data-i18n="nav.menu.install">📲 Instalar aplicativo My Plan</button>
+            <button type="button" id="btnMenuAiPlan" data-i18n="nav.menu.aiPlan">✨ Planejar com IA (Áudio/Imagens)</button>
+            <button type="button" id="btnMenuImportCalImg" data-i18n="nav.menu.importCalImg">🖼️ Importar calendário por imagem (IA)</button>
+            <button type="button" id="btnExportIcs" data-i18n="nav.menu.exportIcs">📆 Baixar Agenda (.ics)</button>
+            <button type="button" id="btnExportXlsx" data-i18n="nav.menu.exportXlsx">⬇️ Exportar Excel (.xlsx)</button>
+            <button type="button" id="btnExportJson" data-i18n="nav.menu.exportJson">💾 Backup (.json)</button>
+            <button type="button" id="btnImportJson" data-i18n="nav.menu.importJson">📂 Restaurar backup</button>
+            <button type="button" id="btnImportXlsx" data-i18n="nav.menu.importXlsx">📥 Importar planilha original</button>
             <hr>
-            <button type="button" id="btnRenameTrip">✏️ Renomear planejamento atual</button>
-            <button type="button" id="btnDeleteTrip" class="danger">🗑️ Excluir planejamento atual</button>
-            <button type="button" id="btnLogout" class="danger">🚪 Sair da conta</button>
+            <button type="button" id="btnRenameTrip" data-i18n="nav.menu.renameTrip">✏️ Renomear planejamento atual</button>
+            <button type="button" id="btnDeleteTrip" class="danger" data-i18n="nav.menu.deleteTrip">🗑️ Excluir planejamento atual</button>
+            <button type="button" id="btnLogout" class="danger" data-i18n="nav.menu.logout">🚪 Sair da conta</button>
           </div>
         </div>
       </div>
     </div>
 
     <nav class="tabs" id="tabs" aria-label="Navegação pessoal">
-      <button class="tab active" data-view="gantt" id="tab-gantt" type="button">📅 Cronograma</button>
-      <button class="tab" data-view="personal-map" id="tab-map" type="button">🗺️ Mapa</button>
-      <button class="tab" data-view="dashboard" id="tab-dashboard" type="button">📊 Dashboard</button>
-      <button class="tab" data-view="finance" id="tab-finance" type="button">💰 Financeiro</button>
-      <button class="tab" data-view="splitwise" id="tab-splitwise" type="button">🤝 Dividir Despesas <span class="pill sw-tab-badge" id="swTabBadge" hidden></span></button>
-      <button class="tab" data-view="personal-board" id="tab-personal-board" type="button">🗂️ Quadros</button>
-      <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
-      <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
+      <button class="tab active" data-view="gantt" id="tab-gantt" type="button" data-i18n-tab="nav.tabs.gantt">📅 Cronograma</button>
+      <button class="tab" data-view="personal-map" id="tab-map" type="button" data-i18n-tab="nav.tabs.personal-map">🗺️ Mapa</button>
+      <button class="tab" data-view="dashboard" id="tab-dashboard" type="button" data-i18n-tab="nav.tabs.dashboard">📊 Dashboard</button>
+      <button class="tab" data-view="finance" id="tab-finance" type="button" data-i18n-tab="nav.tabs.finance">💰 Financeiro</button>
+      <button class="tab" data-view="splitwise" id="tab-splitwise" type="button" data-i18n-tab="nav.tabs.splitwise">🤝 Dividir Despesas <span class="pill sw-tab-badge" id="swTabBadge" hidden></span></button>
+      <button class="tab" data-view="personal-board" id="tab-personal-board" type="button" data-i18n-tab="nav.tabs.personal-board">🗂️ Quadros</button>
+      <button class="tab" data-view="table" id="tab-table" type="button" data-i18n-tab="nav.tabs.table">🧾 Tabela</button>
+      <button class="tab" data-view="checklist" id="tab-checklist" type="button" data-i18n-tab="nav.tabs.checklist">✅ Checklist</button>
     </nav>
 
     <nav class="tabs tabs-pro" id="tabsPro" aria-label="Navegação profissional" hidden>
-      <button class="tab active" data-pro-view="pro-board" id="tab-pro-board" type="button">🗂️ Quadro</button>
-      <button class="tab" data-pro-view="pro-gantt" id="tab-pro-gantt" type="button">📅 Timeline</button>
-      <button class="tab" data-pro-view="pro-map" id="tab-pro-map" type="button">🗺️ Mapa</button>
-      <button class="tab" data-pro-view="pro-travels" id="tab-pro-travels" type="button">✈️ Viagens</button>
-      <button class="tab" data-pro-view="pro-control" id="tab-pro-control" type="button">📋 Controle</button>
-      <button class="tab" data-pro-view="pro-docs" id="tab-pro-docs" type="button">📁 Documentos</button>
-      <button class="tab" data-pro-view="pro-dashboard" id="tab-pro-dashboard" type="button">📊 Dashboard</button>
-      <button class="tab" data-pro-view="pro-finance" id="tab-pro-finance" type="button">💼 Financeiro</button>
-      <button class="tab" data-pro-view="pro-table" id="tab-pro-table" type="button">🧾 Tabela</button>
-      <button class="tab" data-pro-view="pro-checklist" id="tab-pro-checklist" type="button">✅ Checklist</button>
+      <button class="tab active" data-pro-view="pro-board" id="tab-pro-board" type="button" data-i18n-tab="nav.tabs.pro-board">🗂️ Quadro</button>
+      <button class="tab" data-pro-view="pro-gantt" id="tab-pro-gantt" type="button" data-i18n-tab="nav.tabs.pro-gantt">📅 Timeline</button>
+      <button class="tab" data-pro-view="pro-map" id="tab-pro-map" type="button" data-i18n-tab="nav.tabs.pro-map">🗺️ Mapa</button>
+      <button class="tab" data-pro-view="pro-travels" id="tab-pro-travels" type="button" data-i18n-tab="nav.tabs.pro-travels">✈️ Viagens</button>
+      <button class="tab" data-pro-view="pro-control" id="tab-pro-control" type="button" data-i18n-tab="nav.tabs.pro-control">📋 Controle</button>
+      <button class="tab" data-pro-view="pro-docs" id="tab-pro-docs" type="button" data-i18n-tab="nav.tabs.pro-docs">📁 Documentos</button>
+      <button class="tab" data-pro-view="pro-dashboard" id="tab-pro-dashboard" type="button" data-i18n-tab="nav.tabs.pro-dashboard">📊 Dashboard</button>
+      <button class="tab" data-pro-view="pro-finance" id="tab-pro-finance" type="button" data-i18n-tab="nav.tabs.pro-finance">💼 Financeiro</button>
+      <button class="tab" data-pro-view="pro-table" id="tab-pro-table" type="button" data-i18n-tab="nav.tabs.pro-table">🧾 Tabela</button>
+      <button class="tab" data-pro-view="pro-checklist" id="tab-pro-checklist" type="button" data-i18n-tab="nav.tabs.pro-checklist">✅ Checklist</button>
     </nav>
 
     <div class="sb-footer" id="sidebarFooter">
+      <button type="button" class="sb-foot-btn i18n-lang-trigger" id="btnSidebarLang" data-i18n-lang-btn data-sb-tip="Idioma / Language" title="Alterar Idioma / Change Language">
+        <span class="sb-foot-ico" aria-hidden="true">🌐</span>
+        <span class="sb-foot-lbl" data-lang-native>English</span>
+        <span class="sb-foot-pill" data-lang-code>EN</span>
+      </button>
       <button type="button" class="sb-foot-btn" id="btnSidebarAutoCollapse" data-sb-tip="Auto-recolher em Gantt / Mapa" title="Recolher barra lateral automaticamente ao abrir Gantt, Calendário Anual ou Mapa" aria-pressed="false">
         <span class="sb-foot-ico" aria-hidden="true">⚡</span>
-        <span class="sb-foot-lbl">Auto-recolher</span>
+        <span class="sb-foot-lbl" data-i18n="nav.autoCollapse">Auto-recolher</span>
         <span class="sb-foot-pill" id="sbAutoCollapseState">OFF</span>
       </button>
       <button type="button" class="sb-foot-btn" id="btnSidebarPosCycle" data-sb-tip="Alternar posição do menu" title="Alternar entre Lateral Esquerda, Lateral Direita e Barra Superior">
         <span class="sb-foot-ico" aria-hidden="true">⇄</span>
-        <span class="sb-foot-lbl" id="sbPosCycleLabel">Lateral Esq.</span>
+        <span class="sb-foot-lbl" id="sbPosCycleLabel" data-i18n="nav.posLeft">Lateral Esq.</span>
       </button>
     </div>
   </header>
@@ -294,7 +306,7 @@
       <div class="ctx-right">
         <button type="button" class="ctx-cmdk-trigger" id="ctxBtnCmdk" title="Abrir Command Palette (Ctrl+K ou /)">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-          <span class="ctx-cmdk-text">Buscar ou comando...</span>
+          <span class="ctx-cmdk-text" data-i18n="nav.searchOrCmd">Buscar ou comando...</span>
           <kbd>Ctrl K</kbd>
         </button>
         <button type="button" class="ctx-icon-btn" id="ctxBtnNavPos" title="Alternar posição do menu (Esquerda / Direita / Topo)" aria-label="Alternar posição do menu">
@@ -472,12 +484,12 @@
     <!-- BANNER DISCRETO: MODO EXEMPLO ISOLADO (EXCLUSIVO MODO PESSOAL) -->
     <div id="personalExampleBanner" class="example-trip-banner" hidden role="status" aria-live="polite">
       <div class="ex-banner-left">
-        <span class="ex-banner-pill">🧪 Modo Exemplo (Isolado)</span>
-        <span class="ex-banner-msg">Edite livremente para explorar todos os recursos — nunca se mistura aos seus outros calendários.</span>
+        <span class="ex-banner-pill" data-i18n="example.pill">🧪 Modo Exemplo (Isolado)</span>
+        <span class="ex-banner-msg" data-i18n="example.msg">Edite livremente para explorar todos os recursos — nunca se mistura aos seus outros calendários.</span>
       </div>
       <div class="ex-banner-actions">
-        <button type="button" class="btn ghost small" id="btnRestoreExampleTrip" title="Restaurar o roteiro Europa 2027 ao estado original">↺ Restaurar exemplo original</button>
-        <button type="button" class="btn danger-ghost small" id="btnDeleteExampleTrip" title="Excluir este projeto de exemplo">🗑️ Excluir exemplo</button>
+        <button type="button" class="btn ghost small" id="btnRestoreExampleTrip" data-i18n="example.restore" title="Restaurar o roteiro Europa 2027 ao estado original">↺ Restaurar exemplo original</button>
+        <button type="button" class="btn danger-ghost small" id="btnDeleteExampleTrip" data-i18n="example.delete" title="Excluir este projeto de exemplo">🗑️ Excluir exemplo</button>
       </div>
     </div>
 
@@ -487,7 +499,7 @@
         <div class="puf-trigger-group">
           <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnPmapFilterPop" data-puf-trigger="personal-map" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Mapa">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <span>Filtros</span>
+            <span data-i18n="common.filters">Filtros</span>
             <span class="gantt-pop-count" id="pmapFilterCount" data-puf-count hidden></span>
           </button>
           <button type="button" class="btn ghost small puf-quick-clear" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
@@ -548,7 +560,7 @@
           <div class="puf-trigger-group">
             <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnPboardFilterPop" data-puf-trigger="personal-board" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros dos Quadros">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-              <span>Filtros</span>
+              <span data-i18n="common.filters">Filtros</span>
               <span class="gantt-pop-count" data-puf-count hidden></span>
             </button>
             <button type="button" class="btn ghost small puf-quick-clear" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
@@ -571,7 +583,7 @@
             <div class="puf-trigger-group">
               <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnGanttFilterPop" data-puf-trigger="gantt" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Cronograma">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                <span class="hide-xs">Filtros</span>
+                <span class="hide-xs" data-i18n="common.filters">Filtros</span>
                 <span class="gantt-pop-count" id="ganttFilterCount" data-puf-count hidden></span>
               </button>
               <button type="button" class="btn ghost small puf-quick-clear" id="btnGanttClearFilters" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar</button>
@@ -586,18 +598,18 @@
               </button>
               <div class="gantt-pop-panel gantt-view-pop" id="ganttViewPopPanel" hidden>
                 <div class="gantt-pop-section">
-                  <span class="gantt-pop-lbl">Visualização</span>
+                  <span class="gantt-pop-lbl" data-i18n="gantt.view">Visualização</span>
                   <div class="seg" id="ganttModeSeg" role="group" aria-label="Modo de visualização">
-                    <button type="button" class="active" data-gmode="gantt">Gantt</button>
-                    <button type="button" data-gmode="timeline">Linha do Tempo</button>
-                    <button type="button" data-gmode="annual">Calendário Anual</button>
+                    <button type="button" class="active" data-gmode="gantt" data-i18n="gantt.gantt">Gantt</button>
+                    <button type="button" data-gmode="timeline" data-i18n="gantt.timeline">Linha do Tempo</button>
+                    <button type="button" data-gmode="annual" data-i18n="gantt.annual">Calendário Anual</button>
                   </div>
                 </div>
                 <div class="gantt-pop-section">
-                  <span class="gantt-pop-lbl">Calendários &amp; Atalhos</span>
+                  <span class="gantt-pop-lbl" data-i18n="gantt.calendarsShortcuts">Calendários &amp; Atalhos</span>
                   <div class="gantt-pop-actions">
-                    <button type="button" class="btn ghost small unified-toggle-btn" id="btnGanttUnified" aria-pressed="false" title="Ver calendário Pessoal + Profissional juntos">🔀 Agenda Completa</button>
-                    <button type="button" class="btn ghost small" id="btnGanttToday" title="Ir para o início ou hoje">🎯 Hoje</button>
+                    <button type="button" class="btn ghost small unified-toggle-btn" id="btnGanttUnified" aria-pressed="false" data-i18n="gantt.unified" title="Ver calendário Pessoal + Profissional juntos">🔀 Agenda Completa</button>
+                    <button type="button" class="btn ghost small" id="btnGanttToday" data-i18n="gantt.today" title="Ir para o início ou hoje">🎯 Hoje</button>
                   </div>
                 </div>
               </div>
@@ -612,17 +624,17 @@
 
             <button type="button" class="btn ghost small gantt-fit-events-btn" id="btnGanttFitEvents" aria-pressed="false" title="Ajustar janela de datas apenas ao período com eventos cadastrados">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-              <span class="gantt-fit-lbl">Ajustar aos eventos</span>
+              <span class="gantt-fit-lbl" data-i18n="gantt.fitEvents">Ajustar aos eventos</span>
             </button>
 
             <div class="gantt-toolbar-right">
-              <span class="pill gantt-shared-pill" id="tripRoleBadge" hidden>Compartilhada</span>
-              <button type="button" class="btn ai-pill small journey-open-btn" id="btnGanttJourney" data-open-journey title="Gerar resumo visual compartilhável da viagem com IA">✨ <span class="hide-sm">Jornada da Viagem</span></button>
+              <span class="pill gantt-shared-pill" id="tripRoleBadge" hidden data-i18n="common.shared">Compartilhada</span>
+              <button type="button" class="btn ai-pill small journey-open-btn" id="btnGanttJourney" data-open-journey title="Gerar resumo visual compartilhável da viagem com IA">✨ <span class="hide-sm" data-i18n="gantt.journeyBtn">Jornada da Viagem</span></button>
               <button type="button" class="btn ghost small gantt-print-btn" id="btnPrintGantt" title="Imprimir / PDF">🖨️<span class="gantt-pdf-lbl"> PDF</span></button>
               <button type="button" class="btn ghost small gantt-fs-btn" id="btnGanttFullscreen" title="Ampliar Gantt em tela inteira" aria-pressed="false">⛶</button>
               <button type="button" class="btn primary small btn-add-event-gantt" id="btnAddEventGantt" title="Adicionar evento ou viagem">
                 <svg class="plus-ico" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
-                <span class="hide-sm">Novo</span>
+                <span class="hide-sm" data-i18n="gantt.newBtn">Novo</span>
               </button>
             </div>
           </div>
@@ -644,7 +656,7 @@
         <div class="puf-trigger-group">
           <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnDashFilterPop" data-puf-trigger="dashboard" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Dashboard">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <span>Filtros</span>
+            <span data-i18n="common.filters">Filtros</span>
             <span class="gantt-pop-count" data-puf-count hidden></span>
           </button>
           <button type="button" class="btn ghost small puf-quick-clear" id="btnDashClearFilters" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
@@ -705,7 +717,7 @@
         <div class="puf-trigger-group">
           <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnFinFilterPop" data-puf-trigger="finance" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Financeiro">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <span>Filtros</span>
+            <span data-i18n="common.filters">Filtros</span>
             <span class="gantt-pop-count" data-puf-count hidden></span>
           </button>
           <button type="button" class="btn ghost small puf-quick-clear" id="btnFinClearFilters" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
@@ -807,7 +819,7 @@
         <div class="puf-trigger-group">
           <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnSwFilterPop" data-puf-trigger="splitwise" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros de Dividir Despesas">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <span>Filtros</span>
+            <span data-i18n="common.filters">Filtros</span>
             <span class="gantt-pop-count" data-puf-count hidden></span>
           </button>
           <button type="button" class="btn ghost small puf-quick-clear" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
@@ -825,7 +837,7 @@
             <div class="puf-trigger-group">
               <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnTableFilterPop" data-puf-trigger="table" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros da Tabela">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                <span>Filtros</span>
+                <span data-i18n="common.filters">Filtros</span>
                 <span class="gantt-pop-count" data-puf-count hidden></span>
               </button>
               <button type="button" class="btn ghost small puf-quick-clear" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
@@ -846,16 +858,26 @@
 
       <!-- NÍVEL 1: CONFIGURAÇÕES AMPLAS (ABERTAS POR PADRÃO) -->
       <div class="cfg-tier-head">
-        <span class="cfg-tier-badge">✨ Configurações Gerais</span>
-        <span class="muted small">Personalize o visual e a organização dos menus do Modo Pessoal</span>
+        <span class="cfg-tier-badge" data-i18n="settings.generalBadge">✨ Configurações Gerais</span>
+        <span class="muted small" data-i18n="settings.generalSubPersonal">Personalize o visual e a organização dos menus do Modo Pessoal</span>
       </div>
 
       <div class="cfg-broad-grid">
+        <div class="card cfg-broad-card cfg-region-card">
+          <div class="card-head">
+            <div>
+              <h2 data-i18n="settings.regionCardTitle">🌐 Idioma, Região &amp; Moeda</h2>
+              <span class="muted small" data-i18n="settings.regionCardSub">Idioma da interface e IA, primeiro dia da semana e moeda deste projeto</span>
+            </div>
+          </div>
+          <div id="personalRegionHost" class="region-settings-host"></div>
+        </div>
+
         <div class="card cfg-broad-card">
           <div class="card-head">
             <div>
-              <h2>🎨 Aparência &amp; Identidade Visual</h2>
-              <span class="muted small">Tema Dia/Noite, paletas de cores e logo do Modo Pessoal</span>
+              <h2 data-i18n="settings.appearanceTitle">🎨 Aparência &amp; Identidade Visual</h2>
+              <span class="muted small" data-i18n="settings.appearanceSubPersonal">Tema Dia/Noite, paletas de cores e logo do Modo Pessoal</span>
             </div>
           </div>
           <div id="personalAppearanceHost" class="appearance-host"></div>
@@ -864,10 +886,10 @@
         <div class="card cfg-broad-card">
           <div class="card-head">
             <div>
-              <h2>🧭 Menus Visíveis &amp; Ordem</h2>
-              <span class="muted small">Arraste (⋮⋮), use ↑/↓ ou oculte abas do topo</span>
+              <h2 data-i18n="settings.menusTitle">🧭 Menus Visíveis &amp; Ordem</h2>
+              <span class="muted small" data-i18n="settings.menusSub">Arraste (⋮⋮), use ↑/↓ ou oculte abas do topo</span>
             </div>
-            <button type="button" class="btn ghost small" id="btnResetPersonalMenuOrder" title="Restaurar ordem e visibilidade padrão">↺ Padrão</button>
+            <button type="button" class="btn ghost small" id="btnResetPersonalMenuOrder" data-i18n="settings.resetDefault" title="Restaurar ordem e visibilidade padrão">↺ Padrão</button>
           </div>
           <div id="personalVisibleMenusManager" class="menu-order-list"></div>
         </div>
@@ -1138,7 +1160,7 @@
             <div class="puf-trigger-group">
               <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnChkFilterPop" data-puf-trigger="checklist" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Checklist">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                <span>Filtros</span>
+                <span data-i18n="common.filters">Filtros</span>
                 <span class="gantt-pop-count" id="chkFilterCount" data-puf-count hidden></span>
               </button>
               <button type="button" class="btn ghost small puf-quick-clear" id="btnChkClearFilters" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar</button>
@@ -1169,7 +1191,7 @@
           <div class="gantt-pop-host">
             <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProBoardFilterPop" aria-expanded="false" aria-controls="proBoardFilterPopPanel" title="Filtros do quadro">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-              <span>Filtros</span>
+              <span data-i18n="common.filters">Filtros</span>
               <span class="gantt-pop-count" id="proBoardFilterCount" hidden></span>
             </button>
             <div class="gantt-pop-panel" id="proBoardFilterPopPanel" hidden>
@@ -1296,7 +1318,7 @@
             <div class="gantt-pop-host">
               <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProGanttFilterPop" aria-expanded="false" aria-controls="proGanttFilterPopPanel" title="Filtros">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                <span class="hide-xs">Filtros</span>
+                <span class="hide-xs" data-i18n="common.filters">Filtros</span>
                 <span class="gantt-pop-count" id="proGanttFilterCount" hidden></span>
               </button>
               <div class="gantt-pop-panel" id="proGanttFilterPopPanel" hidden>
@@ -1473,7 +1495,7 @@
           <div class="gantt-pop-host pro-map-hdr-filter">
             <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProMapFilterPop" aria-expanded="false" aria-controls="proMapFilterPopPanel" title="Filtros do Mapa">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-              <span>Filtros</span>
+              <span data-i18n="common.filters">Filtros</span>
               <span class="gantt-pop-count" id="proMapFilterCount" hidden></span>
             </button>
             <div class="gantt-pop-panel" id="proMapFilterPopPanel" hidden>
@@ -1681,7 +1703,7 @@
           <div class="gantt-pop-host pro-travels-hdr-filter">
             <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProTravelsFilterPop" aria-expanded="false" aria-controls="proTravelsFilterPopPanel" title="Filtros de Deslocamentos">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-              <span>Filtros</span>
+              <span data-i18n="common.filters">Filtros</span>
               <span class="gantt-pop-count" id="proTravelsFilterCount" hidden></span>
             </button>
             <div class="gantt-pop-panel" id="proTravelsFilterPopPanel" hidden>
@@ -1905,7 +1927,7 @@
           <div class="gantt-pop-host pro-control-hdr-filter">
             <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProControlFilterPop" aria-expanded="false" aria-controls="proControlFilterPopPanel" title="Filtros do Controle">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-              <span>Filtros</span>
+              <span data-i18n="common.filters">Filtros</span>
               <span class="gantt-pop-count" id="proControlFilterCount" hidden></span>
             </button>
             <div class="gantt-pop-panel" id="proControlFilterPopPanel" hidden>
@@ -2047,8 +2069,8 @@
       <div class="card pro-map-table-card pro-control-main-card">
         <div class="card-head pro-ctrl-table-head">
           <div>
-            <h2>📋 Controle de Viagens &amp; Financeiro</h2>
-            <span class="muted small">Clique em <b>Diária</b>, <b>Grat. Rep.</b> ou <b>Comissionamento</b> para definir o recebimento (cálculo pelas datas de Ida/Volta) — ou clique na viagem para editar</span>
+            <h2 id="proControlTableTitle">📋 Controle de Viagens &amp; Financeiro</h2>
+            <span class="muted small" id="proControlTableSub">Clique em <b>Diária</b>, <b>Grat. Rep.</b> ou <b>Comissionamento</b> para definir o recebimento (cálculo pelas datas de Ida/Volta) — ou clique na viagem para editar</span>
           </div>
           <div class="pro-ctrl-export-bar">
             <span class="pill" id="proControlTableCountBadge">0 lançamentos</span>
@@ -2307,7 +2329,7 @@
         <div class="gantt-pop-host">
           <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProDashFilterPop" aria-expanded="false" aria-controls="proDashFilterPopPanel" title="Filtros do dashboard">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <span>Filtros</span>
+            <span data-i18n="common.filters">Filtros</span>
             <span class="gantt-pop-count" id="proDashFilterCount" hidden></span>
           </button>
           <div class="gantt-pop-panel" id="proDashFilterPopPanel" hidden>
@@ -2483,7 +2505,7 @@
         <div class="gantt-pop-host">
           <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProFinFilterPop" aria-expanded="false" aria-controls="proFinFilterPopPanel" title="Filtros do financeiro">
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <span>Filtros</span>
+            <span data-i18n="common.filters">Filtros</span>
             <span class="gantt-pop-count" id="proFinFilterCount" hidden></span>
           </button>
           <div class="gantt-pop-panel" id="proFinFilterPopPanel" hidden>
@@ -2638,7 +2660,7 @@
             <div class="gantt-pop-host">
               <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProTableFilterPop" aria-expanded="false" aria-controls="proTableFilterPopPanel" title="Filtros da tabela">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                <span>Filtros</span>
+                <span data-i18n="common.filters">Filtros</span>
                 <span class="gantt-pop-count" id="proTableFilterCount" hidden></span>
               </button>
               <div class="gantt-pop-panel" id="proTableFilterPopPanel" hidden>
@@ -2757,16 +2779,26 @@
 
       <!-- NÍVEL 1: CONFIGURAÇÕES AMPLAS (ABERTAS POR PADRÃO) -->
       <div class="cfg-tier-head">
-        <span class="cfg-tier-badge">✨ Configurações Gerais</span>
-        <span class="muted small">Personalize o visual e a organização dos menus do Modo Profissional</span>
+        <span class="cfg-tier-badge" data-i18n="settings.generalBadge">✨ Configurações Gerais</span>
+        <span class="muted small" data-i18n="settings.generalSubPro">Personalize o visual e a organização dos menus do Modo Profissional</span>
       </div>
 
       <div class="cfg-broad-grid">
+        <div class="card cfg-broad-card cfg-region-card">
+          <div class="card-head">
+            <div>
+              <h2 data-i18n="settings.regionCardTitle">🌐 Idioma, Região &amp; Moeda</h2>
+              <span class="muted small" data-i18n="settings.regionCardSub">Idioma da interface e IA, primeiro dia da semana e moeda deste projeto</span>
+            </div>
+          </div>
+          <div id="proRegionHost" class="region-settings-host"></div>
+        </div>
+
         <div class="card cfg-broad-card">
           <div class="card-head">
             <div>
-              <h2>🎨 Aparência &amp; Identidade Visual</h2>
-              <span class="muted small">Tema Dia/Noite, paletas de cores e logo do Modo Profissional</span>
+              <h2 data-i18n="settings.appearanceTitle">🎨 Aparência &amp; Identidade Visual</h2>
+              <span class="muted small" data-i18n="settings.appearanceSubPro">Tema Dia/Noite, paletas de cores e logo do Modo Profissional</span>
             </div>
           </div>
           <div id="proAppearanceHost" class="appearance-host"></div>
@@ -2775,10 +2807,10 @@
         <div class="card cfg-broad-card">
           <div class="card-head">
             <div>
-              <h2>🧭 Menus Visíveis &amp; Ordem</h2>
-              <span class="muted small">Arraste (⋮⋮), use ↑/↓ ou oculte abas deste projeto</span>
+              <h2 data-i18n="settings.menusTitle">🧭 Menus Visíveis &amp; Ordem</h2>
+              <span class="muted small" data-i18n="settings.menusSub">Arraste (⋮⋮), use ↑/↓ ou oculte abas deste projeto</span>
             </div>
-            <button type="button" class="btn ghost small" id="btnResetProMenuOrder" title="Restaurar ordem e visibilidade padrão">↺ Padrão</button>
+            <button type="button" class="btn ghost small" id="btnResetProMenuOrder" data-i18n="settings.resetDefault" title="Restaurar ordem e visibilidade padrão">↺ Padrão</button>
           </div>
           <div id="proVisibleMenusManager" class="menu-order-list"></div>
         </div>
@@ -3081,7 +3113,7 @@
             <div class="gantt-pop-host">
               <button type="button" class="btn ghost small gantt-pop-trigger" id="btnProChkFilterPop" data-chk-filter-btn aria-expanded="false" aria-controls="proChkFilterPopPanel" title="Filtros do Checklist Executivo">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                <span>Filtros</span>
+                <span data-i18n="common.filters">Filtros</span>
                 <span class="gantt-pop-count" id="proChkFilterCount" data-chk-filter-count hidden></span>
               </button>
               <div class="gantt-pop-panel chk-filter-panel" id="proChkFilterPopPanel" data-chk-filter-panel hidden>
@@ -3667,13 +3699,13 @@
       <label class="span2">Nome do Participante *
         <input id="swp-name" required placeholder="Ex: João, Maria, Casal Silva...">
       </label>
-      <label class="span2">Chave Pix (opcional — CPF/CNPJ, E-mail, Telefone ou Aleatória)
+      <label class="span2"><span id="swp-pixKeyLabel">Chave Pix (opcional — CPF/CNPJ, E-mail, Telefone ou Aleatória)</span>
         <input id="swp-pixKey" placeholder="Ex: joao@email.com ou +5561999999999">
       </label>
-      <label>Titular Pix (opcional)
+      <label class="swp-pix-only-field">Titular Pix (opcional)
         <input id="swp-pixName" maxlength="25" placeholder="Nome no banco (até 25 chars)">
       </label>
-      <label>Cidade (padrão BR Code)
+      <label class="swp-pix-only-field">Cidade (padrão BR Code)
         <input id="swp-pixCity" maxlength="15" placeholder="Ex: BRASILIA">
       </label>
     </div>
@@ -5282,7 +5314,7 @@
   <div class="cmdk-shell">
     <div class="cmdk-head">
       <svg class="cmdk-search-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input type="search" id="cmdkInput" class="cmdk-input" placeholder="Buscar cartões, abas, projetos ou ações..." autocomplete="off" autofocus aria-label="Pesquisar comandos, cartões ou abas">
+      <input type="search" id="cmdkInput" class="cmdk-input" placeholder="Buscar cartões, abas, projetos ou ações..." data-i18n-placeholder="cmdk.placeholder" autocomplete="off" autofocus aria-label="Pesquisar comandos, cartões ou abas">
       <button type="button" class="cmdk-esc-btn" id="btnCmdkClose" aria-label="Fechar paleta de comandos">ESC</button>
     </div>
     <div class="cmdk-results" id="cmdkResults" role="listbox" aria-label="Resultados da paleta de comandos"></div>
@@ -5326,40 +5358,40 @@
 <dialog id="travelJourneyModal" class="journey-dialog" closedby="any" aria-labelledby="journeyModalTitle">
   <div class="journey-head">
     <div>
-      <h2 id="journeyModalTitle">✨ Jornada da Viagem</h2>
-      <p class="muted small" id="journeyAiSourceBadge">Preparando resumo visual compartilhável...</p>
+      <h2 id="journeyModalTitle" data-i18n="journey.title">✨ Jornada da Viagem</h2>
+      <p class="muted small" id="journeyAiSourceBadge" data-i18n="journey.subtitle">Preparando resumo visual compartilhável...</p>
     </div>
     <button type="button" class="icon-btn modal-close" id="btnCloseJourneyModal" aria-label="Fechar Jornada da Viagem">✕</button>
   </div>
 
   <div class="journey-controls-bar">
     <div class="journey-tablist" id="journeyFormatTablist" role="tablist" aria-label="Formato de exportação da Jornada">
-      <button type="button" role="tab" id="journeyTabStory" data-jfmt="story" aria-selected="true">📱 Stories (9:16)</button>
-      <button type="button" role="tab" id="journeyTabTimeline" data-jfmt="timeline" aria-selected="false">🗺️ Resumo &amp; PDF</button>
+      <button type="button" role="tab" id="journeyTabStory" data-jfmt="story" aria-selected="true" data-i18n="journey.tabStory">📱 Stories (9:16)</button>
+      <button type="button" role="tab" id="journeyTabTimeline" data-jfmt="timeline" aria-selected="false" data-i18n="journey.tabTimeline">🗺️ Resumo &amp; PDF</button>
     </div>
 
     <div class="journey-style-controls">
       <div class="journey-pill-group" role="group" aria-label="Tom do texto da IA">
-        <button type="button" class="journey-tone-btn" data-jtone="inspirador" aria-pressed="true">✨ Inspirador</button>
-        <button type="button" class="journey-tone-btn" data-jtone="divertido" aria-pressed="false">😄 Divertido</button>
-        <button type="button" class="journey-tone-btn" data-jtone="minimalista" aria-pressed="false">🤍 Minimalista</button>
+        <button type="button" class="journey-tone-btn" data-jtone="inspirador" aria-pressed="true" data-i18n="journey.toneInspiring">✨ Inspirador</button>
+        <button type="button" class="journey-tone-btn" data-jtone="divertido" aria-pressed="false" data-i18n="journey.toneFun">😄 Divertido</button>
+        <button type="button" class="journey-tone-btn" data-jtone="minimalista" aria-pressed="false" data-i18n="journey.toneMinimal">🤍 Minimalista</button>
       </div>
       <div class="journey-pill-group" role="group" aria-label="Paleta visual do cartão">
         <button type="button" class="journey-theme-btn" data-jtheme="aurora" aria-pressed="true" title="Tema Aurora">🌌</button>
         <button type="button" class="journey-theme-btn" data-jtheme="sunset" aria-pressed="false" title="Tema Mediterrâneo">🌅</button>
         <button type="button" class="journey-theme-btn" data-jtheme="ocean" aria-pressed="false" title="Tema Oceano">🌊</button>
       </div>
-      <button type="button" class="btn ghost small" id="btnJourneyRegenerate" title="Regenerar título e narrativa com IA">🔄 Regenerar</button>
+      <button type="button" class="btn ghost small" id="btnJourneyRegenerate" data-i18n="journey.regenerate" title="Regenerar título e narrativa com IA">🔄 Regenerar</button>
     </div>
   </div>
 
   <div id="journeyLoadingBar" class="journey-loading-bar" hidden>
     <span class="ai-spinner" aria-hidden="true"></span>
-    <span>Criando manchete e narrativa positiva com Gemini IA...</span>
+    <span data-i18n="journey.loading">Criando manchete e narrativa positiva com Gemini IA...</span>
   </div>
 
   <div class="journey-privacy-note">
-    <span>🔒 Privacidade por padrão: nenhum valor financeiro, gasto ou dado do Splitwise é exibido neste resumo.</span>
+    <span data-i18n="journey.privacy">🔒 Privacidade por padrão: nenhum valor financeiro, gasto ou dado do Splitwise é exibido neste resumo.</span>
   </div>
 
   <div id="journeyPanelStory" role="tabpanel" aria-labelledby="journeyTabStory">
@@ -5367,8 +5399,8 @@
       <img id="journeyStoryPreviewImg" class="journey-preview-img is-story" alt="Pré-visualização do Card Vertical 9:16 para Stories e Status">
     </div>
     <div class="journey-actions-foot">
-      <button type="button" class="btn primary" id="btnJourneyDownloadStory">⬇️ Baixar Imagem (PNG Alta Resolução)</button>
-      <button type="button" class="btn ai-pill" id="btnJourneyShareStory">📤 Compartilhar</button>
+      <button type="button" class="btn primary" id="btnJourneyDownloadStory" data-i18n="journey.downloadStory">⬇️ Baixar Imagem (PNG Alta Resolução)</button>
+      <button type="button" class="btn ai-pill" id="btnJourneyShareStory" data-i18n="journey.shareStory">📤 Compartilhar</button>
     </div>
   </div>
 
@@ -5377,9 +5409,9 @@
       <img id="journeyTimelinePreviewImg" class="journey-preview-img is-timeline" alt="Pré-visualização do Resumo Horizontal da Jornada com linha do tempo">
     </div>
     <div class="journey-actions-foot">
-      <button type="button" class="btn primary" id="btnJourneyDownloadTimeline">🖼️ Baixar PNG Horizontal</button>
-      <button type="button" class="btn ghost" id="btnJourneyExportPdf">📄 Baixar / Imprimir PDF</button>
-      <button type="button" class="btn wa-pill" id="btnJourneyShareWa">💬 Enviar no WhatsApp</button>
+      <button type="button" class="btn primary" id="btnJourneyDownloadTimeline" data-i18n="journey.downloadTimeline">🖼️ Baixar PNG Horizontal</button>
+      <button type="button" class="btn ghost" id="btnJourneyExportPdf" data-i18n="journey.exportPdf">📄 Baixar / Imprimir PDF</button>
+      <button type="button" class="btn wa-pill" id="btnJourneyShareWa" data-i18n="journey.shareWa">💬 Enviar no WhatsApp</button>
     </div>
   </div>
 </dialog>
@@ -5390,23 +5422,24 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="shared-utils.js?v=69"></script>
-<script src="config.example.js?v=69"></script>
-<script src="vehicles.js?v=69"></script>
-<script src="countries.js?v=69"></script>
-<script src="data.js?v=69"></script>
-<script src="maps.js?v=69"></script>
-<script src="calendar.js?v=69"></script>
-<script src="drive.js?v=69"></script>
-<script src="report.js?v=69"></script>
-<script src="api.js?v=69"></script>
-<script src="minutes.js?v=69"></script>
-<script src="pro-annual.js?v=69"></script>
-<script src="checklists.js?v=69"></script>
-<script src="pro.js?v=69"></script>
-<script src="personal-map.js?v=69"></script>
-<script src="splitwise.js?v=69"></script>
-<script src="journey.js?v=69"></script>
-<script src="app.js?v=69"></script>
+<script src="i18n.js?v=70"></script>
+<script src="shared-utils.js?v=70"></script>
+<script src="config.example.js?v=70"></script>
+<script src="vehicles.js?v=70"></script>
+<script src="countries.js?v=70"></script>
+<script src="data.js?v=70"></script>
+<script src="maps.js?v=70"></script>
+<script src="calendar.js?v=70"></script>
+<script src="drive.js?v=70"></script>
+<script src="report.js?v=70"></script>
+<script src="api.js?v=70"></script>
+<script src="minutes.js?v=70"></script>
+<script src="pro-annual.js?v=70"></script>
+<script src="checklists.js?v=70"></script>
+<script src="pro.js?v=70"></script>
+<script src="personal-map.js?v=70"></script>
+<script src="splitwise.js?v=70"></script>
+<script src="journey.js?v=70"></script>
+<script src="app.js?v=70"></script>
 </body>
 </html>

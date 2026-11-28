@@ -18,6 +18,10 @@
     "Outros"
   ];
 
+  const tSw = (key, vars, fb) => window.MyPlanI18n ? window.MyPlanI18n.t(key, vars, fb) : (fb || key);
+  const isPixMode = () => window.MyPlanI18n ? window.MyPlanI18n.isPixEnabled() : true;
+  const getCurSym = () => window.MyPlanI18n ? window.MyPlanI18n.getCurrencySymbol() : "R$";
+
   /* ========================================================================
      1. ARITMÉTICA SEGURA EM CENTAVOS (INTEGER CENTS)
      ======================================================================== */
@@ -25,9 +29,9 @@
     if (typeof raw === "number") {
       return Number.isFinite(raw) ? Math.round(raw * 100) : 0;
     }
-    let s = String(raw ?? "").trim().replace(/[R$\s]/g, "");
+    let s = String(raw ?? "").trim().replace(/[^\d.,-]/g, "");
     if (!s) return 0;
-    // Se tiver vírgula e ponto (ex: 1.234,56), remove separador de milhar
+    // Se tiver vírgula e ponto (ex: 1.234,56 ou 1,234.56), remove separador de milhar
     if (s.includes(",") && s.includes(".")) {
       if (s.lastIndexOf(",") > s.lastIndexOf(".")) s = s.replace(/\./g, "").replace(",", ".");
       else s = s.replace(/,/g, "");
@@ -40,6 +44,9 @@
   }
 
   function formatCents(cents) {
+    if (window.MyPlanI18n?.formatCents) {
+      return window.MyPlanI18n.formatCents(cents);
+    }
     const c = Math.round(Number(cents) || 0);
     const neg = c < 0;
     const abs = Math.abs(c) / 100;
@@ -49,7 +56,9 @@
 
   function centsToInput(cents) {
     const c = Math.round(Number(cents) || 0);
-    return (c / 100).toFixed(2).replace(".", ",");
+    const lang = window.MyPlanI18n?.getLang?.() || "pt-BR";
+    const dec = (lang === "en-US" || lang === "zh-CN") ? "." : ",";
+    return (c / 100).toFixed(2).replace(".", dec);
   }
 
   // Distribuição de resto de centavos (Hamilton / Largest Remainder) — soma SEMPRE === totalCents
@@ -575,14 +584,17 @@
     return st.splitwise;
   }
 
-  function buildWhatsAppBillingUrl({ fromName, toName, amountCents, pixCode, tripTitle }) {
+  function buildWhatsAppBillingUrl({ fromName, toName, amountCents, pixCode, paymentInfo, tripTitle }) {
+    const pix = isPixMode();
     const lines = [
-      `🤝 *Acerto de Custos — ${tripTitle || "My Plan"}*`,
-      `👤 *${fromName}* deve *${formatCents(amountCents)}* para *${toName}*.`
+      `🤝 *${tSw("splitwise.title", null, "Split Expenses").replace(/^[^\s]+\s*/, "")} — ${tripTitle || "My Plan"}*`,
+      `👤 *${tSw("splitwise.paysTo", { from: fromName, amount: formatCents(amountCents), to: toName }, `${fromName} pays ${formatCents(amountCents)} to ${toName}`)}*`
     ];
-    if (pixCode) {
-      lines.push(`📱 *Pix Copia e Cola (valor exato):*`);
+    if (pix && pixCode) {
+      lines.push(`📱 *Pix Copia e Cola:*`);
       lines.push(pixCode);
+    } else if (!pix && paymentInfo) {
+      lines.push(`💳 *${tSw("splitwise.viewPaymentInfo", null, "Payment Info")}:* ${paymentInfo}`);
     }
     return `https://wa.me/?text=${encodeURIComponent(lines.join("\n\n"))}`;
   }
@@ -637,12 +649,28 @@
     const dlg = document.getElementById("swParticipantModal");
     if (!dlg) return;
     const isEdit = Boolean(participant);
-    document.getElementById("swPartModalTitle").textContent = isEdit ? "Editar Participante" : "Novo Participante";
+    const pix = isPixMode();
+    document.getElementById("swPartModalTitle").textContent = isEdit
+      ? `${tSw("common.edit", null, "Edit")} ${tSw("splitwise.participants", null, "Participant").replace(/^[^\s]+\s*/, "")}`
+      : tSw("splitwise.addParticipant", null, "New Participant");
     const nameIn = document.getElementById("swp-name");
     const keyIn = document.getElementById("swp-pixKey");
+    const keyLbl = document.getElementById("swp-pixKeyLabel");
     const holderIn = document.getElementById("swp-pixName");
     const cityIn = document.getElementById("swp-pixCity");
     const delBtn = document.getElementById("btnSwpDelete");
+
+    if (keyLbl) {
+      keyLbl.textContent = pix
+        ? tSw("splitwise.paymentLabelPix", null, "Chave Pix (opcional)")
+        : tSw("splitwise.paymentLabelGlobal", null, "Payment Info (IBAN / Zelle / PayPal / Venmo)");
+    }
+    if (keyIn) {
+      keyIn.placeholder = pix
+        ? tSw("splitwise.paymentPlaceholderPix", null, "CPF, e-mail, celular ou chave aleatória")
+        : tSw("splitwise.paymentPlaceholderGlobal", null, "e.g. IBAN, PayPal @user, Zelle, Venmo");
+    }
+    dlg.querySelectorAll(".swp-pix-only-field").forEach(el => { el.hidden = !pix; });
 
     nameIn.value = participant?.name || "";
     keyIn.value = participant?.pixKey || "";
@@ -755,7 +783,7 @@
         payersHost.innerHTML = `<div class="sw-multi-list">${sw.participants.map(p => `
           <div class="sw-split-row">
             <span class="sw-split-name">${esc(p.name)}</span>
-            <div class="sw-num-wrap"><span>R$</span><input type="text" inputmode="decimal" data-sw-mpay="${esc(p.id)}" value="${esc(centsToInput(payerCentsMap.get(p.id) || 0))}"></div>
+            <div class="sw-num-wrap"><span>${esc(getCurSym())}</span><input type="text" inputmode="decimal" data-sw-mpay="${esc(p.id)}" value="${esc(centsToInput(payerCentsMap.get(p.id) || 0))}"></div>
           </div>
         `).join("")}</div>`;
         payersHost.querySelectorAll("[data-sw-mpay]").forEach(inp => {
@@ -792,7 +820,7 @@
           const st = shareState.get(p.id);
           return `<div class="sw-split-row">
             <span class="sw-split-name">${esc(p.name)}</span>
-            <div class="sw-num-wrap"><span>R$</span><input type="text" inputmode="decimal" data-sw-ex="${esc(p.id)}" value="${esc(centsToInput(st.amountCents))}"></div>
+            <div class="sw-num-wrap"><span>${esc(getCurSym())}</span><input type="text" inputmode="decimal" data-sw-ex="${esc(p.id)}" value="${esc(centsToInput(st.amountCents))}"></div>
           </div>`;
         }).join("");
         splitHost.querySelectorAll("[data-sw-ex]").forEach(inp => {
@@ -1254,21 +1282,30 @@
     }) : sw.expenses;
     const isExpFiltered = filteredExpenses.length !== sw.expenses.length;
 
+    const pixEnabled = isPixMode();
     const participantsHtml = sw.participants.length
       ? ledger.balances.map(b => {
           const cls = b.netCents > 0 ? "is-pos" : b.netCents < 0 ? "is-neg" : "is-zero";
-          const lbl = b.netCents > 0 ? `Recebe ${formatCents(b.netCents)}` : b.netCents < 0 ? `Deve ${formatCents(-b.netCents)}` : "Quitado";
-          return `<div class="sw-part-card ${cls}" data-sw-edit-part="${esc(b.participant.id)}" role="button" tabindex="0" title="Clique para editar participante ou chave Pix">
+          const lbl = b.netCents > 0
+            ? tSw("splitwise.receives", { amount: formatCents(b.netCents) }, `Recebe ${formatCents(b.netCents)}`)
+            : b.netCents < 0
+              ? tSw("splitwise.owes", { amount: formatCents(-b.netCents) }, `Deve ${formatCents(-b.netCents)}`)
+              : tSw("splitwise.even", null, "Quitado");
+          const hasPay = Boolean(String(b.participant.pixKey || "").trim());
+          const payBadge = pixEnabled
+            ? (hasPay ? `<span class="sw-pix-tag" title="Chave Pix cadastrada">🔑 Pix</span>` : `<span class="sw-pix-tag is-empty">${esc(tSw("splitwise.noPixKey", null, "Sem Pix"))}</span>`)
+            : (hasPay ? `<span class="sw-pix-tag" title="${esc(b.participant.pixKey)}">💳 ${esc(tSw("splitwise.viewPaymentInfo", null, "Payment Info").replace(/^[^\s]+\s*/, ""))}</span>` : `<span class="sw-pix-tag is-empty">${esc(tSw("splitwise.noPaymentInfo", null, "No payment info"))}</span>`);
+          return `<div class="sw-part-card ${cls}" data-sw-edit-part="${esc(b.participant.id)}" role="button" tabindex="0">
             <div class="sw-part-top">
               <strong>${esc(b.participant.name)}</strong>
-              ${b.participant.pixKey ? `<span class="sw-pix-tag" title="Chave Pix cadastrada">🔑 Pix</span>` : `<span class="sw-pix-tag is-empty">Sem Pix</span>`}
+              ${payBadge}
             </div>
             <div class="sw-part-net">${esc(lbl)}</div>
-            <div class="sw-part-sub muted small">Pagou ${esc(formatCents(b.paidCents))} · Parte ${esc(formatCents(b.owedCents))}</div>
+            <div class="sw-part-sub muted small">${esc(formatCents(b.paidCents))} · ${esc(formatCents(b.owedCents))}</div>
           </div>`;
         }).join("")
       : `<div class="sw-empty-hint">
-          <p class="muted">Adicione os participantes da viagem ou evento (ex: Casal, Amigos, Família) para começar a dividir os custos automaticamente.</p>
+          <p class="muted">${esc(tSw("splitwise.noParticipants", null, "Adicione os participantes da viagem ou evento para começar a dividir os custos."))}</p>
         </div>`;
 
     const transfersHtml = ledger.transfers.length
@@ -1276,9 +1313,10 @@
           const from = pById.get(tr.fromId);
           const to = pById.get(tr.toId);
           if (!from || !to) return "";
-          const hasPix = Boolean(String(to.pixKey || "").trim());
-          const pixCode = hasPix ? buildPixBrCode({
-            key: to.pixKey,
+          const payVal = String(to.pixKey || "").trim();
+          const hasPay = Boolean(payVal);
+          const pixCode = (pixEnabled && hasPay) ? buildPixBrCode({
+            key: payVal,
             name: to.pixName || to.name,
             city: to.pixCity || "BRASILIA",
             amountCents: tr.amountCents
@@ -1288,25 +1326,32 @@
             toName: to.name,
             amountCents: tr.amountCents,
             pixCode,
+            paymentInfo: !pixEnabled ? payVal : "",
             tripTitle
           });
+          const payActionBtn = hasPay
+            ? (pixEnabled
+              ? `<button type="button" class="btn primary small" data-sw-pix="${idx}">${esc(tSw("splitwise.payWithPix", null, "📱 Pagar com Pix"))}</button>`
+              : `<button type="button" class="btn primary small" data-sw-copy-pay="${idx}" title="${esc(payVal)}">${esc(tSw("splitwise.copyPaymentInfo", null, "📋 Copy payment info"))}</button>`)
+            : "";
+          const paySubHint = !pixEnabled && hasPay
+            ? `<div class="muted small">💳 <code>${esc(payVal)}</code></div>`
+            : (!hasPay ? `<div class="muted small">${esc(pixEnabled ? tSw("splitwise.paymentHintPix", null, "Cadastre a chave Pix para gerar QR Code.") : tSw("splitwise.paymentHintGlobal", null, "Add payment info (IBAN, PayPal, Zelle, Venmo) on the recipient card."))}</div>` : "");
           return `<div class="sw-transfer-card">
             <div class="sw-transfer-main">
               <div class="sw-transfer-text">
-                <strong>${esc(from.name)}</strong> <span class="muted">paga</span>
-                <span class="sw-transfer-amt">${esc(formatCents(tr.amountCents))}</span>
-                <span class="muted">para</span> <strong>${esc(to.name)}</strong>
+                <strong>${esc(tSw("splitwise.paysTo", { from: from.name, amount: formatCents(tr.amountCents), to: to.name }, `${from.name} pays ${formatCents(tr.amountCents)} to ${to.name}`))}</strong>
               </div>
-              ${!hasPix ? `<div class="muted small">Cadastre a chave Pix de ${esc(to.name)} para gerar QR Code automático.</div>` : ""}
+              ${paySubHint}
             </div>
             <div class="sw-transfer-actions">
-              ${hasPix ? `<button type="button" class="btn primary small" data-sw-pix="${idx}">📱 Pagar com Pix</button>` : ""}
-              <a class="btn ghost small sw-wa-btn" href="${esc(waUrl)}" target="_blank" rel="noopener">💬 Cobrar no WhatsApp</a>
-              <button type="button" class="btn ghost small sw-settle-btn" data-sw-settle="${idx}">✅ Marcar como pago</button>
+              ${payActionBtn}
+              <a class="btn ghost small sw-wa-btn" href="${esc(waUrl)}" target="_blank" rel="noopener">${esc(tSw("splitwise.shareWhatsApp", null, "💬 WhatsApp"))}</a>
+              <button type="button" class="btn ghost small sw-settle-btn" data-sw-settle="${idx}">${esc(tSw("splitwise.markSettled", null, "✅ Quitar acerto"))}</button>
             </div>
           </div>`;
         }).join("")
-      : `<div class="sw-all-settled">🎉 ${sw.expenses.length ? "Todas as contas estão quitadas! Nenhuma transferência pendente." : "Lance despesas abaixo ou importe dos cartões para gerar a proposta automática de acertos."}</div>`;
+      : `<div class="sw-all-settled">${esc(tSw("splitwise.settled", null, "🎉 Tudo acertado! Nenhuma pendência no grupo."))}</div>`;
 
     const modeLabels = { equal: "Igualmente", exact: "Valores exatos", percent: "Porcentagem", shares: "Cotas" };
     const expensesHtml = filteredExpenses.length
@@ -1352,19 +1397,19 @@
 
     container.innerHTML = `
       <div class="kpis fin-kpis sw-kpis">
-        <div class="kpi"><span class="k">Total gasto no grupo</span><strong class="v">${esc(formatCents(ledger.totalGroupCents))}</strong><span class="s">${sw.expenses.length} despesa(s)</span></div>
-        <div class="kpi"><span class="k">Custo médio por pessoa</span><strong class="v">${esc(formatCents(ledger.avgPerPersonCents))}</strong><span class="s">${sw.participants.length} participante(s)</span></div>
-        <div class="kpi"><span class="k">Transferências pendentes</span><strong class="v">${ledger.transfers.length}</strong><span class="s">${ledger.transfers.length ? "Simplificadas ao mínimo" : "Tudo quitado"}</span></div>
+        <div class="kpi"><span class="k">${esc(tSw("splitwise.totalSpent", null, "Total Gasto"))}</span><strong class="v">${esc(formatCents(ledger.totalGroupCents))}</strong><span class="s">${sw.expenses.length}</span></div>
+        <div class="kpi"><span class="k">${esc(tSw("splitwise.perPersonAvg", null, "Média / Pessoa"))}</span><strong class="v">${esc(formatCents(ledger.avgPerPersonCents))}</strong><span class="s">${sw.participants.length}</span></div>
+        <div class="kpi"><span class="k">${esc(tSw("splitwise.pendingTransfers", null, "Acertos Pendentes"))}</span><strong class="v">${ledger.transfers.length}</strong><span class="s">${esc(ledger.transfers.length ? "Min-Cash-Flow" : tSw("splitwise.settledBadge", null, "Quitado"))}</span></div>
       </div>
 
       <div class="card sw-section-card">
         <div class="card-head">
-          <h2>👥 Participantes &amp; Chaves Pix</h2>
+          <h2>${esc(pixEnabled ? `${tSw("splitwise.participants", null, "👥 Participantes")} & Pix` : `${tSw("splitwise.participants", null, "👥 Participants")} & ${tSw("splitwise.viewPaymentInfo", null, "Payment Info").replace(/^[^\s]+\s*/, "")}`)}</h2>
           <div class="inline-actions">
-            ${!guestMode && tripId ? `<button type="button" class="btn ghost small" id="btnSwInviteWhatsApp">💬 Convidar via WhatsApp</button>` : ""}
-            <button type="button" class="btn ghost small" id="btnSwAddParticipant">➕ Participante</button>
-            ${!guestMode ? `<button type="button" class="btn ghost small" id="btnSwImportCards" ${sw.participants.length ? "" : "disabled"}>📅 Importar dos Cartões</button>` : ""}
-            <button type="button" class="btn primary small" id="btnSwAddExpense" ${sw.participants.length ? "" : "disabled"}>💸 + Nova Despesa</button>
+            ${!guestMode && tripId ? `<button type="button" class="btn ghost small" id="btnSwInviteWhatsApp">${esc(tSw("splitwise.inviteLink", null, "🔗 Link de Convite"))}</button>` : ""}
+            <button type="button" class="btn ghost small" id="btnSwAddParticipant">${esc(tSw("splitwise.addParticipant", null, "➕ Participante"))}</button>
+            ${!guestMode ? `<button type="button" class="btn ghost small" id="btnSwImportCards" ${sw.participants.length ? "" : "disabled"}>${esc(tSw("splitwise.importFromCards", null, "📥 Importar dos Cartões"))}</button>` : ""}
+            <button type="button" class="btn primary small" id="btnSwAddExpense" ${sw.participants.length ? "" : "disabled"}>${esc(tSw("splitwise.addExpense", null, "➕ Despesa"))}</button>
           </div>
         </div>
         <div class="sw-parts-grid">${participantsHtml}</div>
@@ -1372,18 +1417,17 @@
 
       <div class="card sw-section-card">
         <div class="card-head">
-          <h2>⚖️ Proposta Automática de Acertos</h2>
-          <span class="muted small">Menor número possível de transferências</span>
+          <h2>${esc(tSw("splitwise.settlements", null, "⚖️ Acertos Sugeridos"))}</h2>
         </div>
         <div class="sw-transfers-list">${transfersHtml}</div>
       </div>
 
       <div class="card sw-section-card">
         <div class="card-head">
-          <h2>🧾 Despesas do Grupo <span class="pill">${isExpFiltered ? `${filteredExpenses.length}/${sw.expenses.length}` : sw.expenses.length}</span></h2>
+          <h2>${esc(tSw("splitwise.expenses", null, "💸 Despesas"))} <span class="pill">${isExpFiltered ? `${filteredExpenses.length}/${sw.expenses.length}` : sw.expenses.length}</span></h2>
           <div class="inline-actions">
-            ${!guestMode ? `<button type="button" class="btn ghost small" id="btnSwImportCards2" ${sw.participants.length ? "" : "disabled"}>📅 Selecionar dos Cartões</button>` : ""}
-            <button type="button" class="btn primary small" id="btnSwAddExpense2" ${sw.participants.length ? "" : "disabled"}>➕ Nova Despesa</button>
+            ${!guestMode ? `<button type="button" class="btn ghost small" id="btnSwImportCards2" ${sw.participants.length ? "" : "disabled"}>${esc(tSw("splitwise.importFromCards", null, "📥 Importar dos Cartões"))}</button>` : ""}
+            <button type="button" class="btn primary small" id="btnSwAddExpense2" ${sw.participants.length ? "" : "disabled"}>${esc(tSw("splitwise.addExpense", null, "➕ Despesa"))}</button>
           </div>
         </div>
         <div class="sw-expenses-list">${expensesHtml}</div>
@@ -1430,6 +1474,18 @@
         const from = pById.get(tr.fromId);
         const to = pById.get(tr.toId);
         if (from && to) openPixModal({ fromName: from.name, toParticipant: to, amountCents: tr.amountCents, tripTitle, toast });
+      };
+    });
+
+    container.querySelectorAll("[data-sw-copy-pay]").forEach(btn => {
+      btn.onclick = async () => {
+        const tr = ledger.transfers[parseInt(btn.dataset.swCopyPay, 10)];
+        if (!tr) return;
+        const to = pById.get(tr.toId);
+        const payVal = String(to?.pixKey || "").trim();
+        if (!payVal) return;
+        try { await navigator.clipboard.writeText(payVal); } catch {}
+        toast?.(`📋 ${tSw("common.copied", null, "Copied!")} (${payVal})`);
       };
     });
 

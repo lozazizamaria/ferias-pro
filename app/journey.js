@@ -7,6 +7,9 @@
 (() => {
   const MONTHS_SHORT_PT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
   const MONTHS_UPPER_PT = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
+  const getJourneyMonthsUpper = () => window.MyPlanI18n?.getMonthNamesUpper?.() || MONTHS_UPPER_PT;
+  const getJourneyFont = () => window.MyPlanI18n?.getCanvasFontFamily?.() || "Outfit, system-ui, sans-serif";
+  const tJr = (k, v, fb) => window.MyPlanI18n ? window.MyPlanI18n.t(k, v, fb) : (fb || k);
 
   const COUNTRY_CONTINENT_MAP = {
     brasil: ["Brasil", "América do Sul"],
@@ -221,6 +224,7 @@
   }
 
   function fmtDateShortEditorial(iso) {
+    if (window.MyPlanI18n?.formatEditorialDate) return window.MyPlanI18n.formatEditorialDate(iso);
     const d = parseIso(iso);
     if (!d) return "";
     const dd = String(d.getDate()).padStart(2, "0");
@@ -232,12 +236,13 @@
   function fmtPeriodEyebrow(startIso, endIso) {
     const s = parseIso(startIso);
     const e = parseIso(endIso || startIso);
-    if (!s || !e) return "ROTEIRO ESPECIAL";
+    if (!s || !e) return tJr("journey.fallbackEyebrow", null, "TRIP JOURNEY");
+    const mons = getJourneyMonthsUpper();
     if (s.getFullYear() === e.getFullYear()) {
-      if (s.getMonth() === e.getMonth()) return `${MONTHS_UPPER_PT[s.getMonth()]} ${s.getFullYear()}`;
-      return `${MONTHS_UPPER_PT[s.getMonth()]} – ${MONTHS_UPPER_PT[e.getMonth()]} ${s.getFullYear()}`;
+      if (s.getMonth() === e.getMonth()) return `${mons[s.getMonth()]} ${s.getFullYear()}`;
+      return `${mons[s.getMonth()]} – ${mons[e.getMonth()]} ${s.getFullYear()}`;
     }
-    return `${MONTHS_UPPER_PT[s.getMonth()]}/${String(s.getFullYear()).slice(-2)} – ${MONTHS_UPPER_PT[e.getMonth()]}/${String(e.getFullYear()).slice(-2)}`;
+    return `${mons[s.getMonth()]}/${String(s.getFullYear()).slice(-2)} – ${mons[e.getMonth()]}/${String(e.getFullYear()).slice(-2)}`;
   }
 
   function haversineKm(lat1, lng1, lat2, lng2) {
@@ -251,7 +256,10 @@
   }
 
   function fmtKm(n) {
-    return `${Math.round(Number(n) || 0).toLocaleString("pt-BR")} km`;
+    const numStr = window.MyPlanI18n?.formatNumber
+      ? window.MyPlanI18n.formatNumber(Math.round(Number(n) || 0), 0)
+      : Math.round(Number(n) || 0).toLocaleString("pt-BR");
+    return `${numStr} km`;
   }
 
   /* ========================================================================
@@ -615,7 +623,7 @@
     let curY = 120;
 
     // 2. Eyebrow & Período Pill
-    ctx.font = "700 24px Outfit, system-ui, sans-serif";
+    ctx.font = `700 24px ${getJourneyFont()}`;
     const eyebrow = `✨ JORNADA DA VIAGEM  •  ${facts.periodEyebrow}`;
     const pillW = Math.min(W - padX * 2, ctx.measureText(eyebrow).width + 52);
     drawRoundedRect(ctx, padX, curY, pillW, 56, 28);
@@ -633,7 +641,7 @@
 
     // 3. Manchete inspiradora (IA)
     ctx.fillStyle = theme.text;
-    ctx.font = "800 72px Outfit, system-ui, sans-serif";
+    ctx.font = `800 72px ${getJourneyFont()}`;
     const hLines = wrapCanvasText(ctx, copy.headline || facts.projectTitle, W - padX * 2, 3);
     hLines.forEach(line => {
       ctx.fillText(line, padX, curY + 34);
@@ -644,7 +652,7 @@
     // Subtítulo / Tagline
     if (copy.tagline) {
       ctx.fillStyle = theme.muted;
-      ctx.font = "500 32px Outfit, system-ui, sans-serif";
+      ctx.font = `500 32px ${getJourneyFont()}`;
       const tLines = wrapCanvasText(ctx, copy.tagline, W - padX * 2, 2);
       tLines.forEach(line => {
         ctx.fillText(line, padX, curY + 18);
@@ -663,7 +671,7 @@
     ctx.stroke();
 
     ctx.fillStyle = theme.muted;
-    ctx.font = "700 22px Outfit, system-ui, sans-serif";
+    ctx.font = `700 22px ${getJourneyFont()}`;
     const modeSummary = [
       facts.flightsCount ? `✈ ${facts.flightsCount} voo${facts.flightsCount > 1 ? "s" : ""}` : "",
       facts.roadLegsCount ? `🚗 ${facts.roadLegsCount} trecho${facts.roadLegsCount > 1 ? "s" : ""} de carro` : "",
@@ -715,7 +723,7 @@
       ctx.lineWidth = 3;
       ctx.stroke();
       ctx.fillStyle = theme.text;
-      ctx.font = "700 18px Outfit, system-ui, sans-serif";
+      ctx.font = `700 18px ${getJourneyFont()}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(leg.isFlight ? "✈" : "🚗", mx, my + 1);
@@ -732,7 +740,7 @@
       ctx.stroke();
 
       ctx.fillStyle = theme.text;
-      ctx.font = "700 22px Outfit, system-ui, sans-serif";
+      ctx.font = `700 22px ${getJourneyFont()}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const lblY = idx % 2 === 0 ? p.y + 42 : p.y - 38;
@@ -760,15 +768,15 @@
       ctx.stroke();
 
       ctx.fillStyle = theme.accent;
-      ctx.font = "700 32px Outfit, system-ui, sans-serif";
+      ctx.font = `700 32px ${getJourneyFont()}`;
       ctx.fillText(m.icon, x + 28, y + 48);
 
       ctx.fillStyle = theme.text;
-      ctx.font = "800 58px Outfit, system-ui, sans-serif";
+      ctx.font = `800 58px ${getJourneyFont()}`;
       ctx.fillText(m.value, x + 28, y + 112);
 
       ctx.fillStyle = theme.muted;
-      ctx.font = "600 24px Outfit, system-ui, sans-serif";
+      ctx.font = `600 24px ${getJourneyFont()}`;
       ctx.fillText(m.label, x + 28, y + 154);
     });
     curY += cardH * 2 + gap + 36;
@@ -788,7 +796,7 @@
     ctx.fill();
 
     ctx.fillStyle = theme.text;
-    ctx.font = "500 33px Outfit, system-ui, sans-serif";
+    ctx.font = `500 33px ${getJourneyFont()}`;
     const nLines = wrapCanvasText(ctx, copy.narrative || "", W - padX * 2 - 92, 5);
     let qy = curY + 58;
     nLines.forEach(line => {
@@ -798,12 +806,12 @@
 
     // 7. Rodapé editorial discreto
     ctx.fillStyle = theme.muted;
-    ctx.font = "600 24px Outfit, system-ui, sans-serif";
+    ctx.font = `600 24px ${getJourneyFont()}`;
     ctx.textAlign = "left";
     ctx.fillText(facts.periodHuman || facts.projectTitle, padX, H - 72);
     ctx.textAlign = "right";
     ctx.fillStyle = theme.accent;
-    ctx.font = "700 25px Outfit, system-ui, sans-serif";
+    ctx.font = `700 25px ${getJourneyFont()}`;
     ctx.fillText("My Plan ✨", W - padX, H - 72);
 
     return canvas;
@@ -852,11 +860,11 @@
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.fillStyle = theme.accent;
-    ctx.font = "700 20px Outfit, system-ui, sans-serif";
+    ctx.font = `700 20px ${getJourneyFont()}`;
     ctx.fillText(`✨ JORNADA DA VIAGEM  •  ${facts.periodEyebrow}${facts.periodHuman ? `  (${facts.periodHuman})` : ""}`, padX, 54);
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = "800 50px Outfit, system-ui, sans-serif";
+    ctx.font = `800 50px ${getJourneyFont()}`;
     const hlLines = wrapCanvasText(ctx, copy.headline || facts.projectTitle, W - padX * 2, 2);
     let hy = 112;
     hlLines.forEach(l => { ctx.fillText(l, padX, hy); hy += 58; });
@@ -865,7 +873,7 @@
     const metrics = buildImpactMetrics(facts);
     let mx = padX;
     const my = heroH - 56;
-    ctx.font = "700 22px Outfit, system-ui, sans-serif";
+    ctx.font = `700 22px ${getJourneyFont()}`;
     metrics.forEach(m => {
       const txt = `${m.icon} ${m.value} ${m.label}`;
       const bw = ctx.measureText(txt).width + 34;
@@ -894,7 +902,7 @@
     ctx.fill();
 
     ctx.fillStyle = "#1e293b";
-    ctx.font = "500 23px Outfit, system-ui, sans-serif";
+    ctx.font = `500 23px ${getJourneyFont()}`;
     const narLines = wrapCanvasText(ctx, copy.narrative || "", W - padX * 2 - 70, 3);
     let ny = curY + 34;
     narLines.forEach(l => { ctx.fillText(l, padX + 44, ny); ny += 31; });
@@ -902,7 +910,7 @@
 
     // 3. Título da Linha do Tempo
     ctx.fillStyle = "#0f172a";
-    ctx.font = "800 24px Outfit, system-ui, sans-serif";
+    ctx.font = `800 24px ${getJourneyFont()}`;
     ctx.fillText("🗺️ LINHA DO TEMPO DAS PARADAS & DESTAQUES", padX, curY);
     curY += 32;
 
@@ -927,13 +935,13 @@
       ctx.fillStyle = sp.arrivalMode === "flight" ? "#f97316" : theme.lightHeroEnd;
       ctx.fill();
       ctx.fillStyle = "#ffffff";
-      ctx.font = "800 18px Outfit, system-ui, sans-serif";
+      ctx.font = `800 18px ${getJourneyFont()}`;
       ctx.textAlign = "center";
       ctx.fillText(String(idx + 1), x + 34, y + 37);
 
       ctx.textAlign = "left";
       ctx.fillStyle = "#0f172a";
-      ctx.font = "800 24px Outfit, system-ui, sans-serif";
+      ctx.font = `800 24px ${getJourneyFont()}`;
       const cityTitle = sp.country ? `${sp.city}, ${sp.country}` : sp.city;
       ctx.fillText(cityTitle.slice(0, 28), x + 64, y + 30);
 
@@ -942,13 +950,13 @@
         : "";
       const modeLbl = sp.arrivalMode === "flight" ? "✈ Voo" : (sp.arrivalMode === "road" ? "🚗 Carro" : "📍 Parada");
       ctx.fillStyle = "#64748b";
-      ctx.font = "600 17px Outfit, system-ui, sans-serif";
+      ctx.font = `600 17px ${getJourneyFont()}`;
       ctx.fillText(`${modeLbl}${dtRange ? `  •  ${dtRange}` : ""}`, x + 64, y + 58);
 
       // Nota IA ou destaque principal
       const note = noteMap.get(sp.key) || sp.highlights[0] || `Momentos inesquecíveis em ${sp.city}`;
       ctx.fillStyle = "#334155";
-      ctx.font = "500 18px Outfit, system-ui, sans-serif";
+      ctx.font = `500 18px ${getJourneyFont()}`;
       const noteLines = wrapCanvasText(ctx, note, cardW - 44, 2);
       let sy = y + 102;
       noteLines.forEach(nl => { ctx.fillText(nl, x + 22, sy); sy += 25; });
@@ -957,7 +965,7 @@
       const extras = sp.highlights.filter(h => h && h !== note).slice(0, 2);
       if (extras.length) {
         ctx.fillStyle = "#475569";
-        ctx.font = "600 15.5px Outfit, system-ui, sans-serif";
+        ctx.font = `600 15.5px ${getJourneyFont()}`;
         extras.forEach(ex => {
           const line = `• ${ex.length > 42 ? ex.slice(0, 41) + "…" : ex}`;
           ctx.fillText(line, x + 22, sy + 6);
@@ -968,12 +976,12 @@
 
     // Rodapé
     ctx.fillStyle = "#64748b";
-    ctx.font = "600 18px Outfit, system-ui, sans-serif";
+    ctx.font = `600 18px ${getJourneyFont()}`;
     ctx.textAlign = "left";
     ctx.fillText(`${facts.projectTitle}  •  Resumo visual compartilhável (sem valores financeiros)`, padX, H - 34);
     ctx.textAlign = "right";
     ctx.fillStyle = theme.lightHeroEnd;
-    ctx.font = "700 19px Outfit, system-ui, sans-serif";
+    ctx.font = `700 19px ${getJourneyFont()}`;
     ctx.fillText("My Plan ✨", W - padX, H - 34);
 
     return canvas;
@@ -1105,7 +1113,8 @@
     if (regenBtn) regenBtn.disabled = true;
     try {
       if (window.FeriasApi?.aiGenerateTravelJourney) {
-        const res = await window.FeriasApi.aiGenerateTravelJourney(currentFacts, activeTone);
+        const activeLang = window.MyPlanI18n?.getLang?.() || "en-US";
+        const res = await window.FeriasApi.aiGenerateTravelJourney(currentFacts, activeTone, activeLang);
         if (res?.usedAi && res.journey) {
           currentCopy = res.journey;
           currentUsedAi = true;

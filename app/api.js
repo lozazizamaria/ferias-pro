@@ -29,12 +29,14 @@
     const isAi = String(url || "").includes("/api/ai/");
     const timeoutMs = Number(opts.timeoutMs) || (isAi ? 65000 : 25000);
     const fetcher = window.MyPlanUtils?.fetchWithTimeout || ((u, o) => fetch(u, o));
+    const activeLang = window.MyPlanI18n?.getLang?.() || "";
     const res = await fetcher(url, {
       credentials: "same-origin",
       cache: "no-store",
       ...opts,
       headers: {
         ...(opts.body ? { "Content-Type": "application/json" } : {}),
+        ...(activeLang ? { "X-MyPlan-Lang": activeLang } : {}),
         ...(opts.headers || {})
       }
     }, timeoutMs);
@@ -471,6 +473,18 @@
     return r.data;
   }
 
+  async function saveI18nPreferences(i18n) {
+    if (!serverAvailable) {
+      if (currentUser) currentUser = Object.assign({}, currentUser, { i18n: Object.assign({}, currentUser.i18n, i18n) });
+      return { ok: true, user: currentUser };
+    }
+    const r = await req("/api/auth/preferences", { method: "PUT", body: JSON.stringify({ i18n }) });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao salvar preferências de idioma.");
+    currentUser = r.data.user;
+    notify();
+    return r.data;
+  }
+
   async function searchLogoImages(query) {
     if (!serverAvailable) {
       return { ok: true, configured: false, items: [], message: "Busca integrada requer servidor online." };
@@ -494,9 +508,10 @@
     return r.data.plan;
   }
 
-  async function aiTranscribeAudio(audio, language = "pt-BR") {
+  async function aiTranscribeAudio(audio, language) {
     if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
-    const r = await req("/api/ai/transcribe", { method: "POST", body: JSON.stringify({ audio, language }) });
+    const lang = language || window.MyPlanI18n?.getLang?.() || "en-US";
+    const r = await req("/api/ai/transcribe", { method: "POST", body: JSON.stringify({ audio, language: lang, lang }) });
     if (!r.ok) throw new Error(r.data?.error || r.data?.message || "Falha ao transcrever áudio com Gemini.");
     return r.data;
   }
@@ -620,13 +635,14 @@
     return r.data;
   }
 
-  async function aiGenerateTravelJourney(summary, tone = "inspirador") {
-    if (!serverAvailable) return { ok: true, usedAi: false, tone, journey: null };
+  async function aiGenerateTravelJourney(summary, tone = "inspirador", langOpt) {
+    const lang = langOpt || window.MyPlanI18n?.getLang?.() || "en-US";
+    if (!serverAvailable) return { ok: true, usedAi: false, tone, lang, journey: null };
     const r = await req("/api/ai/travel-journey", {
       method: "POST",
-      body: JSON.stringify({ summary: summary || {}, tone })
+      body: JSON.stringify({ summary: summary || {}, tone, lang })
     });
-    if (!r.ok) return { ok: true, usedAi: false, tone, journey: null };
+    if (!r.ok) return { ok: true, usedAi: false, tone, lang, journey: null };
     return r.data;
   }
 
@@ -795,6 +811,7 @@
     updateProfile,
     saveIntegrations,
     savePreferences,
+    saveI18nPreferences,
     searchLogoImages,
     fetchLogoFromUrl,
     aiPlanTrip,

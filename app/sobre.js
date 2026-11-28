@@ -2,8 +2,14 @@
    My Plan — Landing Page Interativa (Abas, Fallback de Prints & Scroll Reveal)
    ========================================================================== */
 (() => {
-  const yr = document.getElementById("lpYear");
-  if (yr) yr.textContent = String(new Date().getFullYear());
+  const syncYear = () => {
+    const yr = document.getElementById("lpYear");
+    if (yr) yr.textContent = String(new Date().getFullYear());
+  };
+  syncYear();
+  if (window.MyPlanI18n?.onChange) {
+    window.MyPlanI18n.onChange(() => syncYear());
+  }
 
   // 1. Sombra sutil na navbar ao rolar
   const nav = document.getElementById("lpNav");

@@ -4,7 +4,10 @@
    Reordenação/Ocultação e Exportação Ultra-Clean PNG (3x) & PDF Paisagem
    ========================================================================== */
 (() => {
-  const MONTHS_PT = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
+  const MONTHS_PT_FALLBACK = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
+  const getMonthsUpper = () => window.MyPlanI18n?.getMonthNamesUpper?.() || MONTHS_PT_FALLBACK;
+  const getAnnualFont = () => window.MyPlanI18n?.getCanvasFontFamily?.() || "Outfit, Arial, sans-serif";
+  const tAnn = (key, vars, fb) => window.MyPlanI18n ? window.MyPlanI18n.t(key, vars, fb) : (fb || key);
   const FULL_YEAR_WEEKS_PER_MONTH = [4, 4, 5, 4, 4, 5, 4, 5, 4, 4, 5, 4]; // soma = 52 semanas
 
   const DEFAULT_YEAR = new Date().getFullYear();
@@ -88,11 +91,11 @@
     return measureCtx;
   }
 
-  function measureTextPx(text, font = "600 11.5px Outfit, Arial, sans-serif") {
+  function measureTextPx(text, font) {
     const str = String(text || "");
     const ctx = getMeasureCtx();
     if (ctx) {
-      ctx.font = font;
+      ctx.font = font || `600 11.5px ${getAnnualFont()}`;
       return Math.ceil(ctx.measureText(str).width);
     }
     return Math.ceil(str.length * 6.8);
@@ -153,8 +156,9 @@
           const dow = new Date(year, m, d).getDay();
           days.push({ num: d, isWeekend: dow === 0 || dow === 6 });
         }
+        const monList = getMonthsUpper();
         months.push({
-          label: MONTHS_PT[m],
+          label: monList[m],
           shaded: m % 2 === 0,
           weeks,
           days
@@ -203,8 +207,9 @@
         days.push({ num: dt.getDate(), isWeekend: dow === 0 || dow === 6 });
       }
       if (!weekNums.length) weekNums.push(getIsoWeekNumber(segStart));
+      const monList = getMonthsUpper();
       months.push({
-        label: multiYear ? `${MONTHS_PT[m]}/${String(y).slice(-2)}` : MONTHS_PT[m],
+        label: multiYear ? `${monList[m]}/${String(y).slice(-2)}` : monList[m],
         shaded: idx % 2 === 0,
         weeks: weekNums,
         days
@@ -214,9 +219,10 @@
     }
 
     const totalWeeks = months.reduce((s, mo) => s + mo.weeks.length, 0) || 1;
+    const monListAll = getMonthsUpper();
     const title = multiYear
       ? `${rStart.getFullYear()} – ${rEnd.getFullYear()}`
-      : `${rStart.getFullYear()} (${MONTHS_PT[rStart.getMonth()]}–${MONTHS_PT[rEnd.getMonth()]})`;
+      : `${rStart.getFullYear()} (${monListAll[rStart.getMonth()]}–${monListAll[rEnd.getMonth()]})`;
 
     return {
       isFullYear: false,
@@ -359,7 +365,7 @@
     const laneLayouts = model.lanes.map(lane => {
       const rCount = Math.max(1, lane.rows.length);
       const contentH = rCount * rowH + Math.max(0, rCount - 1) * rowGap + lanePadY * 2;
-      const minH = Math.max(66, measureTextPx(lane.label.toUpperCase(), "800 12px Outfit, Arial, sans-serif") + 24);
+      const minH = Math.max(66, measureTextPx(lane.label.toUpperCase(), `800 12px ${getAnnualFont()}`) + 24);
       return { lane, h: Math.max(contentH, minH) };
     });
 
@@ -380,7 +386,7 @@
       ctx.translate(x + w / 2, y + h / 2);
       ctx.rotate(-Math.PI / 2);
       ctx.fillStyle = "#0f172a";
-      ctx.font = "800 12px Outfit, Arial, sans-serif";
+      ctx.font = `800 12px ${getAnnualFont()}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const maxTxtW = Math.max(24, h - 12);
@@ -399,7 +405,7 @@
 
     // Título do Ano centralizado
     ctx.fillStyle = "#0f172a";
-    ctx.font = "800 16px Outfit, Arial, sans-serif";
+    ctx.font = `800 16px ${getAnnualFont()}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(model.period.title, gx + gridW / 2, hy + hdrYearH / 2);
@@ -417,13 +423,13 @@
       ctx.fillRect(mx, hy + hdrYearH, mw, hdrMonthH + hdrWeekH + hdrDayH);
 
       ctx.fillStyle = "#0f172a";
-      ctx.font = "700 11px Outfit, Arial, sans-serif";
+      ctx.font = `700 11px ${getAnnualFont()}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(mo.label, mx + mw / 2, hy + hdrYearH + hdrMonthH / 2);
 
       const mWkW = mw / Math.max(1, mo.weeks.length);
-      ctx.font = "600 10px Outfit, Arial, sans-serif";
+      ctx.font = `600 10px ${getAnnualFont()}`;
       mo.weeks.forEach((wn, wi) => {
         const wx = mx + wi * mWkW;
         ctx.fillText(String(wn), wx + mWkW / 2, hy + hdrYearH + hdrMonthH + hdrWeekH / 2);
@@ -465,7 +471,7 @@
     });
 
     // Rótulo vertical ANO e borda nítida do cabeçalho
-    drawVerticalLabel("ANO", hx, hy, railW, hdrTotalH);
+    drawVerticalLabel(tAnn("annual.year", null, "ANO").toUpperCase(), hx, hy, railW, hdrTotalH);
     ctx.strokeStyle = "#0f172a";
     ctx.lineWidth = 1.6;
     ctx.strokeRect(hx, hy, railW + gridW, hdrTotalH);
@@ -490,7 +496,7 @@
           ctx.fillStyle = ev.color;
           ctx.fillRect(bx, ry, bw, rowH);
 
-          ctx.font = "600 11.5px Outfit, Arial, sans-serif";
+          ctx.font = `600 11.5px ${getAnnualFont()}`;
           ctx.textBaseline = "middle";
           const txtW = ctx.measureText(ev.label).width;
           if (bw >= txtW + 10) {
@@ -767,46 +773,46 @@
           </div>`;
         }).join("")
       : `<div class="pa-empty-box">
-          <strong>Nenhum cartão com data para exibir em ${esc(period.title)}</strong>
-          <span class="muted small">Altere o ano acima, ajuste os filtros ou restaure categorias/cartões ocultos.</span>
+          <strong>${esc(tAnn("annual.noEvents", null, "Nenhum evento com data neste período."))} (${esc(period.title)})</strong>
         </div>`;
 
+    const yearRailLabel = tAnn("annual.year", null, "ANO").toUpperCase();
     container.innerHTML = `
       <div class="pa-topbar annual-no-export">
         <div class="pa-topbar-left">
-          <div class="pa-year-nav" ${!period.isFullYear ? 'title="Período personalizado ativo nos Filtros (limpe De/Até para navegar por ano)"' : ""}>
-            <button type="button" class="btn ghost small icon-compact" id="${btnPrefix}PrevYear" data-pa-role="prevYear" ${!period.isFullYear ? "disabled" : ""} aria-label="Ano anterior">◀</button>
-            <select id="${idPrefix}YearSelect" data-pa-role="yearSelect" aria-label="Selecionar ano" ${!period.isFullYear ? "disabled" : ""}>
+          <div class="pa-year-nav">
+            <button type="button" class="btn ghost small icon-compact" id="${btnPrefix}PrevYear" data-pa-role="prevYear" ${!period.isFullYear ? "disabled" : ""} aria-label="Previous">◀</button>
+            <select id="${idPrefix}YearSelect" data-pa-role="yearSelect" aria-label="${esc(tAnn("annual.year", null, "Year"))}" ${!period.isFullYear ? "disabled" : ""}>
               ${sortedYears.map(y => `<option value="${y}" ${y === selectedYear ? "selected" : ""}>${y}</option>`).join("")}
             </select>
-            <button type="button" class="btn ghost small icon-compact" id="${btnPrefix}NextYear" data-pa-role="nextYear" ${!period.isFullYear ? "disabled" : ""} aria-label="Próximo ano">▶</button>
+            <button type="button" class="btn ghost small icon-compact" id="${btnPrefix}NextYear" data-pa-role="nextYear" ${!period.isFullYear ? "disabled" : ""} aria-label="Next">▶</button>
           </div>
-          <label class="pa-days-toggle" title="Exibir ou ocultar os dias do mês no cabeçalho do Calendário Anual">
+          <label class="pa-days-toggle">
             <input type="checkbox" id="${idPrefix}ShowDays" data-pa-role="showDays" ${showDays ? "checked" : ""}>
-            <span>Mostrar dias do mês</span>
+            <span>${esc(tAnn("common.days", null, "Days"))}</span>
           </label>
-          <button type="button" class="btn ghost small gantt-fit-events-btn" id="${btnPrefix}FitEvents" data-pa-role="fitEvents" aria-pressed="${fitActive ? "true" : "false"}" title="Ajustar janela de datas apenas ao período com eventos cadastrados">
+          <button type="button" class="btn ghost small gantt-fit-events-btn" id="${btnPrefix}FitEvents" data-pa-role="fitEvents" aria-pressed="${fitActive ? "true" : "false"}">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-            <span>Ajustar aos eventos</span>
+            <span>${esc(tAnn("gantt.fitEvents", null, "Fit to events"))}</span>
           </button>
-          ${period.isFitToEvents ? `<span class="pill" style="font-size:0.72rem">🎯 ${esc(fmtBR(fitRange.rawStartIso))} → ${esc(fmtBR(fitRange.rawEndIso))}</span>` : (!period.isFullYear ? `<span class="pill" style="font-size:0.72rem">Período filtrado: ${esc(period.title)}</span>` : "")}
-          ${totalHiddenCount > 0 ? `<button type="button" class="btn ghost small" id="${btnPrefix}RestoreHidden" data-pa-role="restoreHidden" title="Restaurar categorias e cartões ocultos nesta visualização">👁️ Restaurar ocultos (${totalHiddenCount})</button>` : ""}
+          ${period.isFitToEvents ? `<span class="pill" style="font-size:0.72rem">🎯 ${esc(fmtBR(fitRange.rawStartIso))} → ${esc(fmtBR(fitRange.rawEndIso))}</span>` : (!period.isFullYear ? `<span class="pill" style="font-size:0.72rem">${esc(period.title)}</span>` : "")}
+          ${totalHiddenCount > 0 ? `<button type="button" class="btn ghost small" id="${btnPrefix}RestoreHidden" data-pa-role="restoreHidden">👁️ ${esc(tAnn("annual.showAll", null, "Show all"))} (${totalHiddenCount})</button>` : ""}
         </div>
         <div class="pa-topbar-right">
           <div class="pm-dd-host">
-            <button type="button" class="btn primary small" id="${btnPrefix}ExportMenu" data-pa-role="exportMenuBtn" aria-expanded="false">🖨️ Imprimir ▾</button>
+            <button type="button" class="btn primary small" id="${btnPrefix}ExportMenu" data-pa-role="exportMenuBtn" aria-expanded="false">🖨️ ${esc(tAnn("common.print", null, "Print"))} ▾</button>
             <div class="pm-dd-menu pa-export-menu" id="${idPrefix}ExportMenu" data-pa-role="exportMenu" hidden>
-              <button type="button" id="${btnPrefix}ExportPng" data-pa-role="exportPng">🖼️ Baixar como Imagem (.png alta resolução)</button>
-              <button type="button" id="${btnPrefix}ExportPdf" data-pa-role="exportPdf">📄 Imprimir / Baixar em PDF (Horizontal)</button>
+              <button type="button" id="${btnPrefix}ExportPng" data-pa-role="exportPng">${esc(tAnn("annual.exportPng", null, "🖼️ High-Res PNG"))}</button>
+              <button type="button" id="${btnPrefix}ExportPdf" data-pa-role="exportPdf">${esc(tAnn("annual.exportPdf", null, "📄 Landscape PDF"))}</button>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="pa-sheet-scroll" tabindex="0" role="region" aria-label="Calendário Anual">
+      <div class="pa-sheet-scroll" tabindex="0" role="region" aria-label="${esc(tAnn("annual.title", null, "Annual Calendar"))}">
         <div class="pa-sheet${showDays ? " is-show-days" : ""}" id="${idPrefix}ExecutiveSheet"${(showDays || zoomScale !== 1) ? ` style="min-width:${sheetMinWidth}px"` : ""}>
           <div class="pa-header-box">
-            <div class="pa-rail pa-rail-ano"><span class="pa-rail-lbl">ANO</span></div>
+            <div class="pa-rail pa-rail-ano"><span class="pa-rail-lbl">${esc(yearRailLabel)}</span></div>
             <div class="pa-header-main">
               <div class="pa-year-banner">${esc(period.title)}</div>
               <div class="pa-months-row">${monthsHeaderHtml}</div>

@@ -746,3 +746,67 @@ test("Personal Example Isolation (isExample) & Travel Journey AI Endpoint (v68)"
   assert.equal(jRes.json.tone, "divertido");
   assert.equal(jRes.json.usedAi, false);
 });
+
+
+test("i18n Global (v70) — 7 Dicionários JSON, Preferências Persistentes e IA Multilíngue", async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "myplan-i18n-"));
+  const port = await getFreePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const srv = startServerInstance(tmpDir, port);
+
+  t.after(async () => {
+    await srv.stop();
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  });
+
+  await waitForHealth(baseUrl, srv.child);
+
+  // 1. Verificar os 7 dicionários JSON oficiais servidos corretamente
+  const locales = ["pt-BR", "en-US", "es", "fr", "it", "de", "zh-CN"];
+  for (const code of locales) {
+    const r = await fetch(`${baseUrl}/locales/${code}.json?v=70`);
+    assert.equal(r.status, 200, `Dicionário ${code} deve retornar 200`);
+    const dict = await r.json();
+    assert.equal(dict?.meta?.code, code);
+    assert.ok(dict?.landing?.heroH1, `${code} deve conter traduções da Landing Page`);
+    assert.ok(dict?.nav?.tabs?.gantt, `${code} deve conter traduções de navegação`);
+    assert.ok(dict?.splitwise?.paymentLabelGlobal, `${code} deve conter labels de pagamento`);
+  }
+
+  // 2. Registrar usuário e salvar preferências i18n sem apagar aparência
+  const reg = await apiJson(baseUrl, "/api/auth/register", {
+    method: "POST",
+    body: { name: "Global User", email: "global@example.com", password: "Forte!Password2026" }
+  });
+  assert.equal(reg.resp.status, 201);
+  const cookie = reg.setCookie;
+
+  const prefRes = await apiJson(baseUrl, "/api/auth/preferences", {
+    method: "PUT",
+    cookie,
+    body: {
+      i18n: { lang: "zh-TW", firstDayOfWeek: "1", militaryProfile: false }
+    }
+  });
+  assert.equal(prefRes.resp.status, 200);
+  assert.equal(prefRes.json.user.i18n.lang, "zh-CN", "zh-TW deve normalizar para zh-CN");
+  assert.equal(prefRes.json.user.i18n.firstDayOfWeek, "1");
+  assert.equal(prefRes.json.user.i18n.militaryProfile, false);
+
+  // 3. /api/ai/travel-journey deve respeitar mapeamento de idioma (es-MX -> es, pt-PT -> pt-BR, fallback -> en-US)
+  const jEs = await apiJson(baseUrl, "/api/ai/travel-journey", {
+    method: "POST",
+    cookie,
+    body: { lang: "es-MX", tone: "inspirador", summary: { projectTitle: "Europa 2027" } }
+  });
+  assert.equal(jEs.resp.status, 200);
+  assert.equal(jEs.json.lang, "es");
+
+  const jDe = await apiJson(baseUrl, "/api/ai/travel-journey", {
+    method: "POST",
+    cookie,
+    body: { lang: "de-AT", tone: "minimalista", summary: { projectTitle: "Europa 2027" } }
+  });
+  assert.equal(jDe.resp.status, 200);
+  assert.equal(jDe.json.lang, "de");
+});

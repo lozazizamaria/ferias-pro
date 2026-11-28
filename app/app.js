@@ -40,6 +40,20 @@ const MON = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out
 const MON_ABBR = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 const MON_FULL = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
+function syncLocaleDateArrays() {
+  const i18n = window.MyPlanI18n;
+  if (!i18n) return;
+  const wd = i18n.getWeekdayNames("short");
+  const monShort = i18n.getMonthNames("short");
+  const monUpper = i18n.getMonthNamesUpper();
+  const monLong = i18n.getMonthNames("long");
+  if (wd.length === 7) WD.splice(0, WD.length, ...wd);
+  if (monShort.length === 12) MON.splice(0, MON.length, ...monShort);
+  if (monUpper.length === 12) MON_ABBR.splice(0, MON_ABBR.length, ...monUpper);
+  if (monLong.length === 12) MON_FULL.splice(0, MON_FULL.length, ...monLong);
+}
+syncLocaleDateArrays();
+
 const SELECTED_TRIPS_KEY = "ferias-pro-selected-trips";
 const CUSTOM_TAGS_KEY = "ferias-pro-custom-tags";
 let ganttFilterTypes = new Set(Object.keys(window.ACTIVITY_TYPES || {}));
@@ -968,7 +982,12 @@ function applyLayoutPrefs() {
   if (autoPill) autoPill.textContent = lay.autoCollapseHeavy ? "ON" : "OFF";
 
   const posLbl = $("#sbPosCycleLabel");
-  const posText = navPos === "left" ? "Lateral Esq." : (navPos === "right" ? "Lateral Dir." : "Barra Topo");
+  const _i18n = window.MyPlanI18n;
+  const posText = navPos === "left"
+    ? (_i18n?.t("nav.posLeft", null, "Lateral Esq.") || "Lateral Esq.")
+    : (navPos === "right"
+      ? (_i18n?.t("nav.posRight", null, "Lateral Dir.") || "Lateral Dir.")
+      : (_i18n?.t("nav.posTop", null, "Topo") || "Topo"));
   if (posLbl) posLbl.textContent = posText;
 }
 
@@ -1016,9 +1035,12 @@ function toggleAutoCollapseHeavy() {
 
 function updateContextBar() {
   const isPro = appMode === "professional";
+  const i18n = window.MyPlanI18n;
   const appName = getEffectiveAppName(appMode);
-  const tabTitle = getActiveTabTitle(currentActiveViewId);
-  const modeTxt = isPro ? "Profissional" : "Pessoal";
+  const tabTitle = i18n?.t(`nav.tabNames.${currentActiveViewId}`, null, getActiveTabTitle(currentActiveViewId)) || getActiveTabTitle(currentActiveViewId);
+  const modeTxt = isPro
+    ? (i18n?.t("nav.modePro", null, "Profissional") || "Profissional")
+    : (i18n?.t("nav.modePersonal", null, "Pessoal") || "Pessoal");
 
   const modePill = $("#ctxModePill");
   if (modePill) modePill.textContent = modeTxt;
@@ -1027,8 +1049,8 @@ function updateContextBar() {
   if (projEl) {
     const selTrips = typeof getSelectedTrips === "function" ? getSelectedTrips() : [];
     const projName = selTrips.length > 1
-      ? `${selTrips.length} planejamentos`
-      : (activeTrip?.name || state?.title || (isPro ? "Projeto Profissional" : "Meu Planejamento"));
+      ? `${selTrips.length} ${i18n?.t("cmdk.groupProjects", null, "projetos").replace(/^[^\s]+\s*/, "") || "planejamentos"}`
+      : (activeTrip?.name || state?.title || (isPro ? "My Plan Pro" : "My Plan"));
     projEl.textContent = projName;
   }
 
@@ -1036,6 +1058,108 @@ function updateContextBar() {
   if (tabEl) tabEl.textContent = tabTitle;
 
   document.title = `${appName} — ${tabTitle}`;
+}
+
+function renderRegionSettingsPanel(hostEl, mode) {
+  if (!hostEl || !window.MyPlanI18n) return;
+  const i18n = window.MyPlanI18n;
+  const curLang = i18n.getLang();
+  const curCurrency = String(state?.params?.currency || "").toUpperCase();
+  const defaultCur = i18n.getDefaultCurrency(curLang);
+  const defaultSym = i18n.getCurrencySymbol(defaultCur);
+  const fdPref = i18n.getFirstDayPref();
+  const autoDayName = i18n.getLocaleInfo(curLang).defaultFirstDay === 1
+    ? i18n.t("settings.monday", null, "Monday")
+    : i18n.t("settings.sunday", null, "Sunday");
+  const isPtBr = curLang === "pt-BR";
+  const milEnabled = i18n.getMilitaryPref();
+
+  const langOptions = i18n.SUPPORTED_LOCALES.map(l =>
+    `<option value="${esc(l.code)}"${l.code === curLang ? " selected" : ""}>${esc(l.nativeName)} (${esc(l.code)})</option>`
+  ).join("");
+
+  const curOptions = [
+    `<option value=""${!curCurrency ? " selected" : ""}>${esc(i18n.t("settings.projectCurrencyAuto", { code: defaultCur, sym: defaultSym }))}</option>`,
+    ...i18n.SUPPORTED_CURRENCIES.map(c =>
+      `<option value="${esc(c.code)}"${c.code === curCurrency ? " selected" : ""}>${esc(c.label)}</option>`
+    )
+  ].join("");
+
+  hostEl.innerHTML = `
+    <div class="region-settings-grid">
+      <label class="region-field">
+        <span class="region-field-lbl">${esc(i18n.t("settings.interfaceLang"))}</span>
+        <select data-region-lang aria-label="${esc(i18n.t("settings.interfaceLang"))}">${langOptions}</select>
+        <span class="muted small">${esc(i18n.t("settings.interfaceLangHelp"))}</span>
+      </label>
+
+      <label class="region-field">
+        <span class="region-field-lbl">${esc(i18n.t("settings.projectCurrency"))}</span>
+        <select data-region-currency aria-label="${esc(i18n.t("settings.projectCurrency"))}">${curOptions}</select>
+        <span class="muted small">${esc(i18n.t("settings.projectCurrencyHelp"))}</span>
+      </label>
+
+      <label class="region-field">
+        <span class="region-field-lbl">${esc(i18n.t("settings.firstDayOfWeek"))}</span>
+        <select data-region-firstday aria-label="${esc(i18n.t("settings.firstDayOfWeek"))}">
+          <option value="auto"${fdPref === "auto" ? " selected" : ""}>${esc(i18n.t("settings.firstDayAuto", { day: autoDayName }))}</option>
+          <option value="0"${fdPref === "0" ? " selected" : ""}>${esc(i18n.t("settings.sunday"))}</option>
+          <option value="1"${fdPref === "1" ? " selected" : ""}>${esc(i18n.t("settings.monday"))}</option>
+        </select>
+      </label>
+
+      ${isPtBr ? `
+        <div class="region-field region-military-box">
+          <label class="region-toggle-row">
+            <input type="checkbox" data-region-military ${milEnabled ? "checked" : ""}>
+            <span>
+              <strong>${esc(i18n.t("settings.militaryToggleLabel"))}</strong>
+              <small class="muted" style="display:block;margin-top:2px">${esc(i18n.t("settings.militaryToggleHelp"))}</small>
+            </span>
+          </label>
+        </div>
+      ` : ""}
+    </div>
+  `;
+
+  const langSel = hostEl.querySelector("[data-region-lang]");
+  if (langSel) {
+    langSel.onchange = async () => {
+      const next = langSel.value;
+      await i18n.setLang(next, { persist: true });
+      const info = i18n.getLocaleInfo(next);
+      toast(`🌐 ${i18n.t("common.languageChanged", { name: info.nativeName })}`);
+    };
+  }
+
+  const curSel = hostEl.querySelector("[data-region-currency]");
+  if (curSel) {
+    curSel.onchange = () => {
+      if (!state.params) state.params = {};
+      state.params.currency = curSel.value || "";
+      save();
+      const activeCode = i18n.getActiveCurrency();
+      document.documentElement.dataset.pixEnabled = i18n.isPixEnabled() ? "true" : "false";
+      if (appMode === "professional") window.MyPlanPro?.renderProAll?.();
+      else render();
+      toast(`💱 ${i18n.t("settings.currencyUpdated", { code: activeCode })}`);
+    };
+  }
+
+  const fdSel = hostEl.querySelector("[data-region-firstday]");
+  if (fdSel) {
+    fdSel.onchange = () => {
+      i18n.setFirstDayPref(fdSel.value, { persist: true });
+    };
+  }
+
+  const milChk = hostEl.querySelector("[data-region-military]");
+  if (milChk) {
+    milChk.onchange = () => {
+      i18n.setMilitaryPref(milChk.checked, { persist: true });
+      if (appMode === "professional") window.MyPlanPro?.renderProAll?.();
+    };
+  }
 }
 
 function getEffectiveLogoForMode(mode) {
@@ -1646,31 +1770,50 @@ function initLogoSearchModal() {
 }
 
 /* ---------- SIDEBAR TABS (ÍCONES + TOOLTIPS FLUTUANTES) & CONTEXT BAR ---------- */
-function enhanceSidebarTabs() {
+function enhanceSidebarTabs(forceRefresh = false) {
+  const i18n = window.MyPlanI18n;
   document.querySelectorAll("#tabs .tab, #tabsPro .tab").forEach(btn => {
-    if (btn.dataset.sbEnhanced) return;
-    btn.dataset.sbEnhanced = "1";
+    if (btn.dataset.sbEnhanced && !forceRefresh) return;
     const badge = btn.querySelector(".sw-tab-badge");
-    const rawText = Array.from(btn.childNodes)
-      .filter(n => n.nodeType === Node.TEXT_NODE)
-      .map(n => n.textContent)
-      .join(" ")
-      .trim();
+    const i18nKey = btn.dataset.i18nTab;
+    let rawText = "";
+    if (i18nKey && i18n) {
+      const translated = i18n.t(i18nKey, null, "");
+      if (translated && translated !== i18nKey) rawText = translated.trim();
+    }
+    if (!rawText) {
+      if (btn.dataset.sbRawText) {
+        rawText = btn.dataset.sbRawText;
+      } else {
+        rawText = Array.from(btn.childNodes)
+          .filter(n => !(n.nodeType === Node.ELEMENT_NODE && n.classList.contains("sw-tab-badge")))
+          .map(n => n.textContent)
+          .join(" ")
+          .trim();
+      }
+    }
+    if (!btn.dataset.sbRawText && rawText) btn.dataset.sbRawText = rawText;
     const m = rawText.match(/^(\S+)\s+(.+)$/);
     const ico = m ? m[1] : "•";
     const lbl = m ? m[2] : rawText;
     btn.dataset.sbTip = lbl;
-    btn.textContent = "";
-    const icoSpan = document.createElement("span");
-    icoSpan.className = "tab-ico";
-    icoSpan.setAttribute("aria-hidden", "true");
+    btn.dataset.sbEnhanced = "1";
+
+    let icoSpan = btn.querySelector(".tab-ico");
+    let lblSpan = btn.querySelector(".tab-lbl");
+    if (!icoSpan || !lblSpan) {
+      btn.textContent = "";
+      icoSpan = document.createElement("span");
+      icoSpan.className = "tab-ico";
+      icoSpan.setAttribute("aria-hidden", "true");
+      lblSpan = document.createElement("span");
+      lblSpan.className = "tab-lbl";
+      btn.appendChild(icoSpan);
+      btn.appendChild(lblSpan);
+      if (badge) btn.appendChild(badge);
+    }
     icoSpan.textContent = ico;
-    const lblSpan = document.createElement("span");
-    lblSpan.className = "tab-lbl";
     lblSpan.textContent = lbl;
-    btn.appendChild(icoSpan);
-    btn.appendChild(lblSpan);
-    if (badge) btn.appendChild(badge);
   });
 }
 
@@ -1934,6 +2077,30 @@ function buildCommandPaletteItems(query) {
     });
   });
 
+  // 3.5 Idioma / Change Language (Ctrl+K rápido para os 7 idiomas)
+  if (window.MyPlanI18n?.SUPPORTED_LOCALES) {
+    const i18n = window.MyPlanI18n;
+    const curLang = i18n.getLang();
+    const langGroup = i18n.t("cmdk.groupLanguage", null, "🌐 Idioma / Language");
+    i18n.SUPPORTED_LOCALES.forEach(loc => {
+      const isCur = loc.code === curLang;
+      items.push({
+        group: langGroup,
+        ico: "🌐",
+        title: `${i18n.t("common.changeLanguage", null, "Change Language")}: ${loc.nativeName}`,
+        sub: isCur
+          ? `${i18n.t("cmdk.currentBadge", null, "Atual")} · ${loc.fullName}`
+          : i18n.t("cmdk.switchLangSub", { code: loc.code }, `${loc.fullName}`),
+        kbd: loc.shortCode,
+        hay: `idioma language lingua alterar mudar switch change lang ${loc.code} ${loc.nativeName} ${loc.fullName} ${loc.shortCode} portugues english espanol francais italiano deutsch chinese中文`,
+        run: async () => {
+          await i18n.setLang(loc.code, { persist: true });
+          toast(`🌐 ${i18n.t("common.languageChanged", { name: loc.nativeName })}`);
+        }
+      });
+    });
+  }
+
   // 4. Cartões & Atividades (busca por título, tag, cliente, local, responsável)
   const cards = isPro
     ? (window.MyPlanPro?.getProSortedActivities?.({ includeArchived: true }) || [])
@@ -1959,10 +2126,11 @@ function buildCommandPaletteItems(query) {
 
   const q = String(query || "").trim();
   if (!q) {
-    // Sem texto: mostra ações, abas, projetos e até 6 cartões recentes
+    // Sem texto: mostra ações, idioma, abas, projetos e até 6 cartões recentes
     const out = [];
     const counts = {};
-    const limits = { "Ações rápidas": 6, "Navegar para aba": 8, "Projetos & Planejamentos": 5, "Cartões & Atividades": 6 };
+    const langGroup = window.MyPlanI18n?.t("cmdk.groupLanguage", null, "🌐 Idioma / Language") || "🌐 Idioma / Language";
+    const limits = { "Ações rápidas": 6, [langGroup]: 3, "Navegar para aba": 8, "Projetos & Planejamentos": 5, "Cartões & Atividades": 6 };
     items.forEach(it => {
       counts[it.group] = (counts[it.group] || 0) + 1;
       if (counts[it.group] <= (limits[it.group] || 6)) out.push(it);
@@ -2157,11 +2325,11 @@ function initTheme() {
 /* ---------- UTILS ---------- */
 const parseD = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
 const fmtISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const fmtBR = s => s ? s.split("-").reverse().join("/") : "";
-const fmtShortBR = s => s ? `${s.slice(8, 10)}/${s.slice(5, 7)}` : "";
+const fmtBR = s => s ? (window.MyPlanI18n ? window.MyPlanI18n.formatDate(s) : s.split("-").reverse().join("/")) : "";
+const fmtShortBR = s => s ? (window.MyPlanI18n ? window.MyPlanI18n.formatShortDate(s) : `${s.slice(8, 10)}/${s.slice(5, 7)}`) : "";
 const days = a => Math.max(1, Math.round((parseD(a.end || a.start) - parseD(a.start)) / DAY) + 1);
-const money = v => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const num = (v, d = 0) => (v || 0).toLocaleString("pt-BR", { maximumFractionDigits: d, minimumFractionDigits: d });
+const money = v => window.MyPlanI18n ? window.MyPlanI18n.formatMoney(v || 0) : (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const num = (v, d = 0) => window.MyPlanI18n ? window.MyPlanI18n.formatNumber(v || 0, d) : (v || 0).toLocaleString("pt-BR", { maximumFractionDigits: d, minimumFractionDigits: d });
 const hm = m => { m = Math.round(m || 0); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
 const hmHuman = m => { m = Math.round(m || 0); const h = Math.floor(m / 60), min = m % 60; return min ? `${h}h${String(min).padStart(2, "0")}` : `${h}h`; };
 const parseHM = s => {
@@ -5650,6 +5818,7 @@ const AUTO_PARAM_DEFS = [
 ];
 
 function renderParams() {
+  renderRegionSettingsPanel($("#personalRegionHost"), "personal");
   renderAppearancePanel($("#personalAppearanceHost"), "personal");
   renderPersonalVisibleMenusManager();
   renderPersonalBoardPrefs();
@@ -8186,7 +8355,43 @@ async function boot() {
   }
   window.FeriasApi.onStatus(updateSyncBadge);
 
+  if (window.MyPlanI18n) {
+    window.MyPlanI18n.setProjectCurrencyProvider(() => state?.params?.currency || "");
+    window.MyPlanI18n.onChange(({ reason }) => {
+      syncLocaleDateArrays();
+      enhanceSidebarTabs(true);
+      applyLayoutPrefs();
+      // Atualiza etiquetas de modo / botão switch sem trocar de projeto
+      const isPro = appMode === "professional";
+      const i18n = window.MyPlanI18n;
+      if ($("#brandModeTag")) $("#brandModeTag").textContent = isPro ? i18n.t("nav.proShort", null, "PRO") : i18n.t("nav.modePersonal", null, "Pessoal");
+      const swBtn = $("#btnModeSwitch");
+      if (swBtn) {
+        const full = swBtn.querySelector(".mode-switch-full");
+        const short = swBtn.querySelector(".mode-switch-short");
+        if (full) full.textContent = isPro ? i18n.t("nav.switchToPersonal") : i18n.t("nav.switchToPro");
+        if (short) short.textContent = isPro ? i18n.t("nav.personalShort") : i18n.t("nav.proShort");
+      }
+      if ($("#btnAddLabel")) $("#btnAddLabel").textContent = isPro ? i18n.t("nav.addCard") : i18n.t("nav.addEvent");
+      if ($("#btnShareTripLabel")) $("#btnShareTripLabel").textContent = isPro ? i18n.t("nav.menu.shareProject") : i18n.t("nav.menu.shareTrip");
+      if ($("#ganttViewPopLabel")) {
+        const gKey = ganttMode === "annual" ? "gantt.annual" : (ganttMode === "timeline" ? "gantt.timeline" : "gantt.gantt");
+        $("#ganttViewPopLabel").textContent = i18n.t(gKey, null, $("#ganttViewPopLabel").textContent);
+      }
+      updateContextBar();
+      if ($("#view-params")?.classList.contains("active")) renderRegionSettingsPanel($("#personalRegionHost"), "personal");
+      if ($("#view-pro-params")?.classList.contains("active")) renderRegionSettingsPanel($("#proRegionHost"), "professional");
+      if (reason !== "init" && !$("#appShell")?.hidden) {
+        if (isPro) window.MyPlanPro?.renderProAll?.();
+        else render();
+      }
+    });
+  }
+
   const cfg = await window.FeriasApi.initServer();
+  if (cfg.user && window.MyPlanI18n?.hydrateFromUser) {
+    await window.MyPlanI18n.hydrateFromUser(cfg.user);
+  }
   if (!cfg.serverAvailable) {
     // Fallback offline sem servidor
     await enterApp();
@@ -8512,7 +8717,10 @@ function switchProView(viewId) {
   updateContextBar();
   const renderedDirty = Boolean(window.MyPlanPro?.renderProViewIfDirty?.(viewId));
   if (viewId === "admin") loadAndRenderAdmin();
-  else if (viewId === "pro-params") renderAppearancePanel($("#proAppearanceHost"), "professional");
+  else if (viewId === "pro-params") {
+    renderRegionSettingsPanel($("#proRegionHost"), "professional");
+    renderAppearancePanel($("#proAppearanceHost"), "professional");
+  }
   else if (viewId === "pro-map" && !renderedDirty && window.MyPlanPro?.renderProMap) window.MyPlanPro.renderProMap();
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();
@@ -8531,14 +8739,21 @@ async function setAppMode(nextMode, opts = {}) {
   closeAllUnifiedCalMenus();
 
   const isPro = mode === "professional";
-  if ($("#brandModeTag")) $("#brandModeTag").textContent = isPro ? "PRO" : "Pessoal";
+  const _i18n = window.MyPlanI18n;
+  if ($("#brandModeTag")) $("#brandModeTag").textContent = isPro ? (_i18n?.t("nav.proShort", null, "PRO") || "PRO") : (_i18n?.t("nav.modePersonal", null, "Pessoal") || "Pessoal");
   const swBtn = $("#btnModeSwitch");
   if (swBtn) {
     const full = swBtn.querySelector(".mode-switch-full");
     const short = swBtn.querySelector(".mode-switch-short");
-    if (full) full.textContent = isPro ? "Mudar para Pessoal" : "Mudar para Profissional";
-    if (short) short.textContent = isPro ? "Pessoal" : "Pro";
-    swBtn.title = isPro ? "Mudar para o Modo Pessoal (Férias & Viagens)" : "Mudar para o Modo Profissional (Quadro, Gantt & Projetos)";
+    if (full) full.textContent = isPro
+      ? (_i18n?.t("nav.switchToPersonal", null, "Mudar para Pessoal") || "Mudar para Pessoal")
+      : (_i18n?.t("nav.switchToPro", null, "Mudar para Profissional") || "Mudar para Profissional");
+    if (short) short.textContent = isPro
+      ? (_i18n?.t("nav.personalShort", null, "Pessoal") || "Pessoal")
+      : (_i18n?.t("nav.proShort", null, "Pro") || "Pro");
+    swBtn.title = isPro
+      ? (_i18n?.t("nav.switchToPersonal", null, "Mudar para o Modo Pessoal") || "Mudar para o Modo Pessoal")
+      : (_i18n?.t("nav.switchToPro", null, "Mudar para o Modo Profissional") || "Mudar para o Modo Profissional");
   }
 
   if ($("#tabs")) $("#tabs").hidden = isPro;

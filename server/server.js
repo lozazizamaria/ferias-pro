@@ -919,6 +919,57 @@ function sanitizeAppearancePrefs(raw, prev = {}) {
   };
 }
 
+const AI_LOCALE_LABELS = {
+  "pt-BR": "Portuguese (Brazil / pt-BR — Português do Brasil)",
+  "en-US": "English (US / en-US)",
+  "es":    "Spanish (es — Español)",
+  "fr":    "French (fr — Français)",
+  "it":    "Italian (it — Italiano)",
+  "de":    "German (de — Deutsch)",
+  "zh-CN": "Simplified Chinese (zh-CN — 中文 (简体))"
+};
+
+function normalizeServerLocale(raw) {
+  const s = String(raw || "").trim().toLowerCase().replace(/_/g, "-");
+  if (!s) return "";
+  if (s === "pt" || s.startsWith("pt-")) return "pt-BR";
+  if (s === "en" || s.startsWith("en-")) return "en-US";
+  if (s === "es" || s.startsWith("es-")) return "es";
+  if (s === "fr" || s.startsWith("fr-")) return "fr";
+  if (s === "it" || s.startsWith("it-")) return "it";
+  if (s === "de" || s.startsWith("de-")) return "de";
+  if (s === "zh" || s.startsWith("zh-")) return "zh-CN";
+  return "";
+}
+
+function sanitizeI18nPrefs(raw, prev = {}) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const base = prev && typeof prev === "object" ? prev : {};
+  const lang = src.lang !== undefined
+    ? (normalizeServerLocale(src.lang) || "")
+    : (normalizeServerLocale(base.lang) || "");
+  const fdRaw = src.firstDayOfWeek !== undefined ? String(src.firstDayOfWeek) : String(base.firstDayOfWeek || "auto");
+  const firstDayOfWeek = (fdRaw === "0" || fdRaw === "1" || fdRaw === "auto") ? fdRaw : "auto";
+  const militaryProfile = typeof src.militaryProfile === "boolean"
+    ? src.militaryProfile
+    : (typeof base.militaryProfile === "boolean" ? base.militaryProfile : true);
+  return { lang, firstDayOfWeek, militaryProfile };
+}
+
+function resolveRequestLang(req, body, user) {
+  return normalizeServerLocale(body?.lang)
+    || normalizeServerLocale(body?.language)
+    || normalizeServerLocale(req?.headers?.["x-myplan-lang"])
+    || normalizeServerLocale(user?.i18n?.lang)
+    || "en-US";
+}
+
+function withAiLanguageDirective(sysPrompt, langCode) {
+  const clean = normalizeServerLocale(langCode) || "en-US";
+  const label = AI_LOCALE_LABELS[clean] || AI_LOCALE_LABELS["en-US"];
+  return `${sysPrompt}\n\nCRITICAL OUTPUT LANGUAGE REQUIREMENT:\n- Target language: ${label}.\n- You MUST write ALL human-readable output text (titles, headlines, summaries, narratives, notes, checklist items, section headers, slide text, and warnings) strictly in ${label}, regardless of the prompt language.\n- Keep JSON property names and fixed schema enum values exactly as defined above.`;
+}
+
 function isPrivateOrReservedIp(ip) {
   const clean = String(ip || "").trim().toLowerCase();
   if (!clean) return true;
@@ -1011,6 +1062,7 @@ function publicUser(u) {
     whatsappNumber: u.whatsappNumber || "",
     whatsappFull: u.whatsappFull || "",
     appearance: sanitizeAppearancePrefs(u.appearance),
+    i18n: sanitizeI18nPrefs(u.i18n),
     integrations: {
       hasGemini: Boolean(creds.geminiKey),
       geminiHint: maskKeyHint(creds.geminiKey),
@@ -2878,8 +2930,14 @@ const server = http.createServer(async (req, res) => {
       if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
       const body = await readBody(req);
       const u = auth.user;
-      const incoming = body && typeof body.appearance === "object" ? body.appearance : body;
-      u.appearance = sanitizeAppearancePrefs(incoming, u.appearance);
+      if (body && typeof body.i18n === "object") {
+        u.i18n = sanitizeI18nPrefs(body.i18n, u.i18n);
+      }
+      if (body && typeof body.appearance === "object") {
+        u.appearance = sanitizeAppearancePrefs(body.appearance, u.appearance);
+      } else if (body && (body.personal || body.professional || body.layout)) {
+        u.appearance = sanitizeAppearancePrefs(body, u.appearance);
+      }
       saveDb();
       return sendJson(res, 200, { ok: true, user: publicUser(u) });
     }
@@ -3993,7 +4051,7 @@ const server = http.createServer(async (req, res) => {
       if (!audioPart) {
         return sendJson(res, 400, { ok: false, error: "Áudio vazio ou inválido." });
       }
-      const lang = String(body.language || "pt-BR").slice(0, 16);
+      const lang = resolveRequestLang(req, body, auth.user);
       const parts = [
         {
           text: `Transcreva com máxima fidelidade o áudio anexo (idioma principal esperado: ${lang}). Não invente absolutamente nada que não tenha sido falado no áudio.`
@@ -4001,9 +4059,9 @@ const server = http.createServer(async (req, res) => {
         audioPart
       ];
       const sysTranscribe = `Você é um motor de transcrição exata de voz do aplicativo My Plan.
-Ouça atentamente o áudio enviado e transcreva palavra por palavra tudo que foi falado pelo usuário (mantendo datas, horários, cidades, nomes próprios, clientes, valores em reais e tarefas exatamente como ditos).
+Ouça atentamente o áudio enviado e transcreva palavra por palavra tudo que foi falado pelo usuário (mantendo datas, horários, cidades, nomes próprios, clientes, valores e tarefas exatamente como ditos).
 REGRAS INVIOLÁVEIS:
-1. Se o áudio estiver mudo, apenas ruído estático, vazio ou completamente incompreensível, retorne audible=false, transcript="" e warning explicando que nenhuma fala compreensível foi captada no microfone.
+1. Se o áudio estiver mudo, apenas ruído estático, vazio ou completamente incompreensível, retorne audible=false, transcript="" e warning explicando no idioma do usuário (${lang}) que nenhuma fala compreensível foi captada no microfone.
 2. NUNCA invente, complete ou adivinhe frases ou viagens/projetos que não estão claramente no áudio.
 Retorne EXCLUSIVAMENTE JSON válido:
 {
@@ -4012,7 +4070,7 @@ Retorne EXCLUSIVAMENTE JSON válido:
   "warning": ""
 }`;
       try {
-        const out = await callGeminiJSON(creds.geminiKey, parts, sysTranscribe);
+        const out = await callGeminiJSON(creds.geminiKey, parts, withAiLanguageDirective(sysTranscribe, lang));
         const transcript = String(out?.transcript || "").trim();
         const audible = Boolean(out?.audible !== false && transcript.length > 0);
         const warning = String(out?.warning || (!audible ? "Áudio silencioso ou sem fala compreensível. Verifique o microfone e grave novamente." : "")).trim();
@@ -4080,7 +4138,7 @@ Retorne EXCLUSIVAMENTE JSON válido:
   ]
 }`;
       try {
-        const raw = await callGeminiJSON(creds.geminiKey, parts, sysImportCal);
+        const raw = await callGeminiJSON(creds.geminiKey, parts, withAiLanguageDirective(sysImportCal, resolveRequestLang(req, body, auth.user)));
         const isoRe = /^\d{4}-\d{2}-\d{2}$/;
         const rawEvents = Array.isArray(raw?.events) ? raw.events : [];
         const events = rawEvents
@@ -4228,7 +4286,7 @@ Retorne EXCLUSIVAMENTE um JSON válido com esta estrutura exata:
 Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Converta datas relativas usando ${todayIso} no formato YYYY-MM-DD. Se extrair passagens aéreas, marítimas, ingressos ou hotéis das imagens, identifique o type exato, preencha valores em extraCost, localizadores em bookingRef, qrPayload (se legível) e todas as datas.`;
 
       try {
-        const plan = await callGeminiJSON(creds.geminiKey, parts, sysPrompt);
+        const plan = await callGeminiJSON(creds.geminiKey, parts, withAiLanguageDirective(sysPrompt, resolveRequestLang(req, body, auth.user)));
         return sendJson(res, 200, { ok: true, plan });
       } catch (err) {
         return sendJson(res, 502, { ok: false, error: err.message || "Falha ao consultar Gemini AI." });
@@ -4246,10 +4304,11 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
       const modelName = String(body.modelName || "").trim();
       if (!modelName) return sendJson(res, 400, { ok: false, error: "Informe o modelo do veículo." });
       try {
+        const aiLang = resolveRequestLang(req, body, auth.user);
         const vehicle = await callGeminiJSON(
           creds.geminiKey,
-          [{ text: `Retorne as especificações técnicas reais (padrão INMETRO/Brasil quando aplicável) para viagens rodoviárias do veículo: "${modelName}".` }],
-          `Retorne JSON exato:
+          [{ text: `Retorne as especificações técnicas reais para viagens rodoviárias do veículo: "${modelName}".` }],
+          withAiLanguageDirective(`Retorne JSON exato:
 {
   "name": "Nome oficial formatado do veículo",
   "powertrain": "PHEV | HEV | COMBUSTION | BEV",
@@ -4259,7 +4318,7 @@ Regras: "drive" é em MINUTOS de direção (somente para type="Viagem"). Convert
   "tank": litros do tanque de combustível (0 se BEV),
   "battery": kWh nominais da bateria (0 se combustão pura),
   "kwhPerCharge": kWh úteis por recarga ~80% da bateria (0 se não plug-in)
-}`
+}`, aiLang)
         );
         return sendJson(res, 200, { ok: true, vehicle });
       } catch (err) {
@@ -4336,7 +4395,7 @@ Interprete automaticamente o meio de transporte ou tipo da atividade ("Voo" para
   "qrFormat": "qr_code | aztec | pdf417 | code_128 | ",
   "notes": "Horários, terminal/portão, assento, cabine, franquia de bagagem, endereço ou detalhes importantes"
 }`;
-        const activity = await callGeminiJSON(creds.geminiKey, parts, sysAnalyze);
+        const activity = await callGeminiJSON(creds.geminiKey, parts, withAiLanguageDirective(sysAnalyze, resolveRequestLang(req, body, auth.user)));
         if (detectedBarcode && activity && typeof activity === "object") {
           if (!activity.qrPayload) activity.qrPayload = detectedBarcode.rawValue;
           if (!activity.qrFormat) activity.qrFormat = detectedBarcode.format;
@@ -4421,7 +4480,7 @@ Regras importantes:
 - Use o destino/datas do evento e o contexto já registrado para classificar com precisão se o bilhete é de IDA ou VOLTA.
 - Nunca invente horários ou valores se não constarem no bilhete (deixe string vazia "" ou 0).`;
       try {
-        const result = await callGeminiJSON(creds.geminiKey, parts, sysTickets);
+        const result = await callGeminiJSON(creds.geminiKey, parts, withAiLanguageDirective(sysTickets, resolveRequestLang(req, body, auth.user)));
         return sendJson(res, 200, { ok: true, result: result || {} });
       } catch (err) {
         return sendJson(res, 502, { ok: false, error: err.message || "Erro ao analisar bilhetes com IA." });
@@ -4595,7 +4654,7 @@ Retorne EXCLUSIVAMENTE um JSON válido no formato:
   "summary": "Texto estruturado do resumo completo aqui"
 }`;
       try {
-        const result = await callGeminiJSON(creds.geminiKey, parts, sysPrompt);
+        const result = await callGeminiJSON(creds.geminiKey, parts, withAiLanguageDirective(sysPrompt, resolveRequestLang(req, body, auth.user)));
         const summary = String(result?.summary || "").trim();
         if (!summary) return sendJson(res, 502, { ok: false, error: "A IA não retornou um resumo válido." });
         return sendJson(res, 200, { ok: true, summary, filesRead: readList });
@@ -4633,7 +4692,7 @@ Retorne EXCLUSIVAMENTE um JSON válido no formato:
       try {
         const result = await callGeminiJSON(creds.geminiKey, [{
           text: `Cartão: ${String(body.cardName || "")}\nTítulo da Ata: ${String(body.title || "")}\n\nConteúdo atual:\n${plainIn || htmlIn}`
-        }], sysPrompt);
+        }], withAiLanguageDirective(sysPrompt, resolveRequestLang(req, body, auth.user)));
         return sendJson(res, 200, { ok: true, html: String(result?.html || htmlIn), summary: String(result?.summary || "Texto aprimorado com IA.") });
       } catch (err) {
         return sendJson(res, 502, { ok: false, error: err.message || "Falha ao melhorar ata com IA." });
@@ -4681,7 +4740,7 @@ Regras:
         const result = await callGeminiJSON(creds.geminiKey, [
           { text: `${ctxLines ? ctxLines + "\n\n" : ""}Transcreva e gere a Ata Executiva completa a partir deste áudio gravado:` },
           audioPart
-        ], sysPrompt);
+        ], withAiLanguageDirective(sysPrompt, resolveRequestLang(req, body, auth.user)));
         const htmlOut = String(result?.html || "").trim();
         if (!htmlOut) return sendJson(res, 502, { ok: false, error: "A IA não retornou conteúdo para a ata." });
         return sendJson(res, 200, {
@@ -4728,7 +4787,7 @@ Retorne EXCLUSIVAMENTE JSON:
       try {
         const resAi = await callGeminiJSON(creds.geminiKey, [{
           text: `Cartão: ${cardName}\nAta: ${title}\nData: ${meetingDate}\nParticipantes: ${participants.join(", ")}\nAções já convertidas em checklist/cartões: ${JSON.stringify(actions)}\n\nConteúdo da Ata:\n${plainIn}`
-        }], sysSlides);
+        }], withAiLanguageDirective(sysSlides, resolveRequestLang(req, body, auth.user)));
         const slides = Array.isArray(resAi?.slides) && resAi.slides.length ? resAi.slides : null;
         return sendJson(res, 200, { ok: true, usedAi: Boolean(slides), slides });
       } catch {
@@ -4767,8 +4826,9 @@ Retorne EXCLUSIVAMENTE JSON:
           : []
       };
 
+      const aiLang = resolveRequestLang(req, body, auth.user);
       if (!creds.geminiKey) {
-        return sendJson(res, 200, { ok: true, usedAi: false, tone, journey: null });
+        return sendJson(res, 200, { ok: true, usedAi: false, tone, lang: aiLang, journey: null });
       }
 
       const toneGuide = tone === "divertido"
@@ -4777,7 +4837,7 @@ Retorne EXCLUSIVAMENTE JSON:
           ? "Tom MINIMALISTA e EDITORIAL: elegante, limpo, poético e direto, estilo revista Kinfolk / Monocle, frases curtas e sofisticadas, sem exageros."
           : "Tom INSPIRADOR e CELEBRATÓRIO: positivo, envolvente e memorável, estilo Spotify Wrapped / cartão-postal moderno que desperta encantamento e orgulho da jornada.");
 
-      const sysJourney = `Você é um diretor criativo especialista em narrativas de viagem em português do Brasil (pt-BR).
+      const sysJourney = withAiLanguageDirective(`Você é um diretor criativo especialista em narrativas de viagem.
 A partir do resumo de roteiro fornecido, crie um "marketing positivo da viagem" para compartilhar com família, amigos e redes sociais.
 REGRAS INVIOLÁVEIS:
 1. ${toneGuide}
@@ -4791,7 +4851,7 @@ REGRAS INVIOLÁVEIS:
     { "city": "Nome da Cidade", "highlight": "Frase curta (até 90 caracteres) destacando o melhor dessa parada" }
   ],
   "shareCaption": "Legenda pronta e cativante para WhatsApp ou Instagram (até 260 caracteres, sem valores financeiros)"
-}`;
+}`, aiLang);
 
       try {
         const resAi = await callGeminiJSON(creds.geminiKey, [{
@@ -4800,7 +4860,7 @@ REGRAS INVIOLÁVEIS:
         const headline = String(resAi?.headline || "").trim().slice(0, 90);
         const narrative = String(resAi?.narrative || "").trim().slice(0, 420);
         if (!headline || !narrative) {
-          return sendJson(res, 200, { ok: true, usedAi: false, tone, journey: null });
+          return sendJson(res, 200, { ok: true, usedAi: false, tone, lang: aiLang, journey: null });
         }
         const journey = {
           headline,
@@ -4814,9 +4874,9 @@ REGRAS INVIOLÁVEIS:
             : [],
           shareCaption: String(resAi?.shareCaption || "").trim().slice(0, 380)
         };
-        return sendJson(res, 200, { ok: true, usedAi: true, tone, journey });
+        return sendJson(res, 200, { ok: true, usedAi: true, tone, lang: aiLang, journey });
       } catch {
-        return sendJson(res, 200, { ok: true, usedAi: false, tone, journey: null });
+        return sendJson(res, 200, { ok: true, usedAi: false, tone, lang: aiLang, journey: null });
       }
     }
 
