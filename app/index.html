@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="dark" data-mode="personal">
+<html lang="pt-BR" data-theme="dark" data-mode="personal" data-nav-pos="left" data-density="comfortable">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -11,12 +11,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=65">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=65">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=65">
+<link rel="manifest" href="/manifest.webmanifest?v=66">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=66">
+<link rel="icon" id="appFaviconLink" type="image/svg+xml" href="/icons/icon.svg?v=66">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=65">
+<link rel="stylesheet" href="styles.css?v=66">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -28,9 +28,9 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=65" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=66" alt="" width="30" height="30" class="brand-logo-img" id="authBrandLogoImg">
         </span>
-        <h1>My Plan</h1>
+        <h1 id="authBrandName">My Plan</h1>
       </div>
       <div class="auth-top-actions">
         <a href="/como-usar.html" class="btn ghost small btn-learn-more" title="Conheça todos os recursos do My Plan">📖 Saiba mais</a>
@@ -127,15 +127,18 @@
 </section>
 
 <!-- APLICATIVO PRINCIPAL -->
-<div id="appShell" hidden>
-  <header class="topbar">
+<div id="appShell" class="app-shell" hidden>
+  <header class="topbar" id="appNavShell">
     <div class="topbar-row">
       <div class="brand-group">
         <div class="brand">
           <span class="logo" id="appBrandLogoWrap" aria-hidden="true">
-            <img src="icons/icon.svg?v=65" alt="" width="30" height="30" class="brand-logo-img" id="appBrandLogoImg">
+            <img src="icons/icon.svg?v=66" alt="" width="30" height="30" class="brand-logo-img" id="appBrandLogoImg">
           </span>
-          <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
+          <h1 id="appBrand"><span id="appBrandName">My Plan</span> <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
+          <button type="button" class="btn ghost icon-only sb-collapse-btn" id="btnSidebarCollapse" title="Recolher/expandir barra lateral" aria-label="Recolher ou expandir barra lateral" aria-expanded="true">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>
+          </button>
         </div>
 
         <div class="trip-switcher">
@@ -148,13 +151,23 @@
 
       <div class="global-search-wrap" id="globalCardSearchWrap">
         <span class="global-search-ico" aria-hidden="true">🔎</span>
-        <input type="search" id="globalCardSearchInput" placeholder="Buscar cartão..." autocomplete="off" aria-label="Buscar cartão em todo o sistema">
+        <input type="search" id="globalCardSearchInput" placeholder="Buscar cartão... (Ctrl+K)" autocomplete="off" aria-label="Buscar cartão em todo o sistema">
+        <button type="button" class="cmdk-kbd-hint" id="btnCmdkHint" title="Abrir Command Palette (Ctrl+K)" aria-label="Abrir paleta de comandos (Ctrl+K)">Ctrl K</button>
         <button type="button" class="global-search-close" id="btnMobileSearchClose" aria-label="Fechar busca" title="Fechar busca">✕</button>
         <div class="global-search-dd" id="globalCardSearchDropdown" hidden role="listbox"></div>
       </div>
 
+      <button type="button" class="sb-cmdk-btn" id="btnSidebarCmdk" data-sb-tip="Buscar ou comandos (Ctrl+K)" title="Buscar ou executar comando (Ctrl+K)" aria-label="Buscar ou executar comando (Ctrl+K)">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <span class="sb-cmdk-label">Buscar...</span>
+        <kbd class="sb-cmdk-kbd">Ctrl K</kbd>
+      </button>
+
       <div class="actions">
-        <button type="button" class="btn ghost small btn-learn-more mode-switch-btn" id="btnModeSwitch" title="Alternar entre Modo Pessoal e Modo Profissional">
+        <button type="button" class="btn ghost icon-only nav-pos-quick-btn" id="btnQuickNavPos" data-sb-tip="Posição do menu" title="Alternar posição do menu (Lateral Esquerda / Direita / Superior)" aria-label="Alternar posição do menu">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/></svg>
+        </button>
+        <button type="button" class="btn ghost small btn-learn-more mode-switch-btn" id="btnModeSwitch" data-sb-tip="Alternar modo Pessoal / Profissional" title="Alternar entre Modo Pessoal e Modo Profissional">
           <span class="mode-switch-full">Mudar para Profissional</span>
           <span class="mode-switch-short">Pro</span>
         </button>
@@ -162,29 +175,30 @@
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         </button>
         <button class="btn ghost small invite-pill" id="btnPendingInvites" type="button" hidden>📩 <span id="inviteCount">0</span></button>
-        <a class="btn ghost small btn-learn-more" id="btnTopLearnMore" href="/como-usar.html" title="Conheça todas as funções e saiba como usar o My Plan">📖 <span class="hide-sm">Saiba mais</span></a>
-        <button class="btn ai-pill small" id="btnAiPlan" type="button" title="Planejar com IA (Áudio, Imagens e Texto)">✨ <span class="hide-sm">IA</span></button>
-        <button class="btn ghost sync-pill sync-dot-only" id="syncBadge" type="button" title="Sincronizado com a nuvem" aria-label="Status da sincronização">
+        <a class="btn ghost small btn-learn-more" id="btnTopLearnMore" href="/como-usar.html" data-sb-tip="Saiba mais" title="Conheça todas as funções e saiba como usar o aplicativo">📖 <span class="hide-sm">Saiba mais</span></a>
+        <button class="btn ai-pill small" id="btnAiPlan" type="button" data-sb-tip="Planejar com IA" title="Planejar com IA (Áudio, Imagens e Texto)">✨ <span class="hide-sm">IA</span></button>
+        <button class="btn ghost sync-pill sync-dot-only" id="syncBadge" type="button" data-sb-tip="Status da sincronização" title="Sincronizado com a nuvem" aria-label="Status da sincronização">
           <span class="sync-dot" aria-hidden="true"></span>
           <span class="sync-text" id="syncText" hidden>Sincronizado</span>
         </button>
-        <button class="btn ghost icon-only theme-toggle-mini" id="btnTheme" type="button" title="Alternar modo Dia / Noite" aria-label="Alternar tema Dia/Noite">
+        <button class="btn ghost icon-only theme-toggle-mini" id="btnTheme" type="button" data-sb-tip="Alternar Dia / Noite" title="Alternar modo Dia / Noite" aria-label="Alternar tema Dia/Noite">
           <span id="themeIcon" aria-hidden="true">☀️</span>
         </button>
-        <button class="btn primary small btn-add-top" id="btnAdd" type="button" title="Adicionar evento ou atividade">
+        <button class="btn primary small btn-add-top" id="btnAdd" type="button" data-sb-tip="Novo Cartão / Evento (N)" title="Adicionar evento ou atividade (Atalho: N)">
           <svg class="plus-ico" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
           <span class="btn-text" id="btnAddLabel">Evento</span>
         </button>
-        <button class="btn ghost small btn-add-minute-top" id="btnAddMinuteTop" type="button" title="Criar nova Ata de Reunião" hidden>
+        <button class="btn ghost small btn-add-minute-top" id="btnAddMinuteTop" type="button" data-sb-tip="Nova Ata" title="Criar nova Ata de Reunião" hidden>
           <svg class="plus-ico" viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>
           <span class="btn-text">Ata</span>
         </button>
         <div class="dropdown">
-          <button class="btn ghost small" id="btnMenu" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções">⋯</button>
+          <button class="btn ghost small" id="btnMenu" type="button" data-sb-tip="Mais opções" aria-haspopup="true" aria-expanded="false" aria-label="Mais opções">⋯</button>
           <div class="menu" id="menu">
             <div class="menu-user" id="menuUserInfo"></div>
             <div class="menu-sync-row" id="menuSyncStatus">🟢 Sincronizado na nuvem</div>
             <hr>
+            <button type="button" id="btnMenuParams" class="menu-item-featured">⚙️ Configurações</button>
             <button type="button" id="btnPrintReport">🖨️ Imprimir relatório completo</button>
             <button type="button" id="btnMenuProfile" class="menu-icon-row">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-3.8 3.6-6 8-6s8 2.2 8 6"/></svg>
@@ -195,7 +209,6 @@
               <span id="btnShareTripLabel">Compartilhar viagem</span>
             </button>
             <button type="button" id="btnMenuCrossings" hidden>🔀 Cruzamentos de Viagens</button>
-            <button type="button" id="btnMenuParams">⚙️ Configurações</button>
             <button type="button" id="btnMenuAdmin" hidden>🛡️ Admin (Super Painel)</button>
             <button type="button" id="btnMenuAllCards">📋 Mostrar todos os cartões</button>
             <button type="button" id="btnMenuArchivedCards">📦 Mostrar cartões arquivados</button>
@@ -234,9 +247,9 @@
       <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
       <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
       <div class="gantt-pop-host pmap-nav-filter-host" id="personalMapNavFilterHost">
-        <button type="button" class="btn ghost small gantt-pop-trigger pmap-nav-filter-btn" id="btnPmapFilterPop" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Modo Pessoal">
+        <button type="button" class="btn ghost small gantt-pop-trigger pmap-nav-filter-btn" id="btnPmapFilterPop" data-sb-tip="Filtros do Modo Pessoal" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Modo Pessoal">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-          <span>Filtros</span>
+          <span class="tab-lbl">Filtros</span>
           <span class="gantt-pop-count" id="pmapFilterCount" hidden></span>
         </button>
       </div>
@@ -254,9 +267,50 @@
       <button class="tab" data-pro-view="pro-table" id="tab-pro-table" type="button">🧾 Tabela</button>
       <button class="tab" data-pro-view="pro-checklist" id="tab-pro-checklist" type="button">✅ Checklist</button>
     </nav>
+
+    <div class="sb-footer" id="sidebarFooter">
+      <button type="button" class="sb-foot-btn" id="btnSidebarAutoCollapse" data-sb-tip="Auto-recolher em Gantt / Mapa" title="Recolher barra lateral automaticamente ao abrir Gantt, Calendário Anual ou Mapa" aria-pressed="false">
+        <span class="sb-foot-ico" aria-hidden="true">⚡</span>
+        <span class="sb-foot-lbl">Auto-recolher</span>
+        <span class="sb-foot-pill" id="sbAutoCollapseState">OFF</span>
+      </button>
+      <button type="button" class="sb-foot-btn" id="btnSidebarPosCycle" data-sb-tip="Alternar posição do menu" title="Alternar entre Lateral Esquerda, Lateral Direita e Barra Superior">
+        <span class="sb-foot-ico" aria-hidden="true">⇄</span>
+        <span class="sb-foot-lbl" id="sbPosCycleLabel">Lateral Esq.</span>
+      </button>
+    </div>
   </header>
 
-  <!-- PAINEL UNIFICADO DE FILTROS DO MODO PESSOAL (POPOVER DESKTOP / DRAWER MOBILE) -->
+  <!-- ÁREA PRINCIPAL (flex-1 min-w-0 overflow-y-auto) -->
+  <div class="app-main-wrap" id="appMainWrap">
+    <!-- BARRA DE CONTEXTO / BREADCRUMB SUTIL -->
+    <div class="context-bar" id="appContextBar" aria-label="Contexto de navegação">
+      <div class="ctx-left">
+        <span class="ctx-mode-pill" id="ctxModePill">Pessoal</span>
+        <span class="ctx-sep" aria-hidden="true">›</span>
+        <div class="ctx-project-wrap">
+          <button type="button" class="ctx-project-btn" id="ctxProjectBtn" aria-haspopup="menu" aria-expanded="false" title="Trocar de projeto/planejamento em 1 clique">
+            <span id="ctxProjectName">Carregando...</span>
+            <span class="ctx-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="ctx-project-menu" id="ctxProjectMenu" hidden role="menu"></div>
+        </div>
+        <span class="ctx-sep" aria-hidden="true">›</span>
+        <span class="ctx-tab-name" id="ctxTabName">Cronograma</span>
+      </div>
+      <div class="ctx-right">
+        <button type="button" class="ctx-cmdk-trigger" id="ctxBtnCmdk" title="Abrir Command Palette (Ctrl+K ou /)">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <span class="ctx-cmdk-text">Buscar ou comando...</span>
+          <kbd>Ctrl K</kbd>
+        </button>
+        <button type="button" class="ctx-icon-btn" id="ctxBtnNavPos" title="Alternar posição do menu (Esquerda / Direita / Topo)" aria-label="Alternar posição do menu">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- PAINEL UNIFICADO DE FILTROS DO MODO PESSOAL (POPOVER DESKTOP / DRAWER MOBILE) -->
   <div class="puf-panel" id="pmapFilterPopPanel" hidden>
     <div class="puf-head">
       <strong>🔎 Filtros do Planejamento Pessoal</strong>
@@ -3078,6 +3132,7 @@
       </div>
     </section>
   </main>
+  </div>
 </div>
 
 <!-- POP-UP / BOTÃO INSTALAR APP (PWA) -->
@@ -5137,26 +5192,73 @@
   </div>
 </dialog>
 
+<!-- COMMAND PALETTE GLOBAL (CTRL+K / CMD+K / /) -->
+<dialog id="cmdkDialog" class="cmdk-dialog" closedby="any" aria-label="Paleta de comandos e busca rápida">
+  <div class="cmdk-shell">
+    <div class="cmdk-head">
+      <svg class="cmdk-search-svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" id="cmdkInput" class="cmdk-input" placeholder="Buscar cartões, abas, projetos ou ações..." autocomplete="off" autofocus aria-label="Pesquisar comandos, cartões ou abas">
+      <button type="button" class="cmdk-esc-btn" id="btnCmdkClose" aria-label="Fechar paleta de comandos">ESC</button>
+    </div>
+    <div class="cmdk-results" id="cmdkResults" role="listbox" aria-label="Resultados da paleta de comandos"></div>
+    <div class="cmdk-foot">
+      <span><kbd>↑</kbd> <kbd>↓</kbd> Navegar</span>
+      <span><kbd>↵</kbd> Abrir</span>
+      <span><kbd>Esc</kbd> Fechar</span>
+      <span class="cmdk-foot-hint">Atalhos globais: <kbd>/</kbd> Buscar · <kbd>N</kbd> Novo Cartão</span>
+    </div>
+  </div>
+</dialog>
+
+<!-- MODAL PROCURAR LOGO NA INTERNET -->
+<dialog id="logoSearchModal" class="logo-search-dialog" closedby="any" aria-labelledby="logoSearchTitle">
+  <div class="modal-head">
+    <h1 id="logoSearchTitle" style="margin:0;font-size:1.1rem">🔍 Procurar Logo na Internet</h1>
+    <button type="button" class="icon-btn modal-close" id="btnLogoSearchClose" aria-label="Fechar busca de logo">✕</button>
+  </div>
+  <p class="muted small" style="margin:6px 0 12px" id="logoSearchScopeHint">A imagem escolhida será baixada pelo servidor (sem erro de CORS) e aplicada ao escopo selecionado.</p>
+
+  <form id="logoSearchForm" class="key-input-row" style="margin-bottom:10px">
+    <input type="search" id="logoSearchQuery" placeholder="Ex: logo empresa minimalista png transparente, avião ícone..." autocomplete="off" autofocus>
+    <button type="submit" class="btn primary small" id="btnLogoSearchGo">🔍 Buscar</button>
+    <button type="button" class="btn ghost small" id="btnLogoOpenGoogleImg" title="Abrir busca no Google Imagens em nova aba">🌐 Google Imagens</button>
+  </form>
+
+  <div id="logoSearchNotice" class="fin-redist-banner warn" hidden style="margin-bottom:10px;font-size:.82rem"></div>
+  <div id="logoSearchGrid" class="logo-search-grid"></div>
+
+  <hr style="border:0;border-top:1px solid var(--border);margin:14px 0 12px">
+  <div class="logo-url-fallback">
+    <label style="display:block;font-size:.82rem;font-weight:700;margin-bottom:6px">Ou cole o link direto (URL) de qualquer imagem PNG / SVG / JPG:</label>
+    <div class="key-input-row">
+      <input type="url" id="logoDirectUrlInput" placeholder="https://exemplo.com/minha-logo.png" autocomplete="off">
+      <button type="button" class="btn primary small" id="btnLogoFetchUrl">⬇️ Baixar e aplicar</button>
+    </div>
+  </div>
+</dialog>
+
+<div id="sbFloatingTooltip" class="sb-floating-tooltip" hidden role="tooltip"></div>
+
 <input type="file" id="fileJson" accept=".json" hidden>
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="shared-utils.js?v=65"></script>
-<script src="config.example.js?v=65"></script>
-<script src="vehicles.js?v=65"></script>
-<script src="countries.js?v=65"></script>
-<script src="data.js?v=65"></script>
-<script src="maps.js?v=65"></script>
-<script src="calendar.js?v=65"></script>
-<script src="drive.js?v=65"></script>
-<script src="report.js?v=65"></script>
-<script src="api.js?v=65"></script>
-<script src="minutes.js?v=65"></script>
-<script src="pro-annual.js?v=65"></script>
-<script src="checklists.js?v=65"></script>
-<script src="pro.js?v=65"></script>
-<script src="personal-map.js?v=65"></script>
-<script src="splitwise.js?v=65"></script>
-<script src="app.js?v=65"></script>
+<script src="shared-utils.js?v=66"></script>
+<script src="config.example.js?v=66"></script>
+<script src="vehicles.js?v=66"></script>
+<script src="countries.js?v=66"></script>
+<script src="data.js?v=66"></script>
+<script src="maps.js?v=66"></script>
+<script src="calendar.js?v=66"></script>
+<script src="drive.js?v=66"></script>
+<script src="report.js?v=66"></script>
+<script src="api.js?v=66"></script>
+<script src="minutes.js?v=66"></script>
+<script src="pro-annual.js?v=66"></script>
+<script src="checklists.js?v=66"></script>
+<script src="pro.js?v=66"></script>
+<script src="personal-map.js?v=66"></script>
+<script src="splitwise.js?v=66"></script>
+<script src="app.js?v=66"></script>
 </body>
 </html>

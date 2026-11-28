@@ -1,32 +1,32 @@
 /* ===== Service Worker PWA — My Plan (Network-First Shell + Leituras Offline) ===== */
-const CACHE = "my-plan-v65";
-const DATA_CACHE = "my-plan-data-v65";
+const CACHE = "my-plan-v66";
+const DATA_CACHE = "my-plan-data-v66";
 const SHELL = [
   "/",
   "/index.html",
   "/como-usar.html",
-  "/styles.css?v=65",
-  "/sobre.css?v=65",
-  "/shared-utils.js?v=65",
-  "/vehicles.js?v=65",
-  "/countries.js?v=65",
-  "/data.js?v=65",
-  "/maps.js?v=65",
-  "/calendar.js?v=65",
-  "/drive.js?v=65",
-  "/report.js?v=65",
-  "/api.js?v=65",
-  "/minutes.js?v=65",
-  "/pro-annual.js?v=65",
-  "/checklists.js?v=65",
-  "/pro.js?v=65",
-  "/personal-map.js?v=65",
-  "/splitwise.js?v=65",
-  "/app.js?v=65",
-  "/manifest.webmanifest?v=65",
-  "/icons/icon-192.png?v=65",
-  "/icons/icon-512.png?v=65",
-  "/icons/icon.svg?v=65"
+  "/styles.css?v=66",
+  "/sobre.css?v=66",
+  "/shared-utils.js?v=66",
+  "/vehicles.js?v=66",
+  "/countries.js?v=66",
+  "/data.js?v=66",
+  "/maps.js?v=66",
+  "/calendar.js?v=66",
+  "/drive.js?v=66",
+  "/report.js?v=66",
+  "/api.js?v=66",
+  "/minutes.js?v=66",
+  "/pro-annual.js?v=66",
+  "/checklists.js?v=66",
+  "/pro.js?v=66",
+  "/personal-map.js?v=66",
+  "/splitwise.js?v=66",
+  "/app.js?v=66",
+  "/manifest.webmanifest?v=66",
+  "/icons/icon-192.png?v=66",
+  "/icons/icon-512.png?v=66",
+  "/icons/icon.svg?v=66"
 ];
 
 /* Apenas leituras essenciais GET ficam disponíveis em fallback offline read-only. */

@@ -437,7 +437,9 @@ function save(msg, skipRender = false) {
 
 /* ---------- TEMA DIA / NOITE & PERSONALIZAÇÃO DE APARÊNCIA (PALETAS + LOGOS) ---------- */
 const APPEARANCE_STORAGE_KEY = "myplan-appearance-v1";
-const DEFAULT_APP_LOGO = "icons/icon.svg?v=65";
+const DEFAULT_APP_LOGO = "icons/icon.svg?v=66";
+const DEFAULT_APP_NAME = "My Plan";
+const HEAVY_CANVAS_VIEWS = new Set(["gantt", "personal-map", "pro-gantt", "pro-map"]);
 
 const APPEARANCE_PALETTE_VARS = [
   "--bg", "--bg2", "--bg3", "--surface", "--surface-hover", "--topbar-bg",
@@ -708,13 +710,16 @@ const APPEARANCE_PALETTES = [
 
 function createEmptyAppearance() {
   return {
-    personal: { paletteId: "default", customPrimary: "#7c5cff", logoDataUrl: "", menuOrder: [] },
-    professional: { paletteId: "default", customPrimary: "#2563eb", logoDataUrl: "", menuOrder: [] }
+    personal: { paletteId: "default", customPrimary: "#7c5cff", logoDataUrl: "", appName: "", density: "comfortable", menuOrder: [] },
+    professional: { paletteId: "default", customPrimary: "#2563eb", logoDataUrl: "", appName: "", density: "comfortable", menuOrder: [] },
+    layout: { navPos: "left", sidebarCollapsed: false, autoCollapseHeavy: false }
   };
 }
 
 let appearancePrefs = createEmptyAppearance();
 let appearanceLogoScope = { personal: "project", professional: "project" };
+let sidebarManualExpandOnHeavy = false;
+let currentActiveViewId = "gantt";
 
 function hexToRgb(hex) {
   const m = String(hex || "").trim().match(/^#?([0-9a-f]{6})$/i);
@@ -830,10 +835,20 @@ function loadAppearanceFromLocal() {
               ? String(raw[m].customPrimary).toLowerCase()
               : (m === "professional" ? "#2563eb" : "#7c5cff"),
             logoDataUrl: typeof raw[m].logoDataUrl === "string" ? raw[m].logoDataUrl : "",
+            appName: typeof raw[m].appName === "string" ? raw[m].appName.trim().slice(0, 48) : "",
+            density: raw[m].density === "compact" ? "compact" : "comfortable",
             menuOrder: Array.isArray(raw[m].menuOrder) ? raw[m].menuOrder : []
           };
         }
       });
+      if (raw.layout && typeof raw.layout === "object") {
+        const pos = ["left", "right", "top"].includes(raw.layout.navPos) ? raw.layout.navPos : "left";
+        appearancePrefs.layout = {
+          navPos: pos,
+          sidebarCollapsed: Boolean(raw.layout.sidebarCollapsed),
+          autoCollapseHeavy: Boolean(raw.layout.autoCollapseHeavy)
+        };
+      }
     }
   } catch {}
 }
@@ -848,8 +863,15 @@ function hydrateAppearanceFromUser(user) {
     else if (s.paletteId === "default" && !appearancePrefs[m].paletteId) appearancePrefs[m].paletteId = "default";
     if (s.customPrimary) appearancePrefs[m].customPrimary = s.customPrimary;
     if (s.logoDataUrl) appearancePrefs[m].logoDataUrl = s.logoDataUrl;
+    if (typeof s.appName === "string" && s.appName.trim()) appearancePrefs[m].appName = s.appName.trim().slice(0, 48);
+    if (s.density === "compact" || s.density === "comfortable") appearancePrefs[m].density = s.density;
     if (Array.isArray(s.menuOrder) && s.menuOrder.length) appearancePrefs[m].menuOrder = [...s.menuOrder];
   });
+  if (srv.layout && typeof srv.layout === "object") {
+    if (["left", "right", "top"].includes(srv.layout.navPos)) appearancePrefs.layout.navPos = srv.layout.navPos;
+    if (srv.layout.sidebarCollapsed !== undefined) appearancePrefs.layout.sidebarCollapsed = Boolean(srv.layout.sidebarCollapsed);
+    if (srv.layout.autoCollapseHeavy !== undefined) appearancePrefs.layout.autoCollapseHeavy = Boolean(srv.layout.autoCollapseHeavy);
+  }
   try { localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(appearancePrefs)); } catch {}
   applyCurrentAppearance();
 }
@@ -861,6 +883,143 @@ function persistAppearance(msg) {
     window.FeriasApi.savePreferences(appearancePrefs).catch(() => {});
   }
   if (msg) toast(msg);
+}
+
+function getEffectiveAppName(modeOpt) {
+  const m = (modeOpt || appMode) === "professional" ? "professional" : "personal";
+  const custom = String(appearancePrefs[m]?.appName || "").trim();
+  return custom || DEFAULT_APP_NAME;
+}
+
+function updateDynamicFavicon(logoSrc) {
+  const link = $("#appFaviconLink") || document.querySelector('link[rel="icon"]');
+  if (!link) return;
+  const src = String(logoSrc || DEFAULT_APP_LOGO);
+  link.href = src;
+  if (src.startsWith("data:image/png")) link.type = "image/png";
+  else if (src.startsWith("data:image/jpeg")) link.type = "image/jpeg";
+  else if (src.startsWith("data:image/webp")) link.type = "image/webp";
+  else link.type = "image/svg+xml";
+}
+
+function getActiveTabTitle(viewId) {
+  const map = {
+    "gantt": "Cronograma",
+    "personal-map": "Mapa",
+    "dashboard": "Dashboard",
+    "finance": "Financeiro",
+    "splitwise": "Dividir Despesas",
+    "personal-board": "Quadros",
+    "table": "Tabela",
+    "checklist": "Checklist",
+    "params": "Configurações",
+    "pro-board": "Quadro",
+    "pro-gantt": "Timeline",
+    "pro-map": "Mapa",
+    "pro-travels": "Viagens",
+    "pro-control": "Controle",
+    "pro-docs": "Documentos",
+    "pro-dashboard": "Dashboard",
+    "pro-finance": "Financeiro",
+    "pro-table": "Tabela",
+    "pro-checklist": "Checklist",
+    "pro-params": "Configurações",
+    "admin": "Admin"
+  };
+  return map[viewId] || "Planejamento";
+}
+
+function applyLayoutPrefs() {
+  const root = document.documentElement;
+  const lay = appearancePrefs.layout || { navPos: "left", sidebarCollapsed: false, autoCollapseHeavy: false };
+  const navPos = ["left", "right", "top"].includes(lay.navPos) ? lay.navPos : "left";
+  root.setAttribute("data-nav-pos", navPos);
+
+  const isHeavy = HEAVY_CANVAS_VIEWS.has(currentActiveViewId);
+  const effectiveCollapsed = navPos !== "top" && (
+    lay.sidebarCollapsed || (lay.autoCollapseHeavy && isHeavy && !sidebarManualExpandOnHeavy)
+  );
+  root.setAttribute("data-sidebar-collapsed", effectiveCollapsed ? "true" : "false");
+
+  const colBtn = $("#btnSidebarCollapse");
+  if (colBtn) {
+    colBtn.setAttribute("aria-expanded", effectiveCollapsed ? "false" : "true");
+    colBtn.title = effectiveCollapsed ? "Expandir barra lateral" : "Recolher barra lateral";
+  }
+  const autoBtn = $("#btnSidebarAutoCollapse");
+  const autoPill = $("#sbAutoCollapseState");
+  if (autoBtn) autoBtn.setAttribute("aria-pressed", lay.autoCollapseHeavy ? "true" : "false");
+  if (autoPill) autoPill.textContent = lay.autoCollapseHeavy ? "ON" : "OFF";
+
+  const posLbl = $("#sbPosCycleLabel");
+  const posText = navPos === "left" ? "Lateral Esq." : (navPos === "right" ? "Lateral Dir." : "Barra Topo");
+  if (posLbl) posLbl.textContent = posText;
+}
+
+function setNavPosition(pos, silent = false) {
+  const next = ["left", "right", "top"].includes(pos) ? pos : "left";
+  appearancePrefs.layout.navPos = next;
+  sidebarManualExpandOnHeavy = false;
+  const names = { left: "Lateral Esquerda", right: "Lateral Direita", top: "Barra Superior" };
+  persistAppearance(silent ? null : `🧭 Menu alterado para ${names[next]}`);
+  if ($("#view-params")?.classList.contains("active")) renderAppearancePanel($("#personalAppearanceHost"), "personal");
+  if ($("#view-pro-params")?.classList.contains("active")) renderAppearancePanel($("#proAppearanceHost"), "professional");
+}
+
+function cycleNavPosition() {
+  const cur = appearancePrefs.layout?.navPos || "left";
+  const next = cur === "left" ? "right" : (cur === "right" ? "top" : "left");
+  setNavPosition(next);
+}
+
+function toggleSidebarCollapsed() {
+  const lay = appearancePrefs.layout;
+  const isHeavy = HEAVY_CANVAS_VIEWS.has(currentActiveViewId);
+  const currentlyCollapsed = document.documentElement.getAttribute("data-sidebar-collapsed") === "true";
+  if (lay.autoCollapseHeavy && isHeavy && !lay.sidebarCollapsed) {
+    sidebarManualExpandOnHeavy = currentlyCollapsed;
+    applyLayoutPrefs();
+    return;
+  }
+  lay.sidebarCollapsed = !currentlyCollapsed;
+  sidebarManualExpandOnHeavy = !lay.sidebarCollapsed;
+  persistAppearance();
+}
+
+function toggleAutoCollapseHeavy() {
+  appearancePrefs.layout.autoCollapseHeavy = !appearancePrefs.layout.autoCollapseHeavy;
+  sidebarManualExpandOnHeavy = false;
+  persistAppearance(
+    appearancePrefs.layout.autoCollapseHeavy
+      ? "⚡ Auto-recolher ativado para Gantt, Calendário Anual e Mapa!"
+      : "Auto-recolher desativado."
+  );
+  if ($("#view-params")?.classList.contains("active")) renderAppearancePanel($("#personalAppearanceHost"), "personal");
+  if ($("#view-pro-params")?.classList.contains("active")) renderAppearancePanel($("#proAppearanceHost"), "professional");
+}
+
+function updateContextBar() {
+  const isPro = appMode === "professional";
+  const appName = getEffectiveAppName(appMode);
+  const tabTitle = getActiveTabTitle(currentActiveViewId);
+  const modeTxt = isPro ? "Profissional" : "Pessoal";
+
+  const modePill = $("#ctxModePill");
+  if (modePill) modePill.textContent = modeTxt;
+
+  const projEl = $("#ctxProjectName");
+  if (projEl) {
+    const selTrips = typeof getSelectedTrips === "function" ? getSelectedTrips() : [];
+    const projName = selTrips.length > 1
+      ? `${selTrips.length} planejamentos`
+      : (activeTrip?.name || state?.title || (isPro ? "Projeto Profissional" : "Meu Planejamento"));
+    projEl.textContent = projName;
+  }
+
+  const tabEl = $("#ctxTabName");
+  if (tabEl) tabEl.textContent = tabTitle;
+
+  document.title = `${appName} — ${tabTitle}`;
 }
 
 function getEffectiveLogoForMode(mode) {
@@ -880,7 +1039,7 @@ function applyCurrentAppearance() {
   const root = document.documentElement;
   const theme = root.getAttribute("data-theme") === "light" ? "light" : "dark";
   const mode = appMode === "professional" ? "professional" : "personal";
-  const cfg = appearancePrefs[mode] || { paletteId: "default", customPrimary: "#2563eb", logoDataUrl: "" };
+  const cfg = appearancePrefs[mode] || { paletteId: "default", customPrimary: "#2563eb", logoDataUrl: "", appName: "", density: "comfortable" };
 
   let tokens = null;
   if (cfg.paletteId === "custom") {
@@ -901,18 +1060,34 @@ function applyCurrentAppearance() {
     APPEARANCE_PALETTE_VARS.forEach(v => root.style.removeProperty(v));
   }
 
+  // Densidade Visual
+  root.setAttribute("data-density", cfg.density === "compact" ? "compact" : "comfortable");
+
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) {
     const bgHex = tokens?.["--bg"] || (theme === "dark" ? (mode === "professional" ? "#050c19" : "#0b0f1a") : (mode === "professional" ? "#edf2f8" : "#f1f5f9"));
     meta.setAttribute("content", bgHex);
   }
 
-  // Logo no cabeçalho principal
+  // White-Label: Nome do App
+  const appName = getEffectiveAppName(mode);
+  if ($("#appBrandName")) $("#appBrandName").textContent = appName;
+  if ($("#authBrandName")) $("#authBrandName").textContent = appName;
+  const appleMeta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (appleMeta) appleMeta.setAttribute("content", appName);
+
+  // Logo + Favicon dinâmico automático
   const logoInfo = getEffectiveLogoForMode(mode);
   const logoImg = $("#appBrandLogoImg");
+  const authLogoImg = $("#authBrandLogoImg");
   const logoWrap = $("#appBrandLogoWrap");
   if (logoImg) logoImg.src = logoInfo.src;
+  if (authLogoImg) authLogoImg.src = logoInfo.src;
   if (logoWrap) logoWrap.classList.toggle("has-custom-logo", logoInfo.scope !== "default");
+  updateDynamicFavicon(logoInfo.src);
+
+  applyLayoutPrefs();
+  updateContextBar();
 }
 
 function readLogoFileToDataUrl(file) {
@@ -976,18 +1151,74 @@ function readLogoFileToDataUrl(file) {
   });
 }
 
+function compressRasterDataUrl(rawDataUrl) {
+  return new Promise(resolve => {
+    const src = String(rawDataUrl || "");
+    if (!src || src.startsWith("data:image/svg+xml")) return resolve(src);
+    const img = new Image();
+    img.onerror = () => resolve(src);
+    img.onload = () => {
+      try {
+        const maxSide = 256;
+        const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
+        const w = Math.max(1, Math.round((img.width || 1) * scale));
+        const h = Math.max(1, Math.round((img.height || 1) * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        let out = canvas.toDataURL("image/png");
+        if (out.length > 320000) out = canvas.toDataURL("image/webp", 0.86);
+        if (out.length > 350000) out = canvas.toDataURL("image/jpeg", 0.82);
+        resolve(out);
+      } catch {
+        resolve(src);
+      }
+    };
+    img.src = src;
+  });
+}
+
+function applyChosenLogoDataUrl(mode, scope, dataUrl) {
+  const m = mode === "professional" ? "professional" : "personal";
+  const chosenScope = scope === "mode" ? "mode" : "project";
+  const modeLabel = m === "professional" ? "Modo Profissional" : "Modo Pessoal";
+  appearanceLogoScope[m] = chosenScope;
+  if (chosenScope === "project") {
+    if (!state.params) state.params = {};
+    state.params.customLogo = dataUrl;
+    applyCurrentAppearance();
+    save("🖼️ Logo e favicon aplicados a este calendário/projeto!");
+  } else {
+    appearancePrefs[m].logoDataUrl = dataUrl;
+    if (state?.params?.customLogo) {
+      delete state.params.customLogo;
+      save(null, true);
+    }
+    persistAppearance(`🖼️ Logo e favicon aplicados a todos os calendários do ${modeLabel}!`);
+  }
+  const host = m === "professional" ? $("#proAppearanceHost") : $("#personalAppearanceHost");
+  if (host) renderAppearancePanel(host, m);
+}
+
 function renderAppearancePanel(hostEl, mode) {
   if (!hostEl) return;
   const m = mode === "professional" ? "professional" : "personal";
-  const cfg = appearancePrefs[m] || { paletteId: "default", customPrimary: "#2563eb", logoDataUrl: "" };
+  const cfg = appearancePrefs[m] || { paletteId: "default", customPrimary: "#2563eb", logoDataUrl: "", appName: "", density: "comfortable" };
+  const lay = appearancePrefs.layout || { navPos: "left", sidebarCollapsed: false, autoCollapseHeavy: false };
   const theme = isDarkTheme() ? "dark" : "light";
+  const density = cfg.density === "compact" ? "compact" : "comfortable";
+  const currentAppName = getEffectiveAppName(m);
+  const isCustomName = Boolean(String(cfg.appName || "").trim());
   const logoInfo = getEffectiveLogoForMode(m);
   const scopeVal = appearanceLogoScope[m] || (logoInfo.scope === "mode" ? "mode" : "project");
   const modeLabel = m === "professional" ? "Modo Profissional" : "Modo Pessoal";
   const projectLabel = m === "professional" ? "este projeto" : "este calendário/viagem";
   const scopeBadgeTxt = logoInfo.scope === "project"
     ? `Logo exclusiva de ${projectLabel}`
-    : (logoInfo.scope === "mode" ? `Logo global do ${modeLabel}` : "Logo padrão do My Plan");
+    : (logoInfo.scope === "mode" ? `Logo global do ${modeLabel}` : `Logo padrão (${currentAppName})`);
 
   const paletteCardsHtml = APPEARANCE_PALETTES.map(p => {
     const sw = p.swatches[m] ? p.swatches[m][theme] : p.swatches[theme];
@@ -1011,11 +1242,50 @@ function renderAppearancePanel(hostEl, mode) {
   hostEl.innerHTML = `
     <div class="app-subblock">
       <div class="app-subblock-head">
-        <span class="app-subblock-title">🌓 Modo de Exibição</span>
-        <div class="app-theme-seg" role="group" aria-label="Alternar tema Dia ou Noite">
-          <button type="button" data-app-theme="light" class="${theme === "light" ? "active" : ""}">☀️ Dia</button>
-          <button type="button" data-app-theme="dark" class="${theme === "dark" ? "active" : ""}">🌙 Noite</button>
+        <span class="app-subblock-title">🏷️ Nome do App (White-Label)</span>
+        <span class="muted small">Atualiza menu, configurações e aba do navegador</span>
+      </div>
+      <div class="app-name-row">
+        <input type="text" data-app-name value="${esc(cfg.appName || "")}" placeholder="${esc(DEFAULT_APP_NAME)}" maxlength="48" aria-label="Nome personalizado do aplicativo">
+        <button type="button" class="btn ghost small" data-app-name-reset ${isCustomName ? "" : "disabled"} title="Voltar ao nome padrão My Plan">↺ Restaurar padrão</button>
+      </div>
+    </div>
+
+    <div class="app-subblock">
+      <div class="app-subblock-head">
+        <span class="app-subblock-title">🌓 Modo de Exibição &amp; Densidade</span>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="app-theme-seg" role="group" aria-label="Alternar tema Dia ou Noite">
+            <button type="button" data-app-theme="light" class="${theme === "light" ? "active" : ""}">☀️ Dia</button>
+            <button type="button" data-app-theme="dark" class="${theme === "dark" ? "active" : ""}">🌙 Noite</button>
+          </div>
+          <div class="app-theme-seg" role="group" aria-label="Densidade visual do layout">
+            <button type="button" data-app-density="comfortable" class="${density === "comfortable" ? "active" : ""}" title="Mais espaçamento e respiro visual">Confortável</button>
+            <button type="button" data-app-density="compact" class="${density === "compact" ? "active" : ""}" title="Mais informações visíveis no Gantt, Quadros e Tabelas">Compacto</button>
+          </div>
         </div>
+      </div>
+    </div>
+
+    <div class="app-subblock">
+      <div class="app-subblock-head">
+        <span class="app-subblock-title">🧭 Posição do Menu (Desktop ≥ 1024px)</span>
+        <span class="muted small">No celular fica sempre compacto no topo</span>
+      </div>
+      <div class="app-layout-seg" role="group" aria-label="Posição da barra de navegação no computador">
+        <button type="button" data-app-navpos="left" class="${lay.navPos === "left" ? "active" : ""}">◧ Lateral Esquerda</button>
+        <button type="button" data-app-navpos="right" class="${lay.navPos === "right" ? "active" : ""}">◨ Lateral Direita</button>
+        <button type="button" data-app-navpos="top" class="${lay.navPos === "top" ? "active" : ""}">⬒ Barra Superior</button>
+      </div>
+      <div class="app-auto-collapse-row">
+        <div style="min-width:0">
+          <strong style="font-size:.82rem;display:block">⚡ Auto-recolher barra lateral em telas pesadas</strong>
+          <span class="muted small">Recolhe automaticamente ao abrir Gantt, Calendário Anual ou Mapa</span>
+        </div>
+        <label class="cfg-switch" title="Ativar ou desativar auto-recolher">
+          <input type="checkbox" data-app-autocollapse ${lay.autoCollapseHeavy ? "checked" : ""} aria-label="Auto-recolher barra lateral no Gantt, Calendário Anual e Mapa">
+          <span class="cfg-switch-track"></span>
+        </label>
       </div>
     </div>
 
@@ -1047,7 +1317,7 @@ function renderAppearancePanel(hostEl, mode) {
 
     <div class="app-subblock">
       <div class="app-subblock-head">
-        <span class="app-subblock-title">🖼️ Logo (${esc(modeLabel)})</span>
+        <span class="app-subblock-title">🖼️ Logo &amp; Favicon (${esc(modeLabel)})</span>
         <span class="pill" style="font-size:.72rem">${esc(scopeBadgeTxt)}</span>
       </div>
       <div class="logo-editor-box">
@@ -1057,7 +1327,7 @@ function renderAppearancePanel(hostEl, mode) {
           </div>
           <div class="logo-editor-meta">
             <strong style="font-size:.84rem">Onde aplicar a nova logo?</strong>
-            <span class="muted small">Envie PNG, SVG ou JPG. Escolha abaixo o escopo antes de selecionar o arquivo:</span>
+            <span class="muted small">Envie um arquivo ou procure na internet. O favicon da aba atualiza automaticamente:</span>
           </div>
         </div>
         <fieldset class="logo-scope-group">
@@ -1072,13 +1342,36 @@ function renderAppearancePanel(hostEl, mode) {
         </fieldset>
         <div class="logo-editor-actions">
           <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" data-app-logo-file hidden>
-          <button type="button" class="btn primary small" data-app-logo-upload>📤 Enviar logo (PNG/SVG/JPG)</button>
+          <button type="button" class="btn primary small" data-app-logo-upload>📤 Enviar arquivo (PNG/SVG/JPG)</button>
+          <button type="button" class="btn ghost small" data-app-logo-internet>🔍 Procurar na internet</button>
           <button type="button" class="btn ghost small" data-app-logo-reset ${(!hasProjOverride && !hasModeLogo) ? "disabled" : ""}>↺ Restaurar padrão</button>
           ${hasProjOverride && hasModeLogo ? `<button type="button" class="btn ghost small" data-app-logo-clear-proj>Remover só deste projeto</button>` : ""}
         </div>
       </div>
     </div>
   `;
+
+  // Eventos: Nome do App (tempo real + salvar ao sair/Enter)
+  const nameInp = hostEl.querySelector("[data-app-name]");
+  const nameResetBtn = hostEl.querySelector("[data-app-name-reset]");
+  if (nameInp) {
+    nameInp.oninput = () => {
+      appearancePrefs[m].appName = nameInp.value.trim().slice(0, 48);
+      if (nameResetBtn) nameResetBtn.disabled = !appearancePrefs[m].appName;
+      applyCurrentAppearance();
+    };
+    nameInp.onchange = () => {
+      appearancePrefs[m].appName = nameInp.value.trim().slice(0, 48);
+      persistAppearance(`🏷️ Nome atualizado para "${getEffectiveAppName(m)}"!`);
+    };
+  }
+  if (nameResetBtn) {
+    nameResetBtn.onclick = () => {
+      appearancePrefs[m].appName = "";
+      persistAppearance(`↺ Nome restaurado para "${DEFAULT_APP_NAME}"!`);
+      renderAppearancePanel(hostEl, m);
+    };
+  }
 
   // Eventos: Dia / Noite
   hostEl.querySelectorAll("[data-app-theme]").forEach(btn => {
@@ -1087,6 +1380,31 @@ function renderAppearancePanel(hostEl, mode) {
       renderAppearancePanel(hostEl, m);
     };
   });
+
+  // Eventos: Densidade Visual
+  hostEl.querySelectorAll("[data-app-density]").forEach(btn => {
+    btn.onclick = () => {
+      const next = btn.dataset.appDensity === "compact" ? "compact" : "comfortable";
+      appearancePrefs[m].density = next;
+      persistAppearance(next === "compact" ? "📐 Densidade Compacta ativada!" : "📐 Densidade Confortável ativada!");
+      renderAppearancePanel(hostEl, m);
+    };
+  });
+
+  // Eventos: Posição do Menu
+  hostEl.querySelectorAll("[data-app-navpos]").forEach(btn => {
+    btn.onclick = () => setNavPosition(btn.dataset.appNavpos);
+  });
+
+  // Evento: Auto-recolher
+  const autoCb = hostEl.querySelector("[data-app-autocollapse]");
+  if (autoCb) {
+    autoCb.onchange = () => {
+      appearancePrefs.layout.autoCollapseHeavy = autoCb.checked;
+      sidebarManualExpandOnHeavy = false;
+      persistAppearance(autoCb.checked ? "⚡ Auto-recolher ativado para telas pesadas!" : "Auto-recolher desativado.");
+    };
+  }
 
   // Eventos: Selecionar Paleta
   hostEl.querySelectorAll("[data-app-pal]").forEach(btn => {
@@ -1150,24 +1468,20 @@ function renderAppearancePanel(hostEl, mode) {
       try {
         const dataUrl = await readLogoFileToDataUrl(f);
         const chosenScope = hostEl.querySelector(`input[name="logoScope-${m}"]:checked`)?.value || "project";
-        appearanceLogoScope[m] = chosenScope;
-        if (chosenScope === "project") {
-          if (!state.params) state.params = {};
-          state.params.customLogo = dataUrl;
-          applyCurrentAppearance();
-          save("🖼️ Logo aplicada apenas a este calendário/projeto!");
-        } else {
-          appearancePrefs[m].logoDataUrl = dataUrl;
-          if (state?.params?.customLogo) {
-            delete state.params.customLogo;
-            save(null, true);
-          }
-          persistAppearance(`🖼️ Logo aplicada a todos os calendários do ${modeLabel}!`);
-        }
-        renderAppearancePanel(hostEl, m);
+        applyChosenLogoDataUrl(m, chosenScope, dataUrl);
       } catch (err) {
         toast(err.message || "Falha ao processar a imagem da logo.");
       }
+    };
+  }
+
+  // Evento: Procurar logo na internet
+  const internetBtn = hostEl.querySelector("[data-app-logo-internet]");
+  if (internetBtn) {
+    internetBtn.onclick = () => {
+      const chosenScope = hostEl.querySelector(`input[name="logoScope-${m}"]:checked`)?.value || "project";
+      appearanceLogoScope[m] = chosenScope;
+      openLogoSearchModal(m, chosenScope);
     };
   }
 
@@ -1181,7 +1495,7 @@ function renderAppearancePanel(hostEl, mode) {
         tripChanged = true;
       }
       appearancePrefs[m].logoDataUrl = "";
-      persistAppearance("↺ Logo original do My Plan restaurada!");
+      persistAppearance("↺ Logo e favicon padrão restaurados!");
       if (tripChanged) save(null, true);
       renderAppearancePanel(hostEl, m);
     };
@@ -1199,6 +1513,594 @@ function renderAppearancePanel(hostEl, mode) {
       }
     };
   }
+}
+
+/* ---------- MODAL PROCURAR LOGO NA INTERNET (CORS-FREE VIA BACKEND) ---------- */
+let logoSearchCtx = { mode: "personal", scope: "project" };
+
+function openLogoSearchModal(mode, scope) {
+  const dlg = $("#logoSearchModal");
+  if (!dlg) return;
+  logoSearchCtx = { mode: mode === "professional" ? "professional" : "personal", scope: scope === "mode" ? "mode" : "project" };
+  const hint = $("#logoSearchScopeHint");
+  if (hint) {
+    const scopeTxt = logoSearchCtx.scope === "mode"
+      ? `todos os calendários do Modo ${logoSearchCtx.mode === "professional" ? "Profissional" : "Pessoal"}`
+      : "apenas este calendário/projeto";
+    hint.textContent = `A imagem selecionada será baixada pelo servidor (sem erro de CORS) e aplicada em: ${scopeTxt}.`;
+  }
+  const notice = $("#logoSearchNotice");
+  if (notice) { notice.hidden = true; notice.textContent = ""; }
+  const grid = $("#logoSearchGrid");
+  if (grid) grid.innerHTML = `<div class="muted small" style="grid-column:1/-1;padding:12px 4px">Digite um termo acima e clique em <b>Buscar</b>, ou cole o link direto da imagem abaixo.</div>`;
+  const urlInp = $("#logoDirectUrlInput");
+  if (urlInp) urlInp.value = "";
+  dlg.showModal();
+  requestAnimationFrame(() => $("#logoSearchQuery")?.focus?.());
+}
+
+function initLogoSearchModal() {
+  const dlg = $("#logoSearchModal");
+  if (!dlg || dlg.dataset.boundLogoSearch) return;
+  dlg.dataset.boundLogoSearch = "1";
+
+  const closeBtn = $("#btnLogoSearchClose");
+  if (closeBtn) closeBtn.onclick = () => dlg.close();
+
+  const googleImgBtn = $("#btnLogoOpenGoogleImg");
+  if (googleImgBtn) {
+    googleImgBtn.onclick = () => {
+      const q = ($("#logoSearchQuery")?.value || "").trim() || `${getEffectiveAppName()} logo png`;
+      window.open(`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(q)}`, "_blank", "noopener,noreferrer");
+    };
+  }
+
+  const downloadAndApply = async (imgUrl, triggerBtn) => {
+    const clean = String(imgUrl || "").trim();
+    if (!clean) return toast("Cole a URL de uma imagem PNG, SVG ou JPG.");
+    const prevTxt = triggerBtn ? triggerBtn.textContent : "";
+    if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = "⏳ Baixando..."; }
+    try {
+      const res = await window.FeriasApi.fetchLogoFromUrl(clean);
+      const compressed = await compressRasterDataUrl(res.dataUrl);
+      applyChosenLogoDataUrl(logoSearchCtx.mode, logoSearchCtx.scope, compressed);
+      dlg.close();
+    } catch (err) {
+      toast("❌ " + (err.message || "Falha ao baixar imagem."));
+    } finally {
+      if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.textContent = prevTxt; }
+    }
+  };
+
+  const fetchBtn = $("#btnLogoFetchUrl");
+  if (fetchBtn) {
+    fetchBtn.onclick = () => downloadAndApply($("#logoDirectUrlInput")?.value || "", fetchBtn);
+  }
+
+  const form = $("#logoSearchForm");
+  if (form) {
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const q = ($("#logoSearchQuery")?.value || "").trim();
+      if (!q) return toast("Digite o que deseja buscar.");
+      const goBtn = $("#btnLogoSearchGo");
+      const notice = $("#logoSearchNotice");
+      const grid = $("#logoSearchGrid");
+      if (goBtn) { goBtn.disabled = true; goBtn.textContent = "⏳ Buscando..."; }
+      if (notice) { notice.hidden = true; notice.textContent = ""; }
+      if (grid) grid.innerHTML = `<div class="muted small" style="grid-column:1/-1;padding:14px 4px">Consultando imagens...</div>`;
+      try {
+        const res = await window.FeriasApi.searchLogoImages(q);
+        if (!res.configured) {
+          if (notice) {
+            notice.hidden = false;
+            notice.innerHTML = `ℹ️ ${esc(res.message || "Configure GOOGLE_CSE_API_KEY e GOOGLE_CSE_CX no .env para busca automática.")}`;
+          }
+          if (grid) {
+            grid.innerHTML = `<div class="muted small" style="grid-column:1/-1;padding:10px 4px">Clique em <b>🌐 Google Imagens</b> acima, copie o endereço da imagem desejada (botão direito → <i>Copiar endereço da imagem</i>) e cole no campo de URL abaixo.</div>`;
+          }
+          return;
+        }
+        const items = Array.isArray(res.items) ? res.items : [];
+        if (!items.length) {
+          if (grid) grid.innerHTML = `<div class="muted small" style="grid-column:1/-1;padding:12px 4px">Nenhuma imagem encontrada para "${esc(q)}".</div>`;
+          return;
+        }
+        if (grid) {
+          grid.innerHTML = items.map((it, idx) => `
+            <button type="button" class="logo-search-card" data-logo-pick="${idx}" title="${esc(it.title || "Selecionar logo")}">
+              <img src="${esc(it.thumbnail || it.link)}" alt="${esc(it.title || "")}" loading="lazy" referrerpolicy="no-referrer">
+              <span>${esc(it.title || "Imagem")}</span>
+            </button>`).join("");
+          grid.querySelectorAll("[data-logo-pick]").forEach(btn => {
+            btn.onclick = () => {
+              const item = items[parseInt(btn.dataset.logoPick, 10)];
+              if (item?.link) downloadAndApply(item.link, btn);
+            };
+          });
+        }
+      } catch (err) {
+        if (notice) { notice.hidden = false; notice.textContent = "⚠️ " + (err.message || "Erro na busca."); }
+        if (grid) grid.innerHTML = "";
+      } finally {
+        if (goBtn) { goBtn.disabled = false; goBtn.textContent = "🔍 Buscar"; }
+      }
+    };
+  }
+}
+
+/* ---------- SIDEBAR TABS (ÍCONES + TOOLTIPS FLUTUANTES) & CONTEXT BAR ---------- */
+function enhanceSidebarTabs() {
+  document.querySelectorAll("#tabs .tab, #tabsPro .tab").forEach(btn => {
+    if (btn.dataset.sbEnhanced) return;
+    btn.dataset.sbEnhanced = "1";
+    const badge = btn.querySelector(".sw-tab-badge");
+    const rawText = Array.from(btn.childNodes)
+      .filter(n => n.nodeType === Node.TEXT_NODE)
+      .map(n => n.textContent)
+      .join(" ")
+      .trim();
+    const m = rawText.match(/^(\S+)\s+(.+)$/);
+    const ico = m ? m[1] : "•";
+    const lbl = m ? m[2] : rawText;
+    btn.dataset.sbTip = lbl;
+    btn.textContent = "";
+    const icoSpan = document.createElement("span");
+    icoSpan.className = "tab-ico";
+    icoSpan.setAttribute("aria-hidden", "true");
+    icoSpan.textContent = ico;
+    const lblSpan = document.createElement("span");
+    lblSpan.className = "tab-lbl";
+    lblSpan.textContent = lbl;
+    btn.appendChild(icoSpan);
+    btn.appendChild(lblSpan);
+    if (badge) btn.appendChild(badge);
+  });
+}
+
+function initSidebarTooltips() {
+  const tip = $("#sbFloatingTooltip");
+  const navShell = $("#appNavShell");
+  if (!tip || !navShell || navShell.dataset.tipBound) return;
+  navShell.dataset.tipBound = "1";
+
+  const hideTip = () => { tip.hidden = true; };
+  const showTipFor = el => {
+    if (window.innerWidth < 1024) return hideTip();
+    if (document.documentElement.getAttribute("data-sidebar-collapsed") !== "true") return hideTip();
+    const navPos = document.documentElement.getAttribute("data-nav-pos") || "left";
+    if (navPos === "top") return hideTip();
+    const txt = el?.dataset?.sbTip || el?.getAttribute?.("aria-label") || "";
+    if (!txt) return hideTip();
+    const rect = el.getBoundingClientRect();
+    tip.textContent = txt;
+    tip.hidden = false;
+    const tipRect = tip.getBoundingClientRect();
+    const top = Math.max(16, Math.min(window.innerHeight - 16, rect.top + rect.height / 2));
+    tip.style.top = `${top}px`;
+    if (navPos === "right") {
+      tip.style.left = `${Math.max(8, rect.left - tipRect.width - 10)}px`;
+    } else {
+      tip.style.left = `${Math.min(window.innerWidth - tipRect.width - 8, rect.right + 10)}px`;
+    }
+  };
+
+  navShell.addEventListener("pointerover", e => {
+    const target = e.target.closest("[data-sb-tip]");
+    if (target) showTipFor(target);
+    else hideTip();
+  });
+  navShell.addEventListener("pointerleave", hideTip);
+  navShell.addEventListener("focusin", e => {
+    const target = e.target.closest("[data-sb-tip]");
+    if (target) showTipFor(target);
+  });
+  navShell.addEventListener("focusout", hideTip);
+  window.addEventListener("scroll", hideTip, true);
+}
+
+function getAllModeTripsList(modeOpt) {
+  const m = (modeOpt || appMode) === "professional" ? "professional" : "personal";
+  const all = [...(tripsCache?.ownTrips || []), ...(tripsCache?.sharedTrips || [])];
+  return all.filter(t => t && getTripMode(t) === m);
+}
+
+function initContextBarAndLayoutControls() {
+  const colBtn = $("#btnSidebarCollapse");
+  if (colBtn && !colBtn.dataset.boundLay) {
+    colBtn.dataset.boundLay = "1";
+    colBtn.onclick = () => toggleSidebarCollapsed();
+  }
+  const autoBtn = $("#btnSidebarAutoCollapse");
+  if (autoBtn && !autoBtn.dataset.boundLay) {
+    autoBtn.dataset.boundLay = "1";
+    autoBtn.onclick = () => toggleAutoCollapseHeavy();
+  }
+  ["#btnSidebarPosCycle", "#btnQuickNavPos", "#ctxBtnNavPos"].forEach(sel => {
+    const b = $(sel);
+    if (b && !b.dataset.boundLay) {
+      b.dataset.boundLay = "1";
+      b.onclick = () => cycleNavPosition();
+    }
+  });
+
+  // Troca rápida de projeto na Barra de Contexto (Breadcrumb)
+  const projBtn = $("#ctxProjectBtn");
+  const projMenu = $("#ctxProjectMenu");
+  if (projBtn && projMenu && !projBtn.dataset.boundCtx) {
+    projBtn.dataset.boundCtx = "1";
+    const closeProjMenu = () => {
+      projMenu.hidden = true;
+      projBtn.setAttribute("aria-expanded", "false");
+    };
+    projBtn.onclick = e => {
+      e.stopPropagation();
+      if (!projMenu.hidden) { closeProjMenu(); return; }
+      const modeTrips = getAllModeTripsList(appMode);
+      if (!modeTrips.length) {
+        projMenu.innerHTML = `<div class="muted small" style="padding:8px 10px">Nenhum planejamento neste modo.</div>`;
+      } else {
+        projMenu.innerHTML = modeTrips.map(t => {
+          const isCur = activeTrip && t.id === activeTrip.id;
+          return `<button type="button" class="${isCur ? "is-current" : ""}" data-ctx-trip="${esc(t.id)}" role="menuitem">
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name || t.data?.title || "Sem nome")}</span>
+            ${isCur ? '<span aria-hidden="true">✓</span>' : ""}
+          </button>`;
+        }).join("") + `<hr style="border:0;border-top:1px solid var(--border);margin:4px 0"><button type="button" data-ctx-new-trip role="menuitem">➕ Novo planejamento</button>`;
+        projMenu.querySelectorAll("[data-ctx-trip]").forEach(btn => {
+          btn.onclick = async () => {
+            const tid = btn.dataset.ctxTrip;
+            closeProjMenu();
+            if (tid && (!activeTrip || activeTrip.id !== tid)) {
+              selectedTripIds = [tid];
+              await refreshTripsAndLoad(tid);
+            }
+          };
+        });
+        const newBtn = projMenu.querySelector("[data-ctx-new-trip]");
+        if (newBtn) newBtn.onclick = () => { closeProjMenu(); $("#btnNewTrip")?.click(); };
+      }
+      projMenu.hidden = false;
+      projBtn.setAttribute("aria-expanded", "true");
+    };
+    document.addEventListener("click", e => {
+      if (!projMenu.hidden && !projMenu.contains(e.target) && !projBtn.contains(e.target)) closeProjMenu();
+    });
+  }
+}
+
+/* ---------- COMMAND PALETTE (CTRL+K / CMD+K / /) & ATALHOS GLOBAIS ---------- */
+function fuzzyMatchScore(query, target) {
+  const q = String(query || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const t = String(target || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (!q) return 1;
+  if (t === q) return 1000;
+  const idx = t.indexOf(q);
+  if (idx >= 0) return 500 - Math.min(idx, 200);
+  // Fuzzy subsequência
+  let qi = 0, score = 0, streak = 0;
+  for (let i = 0; i < t.length && qi < q.length; i++) {
+    if (t[i] === q[qi]) {
+      qi++;
+      streak++;
+      score += 10 + streak * 4;
+    } else {
+      streak = 0;
+    }
+  }
+  return qi === q.length ? score : 0;
+}
+
+function buildCommandPaletteItems(query) {
+  const isPro = appMode === "professional";
+  const items = [];
+
+  // 1. Ações Rápidas
+  const actions = [
+    {
+      group: "Ações rápidas", ico: "➕", title: isPro ? "Novo Cartão" : "Novo Evento / Cartão",
+      sub: "Criar imediatamente no projeto atual", kbd: "N",
+      hay: "novo cartao evento criar adicionar tarefa atividade",
+      run: () => $("#btnAdd")?.click()
+    },
+    {
+      group: "Ações rápidas", ico: "🔄", title: isPro ? "Alternar para Modo Pessoal" : "Alternar para Modo Profissional",
+      sub: "Trocar espaço de trabalho", kbd: "",
+      hay: "alternar modo pessoal profissional pro trocar espaco",
+      run: () => setAppMode(isPro ? "personal" : "professional")
+    },
+    {
+      group: "Ações rápidas", ico: isDarkTheme() ? "☀️" : "🌙", title: isDarkTheme() ? "Ativar Modo Dia (Claro)" : "Ativar Modo Noite (Escuro)",
+      sub: "Alternar tema claro e escuro", kbd: "",
+      hay: "tema dia noite claro escuro dark light",
+      run: () => applyTheme(isDarkTheme() ? "light" : "dark")
+    },
+    {
+      group: "Ações rápidas", ico: "🧭", title: "Alternar Posição do Menu",
+      sub: "Lateral Esquerda ↔ Lateral Direita ↔ Barra Superior", kbd: "",
+      hay: "posicao menu sidebar barra lateral esquerda direita topo superior layout",
+      run: () => cycleNavPosition()
+    },
+    {
+      group: "Ações rápidas", ico: "📐", title: `Alternar Densidade (${appearancePrefs[appMode]?.density === "compact" ? "Confortável" : "Compacto"})`,
+      sub: "Ajustar espaçamento em Gantt, Quadros e Tabelas", kbd: "",
+      hay: "densidade compacto confortavel layout espacamento",
+      run: () => {
+        const cur = appearancePrefs[appMode]?.density === "compact" ? "compact" : "comfortable";
+        appearancePrefs[appMode].density = cur === "compact" ? "comfortable" : "compact";
+        persistAppearance(appearancePrefs[appMode].density === "compact" ? "📐 Densidade Compacta ativada!" : "📐 Densidade Confortável ativada!");
+      }
+    },
+    {
+      group: "Ações rápidas", ico: "⚙️", title: "Abrir Configurações & Aparência",
+      sub: "White-label, paletas, logos, menus e integrações", kbd: "",
+      hay: "configuracoes parametros aparencia paleta logo menus white-label",
+      run: () => (isPro ? switchProView("pro-params") : switchAppView("params"))
+    }
+  ];
+
+  // 2. Navegação (Abas + Calendário Anual)
+  const navTargets = isPro
+    ? [
+        { ico: "🗂️", title: "Quadro (Kanban)", id: "pro-board" },
+        { ico: "📅", title: "Timeline (Gantt)", id: "pro-gantt" },
+        { ico: "🗓️", title: "Calendário Anual", id: "pro-gantt", annual: true },
+        { ico: "🗺️", title: "Mapa", id: "pro-map" },
+        { ico: "✈️", title: "Viagens", id: "pro-travels" },
+        { ico: "📋", title: "Controle", id: "pro-control" },
+        { ico: "📁", title: "Documentos", id: "pro-docs" },
+        { ico: "📊", title: "Dashboard", id: "pro-dashboard" },
+        { ico: "💼", title: "Financeiro", id: "pro-finance" },
+        { ico: "🧾", title: "Tabela", id: "pro-table" },
+        { ico: "✅", title: "Checklist", id: "pro-checklist" }
+      ]
+    : [
+        { ico: "📅", title: "Cronograma (Gantt)", id: "gantt" },
+        { ico: "🗓️", title: "Calendário Anual", id: "gantt", annual: true },
+        { ico: "🗺️", title: "Mapa", id: "personal-map" },
+        { ico: "📊", title: "Dashboard", id: "dashboard" },
+        { ico: "💰", title: "Financeiro", id: "finance" },
+        { ico: "🤝", title: "Dividir Despesas", id: "splitwise" },
+        { ico: "🗂️", title: "Quadros", id: "personal-board" },
+        { ico: "🧾", title: "Tabela", id: "table" },
+        { ico: "✅", title: "Checklist", id: "checklist" }
+      ];
+
+  navTargets.forEach(n => {
+    items.push({
+      group: "Navegar para aba",
+      ico: n.ico,
+      title: n.title,
+      sub: `Ir para ${n.title}`,
+      kbd: "",
+      hay: `${n.title} aba ir navegar ${n.id}`,
+      run: () => {
+        if (isPro) switchProView(n.id);
+        else switchAppView(n.id);
+        if (n.annual) {
+          setTimeout(() => {
+            document.querySelector(isPro ? '[data-pgmode="annual"]' : '[data-gmode="annual"]')?.click();
+          }, 40);
+        }
+      }
+    });
+  });
+
+  // 3. Trocar de Projeto / Planejamento
+  getAllModeTripsList(appMode).forEach(t => {
+    const tName = t.name || t.data?.title || "Sem nome";
+    const isCur = activeTrip && t.id === activeTrip.id;
+    items.push({
+      group: "Projetos & Planejamentos",
+      ico: isCur ? "✅" : "📁",
+      title: tName,
+      sub: isCur ? "Projeto ativo atualmente" : "Trocar para este projeto",
+      kbd: "",
+      hay: `projeto planejamento viagem calendario trocar ${tName}`,
+      run: async () => {
+        if (!isCur) {
+          selectedTripIds = [t.id];
+          await refreshTripsAndLoad(t.id);
+        }
+      }
+    });
+  });
+
+  // 4. Cartões & Atividades (busca por título, tag, cliente, local, responsável)
+  const cards = isPro
+    ? (window.MyPlanPro?.getProSortedActivities?.({ includeArchived: true }) || [])
+    : (typeof getPersonalAllActivities === "function" ? getPersonalAllActivities({ includeArchived: true }) : (state?.activities || []));
+  cards.forEach(c => {
+    const tags = Array.isArray(c.tags) ? c.tags.join(" ") : "";
+    const meta = [c.columnTitle, c.client, c.location, c.assignee, tags ? `#${tags}` : ""].filter(Boolean).join(" · ");
+    items.push({
+      group: "Cartões & Atividades",
+      ico: c.archived ? "📦" : "🃏",
+      title: c.name || "Sem título",
+      sub: meta || (c.start ? fmtBR(c.start) : "Abrir cartão"),
+      kbd: "",
+      hay: `${c.name || ""} ${tags} ${c.notes || ""} ${c.client || ""} ${c.location || ""} ${c.assignee || ""} ${c.columnTitle || ""}`,
+      run: () => {
+        if (isPro) window.MyPlanPro?.openProCardModal?.(c.id);
+        else window.openModal?.(c.id);
+      }
+    });
+  });
+
+  actions.forEach(a => items.unshift(a));
+
+  const q = String(query || "").trim();
+  if (!q) {
+    // Sem texto: mostra ações, abas, projetos e até 6 cartões recentes
+    const out = [];
+    const counts = {};
+    const limits = { "Ações rápidas": 6, "Navegar para aba": 8, "Projetos & Planejamentos": 5, "Cartões & Atividades": 6 };
+    items.forEach(it => {
+      counts[it.group] = (counts[it.group] || 0) + 1;
+      if (counts[it.group] <= (limits[it.group] || 6)) out.push(it);
+    });
+    return out;
+  }
+
+  return items
+    .map(it => ({ it, score: Math.max(fuzzyMatchScore(q, it.title) * 1.4, fuzzyMatchScore(q, it.hay)) }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 28)
+    .map(x => x.it);
+}
+
+let cmdkState = { items: [], selectedIdx: 0 };
+
+function openCommandPalette(initialQuery = "") {
+  const dlg = $("#cmdkDialog");
+  const inp = $("#cmdkInput");
+  if (!dlg || !inp) return;
+  if ($("#appShell")?.hidden) return;
+  if (!dlg.open) dlg.showModal();
+  inp.value = initialQuery;
+  renderCommandPaletteList(initialQuery);
+  requestAnimationFrame(() => { inp.focus(); inp.select(); });
+}
+
+function renderCommandPaletteList(query) {
+  const box = $("#cmdkResults");
+  if (!box) return;
+  const items = buildCommandPaletteItems(query);
+  cmdkState.items = items;
+  cmdkState.selectedIdx = 0;
+
+  if (!items.length) {
+    box.innerHTML = `<div class="cmdk-empty">Nenhum resultado encontrado para "${esc(query)}".</div>`;
+    return;
+  }
+
+  let html = "";
+  let lastGroup = "";
+  items.forEach((it, idx) => {
+    if (it.group !== lastGroup) {
+      lastGroup = it.group;
+      html += `<div class="cmdk-group-title">${esc(it.group)}</div>`;
+    }
+    html += `<button type="button" class="cmdk-item${idx === 0 ? " is-selected" : ""}" data-cmdk-idx="${idx}" role="option" aria-selected="${idx === 0 ? "true" : "false"}">
+      <span class="cmdk-item-ico" aria-hidden="true">${esc(it.ico)}</span>
+      <span class="cmdk-item-body">
+        <span class="cmdk-item-title">${esc(it.title)}</span>
+        ${it.sub ? `<span class="cmdk-item-sub">${esc(it.sub)}</span>` : ""}
+      </span>
+      ${it.kbd ? `<span class="cmdk-item-kbd">${esc(it.kbd)}</span>` : ""}
+    </button>`;
+  });
+  box.innerHTML = html;
+
+  box.querySelectorAll("[data-cmdk-idx]").forEach(btn => {
+    btn.onmouseenter = () => setCmdkSelected(parseInt(btn.dataset.cmdkIdx, 10), false);
+    btn.onclick = () => executeCmdkItem(parseInt(btn.dataset.cmdkIdx, 10));
+  });
+}
+
+function setCmdkSelected(idx, scrollInto = true) {
+  const box = $("#cmdkResults");
+  if (!box || !cmdkState.items.length) return;
+  const max = cmdkState.items.length - 1;
+  cmdkState.selectedIdx = ((idx % (max + 1)) + (max + 1)) % (max + 1);
+  box.querySelectorAll("[data-cmdk-idx]").forEach(btn => {
+    const active = parseInt(btn.dataset.cmdkIdx, 10) === cmdkState.selectedIdx;
+    btn.classList.toggle("is-selected", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+    if (active && scrollInto) btn.scrollIntoView({ block: "nearest" });
+  });
+}
+
+function executeCmdkItem(idx) {
+  const item = cmdkState.items[idx];
+  const dlg = $("#cmdkDialog");
+  if (dlg?.open) dlg.close();
+  if (item?.run) item.run();
+}
+
+function initCommandPaletteAndShortcuts() {
+  if (document.documentElement.dataset.cmdkBound) return;
+  document.documentElement.dataset.cmdkBound = "1";
+
+  const dlg = $("#cmdkDialog");
+  const inp = $("#cmdkInput");
+
+  // Fallback light-dismiss para navegadores sem <dialog closedby="any"> (ex.: Safari)
+  if (!("closedBy" in HTMLDialogElement.prototype)) {
+    const isOutside = (e, d) => {
+      const r = d.getBoundingClientRect();
+      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    };
+    document.querySelectorAll('dialog[closedby="any"]').forEach(d => {
+      let downOutside = false;
+      d.addEventListener("pointerdown", e => { downOutside = isOutside(e, d); });
+      d.addEventListener("pointerup", e => { if (downOutside && isOutside(e, d)) d.close(); });
+    });
+  }
+
+  ["#btnSidebarCmdk", "#ctxBtnCmdk", "#btnCmdkHint"].forEach(sel => {
+    const b = $(sel);
+    if (b) b.onclick = () => openCommandPalette("");
+  });
+  if ($("#btnCmdkClose")) $("#btnCmdkClose").onclick = () => dlg?.close();
+
+  if (inp) {
+    inp.addEventListener("input", () => renderCommandPaletteList(inp.value));
+    inp.addEventListener("keydown", e => {
+      if (e.key === "ArrowDown") { e.preventDefault(); setCmdkSelected(cmdkState.selectedIdx + 1); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); setCmdkSelected(cmdkState.selectedIdx - 1); }
+      else if (e.key === "Enter") { e.preventDefault(); executeCmdkItem(cmdkState.selectedIdx); }
+      else if (e.key === "Escape") { e.preventDefault(); dlg?.close(); }
+    });
+  }
+
+  // Atalhos globais de teclado
+  document.addEventListener("keydown", e => {
+    if ($("#appShell")?.hidden) return;
+    const keyLower = (e.key || "").toLowerCase();
+
+    // Ctrl+K / Cmd+K -> Command Palette
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && keyLower === "k") {
+      e.preventDefault();
+      if (dlg?.open) dlg.close();
+      else openCommandPalette("");
+      return;
+    }
+
+    const active = document.activeElement;
+    const isTyping = Boolean(
+      active && (
+        active.tagName === "INPUT" ||
+        active.tagName === "TEXTAREA" ||
+        active.tagName === "SELECT" ||
+        active.isContentEditable
+      )
+    );
+    const anyOpenDialog = document.querySelector("dialog[open]");
+
+    if (e.key === "Escape") {
+      $("#menu")?.classList.remove("open", "is-fixed-menu");
+      $("#btnMenu")?.setAttribute("aria-expanded", "false");
+      if ($("#ctxProjectMenu")) {
+        $("#ctxProjectMenu").hidden = true;
+        $("#ctxProjectBtn")?.setAttribute("aria-expanded", "false");
+      }
+      closeAllGanttPopovers?.();
+      closeAllUnifiedCalMenus?.();
+      return;
+    }
+
+    if (isTyping || anyOpenDialog || e.ctrlKey || e.metaKey || e.altKey) return;
+
+    if (e.key === "/") {
+      e.preventDefault();
+      openCommandPalette("");
+    } else if (keyLower === "n") {
+      e.preventDefault();
+      $("#btnAdd")?.click();
+    }
+  });
 }
 
 function saveModeMenuOrder(mode, orderIds) {
@@ -7056,7 +7958,12 @@ function updateSyncBadge(info) {
 
 async function boot() {
   document.documentElement.setAttribute("data-mode", appMode);
+  enhanceSidebarTabs();
   initTheme();
+  initSidebarTooltips();
+  initContextBarAndLayoutControls();
+  initLogoSearchModal();
+  initCommandPaletteAndShortcuts();
   const swInviteToken = new URLSearchParams(window.location.search).get("splitwiseInvite");
   if (swInviteToken && window.MyPlanSplitwise && window.FeriasApi?.getPublicSplitwise) {
     await openPublicSplitwiseGuestMode(swInviteToken);
@@ -7437,12 +8344,16 @@ if ($("#btnCrossingsDone")) $("#btnCrossingsDone").onclick = () => $("#crossings
 $("#btnPendingInvites").onclick = () => $("#invitesBanner").scrollIntoView({ behavior: "smooth" });
 
 function switchAppView(viewId) {
+  currentActiveViewId = viewId;
+  sidebarManualExpandOnHeavy = false;
   if (viewId !== "admin") lastPersonalView = viewId;
   $("#tabs")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.view === viewId));
   $("#tabsPro")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.proView === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
+  applyLayoutPrefs();
+  updateContextBar();
   if (viewId === "admin") loadAndRenderAdmin();
-  if (viewId === "params") { renderParams(); window.scrollTo(0, 0); }
+  if (viewId === "params") { renderParams(); $("#appMainScroll")?.scrollTo?.(0, 0); }
   if ($("#personalMapNavFilterHost")) $("#personalMapNavFilterHost").hidden = (viewId === "admin" || viewId === "params");
   if (viewId === "personal-map") renderPersonalMap();
   if (viewId === "personal-board") renderPersonalBoard();
@@ -7451,6 +8362,8 @@ function switchAppView(viewId) {
 }
 
 function switchProView(viewId) {
+  currentActiveViewId = viewId;
+  sidebarManualExpandOnHeavy = false;
   if (viewId !== "admin") lastProView = viewId;
   let activeProTab = null;
   $("#tabsPro")?.querySelectorAll(".tab").forEach(x => {
@@ -7461,12 +8374,15 @@ function switchProView(viewId) {
   activeProTab?.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "center" });
   $("#tabs")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.view === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
+  applyLayoutPrefs();
+  updateContextBar();
   const renderedDirty = Boolean(window.MyPlanPro?.renderProViewIfDirty?.(viewId));
   if (viewId === "admin") loadAndRenderAdmin();
   else if (viewId === "pro-params") renderAppearancePanel($("#proAppearanceHost"), "professional");
   else if (viewId === "pro-map" && !renderedDirty && window.MyPlanPro?.renderProMap) window.MyPlanPro.renderProMap();
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();
+  $("#appMainScroll")?.scrollTo?.(0, 0);
   window.scrollTo(0, 0);
 }
 
@@ -11355,11 +12271,41 @@ $("#btnCheckDelete").onclick = () => {
 
 $("#btnMenu").onclick = e => {
   e.stopPropagation();
-  const open = $("#menu").classList.toggle("open");
-  $("#btnMenu").setAttribute("aria-expanded", String(open));
+  const menu = $("#menu");
+  const btn = $("#btnMenu");
+  const open = menu.classList.toggle("open");
+  btn.setAttribute("aria-expanded", String(open));
+  if (open) {
+    const navPos = document.documentElement.getAttribute("data-nav-pos") || "left";
+    const isSidebar = window.innerWidth >= 1024 && navPos !== "top";
+    if (isSidebar) {
+      menu.classList.add("is-fixed-menu");
+      const r = btn.getBoundingClientRect();
+      const mw = Math.max(255, menu.offsetWidth || 255);
+      const mh = Math.min(window.innerHeight - 24, menu.scrollHeight || 420);
+      let left = navPos === "right" ? (r.left - mw - 8) : (r.right + 8);
+      if (left + mw > window.innerWidth - 10) left = Math.max(10, window.innerWidth - mw - 10);
+      if (left < 10) left = 10;
+      let top = r.top;
+      if (top + mh > window.innerHeight - 12) top = Math.max(12, window.innerHeight - mh - 12);
+      menu.style.left = `${Math.round(left)}px`;
+      menu.style.top = `${Math.round(top)}px`;
+    } else {
+      menu.classList.remove("is-fixed-menu");
+      menu.style.left = "";
+      menu.style.top = "";
+    }
+  } else {
+    menu.classList.remove("is-fixed-menu");
+    menu.style.left = "";
+    menu.style.top = "";
+  }
 };
 document.addEventListener("click", () => {
-  $("#menu").classList.remove("open");
+  const menu = $("#menu");
+  menu.classList.remove("open", "is-fixed-menu");
+  menu.style.left = "";
+  menu.style.top = "";
   $("#btnMenu").setAttribute("aria-expanded", "false");
 });
 

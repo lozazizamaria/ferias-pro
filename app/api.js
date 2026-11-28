@@ -471,6 +471,22 @@
     return r.data;
   }
 
+  async function searchLogoImages(query) {
+    if (!serverAvailable) {
+      return { ok: true, configured: false, items: [], message: "Busca integrada requer servidor online." };
+    }
+    const r = await req(`/api/logo-search?q=${encodeURIComponent(String(query || "").trim())}`);
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao buscar imagens.");
+    return r.data;
+  }
+
+  async function fetchLogoFromUrl(url) {
+    if (!serverAvailable) throw new Error("Download de logo por URL requer servidor online.");
+    const r = await req("/api/logo-fetch", { method: "POST", body: JSON.stringify({ url }) });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao baixar a imagem informada.");
+    return r.data;
+  }
+
   async function aiPlanTrip(payload) {
     if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
     const r = await req("/api/ai/plan-trip", { method: "POST", body: JSON.stringify(payload) });
@@ -768,6 +784,8 @@
     updateProfile,
     saveIntegrations,
     savePreferences,
+    searchLogoImages,
+    fetchLogoFromUrl,
     aiPlanTrip,
     aiTranscribeAudio,
     aiImportCalendar,

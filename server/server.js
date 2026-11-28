@@ -2,6 +2,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const net = require("node:net");
+const dns = require("node:dns").promises;
 const tls = require("node:tls");
 const zlib = require("node:zlib");
 const path = require("node:path");
@@ -885,13 +886,27 @@ function sanitizeModeAppearance(raw, prev = {}) {
   const logoDataUrl = src.logoDataUrl !== undefined
     ? sanitizeLogoDataUrl(src.logoDataUrl)
     : sanitizeLogoDataUrl(base.logoDataUrl || "");
+  const appNameRaw = src.appName !== undefined ? String(src.appName || "") : String(base.appName || "");
+  const appName = appNameRaw.replace(/[\r\n\t]+/g, " ").trim().slice(0, 48);
+  const densRaw = typeof src.density === "string" ? src.density.trim().toLowerCase() : (base.density || "comfortable");
+  const density = densRaw === "compact" ? "compact" : "comfortable";
   let menuOrder = Array.isArray(base.menuOrder) ? base.menuOrder : [];
   if (Array.isArray(src.menuOrder)) {
     menuOrder = [...new Set(src.menuOrder
       .map(x => String(x || "").trim().slice(0, 40))
       .filter(Boolean))].slice(0, 20);
   }
-  return { paletteId, customPrimary, logoDataUrl, menuOrder };
+  return { paletteId, customPrimary, logoDataUrl, appName, density, menuOrder };
+}
+
+function sanitizeLayoutPrefs(raw, prev = {}) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const base = prev && typeof prev === "object" ? prev : {};
+  const posRaw = typeof src.navPos === "string" ? src.navPos.trim().toLowerCase() : (base.navPos || "left");
+  const navPos = ["left", "right", "top"].includes(posRaw) ? posRaw : "left";
+  const sidebarCollapsed = src.sidebarCollapsed !== undefined ? Boolean(src.sidebarCollapsed) : Boolean(base.sidebarCollapsed);
+  const autoCollapseHeavy = src.autoCollapseHeavy !== undefined ? Boolean(src.autoCollapseHeavy) : Boolean(base.autoCollapseHeavy);
+  return { navPos, sidebarCollapsed, autoCollapseHeavy };
 }
 
 function sanitizeAppearancePrefs(raw, prev = {}) {
@@ -899,8 +914,76 @@ function sanitizeAppearancePrefs(raw, prev = {}) {
   const base = prev && typeof prev === "object" ? prev : {};
   return {
     personal: sanitizeModeAppearance(src.personal, base.personal),
-    professional: sanitizeModeAppearance(src.professional, base.professional)
+    professional: sanitizeModeAppearance(src.professional, base.professional),
+    layout: sanitizeLayoutPrefs(src.layout, base.layout)
   };
+}
+
+function isPrivateOrReservedIp(ip) {
+  const clean = String(ip || "").trim().toLowerCase();
+  if (!clean) return true;
+  if (clean.startsWith("::ffff:")) return isPrivateOrReservedIp(clean.slice(7));
+  if (net.isIPv4(clean)) {
+    const parts = clean.split(".").map(Number);
+    if (parts.length !== 4 || parts.some(n => Number.isNaN(n) || n < 0 || n > 255)) return true;
+    const [a, b] = parts;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a >= 224) return true;
+    return false;
+  }
+  if (net.isIPv6(clean)) {
+    if (clean === "::1" || clean === "::" || clean.startsWith("fe80:") || clean.startsWith("fc") || clean.startsWith("fd") || clean.startsWith("ff")) {
+      return true;
+    }
+    return false;
+  }
+  return true;
+}
+
+async function assertSafePublicUrl(rawUrl) {
+  let u;
+  try {
+    u = new URL(String(rawUrl || "").trim());
+  } catch {
+    throw new Error("URL de imagem inválida.");
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") {
+    throw new Error("Apenas URLs http:// ou https:// são permitidas.");
+  }
+  const host = u.hostname.toLowerCase();
+  if (!host || host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) {
+    throw new Error("Host não permitido.");
+  }
+  if (net.isIP(host)) {
+    if (isPrivateOrReservedIp(host)) throw new Error("Endereço IP privado/local não permitido.");
+    return u;
+  }
+  let records;
+  try {
+    records = await dns.lookup(host, { all: true });
+  } catch {
+    throw new Error("Não foi possível resolver o domínio da imagem.");
+  }
+  if (!Array.isArray(records) || !records.length) throw new Error("Domínio sem endereço válido.");
+  for (const r of records) {
+    if (isPrivateOrReservedIp(r.address)) throw new Error("Destino aponta para rede privada/bloqueada.");
+  }
+  return u;
+}
+
+function sniffImageMime(buf, headerMime = "") {
+  const h = String(headerMime || "").split(";")[0].trim().toLowerCase();
+  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length >= 12 && buf.slice(0, 4).toString("ascii") === "RIFF" && buf.slice(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  const headTxt = buf.slice(0, 512).toString("utf8").trim();
+  if (/^(<\?xml[^>]*>\s*)?<svg[\s>]/i.test(headTxt) || h === "image/svg+xml") return "image/svg+xml";
+  if (["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(h)) return h === "image/jpg" ? "image/jpeg" : h;
+  return "";
 }
 
 function publicUser(u) {
@@ -2786,6 +2869,94 @@ const server = http.createServer(async (req, res) => {
       u.appearance = sanitizeAppearancePrefs(incoming, u.appearance);
       saveDb();
       return sendJson(res, 200, { ok: true, user: publicUser(u) });
+    }
+
+    if (pathname === "/api/logo-search" && req.method === "GET") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const q = String(url.searchParams.get("q") || "").trim().slice(0, 120);
+      if (!q) return sendJson(res, 400, { ok: false, error: "Informe um termo de busca." });
+      const apiKey = String(process.env.GOOGLE_CSE_API_KEY || process.env.GOOGLE_SEARCH_API_KEY || "").trim();
+      const cx = String(process.env.GOOGLE_CSE_CX || process.env.GOOGLE_SEARCH_CX || "").trim();
+      if (!apiKey || !cx) {
+        return sendJson(res, 200, {
+          ok: true,
+          configured: false,
+          items: [],
+          message: "Busca integrada de imagens requer GOOGLE_CSE_API_KEY e GOOGLE_CSE_CX no .env. Use o botão Google Imagens ou cole a URL direta da logo abaixo."
+        });
+      }
+      try {
+        const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(apiKey)}&cx=${encodeURIComponent(cx)}&searchType=image&num=10&safe=active&q=${encodeURIComponent(q)}`;
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 10000);
+        const resp = await fetch(apiUrl, { signal: ac.signal, headers: { Accept: "application/json" } }).finally(() => clearTimeout(timer));
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          return sendJson(res, 502, { ok: false, error: data?.error?.message || `Google Custom Search retornou HTTP ${resp.status}.` });
+        }
+        const items = Array.isArray(data.items)
+          ? data.items.map(it => ({
+              title: String(it.title || "").slice(0, 100),
+              link: String(it.link || ""),
+              thumbnail: String(it.image?.thumbnailLink || it.link || ""),
+              width: Number(it.image?.width) || 0,
+              height: Number(it.image?.height) || 0,
+              mime: String(it.mime || "")
+            })).filter(it => /^https?:\/\//i.test(it.link))
+          : [];
+        return sendJson(res, 200, { ok: true, configured: true, items });
+      } catch (err) {
+        return sendJson(res, 502, { ok: false, error: "Falha ao consultar imagens: " + (err.message || "erro de rede") });
+      }
+    }
+
+    if (pathname === "/api/logo-fetch" && req.method === "POST") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const body = await readBody(req);
+      const rawUrl = String(body?.url || "").trim();
+      if (!rawUrl) return sendJson(res, 400, { ok: false, error: "Informe a URL da imagem." });
+      try {
+        const parsed = await assertSafePublicUrl(rawUrl);
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 10000);
+        const resp = await fetch(parsed.toString(), {
+          signal: ac.signal,
+          redirect: "follow",
+          headers: { "User-Agent": "MyPlan-LogoFetcher/1.0", Accept: "image/*,*/*;q=0.5" }
+        }).finally(() => clearTimeout(timer));
+        if (!resp.ok) {
+          return sendJson(res, 400, { ok: false, error: `Servidor da imagem retornou HTTP ${resp.status}.` });
+        }
+        if (resp.url && resp.url !== parsed.toString()) {
+          await assertSafePublicUrl(resp.url);
+        }
+        const ab = await resp.arrayBuffer();
+        if (ab.byteLength === 0 || ab.byteLength > 3 * 1024 * 1024) {
+          return sendJson(res, 400, { ok: false, error: "Imagem vazia ou maior que 3 MB." });
+        }
+        let buf = Buffer.from(ab);
+        const mime = sniffImageMime(buf, resp.headers.get("content-type") || "");
+        if (!mime) {
+          return sendJson(res, 400, { ok: false, error: "O link informado não é uma imagem PNG, JPG, WebP ou SVG válida." });
+        }
+        if (mime === "image/svg+xml") {
+          let svgText = buf.toString("utf8")
+            .replace(/<script[\s\S]*?<\/script>/gi, "")
+            .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, "")
+            .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+            .replace(/javascript:/gi, "");
+          if (!/<svg[\s>]/i.test(svgText)) {
+            return sendJson(res, 400, { ok: false, error: "SVG inválido ou inseguro." });
+          }
+          buf = Buffer.from(svgText, "utf8");
+        }
+        const dataUrl = `data:${mime};base64,${buf.toString("base64")}`;
+        return sendJson(res, 200, { ok: true, mime, dataUrl });
+      } catch (err) {
+        return sendJson(res, 400, { ok: false, error: err.message || "Falha ao baixar a imagem." });
+      }
     }
 
     if (pathname === "/api/integrations" && req.method === "PUT") {

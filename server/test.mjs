@@ -617,4 +617,45 @@ test("Appearance Preferences API — Paletas, Ordem de Menus e Sanitização de 
   assert.equal(meRes.resp.status, 200);
   assert.equal(meRes.json.user.appearance.personal.paletteId, "emerald");
   assert.equal(meRes.json.user.appearance.professional.paletteId, "custom");
+
+  // White-label (appName, density) & Layout (navPos, sidebarCollapsed, autoCollapseHeavy)
+  const wlRes = await apiJson(baseUrl, "/api/auth/preferences", {
+    method: "PUT",
+    cookie,
+    body: {
+      appearance: {
+        personal: { appName: "Minha Agenda", density: "compact" },
+        professional: { appName: "FAB Ops", density: "comfortable" },
+        layout: { navPos: "right", sidebarCollapsed: true, autoCollapseHeavy: true }
+      }
+    }
+  });
+  assert.equal(wlRes.resp.status, 200);
+  assert.equal(wlRes.json.user.appearance.personal.appName, "Minha Agenda");
+  assert.equal(wlRes.json.user.appearance.personal.density, "compact");
+  assert.equal(wlRes.json.user.appearance.professional.appName, "FAB Ops");
+  assert.equal(wlRes.json.user.appearance.layout.navPos, "right");
+  assert.equal(wlRes.json.user.appearance.layout.sidebarCollapsed, true);
+  assert.equal(wlRes.json.user.appearance.layout.autoCollapseHeavy, true);
+
+  // Busca de logo sem chave CSE configurada -> retorna configured: false com fallback claro
+  const searchRes = await apiJson(baseUrl, "/api/logo-search?q=minimal+logo", { cookie });
+  assert.equal(searchRes.resp.status, 200);
+  assert.equal(searchRes.json.ok, true);
+  assert.equal(searchRes.json.configured, false);
+
+  // Proteção SSRF em /api/logo-fetch (bloqueia localhost, loopback, link-local e file://)
+  for (const blockedUrl of [
+    "http://127.0.0.1:80/logo.png",
+    "http://localhost:3080/icons/icon.svg",
+    "http://169.254.169.254/latest/meta-data/",
+    "file:///etc/passwd"
+  ]) {
+    const ssrf = await apiJson(baseUrl, "/api/logo-fetch", {
+      method: "POST",
+      cookie,
+      body: { url: blockedUrl }
+    });
+    assert.equal(ssrf.resp.status, 400, `SSRF deveria bloquear ${blockedUrl}`);
+  }
 });
