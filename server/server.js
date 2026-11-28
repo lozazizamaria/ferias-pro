@@ -1115,7 +1115,7 @@ function serveStaticFile(req, res, reqPath) {
     cleanPath = "/como-usar.html";
   }
   const baseStatic = path.resolve(STATIC_DIR);
-  const resolved = path.resolve(STATIC_DIR, "." + cleanPath);
+  let resolved = path.resolve(STATIC_DIR, "." + cleanPath);
   if (resolved !== baseStatic && !resolved.startsWith(baseStatic + path.sep)) {
     res.writeHead(403, applySecurityHeaders(res));
     return res.end("Forbidden");
@@ -1124,8 +1124,21 @@ function serveStaticFile(req, res, reqPath) {
   try {
     stat = fs.statSync(resolved);
   } catch {
-    res.writeHead(404, applySecurityHeaders(res));
-    return res.end("Not Found");
+    // Fallback opcional: se o usuário salvar prints em /public/screenshots na raiz do repositório
+    if (cleanPath.startsWith("/public/screenshots/")) {
+      const rootPublicBase = path.resolve(ROOT_DIR, "public", "screenshots");
+      const altResolved = path.resolve(ROOT_DIR, "." + cleanPath);
+      if (altResolved.startsWith(rootPublicBase + path.sep)) {
+        try {
+          stat = fs.statSync(altResolved);
+          resolved = altResolved;
+        } catch {}
+      }
+    }
+    if (!stat) {
+      res.writeHead(404, applySecurityHeaders(res));
+      return res.end("Not Found");
+    }
   }
   if (stat.isDirectory()) {
     res.writeHead(404, applySecurityHeaders(res));

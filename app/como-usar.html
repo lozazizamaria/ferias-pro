@@ -1,278 +1,592 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="dark">
+<html lang="pt-BR" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>My Plan — Planejador Profissional (Trello + Gantt) &amp; Pessoal com IA</title>
-<meta name="description" content="My Plan: gerencie projetos no Modo Profissional (Quadro Trello, Gantt em Tela Cheia com Semanas ISO, Fluxo de Caixa) e viagens no Modo Pessoal (Google Maps, IA por Voz Transcrita, Importação de Calendários Excel/Imagem, Agenda Completa Unificada com Desconflito, Google Agenda dedicado e Carteira em 1 clique).">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=68">
+<title>My Plan — Gestão Profissional &amp; Vida Pessoal em um Só Lugar</title>
+<meta name="description" content="Planeje projetos complexos, viagens e finanças com Gantt, Calendário Anual por Semanas, Mapas Inteligentes (Terra e Ar), Inteligência Artificial prática e Dividir Despesas com QR Code Pix.">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=69">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="sobre.css?v=68">
+<link rel="stylesheet" href="sobre.css?v=69">
 </head>
 <body>
-<div class="lp-glow" aria-hidden="true"></div>
 
-<header class="lp-nav">
-  <div class="lp-nav-inner">
-    <a class="lp-brand" href="/">
-      <span class="lp-logo" aria-hidden="true">
-        <img src="/icons/icon.svg?v=68" alt="Logo My Plan" class="lp-logo-img" width="36" height="36">
+<!-- ==================== SEÇÃO 1: NAVBAR FIXA E LIMPA ==================== -->
+<header class="lp-nav" id="lpNav">
+  <div class="lp-container lp-nav-inner">
+    <a class="lp-brand" href="#topo" aria-label="My Plan — Início">
+      <span class="lp-brand-logo" aria-hidden="true">
+        <img src="/icons/icon.svg?v=69" alt="" width="34" height="34">
       </span>
-      <span>My Plan</span>
+      <span class="lp-brand-name">My Plan</span>
     </a>
 
-    <nav class="lp-links" aria-label="Seções">
-      <a href="#gantt-unificado">Gantt &amp; Agenda Completa</a>
-      <a href="#ia-multimodal">IA &amp; Importação Excel</a>
-      <a href="#google-ecossistema">Agenda &amp; Carteira 1 Clique</a>
-      <a href="#tudo-que-faz">Recursos</a>
-      <a href="#como-comecar">Como Usar</a>
+    <nav class="lp-nav-links" aria-label="Navegação principal">
+      <a href="#funcionalidades">Funcionalidades</a>
+      <a href="#modos">Profissional vs. Pessoal</a>
+      <a href="#inteligencia-artificial">Inteligência Artificial</a>
+      <a href="#dividir-custos">Dividir Custos</a>
     </nav>
 
     <div class="lp-nav-actions">
-      <button type="button" class="lp-btn icon" id="lpThemeBtn" title="Alternar Dia/Noite" aria-label="Alternar tema">☀️</button>
-      <a class="lp-btn lp-hide-xs" href="/">Entrar</a>
-      <a class="lp-btn primary" href="/">Abrir My Plan ➔</a>
+      <a class="lp-btn lp-btn-ghost lp-hide-xs" href="/">Entrar</a>
+      <a class="lp-btn lp-btn-primary" href="/">Começar Grátis</a>
+      <button type="button" class="lp-nav-toggle" id="lpMobileMenuBtn" aria-label="Abrir menu de navegação" aria-expanded="false" aria-controls="lpMobileDrawer">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="lp-mobile-drawer" id="lpMobileDrawer" hidden>
+    <div class="lp-container lp-mobile-drawer-inner">
+      <a href="#funcionalidades">Funcionalidades</a>
+      <a href="#modos">Profissional vs. Pessoal</a>
+      <a href="#inteligencia-artificial">Inteligência Artificial</a>
+      <a href="#dividir-custos">Dividir Custos</a>
+      <div class="lp-mobile-drawer-ctas">
+        <a class="lp-btn lp-btn-ghost" href="/">Entrar</a>
+        <a class="lp-btn lp-btn-primary" href="/">Testar Agora</a>
+      </div>
     </div>
   </div>
 </header>
 
-<main class="lp-container">
-  <!-- HERO -->
-  <section class="lp-hero">
-    <div class="lp-pill">💼 Modo Profissional Estilo Trello · 📅 Gantt Tela Cheia &amp; Semanal · 🔀 Agenda Completa sem Conflitos</div>
-    <h1>Domine projetos, viagens, prazos e caixa em um só lugar. <span class="lp-grad-txt">Do Quadro Trello ao Gantt em Tela Cheia.</span></h1>
-    <p class="lp-hero-sub">Alterne em 1 clique entre o <b>Modo Profissional</b> (visual executivo azul escuro, cartões Kanban Trello, fluxo de recebimentos × despesas, reuniões e entregas) e o <b>Modo Pessoal</b> (roteiros completos com Google Maps, pedágios, veículos BEV/PHEV/Flex e gastos diários) — ou junte tudo na <b>Agenda Completa Unificada</b> para eliminar conflitos na hora.</p>
+<main id="topo">
 
-    <div class="lp-hero-ctas">
-      <a class="lp-btn primary lg" href="/">🚀 Começar Agora no My Plan</a>
-      <a class="lp-btn lg" href="#gantt-unificado">🔍 Ver Recursos Avançados</a>
-    </div>
+  <!-- ==================== SEÇÃO 2: HERO SECTION ==================== -->
+  <section class="lp-section lp-hero">
+    <div class="lp-hero-aura" aria-hidden="true"></div>
+    <div class="lp-container">
+      <div class="lp-hero-copy">
+        <div class="lp-eyebrow-pill">
+          <span class="lp-pill-dot" aria-hidden="true"></span>
+          <span>Gestão Profissional &amp; Vida Pessoal em um só lugar</span>
+        </div>
 
-    <div class="lp-trust-row">
-      <span>✔ 100% em Português</span>
-      <span>✔ Filtros Sincronizados (Tipo, Tag e Data)</span>
-      <span>✔ IA Gemini com Transcrição de Voz &amp; Leitura de Excel/Imagem</span>
-      <span>✔ Calendários Dedicados no Google Agenda &amp; Carteira em 1 Clique</span>
-    </div>
+        <h1>Planeje seus projetos, viagens e finanças com a precisão de um executivo — <em>sem misturar trabalho e vida pessoal.</em></h1>
 
-    <div class="lp-hero-media">
-      <img src="/images/hero-showcase.jpg" alt="Visão geral do My Plan com cronograma Gantt, quadros Kanban, rotas e análise financeira" width="1280" height="720" fetchpriority="high">
-    </div>
-  </section>
+        <p class="lp-hero-sub">
+          Reúna <strong>Gantt inteligente</strong>, <strong>Calendário Anual</strong>, <strong>Mapas Terra &amp; Ar</strong>,
+          <strong>IA que gera atas e cartões</strong> e <strong>Divisão de Custos (Splitwise + Pix)</strong> em uma única plataforma rápida,
+          limpa e pronta para o computador e para o celular.
+        </p>
 
-  <!-- PILARES -->
-  <section class="lp-pillars" aria-label="Diferenciais do My Plan">
-    <div class="lp-pillar">
-      <strong>🗂️ Modo Pro Estilo Trello</strong>
-      <span>Colunas arrastáveis, checklists, etiquetas, fluxo de caixa e tema executivo escuro.</span>
-    </div>
-    <div class="lp-pillar">
-      <strong>⛶ Gantt Tela Cheia &amp; Semanas</strong>
-      <span>Barra fina única no topo, Semanas ISO, contraste alternado e escala semanal abaixo de 44%.</span>
-    </div>
-    <div class="lp-pillar">
-      <strong>🔀 Agenda Completa Unificada</strong>
-      <span>Veja Profissional + Pessoal juntos no Gantt e identifique conflitos de data/hora na hora.</span>
-    </div>
-    <div class="lp-pillar">
-      <strong>🎙️ IA c/ Transcrição + Excel</strong>
-      <span>Confirme sua fala transcrita ao gravar áudio ou importe planilhas/calendários por imagem.</span>
-    </div>
-    <div class="lp-pillar">
-      <strong>📅 Agenda &amp; Carteira Direto</strong>
-      <span>1 clique no cabeçalho do cartão abre a Carteira do Google ou salva no calendário dedicado.</span>
-    </div>
-    <div class="lp-pillar">
-      <strong>🔐 Blindagem AES-256-GCM</strong>
-      <span>Cofre criptografado de chaves, PWA offline-ready, PDF A4 horizontal e resumo WhatsApp.</span>
-    </div>
-  </section>
+        <div class="lp-hero-ctas">
+          <a class="lp-btn lp-btn-primary lp-btn-lg" href="/">
+            <span>Experimentar Agora</span>
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5"/></svg>
+          </a>
+          <a class="lp-btn lp-btn-secondary lp-btn-lg" href="#funcionalidades">Ver Funcionalidades</a>
+        </div>
 
-  <!-- SHOWCASE 1: GANTT INTELIGENTE + AGENDA COMPLETA UNIFICADA -->
-  <section class="lp-section" id="gantt-unificado">
-    <div class="lp-split">
-      <div>
-        <span class="lp-split-badge">📅 Cronograma Gantt Profissional &amp; Agenda Completa Unificada</span>
-        <h3>Veja seus projetos profissionais e compromissos pessoais juntos — sem jamais marcar dois compromissos no mesmo horário.</h3>
-        <p>O Gantt do <b>My Plan</b> foi reconstruído para executivos, gestores e quem planeja a sério: leitura limpa por mês, semana do ano e dia, controle total de escala e visão unificada cross-calendário.</p>
-        <ul class="lp-list">
-          <li><b>Modo Agenda Completa (🔀 Pessoal + Profissional):</b> Sobreponha todos os seus calendários próprios e compartilhados no mesmo Gantt ou Linha do Tempo, com selos distintos (<code>💼 PRO</code> vs <code>🌴 PESSOAL</code>), cor exclusiva por agenda e aviso automático <code>⚠️</code> nos choques de agenda para desconflito imediato.</li>
-          <li><b>Zoom Semântico &lt; 44% (Escala Semanal Automática):</b> Ao afastar o zoom abaixo de 44%, os dias desaparecem, ficam apenas as <b>Semanas do Ano (ISO)</b> com contraste alternado mês/semana e compromissos pontuais preenchem toda a largura da semana para visão macro cristalina.</li>
-          <li><b>Modo Tela Cheia Real (⛶):</b> Oculta menus e barras extras deixando uma única linha fina no topo com Filtros, Zoom −/+/Fit, Imprimir PDF exatamente como está na tela e Sair (<code>Esc</code>).</li>
-          <li><b>Filtros Unificados &amp; Reassociação Rápida:</b> Filtre por <b>Tipo</b>, <b>Tag</b> e <b>Período (De–Até)</b> e veja Cronograma, Dashboard e Financeiro atualizarem em sincronia. Ao abrir qualquer cartão/atividade, troque o <b>Evento</b> ao lado das Tags para mover o item entre agendas/projetos.</li>
-        </ul>
+        <p class="lp-hero-trust">
+          <span class="lp-trust-badge">✓ Projeto de exemplo pronto (Férias Europa 2027)</span>
+          <span aria-hidden="true">·</span>
+          <span>PWA Mobile-First</span>
+          <span aria-hidden="true">·</span>
+          <span>Acesso instantâneo gratuito</span>
+        </p>
       </div>
-      <div class="lp-split-media">
-        <img src="/images/ai-maps.jpg" alt="Cronograma Gantt inteligente com IA, escalas semanais e rotas integradas" loading="lazy">
-      </div>
-    </div>
 
-    <!-- SHOWCASE 2: IA GEMINI TRANSCRITA + IMPORTAÇÃO DE CALENDÁRIO POR IMAGEM/EXCEL -->
-    <div class="lp-split reverse" id="ia-multimodal">
-      <div>
-        <span class="lp-split-badge">✨ Inteligência Artificial com Transcrição Real &amp; Visão de Planilhas</span>
-        <h3>Fale seu planejamento vendo exatamente o que foi captado — ou transforme fotos de planilhas Excel em um calendário completo.</h3>
-        <p>Nada de IA "chutando" planejamento quando o microfone falha ou ter que digitar dezenas de datas de um calendário impresso ou tabela do Excel.</p>
-        <ul class="lp-list">
-          <li><b>Áudio Transparente com Medidor &amp; Transcrição Verbatim:</b> Grave no computador ou celular com barra de nível do microfone ao vivo, player imediato para ouvir o que gravou e <b>transcrição automática fiel exibida na tela</b> antes de gerar o cronograma.</li>
-          <li><b>Importar Calendário por Imagem (<code>⋯ ➔ 🖼️</code>):</b> Suba 1 ou várias capturas de tela de planilhas Excel, grades mensais, cronogramas de PDF ou agendas personalizadas — tanto no Modo Pessoal quanto no Modo Profissional.</li>
-          <li><b>Prévia Editável &amp; Destino Flexível:</b> Revise, marque/desmarque e edite cada data, horário, tipo ou valor detectado pela IA antes de escolher se deseja <b>inserir em um calendário/projeto já existente</b> ou <b>criar um novo</b>.</li>
-          <li><b>Preenchimento Instantâneo no Cartão:</b> Suba foto de passagem aérea, voucher de hotel, ingresso ou NF dentro do modal e a IA preenche datas, valores, cliente, localização e subtarefas na hora.</li>
-        </ul>
-      </div>
-      <div class="lp-split-media">
-        <img src="/images/finance-wallet.jpg" alt="Controle financeiro em tempo real, IA multimodal, Google Agenda e Carteira do Google" loading="lazy">
-      </div>
-    </div>
+      <!-- Visual Principal: Mockup Desktop Diurno + Smartphone Sobreposto -->
+      <div class="lp-hero-stage">
+        <figure class="lp-browser lp-hero-browser">
+          <div class="lp-browser-bar" aria-hidden="true">
+            <span class="lp-dots"><i></i><i></i><i></i></span>
+            <span class="lp-url-pill">myplan.digitalinpulse.com.br</span>
+            <span class="lp-mode-chip">Modo Diurno</span>
+          </div>
+          <div class="lp-shot-box" data-shot-box>
+            <img
+              src="/public/screenshots/hero-desktop.png?v=69"
+              alt="Visão principal do My Plan em Modo Diurno no computador exibindo cronograma e navegação lateral limpa"
+              width="1280"
+              height="800"
+              fetchpriority="high"
+              decoding="async"
+            >
+            <div class="lp-shot-fallback" aria-hidden="true">
+              <div class="lp-fb-top"><span></span><span></span><span></span></div>
+              <div class="lp-fb-grid">
+                <div class="lp-fb-side"></div>
+                <div class="lp-fb-main">
+                  <div class="lp-fb-bar is-blue" style="width:62%"></div>
+                  <div class="lp-fb-bar is-emerald" style="width:46%;margin-left:18%"></div>
+                  <div class="lp-fb-bar is-indigo" style="width:52%;margin-left:34%"></div>
+                  <div class="lp-fb-bar is-amber" style="width:38%;margin-left:52%"></div>
+                </div>
+              </div>
+              <span class="lp-fb-caption">Print Desktop · <code>/public/screenshots/hero-desktop.png</code></span>
+            </div>
+          </div>
+        </figure>
 
-    <!-- SHOWCASE 3: GOOGLE AGENDA DEDICADO + WALLET 1 CLIQUE + RELATÓRIOS -->
-    <div class="lp-split" id="google-ecossistema">
-      <div>
-        <span class="lp-split-badge">📆 Calendários Dedicados no Google + 💳 Carteira em 1 Clique + 📄 PDF A4</span>
-        <h3>Cada projeto ou viagem no seu próprio calendário do Google Agenda, e seu ingresso ou cartão na Carteira em um toque.</h3>
-        <p>Compartilhe projetos profissionais ou viagens com sua equipe e família mantendo sua agenda principal organizada — com exportação direta logo no topo de cada item.</p>
-        <ul class="lp-list">
-          <li><b>Agenda &amp; Carteira no Cabeçalho ao Editar:</b> Ao abrir um cartão ou atividade existente, os botões compactos <b>Agenda</b> e <b>Carteira</b> ficam direto no topo ao lado de <b>Duplicar</b> — sem rolar até o final do cartão.</li>
-          <li><b>Calendários Separados por Evento (Inclusive Compartilhados):</b> Cada viagem ou projeto cria e atualiza automaticamente seu próprio sub-calendário no Google Agenda (ex.: <code>My Plan (Pro) — Projeto X</code> e <code>My Plan (Pessoal) — Férias</code>), para você e para quem recebeu seu compartilhamento.</li>
-          <li><b>Abertura Direta na Carteira do Google:</b> Um clique gera e já abre diretamente o aplicativo/cartão da Carteira do Google com QR Code replicado, sem passos extras.</li>
-          <li><b>PDF A4 WYSIWYG, Excel &amp; WhatsApp:</b> Imprima em PDF/PNG exatamente a janela visível do Gantt, gere relatório executivo horizontal completo ou mande o resumo formatado direto no seu WhatsApp.</li>
-        </ul>
-      </div>
-      <div class="lp-split-media">
-        <img src="/images/sharing-report.jpg" alt="Relatórios PDF A4 horizontais, compartilhamento colaborativo em nuvem e resumo para WhatsApp" loading="lazy">
+        <figure class="lp-phone lp-hero-phone" aria-label="Prévia do aplicativo My Plan no celular">
+          <div class="lp-phone-notch" aria-hidden="true"></div>
+          <div class="lp-shot-box is-phone" data-shot-box>
+            <img
+              src="/public/screenshots/mobile-cartao.png?v=69"
+              alt="My Plan aberto no smartphone em Modo Diurno com interface mobile-first"
+              width="390"
+              height="844"
+              decoding="async"
+            >
+            <div class="lp-shot-fallback is-phone" aria-hidden="true">
+              <div class="lp-fb-pill"></div>
+              <div class="lp-fb-card"></div>
+              <div class="lp-fb-card is-short"></div>
+              <div class="lp-fb-card"></div>
+              <span class="lp-fb-caption"><code>mobile-cartao.png</code></span>
+            </div>
+          </div>
+        </figure>
       </div>
     </div>
   </section>
 
-  <!-- BENTO GRID COMPLETO -->
-  <section class="lp-section" id="tudo-que-faz">
-    <div class="lp-sec-head">
-      <h2>Tudo o que o <span class="lp-grad-txt">My Plan</span> coloca no seu comando</h2>
-      <p>Dois ambientes especializados no mesmo login — Modo Profissional (Azul Executivo) e Modo Pessoal — conectados pelo mesmo motor de Gantt, Financeiro, IA e Nuvem.</p>
-    </div>
+  <!-- ==================== SEÇÃO 3: PROFISSIONAL VS. PESSOAL + CONFLITOS ==================== -->
+  <section class="lp-section lp-section-alt" id="modos">
+    <div class="lp-container">
+      <div class="lp-section-head lp-reveal">
+        <span class="lp-kicker">O Grande Diferencial</span>
+        <h2>Dois mundos completamente isolados.<br>Conectados apenas quando você precisa.</h2>
+        <p>
+          Alterne entre o <strong>Modo Profissional</strong> e o <strong>Modo Pessoal</strong> com 1 clique.
+          Seus projetos de trabalho nunca contaminam suas férias — e quando quiser conferir a agenda completa, o Gantt revela conflitos na hora.
+        </p>
+      </div>
 
-    <div class="lp-bento">
-      <article class="lp-card">
-        <div class="lp-card-ico">🗂️</div>
-        <h4>Modo Profissional Estilo Trello</h4>
-        <p>Quadro Kanban personalizável, cartões com progresso 0–100%, subtarefas, anexos, prioridades, etiquetas, tags personalizadas e movimentação entre projetos via seletor <b>Evento</b>.</p>
-      </article>
+      <div class="lp-modes-shell lp-reveal">
+        <div class="lp-tablist-wrap">
+          <div class="lp-tablist" id="lpModesTablist" role="tablist" aria-label="Comparar modos do My Plan">
+            <button type="button" role="tab" id="lpTabPro" data-lp-tab="pro" aria-selected="true">
+              <span aria-hidden="true">💼</span> Modo Profissional
+            </button>
+            <button type="button" role="tab" id="lpTabPersonal" data-lp-tab="personal" aria-selected="false">
+              <span aria-hidden="true">🌴</span> Modo Pessoal
+            </button>
+            <button type="button" role="tab" id="lpTabConflicts" data-lp-tab="conflicts" aria-selected="false">
+              <span aria-hidden="true">🔀</span> Visão de Conflitos
+            </button>
+          </div>
+        </div>
 
-      <article class="lp-card">
-        <div class="lp-card-ico">💼</div>
-        <h4>Fluxo de Caixa Executivo</h4>
-        <p>Controle recebimentos × despesas nos próprios cartões, liquide parcelas com 1 clique no checkbox e acompanhe margem líquida e impostos no Dashboard Profissional.</p>
-      </article>
+        <!-- TAB 1: MODO PROFISSIONAL -->
+        <div class="lp-mode-panel" id="lpPanelPro" role="tabpanel" aria-labelledby="lpTabPro">
+          <div class="lp-mode-grid">
+            <div class="lp-mode-info">
+              <span class="lp-badge-soft is-indigo">Para equipes, gestores e projetos complexos</span>
+              <h3>Governança executiva com velocidade de produto SaaS</h3>
+              <p>Centralize entregas, reuniões, documentos e viagens corporativas em um workspace focado em prazos e clareza.</p>
+              <ul class="lp-check-list">
+                <li><strong>Quadros Kanban &amp; Controle:</strong> acompanhe etapas, responsáveis, prioridades, progresso e prazos.</li>
+                <li><strong>Atas de Reunião &amp; Google Meet:</strong> crie reuniões, grave áudios para gerar atas com histórico de versões e envie pelo WhatsApp.</li>
+                <li><strong>Google Drive sem duplicidade:</strong> sincronize anexos e pastas dedicadas com central organizada de documentos.</li>
+                <li><strong>Mapa &amp; Viagens Executivas:</strong> visualize cards coloridos por cidade e controle completo de deslocamentos da equipe.</li>
+              </ul>
+            </div>
+            <figure class="lp-browser">
+              <div class="lp-browser-bar" aria-hidden="true">
+                <span class="lp-dots"><i></i><i></i><i></i></span>
+                <span class="lp-url-pill">Modo Profissional · Quadro &amp; Gestão</span>
+              </div>
+              <div class="lp-shot-box" data-shot-box>
+                <img
+                  src="/public/screenshots/modo-profissional.png?v=69"
+                  alt="Modo Profissional do My Plan em Modo Diurno mostrando quadro Kanban com cartões e prioridades"
+                  width="1280"
+                  height="800"
+                  loading="lazy"
+                  decoding="async"
+                >
+                <div class="lp-shot-fallback" aria-hidden="true">
+                  <div class="lp-fb-cols"><span></span><span></span><span></span></div>
+                  <span class="lp-fb-caption">Print Modo Profissional · <code>/public/screenshots/modo-profissional.png</code></span>
+                </div>
+              </div>
+            </figure>
+          </div>
+        </div>
 
-      <article class="lp-card">
-        <div class="lp-card-ico">📅</div>
-        <h4>Gantt 3 Níveis + Zoom &lt; 44%</h4>
-        <p>Cabeçalho Mês + Semana ISO + Dia com alternância visual de contraste; abaixo de 44% converte em grade semanal limpa; em Tela Cheia ocupa 100% da viewport útil.</p>
-      </article>
+        <!-- TAB 2: MODO PESSOAL -->
+        <div class="lp-mode-panel" id="lpPanelPersonal" role="tabpanel" aria-labelledby="lpTabPersonal" hidden>
+          <div class="lp-mode-grid">
+            <div class="lp-mode-info">
+              <span class="lp-badge-soft is-emerald">Para férias, viagens em grupo e vida pessoal</span>
+              <h3>Cada detalhe da viagem — do voo à divisão no Pix</h3>
+              <p>Um espaço leve, visual e completo para planejar viagens com família ou amigos sem planilhas espalhadas.</p>
+              <ul class="lp-check-list">
+                <li><strong>Cartões adaptativos inteligentes:</strong> campos dedicados para <em>Avião</em> (companhia, voo, localizador) e <em>Carro</em> (rota automática, km e pedágios).</li>
+                <li><strong>Mapa de viagens sincronizado:</strong> arcos curvos para voos e rotas terrestres do Google Maps com dias por cidade.</li>
+                <li><strong>Dividir Despesas (Splitwise + Pix):</strong> lance custos do grupo, simplifique dívidas e gere QR Code Pix instantâneo.</li>
+                <li><strong>Jornada da Viagem com IA:</strong> crie resumos visuais positivos prontos para Stories e WhatsApp, sem expor valores.</li>
+              </ul>
+            </div>
+            <figure class="lp-browser">
+              <div class="lp-browser-bar" aria-hidden="true">
+                <span class="lp-dots"><i></i><i></i><i></i></span>
+                <span class="lp-url-pill">Modo Pessoal · Férias Europa 2027</span>
+              </div>
+              <div class="lp-shot-box" data-shot-box>
+                <img
+                  src="/public/screenshots/modo-pessoal.png?v=69"
+                  alt="Modo Pessoal do My Plan em Modo Diurno mostrando planejamento de viagem Europa 2027"
+                  width="1280"
+                  height="800"
+                  fetchpriority="low"
+                  loading="lazy"
+                  decoding="async"
+                >
+                <div class="lp-shot-fallback" aria-hidden="true">
+                  <div class="lp-fb-cols"><span></span><span></span><span></span></div>
+                  <span class="lp-fb-caption">Print Modo Pessoal · <code>/public/screenshots/modo-pessoal.png</code></span>
+                </div>
+              </div>
+            </figure>
+          </div>
+        </div>
 
-      <article class="lp-card">
-        <div class="lp-card-ico">🚗</div>
-        <h4>Modo Pessoal, Rotas &amp; Pedágios</h4>
-        <p>Google Maps com cálculo real de km, pedágios e consumo para +145 carros (BEV elétricos, PHEV, HEV e Flex), além de modais de Avião, Trem, Ônibus e Navio.</p>
-      </article>
-
-      <article class="lp-card">
-        <div class="lp-card-ico">💰</div>
-        <h4>Orçamento Diário &amp; Metas</h4>
-        <p>Gráfico financeiro dia a dia com metas de corte (-5%, -10%, -15% ou % livre), checkboxes diários de gasto real e redistribuição automática do saldo restante.</p>
-      </article>
-
-      <article class="lp-card">
-        <div class="lp-card-ico">🧾</div>
-        <h4>Tabela Editável, Excel, Checklist &amp; PWA</h4>
-        <p>Edite tudo estilo planilha, baixe <code>.xlsx</code> ou <code>.json.gz</code>, ordene checklist por prioridade (⋮⋮), instale como app no celular/PC e compartilhe com Editor ou Visualizador.</p>
-      </article>
+        <!-- TAB 3: VISÃO DE CONFLITOS -->
+        <div class="lp-mode-panel" id="lpPanelConflicts" role="tabpanel" aria-labelledby="lpTabConflicts" hidden>
+          <div class="lp-mode-grid">
+            <div class="lp-mode-info">
+              <span class="lp-badge-soft is-rose">Regra de Ouro · Sobreposição sob demanda</span>
+              <h3>Nunca mais agende uma viagem pessoal em dia de entrega crítica</h3>
+              <p>
+                No dia a dia, Trabalho e Vida Pessoal ficam 100% separados. Quando você ativa a <strong>Agenda Completa</strong> com 1 clique no Gantt,
+                o My Plan cruza os dois calendários temporariamente e destaca conflitos em vermelho.
+              </p>
+              <div class="lp-conflict-callout">
+                <span class="lp-conflict-dot" aria-hidden="true"></span>
+                <div>
+                  <strong>Detecção automática de sobreposição</strong>
+                  <span>Dias em que um compromisso profissional coincide com uma viagem pessoal ficam sinalizados em vermelho para ajuste imediato.</span>
+                </div>
+              </div>
+              <ul class="lp-check-list">
+                <li><strong>Isolamento garantido:</strong> projetos de exemplo (<code>isExample</code>) e agendas não selecionadas jamais contaminam seus alertas.</li>
+                <li><strong>Reagendamento direto:</strong> arraste a barra no Gantt para resolver o conflito em segundos.</li>
+              </ul>
+            </div>
+            <figure class="lp-browser">
+              <div class="lp-browser-bar" aria-hidden="true">
+                <span class="lp-dots"><i></i><i></i><i></i></span>
+                <span class="lp-url-pill">Gantt Unificado · Detecção de Conflitos</span>
+              </div>
+              <div class="lp-shot-box" data-shot-box>
+                <img
+                  src="/public/screenshots/gantt-conflitos.png?v=69"
+                  alt="Cronograma Gantt em Modo Diurno destacando agenda unificada e verificação de conflitos de datas"
+                  width="1280"
+                  height="800"
+                  fetchpriority="low"
+                  loading="lazy"
+                  decoding="async"
+                >
+                <div class="lp-shot-fallback" aria-hidden="true">
+                  <div class="lp-fb-main" style="width:100%">
+                    <div class="lp-fb-bar is-blue" style="width:55%"></div>
+                    <div class="lp-fb-bar is-rose" style="width:36%;margin-left:28%"></div>
+                    <div class="lp-fb-bar is-emerald" style="width:48%;margin-left:42%"></div>
+                  </div>
+                  <span class="lp-fb-caption">Print Gantt Conflitos · <code>/public/screenshots/gantt-conflitos.png</code></span>
+                </div>
+              </div>
+            </figure>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
-  <!-- COMO USAR EM 3 PASSOS -->
-  <section class="lp-section" id="como-comecar">
-    <div class="lp-sec-head">
-      <h2>Comece a organizar trabalho e vida pessoal em 3 passos</h2>
-      <p>Do zero ao seu primeiro quadro Trello e cronograma Gantt sincronizados com o Google em minutos.</p>
-    </div>
+  <!-- ==================== SEÇÃO 4: VITRINE COMPLETA DE FUNCIONALIDADES ==================== -->
+  <div id="funcionalidades">
 
-    <div class="lp-steps">
-      <div class="lp-step">
-        <div class="lp-step-num">1</div>
-        <h4>Escolha seu modo ou importe por imagem</h4>
-        <p>Entre no app, crie um projeto/viagem, alterne entre <b>Modo Pessoal</b> e <b>Modo Profissional</b> no topo ou use <b>⋯ ➔ Importar calendário por imagem (IA)</b>.</p>
+    <!-- Pilar 1: Cronograma, Gantt & Calendário Anual Executivo -->
+    <section class="lp-section">
+      <div class="lp-container lp-feature-row lp-reveal">
+        <div class="lp-feature-copy">
+          <span class="lp-kicker">Pilar 01 · Visão Temporal</span>
+          <h2>Cronograma, Gantt &amp; Calendário Anual Executivo</h2>
+          <p>Enxergue a semana, o mês ou o ano inteiro com clareza cirúrgica — sem barras encavaladas e pronto para apresentar à diretoria ou à família.</p>
+          <ul class="lp-check-list">
+            <li><strong>3 visões sincronizadas:</strong> Gantt interativo, Linha do Tempo e <strong>Calendário Anual por Semanas</strong> com empacotamento inteligente (zero sobreposição).</li>
+            <li><strong>Botão "Ajustar aos eventos":</strong> enquadra automaticamente apenas o período com atividades cadastradas, com respiro nas bordas.</li>
+            <li><strong>Fluidez total no toque e clique:</strong> clique no espaço vazio para criar um evento na data exata e use <strong>zoom de pinça</strong> no celular.</li>
+            <li><strong>Exportação ultra clean:</strong> baixe em <strong>PNG de alta resolução</strong> ou <strong>PDF Horizontal</strong> pronto para reuniões e impressão.</li>
+          </ul>
+        </div>
+        <figure class="lp-browser lp-feature-media">
+          <div class="lp-browser-bar" aria-hidden="true">
+            <span class="lp-dots"><i></i><i></i><i></i></span>
+            <span class="lp-url-pill">Calendário Anual Executivo · Semanas ISO</span>
+          </div>
+          <div class="lp-shot-box" data-shot-box>
+            <img
+              src="/public/screenshots/calendario-anual.png?v=69"
+              alt="Calendário Anual Executivo por Semanas do My Plan em Modo Diurno sem sobreposição de eventos"
+              width="1280"
+              height="800"
+              loading="lazy"
+              decoding="async"
+            >
+            <div class="lp-shot-fallback" aria-hidden="true">
+              <div class="lp-fb-main" style="width:100%">
+                <div class="lp-fb-bar is-indigo" style="width:42%"></div>
+                <div class="lp-fb-bar is-blue" style="width:48%;margin-left:24%"></div>
+                <div class="lp-fb-bar is-emerald" style="width:35%;margin-left:55%"></div>
+              </div>
+              <span class="lp-fb-caption">Print Calendário Anual · <code>/public/screenshots/calendario-anual.png</code></span>
+            </div>
+          </div>
+        </figure>
       </div>
-      <div class="lp-step">
-        <div class="lp-step-num">2</div>
-        <h4>Organize no Trello, Gantt e Filtros</h4>
-        <p>Arraste cartões, filtre simultaneamente por <b>Tipo, Tag e Período</b>, ative a <b>Agenda Completa</b> para evitar conflitos e amplie em <b>Tela Cheia</b>.</p>
+    </section>
+
+    <!-- Pilar 2: Mapas Inteligentes (Terra & Ar) -->
+    <section class="lp-section lp-section-alt">
+      <div class="lp-container lp-feature-row is-reversed lp-reveal">
+        <div class="lp-feature-copy">
+          <span class="lp-kicker">Pilar 02 · Geografia &amp; Rotas</span>
+          <h2>Mapas Inteligentes (Terra &amp; Ar)</h2>
+          <p>Transforme seu cronograma em um mapa vivo que combina voos internacionais e road trips de carro na mesma tela.</p>
+          <ul class="lp-check-list">
+            <li><strong>Rotas terrestres automáticas:</strong> cálculo pelo Google Maps com quilometragem real, tempo de estrada, paradas e pedágios.</li>
+            <li><strong>Arcos aéreos elegantes:</strong> trechos de avião ganham arcos curvos com ícone de aeronave conectando aeroportos e continentes.</li>
+            <li><strong>Resumo lateral em tempo real:</strong> total de dias por cidade, distribuição mensal e filtros por locomoção ou destino sincronizados com o cronograma.</li>
+          </ul>
+        </div>
+        <figure class="lp-browser lp-feature-media">
+          <div class="lp-browser-bar" aria-hidden="true">
+            <span class="lp-dots"><i></i><i></i><i></i></span>
+            <span class="lp-url-pill">Mapa Inteligente · Rotas Terrestres &amp; Arcos Aéreos</span>
+          </div>
+          <div class="lp-shot-box" data-shot-box>
+            <img
+              src="/public/screenshots/mapa-viagem.png?v=69"
+              alt="Mapa Inteligente do My Plan em Modo Diurno exibindo arcos de voo Brasil-Europa, rotas terrestres de carro e resumo de cidades"
+              width="1280"
+              height="800"
+              loading="lazy"
+              decoding="async"
+            >
+            <div class="lp-shot-fallback" aria-hidden="true">
+              <div class="lp-fb-map">
+                <span class="lp-fb-pin" style="left:20%;top:62%">1</span>
+                <span class="lp-fb-pin" style="left:52%;top:32%">2</span>
+                <span class="lp-fb-pin" style="left:78%;top:44%">3</span>
+              </div>
+              <span class="lp-fb-caption">Print Mapa da Viagem · <code>/public/screenshots/mapa-viagem.png</code></span>
+            </div>
+          </div>
+        </figure>
       </div>
-      <div class="lp-step">
-        <div class="lp-step-num">3</div>
-        <h4>Integre ao Google e compartilhe</h4>
-        <p>Clique em <b>Agenda</b> ou <b>Carteira</b> direto no topo do item, convide colaboradores com permissões granulares e gere PDFs A4 ou resumos no WhatsApp.</p>
+    </section>
+
+    <!-- Pilar 3: Inteligência Artificial -->
+    <section class="lp-section" id="inteligencia-artificial">
+      <div class="lp-container lp-feature-row lp-reveal">
+        <div class="lp-feature-copy">
+          <span class="lp-kicker is-indigo">Pilar 03 · Inteligência Artificial Prática</span>
+          <h2>Inteligência Artificial que Realmente Trabalha por Você</h2>
+          <p>Nada de chatbot genérico. A IA do My Plan atua direto nos seus fluxos reais para economizar horas de digitação e gerar materiais prontos.</p>
+          <ul class="lp-check-list">
+            <li><strong>Áudio → Ata Executiva:</strong> grave o áudio da reunião e receba uma ata completa, estruturada em tópicos, com histórico de versões e exportação em Word/PowerPoint.</li>
+            <li><strong>Print, PDF ou Áudio → Cartão/Viagem:</strong> arraste uma passagem, reserva ou print e a IA extrai trechos, horários e localizadores <em>sem apagar o que você já escreveu</em>.</li>
+            <li><strong>Jornada da Viagem com IA:</strong> transforme seu roteiro pessoal em um card inspirador estilo <em>Wrapped</em> (Stories 9:16 ou PDF horizontal) pronto para compartilhar — com privacidade total (zero valores financeiros).</li>
+          </ul>
+        </div>
+        <figure class="lp-browser lp-feature-media">
+          <div class="lp-browser-bar" aria-hidden="true">
+            <span class="lp-dots"><i></i><i></i><i></i></span>
+            <span class="lp-url-pill">✨ Jornada da Viagem com IA · Stories &amp; PDF</span>
+          </div>
+          <div class="lp-shot-box" data-shot-box>
+            <img
+              src="/public/screenshots/jornada-ia.png?v=69"
+              alt="Modal Jornada da Viagem com IA do My Plan exibindo prévia visual compartilhável sem dados financeiros"
+              width="1280"
+              height="800"
+              loading="lazy"
+              decoding="async"
+            >
+            <div class="lp-shot-fallback" aria-hidden="true">
+              <div class="lp-fb-sparkle">✨</div>
+              <span class="lp-fb-caption">Print Jornada IA · <code>/public/screenshots/jornada-ia.png</code></span>
+            </div>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Pilar 4: Dividir Despesas (Splitwise + Pix) -->
+    <section class="lp-section lp-section-alt" id="dividir-custos">
+      <div class="lp-container lp-feature-row is-reversed lp-reveal">
+        <div class="lp-feature-copy">
+          <span class="lp-kicker is-emerald">Pilar 04 · Finanças em Grupo (Modo Pessoal)</span>
+          <h2>Dividir Despesas Estilo Splitwise + QR Code Pix</h2>
+          <p>Esqueça planilhas confusas no fim da viagem. Acerte as contas do casal, família ou amigos com matemática exata em centavos.</p>
+          <ul class="lp-check-list">
+            <li><strong>4 modos de divisão automática:</strong> divida <em>igualmente</em>, por <em>valores exatos</em>, <em>porcentagem (%)</em> ou <em>cotas</em>, ou importe despesas direto dos cartões do calendário.</li>
+            <li><strong>Simplificação inteligente de dívidas:</strong> algoritmo determinístico calcula o menor número possível de transferências para quitar o grupo inteiro.</li>
+            <li><strong>QR Code Pix + WhatsApp:</strong> gere QR Code Pix (Copia e Cola) na hora e envie convites para participantes lançarem gastos direto pelo celular.</li>
+          </ul>
+        </div>
+        <figure class="lp-browser lp-feature-media">
+          <div class="lp-browser-bar" aria-hidden="true">
+            <span class="lp-dots"><i></i><i></i><i></i></span>
+            <span class="lp-url-pill">Dividir Despesas · Splitwise &amp; QR Code Pix</span>
+          </div>
+          <div class="lp-shot-box" data-shot-box>
+            <img
+              src="/public/screenshots/splitwise-pix.png?v=69"
+              alt="Tela Dividir Despesas do My Plan em Modo Diurno com participantes, chaves Pix, despesas e proposta automática de acertos"
+              width="1280"
+              height="800"
+              loading="lazy"
+              decoding="async"
+            >
+            <div class="lp-shot-fallback" aria-hidden="true">
+              <div class="lp-fb-cols"><span></span><span></span></div>
+              <span class="lp-fb-caption">Print Splitwise + Pix · <code>/public/screenshots/splitwise-pix.png</code></span>
+            </div>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Pilar 5: Produtividade Total & Integrações Nativas -->
+    <section class="lp-section">
+      <div class="lp-container lp-feature-row lp-reveal">
+        <div class="lp-feature-copy">
+          <span class="lp-kicker">Pilar 05 · Execução &amp; Ecossistema</span>
+          <h2>Produtividade Total &amp; Integrações Nativas</h2>
+          <p>Do checklist de malas ao convite da reunião corporativa, tudo conversa entre si sem retrabalho.</p>
+          <ul class="lp-check-list">
+            <li><strong>Quadros Kanban com automação:</strong> marque o checkbox de concluído no cartão e mova-o automaticamente para a lista configurada.</li>
+            <li><strong>Checklist Global:</strong> enxergue todos os itens de todos os cartões, arraste para priorizar ou <strong>transforme qualquer item em um novo cartão</strong> com 1 clique.</li>
+            <li><strong>Ecossistema Google &amp; WhatsApp:</strong> criação de link <strong>Google Meet</strong>, bilhetes na <strong>Google Wallet (Carteira)</strong>, backup no <strong>Google Drive</strong>, busca <strong>Google Places</strong> e encaminhamento limpo no <strong>WhatsApp</strong>.</li>
+          </ul>
+          <div class="lp-int-pills" aria-label="Integrações nativas suportadas">
+            <span>🎥 Google Meet</span>
+            <span>💳 Google Wallet</span>
+            <span>☁️ Google Drive</span>
+            <span>📍 Google Places</span>
+            <span>📅 Google Agenda</span>
+            <span>💬 WhatsApp</span>
+          </div>
+        </div>
+        <figure class="lp-browser lp-feature-media">
+          <div class="lp-browser-bar" aria-hidden="true">
+            <span class="lp-dots"><i></i><i></i><i></i></span>
+            <span class="lp-url-pill">Quadros Kanban · Automação &amp; Checklist Global</span>
+          </div>
+          <div class="lp-shot-box" data-shot-box>
+            <img
+              src="/public/screenshots/quadros-kanban.png?v=69"
+              alt="Quadros Kanban do My Plan em Modo Diurno com cartões, checkboxes de conclusão e filtros modulares"
+              width="1280"
+              height="800"
+              loading="lazy"
+              decoding="async"
+            >
+            <div class="lp-shot-fallback" aria-hidden="true">
+              <div class="lp-fb-cols"><span></span><span></span><span></span></div>
+              <span class="lp-fb-caption">Print Quadros Kanban · <code>/public/screenshots/quadros-kanban.png</code></span>
+            </div>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ==================== SEÇÃO 5: FEITO DO SEU JEITO ==================== -->
+  <section class="lp-section lp-section-alt" id="personalizacao">
+    <div class="lp-container">
+      <div class="lp-section-head lp-reveal">
+        <span class="lp-kicker">Personalização &amp; Mobile-First</span>
+        <h2>Feito do seu jeito — no monitor ultrawide ou na palma da mão</h2>
+        <p>Cada detalhe de aparência, navegação e ergonomia se adapta ao seu estilo de trabalho e à tela que você está usando.</p>
+      </div>
+
+      <div class="lp-custom-grid lp-reveal">
+        <article class="lp-custom-card">
+          <div class="lp-custom-ico is-blue" aria-hidden="true">🎨</div>
+          <h3>Paletas Dia &amp; Noite + White-Label</h3>
+          <p>Escolha paletas prontas ou crie sua cor personalizada, alterne entre modo <strong>Compacto</strong> e <strong>Confortável</strong> e renomeie o app como preferir.</p>
+        </article>
+
+        <article class="lp-custom-card">
+          <div class="lp-custom-ico is-indigo" aria-hidden="true">🖼️</div>
+          <h3>Logos Customizáveis + Favicon</h3>
+          <p>Envie sua logo (PNG, SVG ou JPG) ou procure direto na internet — aplique em um único projeto ou no modo inteiro, atualizando o ícone da aba automaticamente.</p>
+        </article>
+
+        <article class="lp-custom-card">
+          <div class="lp-custom-ico is-emerald" aria-hidden="true">🧭</div>
+          <h3>Menus &amp; Layout Configuráveis</h3>
+          <p>Use barra lateral esquerda, direita ou superior, ative o <strong>auto-recolher</strong> em gráficos pesados e reordene ou oculte qualquer aba do menu.</p>
+        </article>
+
+        <article class="lp-custom-card">
+          <div class="lp-custom-ico is-amber" aria-hidden="true">📱</div>
+          <h3>Ergonomia Mobile-First</h3>
+          <p>Cabeçalho limpo com busca rápida por lupa, <strong>Command Palette (<code>Ctrl+K</code>)</strong>, bottom-sheet de filtros, criação ágil no toque e zoom com pinça nos gráficos.</p>
+        </article>
       </div>
     </div>
   </section>
 
-  <!-- FAQ -->
-  <section class="lp-section">
-    <div class="lp-sec-head">
-      <h2>Perguntas Frequentes</h2>
-    </div>
-    <div class="lp-faq">
-      <details open>
-        <summary>Como funciona a visualização unificada entre Modo Profissional e Pessoal?</summary>
-        <p>No Cronograma Gantt de qualquer um dos modos, clique no botão <b>🔀 Agenda Completa</b>. O My Plan carrega seus projetos profissionais e compromissos pessoais (incluindo os compartilhados com você) na mesma linha do tempo, diferenciando visualmente por cor de calendário e selos <b>💼 PRO</b> / <b>🌴 PESSOAL</b> e destacando automaticamente conflitos de datas/horários para desconflito.</p>
-      </details>
-      <details>
-        <summary>Os eventos adicionados ao Google Agenda ficam separados do meu calendário pessoal padrão?</summary>
-        <p>Sim! Cada evento ou projeto (seja seu ou compartilhado com você) é sincronizado em um sub-calendário dedicado na sua conta Google (<code>My Plan (Pro) — Nome</code> ou <code>My Plan (Pessoal) — Nome</code>). Você mantém compromissos corporativos, clientes e viagens totalmente organizados e fáceis de ocultar ou gerenciar no Google Agenda.</p>
-      </details>
-      <details>
-        <summary>Posso importar um planejamento pronto do Excel ou uma foto de calendário?</summary>
-        <p>Sim! Abra o menu <b>⋯ ➔ 🖼️ Importar calendário por imagem (IA)</b> em qualquer modo, selecione uma ou várias imagens da sua planilha/calendário e clique em Analisar. Você visualiza a prévia editável completa e decide na hora se quer criar um novo calendário ou inserir em um já existente.</p>
-      </details>
-      <details>
-        <summary>Posso instalar o My Plan no celular como aplicativo nativo?</summary>
-        <p>Sim! O My Plan é um PWA instalável com cache inteligente network-first. Pelo Chrome no Android toque em <b>Instalar aplicativo</b> (ou no Safari do iPhone em <b>Compartilhar ➔ Adicionar à Tela de Início</b>) para usar em tela cheia com ícone próprio e acesso rápido offline às últimas agendas carregadas.</p>
-      </details>
-    </div>
-
-    <div class="lp-cta-box">
-      <h2>Transforme prazos soltos, planilhas e agendas em clareza absoluta.</h2>
-      <p>Acesse o My Plan gratuitamente agora, ative o Modo Profissional e o Modo Pessoal e leve seu planejamento para o próximo nível.</p>
-      <a class="lp-btn primary lg" href="/">✨ Entrar no My Plan Agora ➔</a>
+  <!-- ==================== SEÇÃO 6: CTA FINAL DE CONVERSÃO ==================== -->
+  <section class="lp-section lp-cta-section">
+    <div class="lp-container">
+      <div class="lp-cta-card lp-reveal">
+        <div class="lp-cta-badge">✨ Teste completo sem configurar nada do zero</div>
+        <h2>Abra agora e explore o projeto pronto <em>Férias Europa 2027</em></h2>
+        <p>
+          Sua conta já começa com um roteiro interativo completo (voos, road trips, mapa, checklist e Splitwise com Pix)
+          totalmente isolado e editável — além do Modo Profissional pronto para seus projetos reais.
+        </p>
+        <div class="lp-cta-actions">
+          <a class="lp-btn lp-btn-primary lp-btn-lg" href="/">
+            <span>Criar Minha Conta / Acessar o My Plan</span>
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5"/></svg>
+          </a>
+        </div>
+        <span class="lp-cta-foot-note">100% Web &amp; PWA instalável · Modo Diurno e Noturno disponíveis dentro do app</span>
+      </div>
     </div>
   </section>
+
 </main>
 
+<!-- ==================== RODAPÉ LIMPO ==================== -->
 <footer class="lp-footer">
-  <span class="lp-footer-brand">
-    <img src="/icons/icon.svg?v=68" alt="Logo My Plan" width="22" height="22" style="border-radius:6px">
-    My Plan
-  </span>
-  © <span id="lpYear">2026</span> · Planejador Inteligente Profissional &amp; Pessoal · <a href="/" style="color:var(--accent2);text-decoration:none">Voltar ao Aplicativo</a>
+  <div class="lp-container lp-footer-inner">
+    <div class="lp-footer-left">
+      <a class="lp-brand" href="#topo">
+        <span class="lp-brand-logo is-sm" aria-hidden="true">
+          <img src="/icons/icon.svg?v=69" alt="" width="26" height="26" loading="lazy">
+        </span>
+        <span class="lp-brand-name">My Plan</span>
+      </a>
+      <p class="lp-footer-copy">© <span id="lpYear">2026</span> My Plan · Planejador Inteligente Profissional &amp; Pessoal. Todos os direitos reservados.</p>
+    </div>
+    <nav class="lp-footer-links" aria-label="Links do rodapé">
+      <a href="#funcionalidades">Funcionalidades</a>
+      <a href="#modos">Profissional vs. Pessoal</a>
+      <a href="#inteligencia-artificial">Inteligência Artificial</a>
+      <a href="#dividir-custos">Dividir Custos</a>
+      <a href="/">Acessar Aplicativo</a>
+    </nav>
+  </div>
 </footer>
 
-<script>
-(() => {
-  const THEME_KEY = "ferias-pro-theme";
-  const btn = document.getElementById("lpThemeBtn");
-  const yr = document.getElementById("lpYear");
-  if (yr) yr.textContent = String(new Date().getFullYear());
-  function apply(theme) {
-    const t = theme === "light" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", t);
-    localStorage.setItem(THEME_KEY, t);
-    if (btn) btn.textContent = t === "dark" ? "☀️" : "🌙";
-  }
-  apply(localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark");
-  if (btn) btn.onclick = () => apply(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
-})();
-</script>
+<script src="sobre.js?v=69" defer></script>
 </body>
 </html>
