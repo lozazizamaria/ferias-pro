@@ -435,22 +435,794 @@ function save(msg, skipRender = false) {
   return saveTripRecord(activeTrip, msg, skipRender);
 }
 
-/* ---------- TEMA DIA / NOITE ---------- */
+/* ---------- TEMA DIA / NOITE & PERSONALIZAÇÃO DE APARÊNCIA (PALETAS + LOGOS) ---------- */
+const APPEARANCE_STORAGE_KEY = "myplan-appearance-v1";
+const DEFAULT_APP_LOGO = "icons/icon.svg?v=65";
+
+const APPEARANCE_PALETTE_VARS = [
+  "--bg", "--bg2", "--bg3", "--surface", "--surface-hover", "--topbar-bg",
+  "--border", "--border-strong", "--text", "--text-strong", "--muted",
+  "--accent", "--accent2", "--edit", "--edit-focus",
+  "--glow-1", "--glow-2", "--glow-3",
+  "--btn-primary-bg", "--btn-primary-hover", "--btn-primary-text", "--btn-primary-shadow",
+  "--tab-active-bg", "--tab-active-color", "--tab-active-shadow",
+  "--gantt-label-bg", "--gantt-label-border"
+];
+
+const APPEARANCE_PALETTES = [
+  {
+    id: "default",
+    name: "Padrão My Plan",
+    swatches: {
+      personal: { dark: ["#7c5cff", "#22d3ee", "#0b0f1a"], light: ["#5b45e8", "#0284c7", "#f1f5f9"] },
+      professional: { dark: ["#2563eb", "#38bdf8", "#050c19"], light: ["#1d4ed8", "#0369a1", "#edf2f8"] }
+    },
+    tokens: null
+  },
+  {
+    id: "ocean",
+    name: "Oceano Royal",
+    swatches: { dark: ["#2563eb", "#06b6d4", "#061325"], light: ["#1d4ed8", "#0284c7", "#eef5fc"] },
+    tokens: {
+      dark: {
+        "--bg": "#061325", "--bg2": "#0c1f3a", "--bg3": "#142e52",
+        "--surface": "rgba(125, 185, 255, 0.065)", "--surface-hover": "rgba(125, 185, 255, 0.12)",
+        "--topbar-bg": "rgba(6, 19, 37, 0.88)", "--border": "rgba(125, 185, 255, 0.16)", "--border-strong": "rgba(125, 185, 255, 0.34)",
+        "--text": "#e6f1ff", "--text-strong": "#ffffff", "--muted": "#8eb0d6",
+        "--accent": "#3b82f6", "--accent2": "#22d3ee",
+        "--edit": "rgba(59, 130, 246, 0.18)", "--edit-focus": "rgba(34, 211, 238, 0.26)",
+        "--glow-1": "rgba(37, 99, 235, 0.26)", "--glow-2": "rgba(6, 182, 212, 0.18)", "--glow-3": "rgba(14, 165, 233, 0.08)",
+        "--btn-primary-bg": "linear-gradient(135deg, #2563eb, #0891b2)", "--btn-primary-hover": "linear-gradient(135deg, #1d4ed8, #0e7490)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(37, 99, 235, 0.36)",
+        "--tab-active-bg": "linear-gradient(135deg, rgba(37, 99, 235, 0.44), rgba(6, 182, 212, 0.28))",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(37, 99, 235, 0.22)",
+        "--gantt-label-bg": "rgba(10, 26, 50, 0.96)", "--gantt-label-border": "rgba(56, 189, 248, 0.26)"
+      },
+      light: {
+        "--bg": "#eef5fc", "--bg2": "#ffffff", "--bg3": "#dceafb",
+        "--surface": "rgba(255, 255, 255, 0.94)", "--surface-hover": "#f1f7fe",
+        "--topbar-bg": "rgba(255, 255, 255, 0.92)", "--border": "rgba(15, 42, 82, 0.13)", "--border-strong": "rgba(15, 42, 82, 0.28)",
+        "--text": "#0d223f", "--text-strong": "#06152b", "--muted": "#436085",
+        "--accent": "#1d4ed8", "--accent2": "#0284c7",
+        "--edit": "rgba(29, 78, 216, 0.09)", "--edit-focus": "rgba(2, 132, 199, 0.17)",
+        "--glow-1": "rgba(29, 78, 216, 0.12)", "--glow-2": "rgba(2, 132, 199, 0.1)", "--glow-3": "rgba(6, 182, 212, 0.06)",
+        "--btn-primary-bg": "linear-gradient(135deg, #1d4ed8, #0284c7)", "--btn-primary-hover": "linear-gradient(135deg, #1e40af, #0369a1)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(29, 78, 216, 0.28)",
+        "--tab-active-bg": "linear-gradient(135deg, #1d4ed8, #0284c7)",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(29, 78, 216, 0.22)",
+        "--gantt-label-bg": "rgba(255, 255, 255, 0.98)", "--gantt-label-border": "rgba(29, 78, 216, 0.24)"
+      }
+    }
+  },
+  {
+    id: "emerald",
+    name: "Esmeralda",
+    swatches: { dark: ["#10b981", "#2dd4bf", "#071713"], light: ["#047857", "#0d9488", "#eef8f4"] },
+    tokens: {
+      dark: {
+        "--bg": "#071713", "--bg2": "#0e2620", "--bg3": "#16382f",
+        "--surface": "rgba(110, 231, 183, 0.06)", "--surface-hover": "rgba(110, 231, 183, 0.12)",
+        "--topbar-bg": "rgba(7, 23, 19, 0.88)", "--border": "rgba(110, 231, 183, 0.16)", "--border-strong": "rgba(110, 231, 183, 0.34)",
+        "--text": "#e7f7f1", "--text-strong": "#ffffff", "--muted": "#8ebca9",
+        "--accent": "#10b981", "--accent2": "#2dd4bf",
+        "--edit": "rgba(16, 185, 129, 0.18)", "--edit-focus": "rgba(45, 212, 191, 0.26)",
+        "--glow-1": "rgba(16, 185, 129, 0.24)", "--glow-2": "rgba(20, 184, 166, 0.17)", "--glow-3": "rgba(52, 211, 153, 0.08)",
+        "--btn-primary-bg": "linear-gradient(135deg, #059669, #0d9488)", "--btn-primary-hover": "linear-gradient(135deg, #047857, #0f766e)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(5, 150, 105, 0.36)",
+        "--tab-active-bg": "linear-gradient(135deg, rgba(16, 185, 129, 0.42), rgba(20, 184, 166, 0.26))",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(16, 185, 129, 0.22)",
+        "--gantt-label-bg": "rgba(11, 32, 26, 0.96)", "--gantt-label-border": "rgba(45, 212, 191, 0.26)"
+      },
+      light: {
+        "--bg": "#eef8f4", "--bg2": "#ffffff", "--bg3": "#d7efe5",
+        "--surface": "rgba(255, 255, 255, 0.94)", "--surface-hover": "#f1faf6",
+        "--topbar-bg": "rgba(255, 255, 255, 0.92)", "--border": "rgba(6, 78, 59, 0.13)", "--border-strong": "rgba(6, 78, 59, 0.28)",
+        "--text": "#0a2920", "--text-strong": "#041c15", "--muted": "#3d6b5c",
+        "--accent": "#047857", "--accent2": "#0d9488",
+        "--edit": "rgba(4, 120, 87, 0.09)", "--edit-focus": "rgba(13, 148, 136, 0.17)",
+        "--glow-1": "rgba(4, 120, 87, 0.11)", "--glow-2": "rgba(13, 148, 136, 0.09)", "--glow-3": "rgba(16, 185, 129, 0.06)",
+        "--btn-primary-bg": "linear-gradient(135deg, #047857, #0f766e)", "--btn-primary-hover": "linear-gradient(135deg, #065f46, #115e59)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(4, 120, 87, 0.26)",
+        "--tab-active-bg": "linear-gradient(135deg, #047857, #0d9488)",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(4, 120, 87, 0.22)",
+        "--gantt-label-bg": "rgba(255, 255, 255, 0.98)", "--gantt-label-border": "rgba(4, 120, 87, 0.24)"
+      }
+    }
+  },
+  {
+    id: "graphite",
+    name: "Grafite Executivo",
+    swatches: { dark: ["#64748b", "#38bdf8", "#0d1015"], light: ["#334155", "#0284c7", "#f1f3f6"] },
+    tokens: {
+      dark: {
+        "--bg": "#0d1015", "--bg2": "#161b23", "--bg3": "#222936",
+        "--surface": "rgba(226, 232, 240, 0.05)", "--surface-hover": "rgba(226, 232, 240, 0.1)",
+        "--topbar-bg": "rgba(13, 16, 21, 0.9)", "--border": "rgba(203, 213, 225, 0.14)", "--border-strong": "rgba(203, 213, 225, 0.28)",
+        "--text": "#e6edf3", "--text-strong": "#ffffff", "--muted": "#94a3b8",
+        "--accent": "#475569", "--accent2": "#38bdf8",
+        "--edit": "rgba(100, 116, 139, 0.22)", "--edit-focus": "rgba(56, 189, 248, 0.24)",
+        "--glow-1": "rgba(100, 116, 139, 0.2)", "--glow-2": "rgba(56, 189, 248, 0.1)", "--glow-3": "rgba(148, 163, 184, 0.06)",
+        "--btn-primary-bg": "linear-gradient(135deg, #475569, #334155)", "--btn-primary-hover": "linear-gradient(135deg, #334155, #1e293b)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(15, 23, 42, 0.45)",
+        "--tab-active-bg": "linear-gradient(135deg, rgba(71, 85, 105, 0.65), rgba(51, 65, 85, 0.55))",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(15, 23, 42, 0.3)",
+        "--gantt-label-bg": "rgba(20, 24, 32, 0.96)", "--gantt-label-border": "rgba(148, 163, 184, 0.26)"
+      },
+      light: {
+        "--bg": "#f1f3f6", "--bg2": "#ffffff", "--bg3": "#e2e6ec",
+        "--surface": "rgba(255, 255, 255, 0.95)", "--surface-hover": "#f6f8fa",
+        "--topbar-bg": "rgba(255, 255, 255, 0.92)", "--border": "rgba(15, 23, 42, 0.12)", "--border-strong": "rgba(15, 23, 42, 0.26)",
+        "--text": "#111827", "--text-strong": "#030712", "--muted": "#4b5563",
+        "--accent": "#334155", "--accent2": "#0369a1",
+        "--edit": "rgba(51, 65, 85, 0.09)", "--edit-focus": "rgba(3, 105, 161, 0.15)",
+        "--glow-1": "rgba(71, 85, 105, 0.09)", "--glow-2": "rgba(148, 163, 184, 0.08)", "--glow-3": "rgba(51, 65, 85, 0.05)",
+        "--btn-primary-bg": "linear-gradient(135deg, #334155, #1e293b)", "--btn-primary-hover": "linear-gradient(135deg, #1e293b, #0f172a)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(15, 23, 42, 0.22)",
+        "--tab-active-bg": "linear-gradient(135deg, #334155, #1e293b)",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(15, 23, 42, 0.18)",
+        "--gantt-label-bg": "rgba(255, 255, 255, 0.98)", "--gantt-label-border": "rgba(51, 65, 85, 0.24)"
+      }
+    }
+  },
+  {
+    id: "amber",
+    name: "Âmbar & Terracota",
+    swatches: { dark: ["#d97706", "#fb923c", "#17100b"], light: ["#b45309", "#c2410c", "#faf5ef"] },
+    tokens: {
+      dark: {
+        "--bg": "#17100b", "--bg2": "#241912", "--bg3": "#342419",
+        "--surface": "rgba(251, 191, 36, 0.06)", "--surface-hover": "rgba(251, 191, 36, 0.12)",
+        "--topbar-bg": "rgba(23, 16, 11, 0.9)", "--border": "rgba(251, 191, 36, 0.16)", "--border-strong": "rgba(251, 191, 36, 0.34)",
+        "--text": "#faf2ea", "--text-strong": "#ffffff", "--muted": "#cbb39d",
+        "--accent": "#d97706", "--accent2": "#fb923c",
+        "--edit": "rgba(217, 119, 6, 0.19)", "--edit-focus": "rgba(251, 146, 60, 0.28)",
+        "--glow-1": "rgba(217, 119, 6, 0.24)", "--glow-2": "rgba(234, 88, 12, 0.16)", "--glow-3": "rgba(245, 158, 11, 0.08)",
+        "--btn-primary-bg": "linear-gradient(135deg, #b45309, #c2410c)", "--btn-primary-hover": "linear-gradient(135deg, #92400e, #9a3412)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(180, 83, 9, 0.38)",
+        "--tab-active-bg": "linear-gradient(135deg, rgba(217, 119, 6, 0.45), rgba(194, 65, 12, 0.32))",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(217, 119, 6, 0.22)",
+        "--gantt-label-bg": "rgba(32, 22, 15, 0.96)", "--gantt-label-border": "rgba(251, 146, 60, 0.28)"
+      },
+      light: {
+        "--bg": "#faf5ef", "--bg2": "#ffffff", "--bg3": "#f2e5d7",
+        "--surface": "rgba(255, 255, 255, 0.95)", "--surface-hover": "#fdf8f3",
+        "--topbar-bg": "rgba(255, 255, 255, 0.92)", "--border": "rgba(120, 53, 15, 0.14)", "--border-strong": "rgba(120, 53, 15, 0.28)",
+        "--text": "#2c1a0e", "--text-strong": "#1b0f06", "--muted": "#6e513b",
+        "--accent": "#b45309", "--accent2": "#c2410c",
+        "--edit": "rgba(180, 83, 9, 0.09)", "--edit-focus": "rgba(194, 65, 12, 0.16)",
+        "--glow-1": "rgba(217, 119, 6, 0.11)", "--glow-2": "rgba(234, 88, 12, 0.09)", "--glow-3": "rgba(245, 158, 11, 0.06)",
+        "--btn-primary-bg": "linear-gradient(135deg, #b45309, #c2410c)", "--btn-primary-hover": "linear-gradient(135deg, #92400e, #9a3412)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(180, 83, 9, 0.26)",
+        "--tab-active-bg": "linear-gradient(135deg, #b45309, #c2410c)",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(180, 83, 9, 0.22)",
+        "--gantt-label-bg": "rgba(255, 255, 255, 0.98)", "--gantt-label-border": "rgba(180, 83, 9, 0.25)"
+      }
+    }
+  },
+  {
+    id: "indigo",
+    name: "Índigo Moderno",
+    swatches: { dark: ["#6366f1", "#a855f7", "#0b0c1e"], light: ["#4338ca", "#7c3aed", "#f2f3fc"] },
+    tokens: {
+      dark: {
+        "--bg": "#0b0c1e", "--bg2": "#141633", "--bg3": "#1e214a",
+        "--surface": "rgba(165, 180, 252, 0.065)", "--surface-hover": "rgba(165, 180, 252, 0.125)",
+        "--topbar-bg": "rgba(11, 12, 30, 0.88)", "--border": "rgba(165, 180, 252, 0.16)", "--border-strong": "rgba(165, 180, 252, 0.34)",
+        "--text": "#eef0ff", "--text-strong": "#ffffff", "--muted": "#9ea5d6",
+        "--accent": "#6366f1", "--accent2": "#c084fc",
+        "--edit": "rgba(99, 102, 241, 0.19)", "--edit-focus": "rgba(192, 132, 252, 0.27)",
+        "--glow-1": "rgba(99, 102, 241, 0.26)", "--glow-2": "rgba(168, 85, 247, 0.18)", "--glow-3": "rgba(129, 140, 248, 0.08)",
+        "--btn-primary-bg": "linear-gradient(135deg, #4f46e5, #7c3aed)", "--btn-primary-hover": "linear-gradient(135deg, #4338ca, #6d28d9)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(79, 70, 229, 0.38)",
+        "--tab-active-bg": "linear-gradient(135deg, rgba(99, 102, 241, 0.45), rgba(168, 85, 247, 0.28))",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(99, 102, 241, 0.24)",
+        "--gantt-label-bg": "rgba(18, 20, 46, 0.96)", "--gantt-label-border": "rgba(165, 180, 252, 0.28)"
+      },
+      light: {
+        "--bg": "#f2f3fc", "--bg2": "#ffffff", "--bg3": "#e2e4f8",
+        "--surface": "rgba(255, 255, 255, 0.94)", "--surface-hover": "#f6f7fe",
+        "--topbar-bg": "rgba(255, 255, 255, 0.92)", "--border": "rgba(49, 46, 129, 0.13)", "--border-strong": "rgba(49, 46, 129, 0.28)",
+        "--text": "#171740", "--text-strong": "#0b0b26", "--muted": "#515385",
+        "--accent": "#4338ca", "--accent2": "#7c3aed",
+        "--edit": "rgba(67, 56, 202, 0.09)", "--edit-focus": "rgba(124, 58, 237, 0.16)",
+        "--glow-1": "rgba(67, 56, 202, 0.11)", "--glow-2": "rgba(124, 58, 237, 0.09)", "--glow-3": "rgba(99, 102, 241, 0.06)",
+        "--btn-primary-bg": "linear-gradient(135deg, #4338ca, #7c3aed)", "--btn-primary-hover": "linear-gradient(135deg, #3730a3, #6d28d9)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(67, 56, 202, 0.28)",
+        "--tab-active-bg": "linear-gradient(135deg, #4338ca, #7c3aed)",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(67, 56, 202, 0.22)",
+        "--gantt-label-bg": "rgba(255, 255, 255, 0.98)", "--gantt-label-border": "rgba(67, 56, 202, 0.24)"
+      }
+    }
+  },
+  {
+    id: "ruby",
+    name: "Vinho & Rubi",
+    swatches: { dark: ["#e11d48", "#fb7185", "#170a10"], light: ["#be123c", "#9f1239", "#fbf1f4"] },
+    tokens: {
+      dark: {
+        "--bg": "#170a10", "--bg2": "#25111a", "--bg3": "#361926",
+        "--surface": "rgba(251, 113, 133, 0.065)", "--surface-hover": "rgba(251, 113, 133, 0.125)",
+        "--topbar-bg": "rgba(23, 10, 16, 0.9)", "--border": "rgba(251, 113, 133, 0.17)", "--border-strong": "rgba(251, 113, 133, 0.35)",
+        "--text": "#fceef2", "--text-strong": "#ffffff", "--muted": "#d1a3b2",
+        "--accent": "#e11d48", "--accent2": "#fb7185",
+        "--edit": "rgba(225, 29, 72, 0.2)", "--edit-focus": "rgba(251, 113, 133, 0.28)",
+        "--glow-1": "rgba(225, 29, 72, 0.25)", "--glow-2": "rgba(190, 24, 93, 0.16)", "--glow-3": "rgba(244, 63, 94, 0.08)",
+        "--btn-primary-bg": "linear-gradient(135deg, #be123c, #9f1239)", "--btn-primary-hover": "linear-gradient(135deg, #9f1239, #881337)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(190, 18, 60, 0.38)",
+        "--tab-active-bg": "linear-gradient(135deg, rgba(225, 29, 72, 0.45), rgba(159, 18, 57, 0.32))",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(225, 29, 72, 0.24)",
+        "--gantt-label-bg": "rgba(34, 15, 24, 0.96)", "--gantt-label-border": "rgba(251, 113, 133, 0.28)"
+      },
+      light: {
+        "--bg": "#fbf1f4", "--bg2": "#ffffff", "--bg3": "#f3dce3",
+        "--surface": "rgba(255, 255, 255, 0.95)", "--surface-hover": "#fdf6f8",
+        "--topbar-bg": "rgba(255, 255, 255, 0.92)", "--border": "rgba(136, 19, 55, 0.14)", "--border-strong": "rgba(136, 19, 55, 0.28)",
+        "--text": "#2c0d18", "--text-strong": "#1b060d", "--muted": "#754656",
+        "--accent": "#be123c", "--accent2": "#9f1239",
+        "--edit": "rgba(190, 18, 60, 0.09)", "--edit-focus": "rgba(159, 18, 57, 0.16)",
+        "--glow-1": "rgba(190, 18, 60, 0.1)", "--glow-2": "rgba(159, 18, 57, 0.08)", "--glow-3": "rgba(225, 29, 72, 0.05)",
+        "--btn-primary-bg": "linear-gradient(135deg, #be123c, #9f1239)", "--btn-primary-hover": "linear-gradient(135deg, #9f1239, #881337)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(190, 18, 60, 0.26)",
+        "--tab-active-bg": "linear-gradient(135deg, #be123c, #9f1239)",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(190, 18, 60, 0.22)",
+        "--gantt-label-bg": "rgba(255, 255, 255, 0.98)", "--gantt-label-border": "rgba(190, 18, 60, 0.24)"
+      }
+    }
+  },
+  {
+    id: "neutral",
+    name: "Minimalista Neutro",
+    swatches: { dark: ["#52525b", "#e4e4e7", "#0d0d0f"], light: ["#27272a", "#52525b", "#f5f5f5"] },
+    tokens: {
+      dark: {
+        "--bg": "#0d0d0f", "--bg2": "#17171a", "--bg3": "#242429",
+        "--surface": "rgba(255, 255, 255, 0.05)", "--surface-hover": "rgba(255, 255, 255, 0.1)",
+        "--topbar-bg": "rgba(13, 13, 15, 0.92)", "--border": "rgba(255, 255, 255, 0.13)", "--border-strong": "rgba(255, 255, 255, 0.28)",
+        "--text": "#f4f4f5", "--text-strong": "#ffffff", "--muted": "#a1a1aa",
+        "--accent": "#52525b", "--accent2": "#e4e4e7",
+        "--edit": "rgba(161, 161, 170, 0.16)", "--edit-focus": "rgba(228, 228, 231, 0.22)",
+        "--glow-1": "rgba(161, 161, 170, 0.1)", "--glow-2": "rgba(113, 113, 122, 0.08)", "--glow-3": "rgba(82, 82, 91, 0.05)",
+        "--btn-primary-bg": "linear-gradient(135deg, #3f3f46, #27272a)", "--btn-primary-hover": "linear-gradient(135deg, #52525b, #3f3f46)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(0, 0, 0, 0.45)",
+        "--tab-active-bg": "linear-gradient(135deg, rgba(82, 82, 91, 0.72), rgba(63, 63, 70, 0.62))",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(0, 0, 0, 0.3)",
+        "--gantt-label-bg": "rgba(22, 22, 26, 0.96)", "--gantt-label-border": "rgba(161, 161, 170, 0.26)"
+      },
+      light: {
+        "--bg": "#f5f5f5", "--bg2": "#ffffff", "--bg3": "#e5e5e5",
+        "--surface": "rgba(255, 255, 255, 0.96)", "--surface-hover": "#fafafa",
+        "--topbar-bg": "rgba(255, 255, 255, 0.94)", "--border": "rgba(24, 24, 27, 0.12)", "--border-strong": "rgba(24, 24, 27, 0.28)",
+        "--text": "#18181b", "--text-strong": "#09090b", "--muted": "#52525b",
+        "--accent": "#27272a", "--accent2": "#52525b",
+        "--edit": "rgba(39, 39, 42, 0.08)", "--edit-focus": "rgba(39, 39, 42, 0.15)",
+        "--glow-1": "rgba(113, 113, 122, 0.07)", "--glow-2": "rgba(161, 161, 170, 0.06)", "--glow-3": "rgba(82, 82, 91, 0.04)",
+        "--btn-primary-bg": "linear-gradient(135deg, #27272a, #18181b)", "--btn-primary-hover": "linear-gradient(135deg, #18181b, #09090b)",
+        "--btn-primary-text": "#ffffff", "--btn-primary-shadow": "0 4px 14px rgba(0, 0, 0, 0.2)",
+        "--tab-active-bg": "linear-gradient(135deg, #27272a, #18181b)",
+        "--tab-active-color": "#ffffff", "--tab-active-shadow": "0 2px 10px rgba(0, 0, 0, 0.16)",
+        "--gantt-label-bg": "rgba(255, 255, 255, 0.98)", "--gantt-label-border": "rgba(39, 39, 42, 0.22)"
+      }
+    }
+  }
+];
+
+function createEmptyAppearance() {
+  return {
+    personal: { paletteId: "default", customPrimary: "#7c5cff", logoDataUrl: "", menuOrder: [] },
+    professional: { paletteId: "default", customPrimary: "#2563eb", logoDataUrl: "", menuOrder: [] }
+  };
+}
+
+let appearancePrefs = createEmptyAppearance();
+let appearanceLogoScope = { personal: "project", professional: "project" };
+
+function hexToRgb(hex) {
+  const m = String(hex || "").trim().match(/^#?([0-9a-f]{6})$/i);
+  if (!m) return { r: 37, g: 99, b: 235 };
+  const n = parseInt(m[1], 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+function hslToHex(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  s = Math.max(0, Math.min(100, s)) / 100;
+  l = Math.max(0, Math.min(100, l)) / 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    const col = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * col).toString(16).padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+function relativeLuminance(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const lin = c => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+function buildCustomPaletteTokens(hex, theme) {
+  const safeHex = /^#[0-9a-fA-F]{6}$/.test(String(hex || "")) ? String(hex).toLowerCase() : "#2563eb";
+  const { r, g, b } = hexToRgb(safeHex);
+  const { h, s } = rgbToHsl(r, g, b);
+  const secH = (h + 24) % 360;
+  const sat = Math.max(18, Math.min(88, s));
+
+  if (theme === "light") {
+    const primary = hslToHex(h, Math.min(sat, 82), Math.min(44, Math.max(30, rgbToHsl(r, g, b).l)));
+    const secondary = hslToHex(secH, Math.min(sat, 78), 38);
+    const btnText = relativeLuminance(primary) > 0.36 ? "#0f172a" : "#ffffff";
+    const bg = hslToHex(h, Math.min(26, Math.round(sat * 0.35)), 95);
+    const bg3 = hslToHex(h, Math.min(30, Math.round(sat * 0.4)), 89);
+    const pr = hexToRgb(primary), sr = hexToRgb(secondary);
+    return {
+      "--bg": bg, "--bg2": "#ffffff", "--bg3": bg3,
+      "--surface": "rgba(255, 255, 255, 0.94)", "--surface-hover": "#f8fafc",
+      "--topbar-bg": "rgba(255, 255, 255, 0.92)",
+      "--border": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.16)`, "--border-strong": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.32)`,
+      "--text": "#0f172a", "--text-strong": "#020617", "--muted": "#475569",
+      "--accent": primary, "--accent2": secondary,
+      "--edit": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.09)`, "--edit-focus": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.17)`,
+      "--glow-1": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.12)`, "--glow-2": `rgba(${sr.r}, ${sr.g}, ${sr.b}, 0.09)`, "--glow-3": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.05)`,
+      "--btn-primary-bg": `linear-gradient(135deg, ${primary}, ${secondary})`,
+      "--btn-primary-hover": `linear-gradient(135deg, ${primary}, ${secondary})`,
+      "--btn-primary-text": btnText,
+      "--btn-primary-shadow": `0 4px 14px rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.28)`,
+      "--tab-active-bg": `linear-gradient(135deg, ${primary}, ${secondary})`,
+      "--tab-active-color": btnText,
+      "--tab-active-shadow": `0 2px 10px rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.22)`,
+      "--gantt-label-bg": "rgba(255, 255, 255, 0.98)", "--gantt-label-border": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.24)`
+    };
+  }
+
+  const primary = hslToHex(h, Math.min(sat, 85), Math.max(46, Math.min(60, rgbToHsl(r, g, b).l)));
+  const secondary = hslToHex(secH, Math.min(sat, 86), 64);
+  const btnStart = hslToHex(h, Math.min(sat, 82), 45);
+  const btnEnd = hslToHex(secH, Math.min(sat, 78), 40);
+  const btnText = relativeLuminance(btnStart) > 0.36 ? "#0b1220" : "#ffffff";
+  const bg = hslToHex(h, Math.min(34, Math.round(sat * 0.42)), 7);
+  const bg2 = hslToHex(h, Math.min(32, Math.round(sat * 0.4)), 12);
+  const bg3 = hslToHex(h, Math.min(30, Math.round(sat * 0.38)), 18);
+  const pr = hexToRgb(primary), sr = hexToRgb(secondary);
+  return {
+    "--bg": bg, "--bg2": bg2, "--bg3": bg3,
+    "--surface": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.075)`, "--surface-hover": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.14)`,
+    "--topbar-bg": `rgba(${hexToRgb(bg).r}, ${hexToRgb(bg).g}, ${hexToRgb(bg).b}, 0.9)`,
+    "--border": `rgba(${sr.r}, ${sr.g}, ${sr.b}, 0.17)`, "--border-strong": `rgba(${sr.r}, ${sr.g}, ${sr.b}, 0.35)`,
+    "--text": "#eef2f9", "--text-strong": "#ffffff", "--muted": "#9cb0c9",
+    "--accent": primary, "--accent2": secondary,
+    "--edit": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.18)`, "--edit-focus": `rgba(${sr.r}, ${sr.g}, ${sr.b}, 0.26)`,
+    "--glow-1": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.24)`, "--glow-2": `rgba(${sr.r}, ${sr.g}, ${sr.b}, 0.16)`, "--glow-3": `rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.07)`,
+    "--btn-primary-bg": `linear-gradient(135deg, ${btnStart}, ${btnEnd})`,
+    "--btn-primary-hover": `linear-gradient(135deg, ${primary}, ${btnEnd})`,
+    "--btn-primary-text": btnText,
+    "--btn-primary-shadow": `0 4px 14px rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.36)`,
+    "--tab-active-bg": `linear-gradient(135deg, rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.44), rgba(${sr.r}, ${sr.g}, ${sr.b}, 0.26))`,
+    "--tab-active-color": "#ffffff",
+    "--tab-active-shadow": `0 2px 10px rgba(${pr.r}, ${pr.g}, ${pr.b}, 0.24)`,
+    "--gantt-label-bg": `rgba(${hexToRgb(bg2).r}, ${hexToRgb(bg2).g}, ${hexToRgb(bg2).b}, 0.96)`,
+    "--gantt-label-border": `rgba(${sr.r}, ${sr.g}, ${sr.b}, 0.26)`
+  };
+}
+
+function loadAppearanceFromLocal() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) || "null");
+    if (raw && typeof raw === "object") {
+      ["personal", "professional"].forEach(m => {
+        if (raw[m] && typeof raw[m] === "object") {
+          appearancePrefs[m] = {
+            paletteId: String(raw[m].paletteId || "default"),
+            customPrimary: /^#[0-9a-fA-F]{6}$/.test(String(raw[m].customPrimary || ""))
+              ? String(raw[m].customPrimary).toLowerCase()
+              : (m === "professional" ? "#2563eb" : "#7c5cff"),
+            logoDataUrl: typeof raw[m].logoDataUrl === "string" ? raw[m].logoDataUrl : "",
+            menuOrder: Array.isArray(raw[m].menuOrder) ? raw[m].menuOrder : []
+          };
+        }
+      });
+    }
+  } catch {}
+}
+
+function hydrateAppearanceFromUser(user) {
+  const srv = user?.appearance;
+  if (!srv || typeof srv !== "object") return;
+  ["personal", "professional"].forEach(m => {
+    const s = srv[m];
+    if (!s || typeof s !== "object") return;
+    if (s.paletteId && s.paletteId !== "default") appearancePrefs[m].paletteId = s.paletteId;
+    else if (s.paletteId === "default" && !appearancePrefs[m].paletteId) appearancePrefs[m].paletteId = "default";
+    if (s.customPrimary) appearancePrefs[m].customPrimary = s.customPrimary;
+    if (s.logoDataUrl) appearancePrefs[m].logoDataUrl = s.logoDataUrl;
+    if (Array.isArray(s.menuOrder) && s.menuOrder.length) appearancePrefs[m].menuOrder = [...s.menuOrder];
+  });
+  try { localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(appearancePrefs)); } catch {}
+  applyCurrentAppearance();
+}
+
+function persistAppearance(msg) {
+  try { localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(appearancePrefs)); } catch {}
+  applyCurrentAppearance();
+  if (window.FeriasApi?.isServer?.() && window.FeriasApi?.getUser?.()) {
+    window.FeriasApi.savePreferences(appearancePrefs).catch(() => {});
+  }
+  if (msg) toast(msg);
+}
+
+function getEffectiveLogoForMode(mode) {
+  const m = mode === "professional" ? "professional" : "personal";
+  const projLogo = (m === appMode && typeof state?.params?.customLogo === "string" && state.params.customLogo.startsWith("data:image/"))
+    ? state.params.customLogo
+    : "";
+  if (projLogo) return { src: projLogo, scope: "project" };
+  const modeLogo = (typeof appearancePrefs[m]?.logoDataUrl === "string" && appearancePrefs[m].logoDataUrl.startsWith("data:image/"))
+    ? appearancePrefs[m].logoDataUrl
+    : "";
+  if (modeLogo) return { src: modeLogo, scope: "mode" };
+  return { src: DEFAULT_APP_LOGO, scope: "default" };
+}
+
+function applyCurrentAppearance() {
+  const root = document.documentElement;
+  const theme = root.getAttribute("data-theme") === "light" ? "light" : "dark";
+  const mode = appMode === "professional" ? "professional" : "personal";
+  const cfg = appearancePrefs[mode] || { paletteId: "default", customPrimary: "#2563eb", logoDataUrl: "" };
+
+  let tokens = null;
+  if (cfg.paletteId === "custom") {
+    tokens = buildCustomPaletteTokens(cfg.customPrimary, theme);
+  } else if (cfg.paletteId && cfg.paletteId !== "default") {
+    const pal = APPEARANCE_PALETTES.find(p => p.id === cfg.paletteId);
+    if (pal?.tokens) tokens = pal.tokens[theme];
+  }
+
+  if (tokens) {
+    root.setAttribute("data-palette", cfg.paletteId);
+    APPEARANCE_PALETTE_VARS.forEach(v => {
+      if (tokens[v]) root.style.setProperty(v, tokens[v]);
+      else root.style.removeProperty(v);
+    });
+  } else {
+    root.removeAttribute("data-palette");
+    APPEARANCE_PALETTE_VARS.forEach(v => root.style.removeProperty(v));
+  }
+
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    const bgHex = tokens?.["--bg"] || (theme === "dark" ? (mode === "professional" ? "#050c19" : "#0b0f1a") : (mode === "professional" ? "#edf2f8" : "#f1f5f9"));
+    meta.setAttribute("content", bgHex);
+  }
+
+  // Logo no cabeçalho principal
+  const logoInfo = getEffectiveLogoForMode(mode);
+  const logoImg = $("#appBrandLogoImg");
+  const logoWrap = $("#appBrandLogoWrap");
+  if (logoImg) logoImg.src = logoInfo.src;
+  if (logoWrap) logoWrap.classList.toggle("has-custom-logo", logoInfo.scope !== "default");
+}
+
+function readLogoFileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) return reject(new Error("Nenhum arquivo selecionado."));
+    const name = String(file.name || "").toLowerCase();
+    const mime = String(file.type || "").toLowerCase();
+    const isSvg = mime === "image/svg+xml" || name.endsWith(".svg");
+    const isRaster = /^image\/(png|jpeg|jpg|webp)$/i.test(mime) || /\.(png|jpe?g|webp)$/i.test(name);
+    if (!isSvg && !isRaster) {
+      return reject(new Error("Formato inválido. Envie PNG, SVG, JPG ou WebP."));
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      return reject(new Error("Arquivo muito grande (máximo 5 MB)."));
+    }
+
+    if (isSvg) {
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error("Erro ao ler SVG."));
+      fr.onload = () => {
+        let svgText = String(fr.result || "");
+        svgText = svgText
+          .replace(/<script[\s\S]*?<\/script>/gi, "")
+          .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, "")
+          .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+          .replace(/javascript:/gi, "");
+        if (!/<svg[\s>]/i.test(svgText)) return reject(new Error("Arquivo SVG inválido."));
+        const b64 = btoa(unescape(encodeURIComponent(svgText)));
+        const dataUrl = `data:image/svg+xml;base64,${b64}`;
+        if (dataUrl.length > 350000) return reject(new Error("SVG muito complexo. Use um SVG menor que 200 KB."));
+        resolve(dataUrl);
+      };
+      fr.readAsText(file);
+      return;
+    }
+
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error("Erro ao ler imagem."));
+    fr.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Imagem corrompida ou não suportada."));
+      img.onload = () => {
+        const maxSide = 256;
+        const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
+        const w = Math.max(1, Math.round((img.width || 1) * scale));
+        const h = Math.max(1, Math.round((img.height || 1) * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        let dataUrl = canvas.toDataURL("image/png");
+        if (dataUrl.length > 320000) dataUrl = canvas.toDataURL("image/webp", 0.86);
+        if (dataUrl.length > 350000) dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        resolve(dataUrl);
+      };
+      img.src = String(fr.result || "");
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+function renderAppearancePanel(hostEl, mode) {
+  if (!hostEl) return;
+  const m = mode === "professional" ? "professional" : "personal";
+  const cfg = appearancePrefs[m] || { paletteId: "default", customPrimary: "#2563eb", logoDataUrl: "" };
+  const theme = isDarkTheme() ? "dark" : "light";
+  const logoInfo = getEffectiveLogoForMode(m);
+  const scopeVal = appearanceLogoScope[m] || (logoInfo.scope === "mode" ? "mode" : "project");
+  const modeLabel = m === "professional" ? "Modo Profissional" : "Modo Pessoal";
+  const projectLabel = m === "professional" ? "este projeto" : "este calendário/viagem";
+  const scopeBadgeTxt = logoInfo.scope === "project"
+    ? `Logo exclusiva de ${projectLabel}`
+    : (logoInfo.scope === "mode" ? `Logo global do ${modeLabel}` : "Logo padrão do My Plan");
+
+  const paletteCardsHtml = APPEARANCE_PALETTES.map(p => {
+    const sw = p.swatches[m] ? p.swatches[m][theme] : p.swatches[theme];
+    const active = cfg.paletteId === p.id;
+    return `<button type="button" class="palette-card${active ? " is-active" : ""}" data-app-pal="${esc(p.id)}" aria-pressed="${active ? "true" : "false"}">
+      ${active ? '<span class="palette-card-check" aria-hidden="true">✓</span>' : ""}
+      <span class="palette-swatches" aria-hidden="true">
+        <span class="palette-dot" style="background:${esc(sw[0])}"></span>
+        <span class="palette-dot" style="background:${esc(sw[1])}"></span>
+        <span class="palette-dot" style="background:${esc(sw[2])}"></span>
+      </span>
+      <span class="palette-card-name">${esc(p.name)}</span>
+    </button>`;
+  }).join("");
+
+  const customActive = cfg.paletteId === "custom";
+  const customHex = cfg.customPrimary || (m === "professional" ? "#2563eb" : "#7c5cff");
+  const hasProjOverride = Boolean(m === appMode && state?.params?.customLogo);
+  const hasModeLogo = Boolean(appearancePrefs[m]?.logoDataUrl);
+
+  hostEl.innerHTML = `
+    <div class="app-subblock">
+      <div class="app-subblock-head">
+        <span class="app-subblock-title">🌓 Modo de Exibição</span>
+        <div class="app-theme-seg" role="group" aria-label="Alternar tema Dia ou Noite">
+          <button type="button" data-app-theme="light" class="${theme === "light" ? "active" : ""}">☀️ Dia</button>
+          <button type="button" data-app-theme="dark" class="${theme === "dark" ? "active" : ""}">🌙 Noite</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="app-subblock">
+      <div class="app-subblock-head">
+        <span class="app-subblock-title">🎨 Paleta de Cores (${esc(modeLabel)})</span>
+        <span class="muted small">Calibrada p/ Dia &amp; Noite</span>
+      </div>
+      <div class="palette-grid">
+        ${paletteCardsHtml}
+        <button type="button" class="palette-card${customActive ? " is-active" : ""}" data-app-pal="custom" aria-pressed="${customActive ? "true" : "false"}">
+          ${customActive ? '<span class="palette-card-check" aria-hidden="true">✓</span>' : ""}
+          <span class="palette-swatches" aria-hidden="true">
+            <span class="palette-dot" style="background:${esc(customHex)}"></span>
+            <span class="palette-dot" style="background:conic-gradient(#ef4444,#f59e0b,#10b981,#3b82f6,#8b5cf6,#ef4444)"></span>
+          </span>
+          <span class="palette-card-name">Personalizada</span>
+        </button>
+      </div>
+      <div class="custom-color-bar" ${customActive ? "" : "hidden"}>
+        <label style="display:inline-flex;align-items:center;gap:8px;font-size:.82rem;font-weight:600">
+          <span>Cor primária:</span>
+          <input type="color" data-app-custom-color value="${esc(customHex)}" aria-label="Escolher cor primária personalizada">
+        </label>
+        <input type="text" class="custom-color-hex" data-app-custom-hex value="${esc(customHex.toUpperCase())}" maxlength="7" aria-label="Código hexadecimal da cor">
+        <span class="muted small">Adapta contraste automaticamente no modo Dia e Noite</span>
+      </div>
+    </div>
+
+    <div class="app-subblock">
+      <div class="app-subblock-head">
+        <span class="app-subblock-title">🖼️ Logo (${esc(modeLabel)})</span>
+        <span class="pill" style="font-size:.72rem">${esc(scopeBadgeTxt)}</span>
+      </div>
+      <div class="logo-editor-box">
+        <div class="logo-editor-top">
+          <div class="logo-preview-frame">
+            <img src="${esc(logoInfo.src)}" alt="Prévia da logo atual">
+          </div>
+          <div class="logo-editor-meta">
+            <strong style="font-size:.84rem">Onde aplicar a nova logo?</strong>
+            <span class="muted small">Envie PNG, SVG ou JPG. Escolha abaixo o escopo antes de selecionar o arquivo:</span>
+          </div>
+        </div>
+        <fieldset class="logo-scope-group">
+          <label class="logo-scope-opt">
+            <input type="radio" name="logoScope-${esc(m)}" value="project" ${scopeVal === "project" ? "checked" : ""}>
+            <span><strong>Aplicar apenas a este calendário/projeto</strong><br><span class="muted">Sobrescreve a logo somente no item atual</span></span>
+          </label>
+          <label class="logo-scope-opt">
+            <input type="radio" name="logoScope-${esc(m)}" value="mode" ${scopeVal === "mode" ? "checked" : ""}>
+            <span><strong>Aplicar a todos os calendários deste modo</strong><br><span class="muted">Define como padrão global do ${esc(modeLabel)}</span></span>
+          </label>
+        </fieldset>
+        <div class="logo-editor-actions">
+          <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" data-app-logo-file hidden>
+          <button type="button" class="btn primary small" data-app-logo-upload>📤 Enviar logo (PNG/SVG/JPG)</button>
+          <button type="button" class="btn ghost small" data-app-logo-reset ${(!hasProjOverride && !hasModeLogo) ? "disabled" : ""}>↺ Restaurar padrão</button>
+          ${hasProjOverride && hasModeLogo ? `<button type="button" class="btn ghost small" data-app-logo-clear-proj>Remover só deste projeto</button>` : ""}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Eventos: Dia / Noite
+  hostEl.querySelectorAll("[data-app-theme]").forEach(btn => {
+    btn.onclick = () => {
+      applyTheme(btn.dataset.appTheme);
+      renderAppearancePanel(hostEl, m);
+    };
+  });
+
+  // Eventos: Selecionar Paleta
+  hostEl.querySelectorAll("[data-app-pal]").forEach(btn => {
+    btn.onclick = () => {
+      const pid = btn.dataset.appPal;
+      appearancePrefs[m].paletteId = pid;
+      persistAppearance(pid === "custom" ? "🎨 Paleta Personalizada ativada!" : "🎨 Paleta de cores aplicada!");
+      renderAppearancePanel(hostEl, m);
+    };
+  });
+
+  // Eventos: Cor personalizada
+  const colorInp = hostEl.querySelector("[data-app-custom-color]");
+  const hexInp = hostEl.querySelector("[data-app-custom-hex]");
+  if (colorInp) {
+    colorInp.oninput = () => {
+      appearancePrefs[m].paletteId = "custom";
+      appearancePrefs[m].customPrimary = colorInp.value.toLowerCase();
+      if (hexInp) hexInp.value = colorInp.value.toUpperCase();
+      applyCurrentAppearance();
+    };
+    colorInp.onchange = () => {
+      appearancePrefs[m].paletteId = "custom";
+      appearancePrefs[m].customPrimary = colorInp.value.toLowerCase();
+      persistAppearance("🎨 Cor personalizada salva!");
+      renderAppearancePanel(hostEl, m);
+    };
+  }
+  if (hexInp) {
+    hexInp.onchange = () => {
+      const v = hexInp.value.trim();
+      const norm = v.startsWith("#") ? v : ("#" + v);
+      if (!/^#[0-9a-fA-F]{6}$/.test(norm)) {
+        hexInp.value = (appearancePrefs[m].customPrimary || "#2563eb").toUpperCase();
+        return toast("Informe um código hexadecimal válido (ex: #2563EB).");
+      }
+      appearancePrefs[m].paletteId = "custom";
+      appearancePrefs[m].customPrimary = norm.toLowerCase();
+      if (colorInp) colorInp.value = norm.toLowerCase();
+      persistAppearance("🎨 Cor personalizada salva!");
+      renderAppearancePanel(hostEl, m);
+    };
+  }
+
+  // Eventos: Escopo da Logo
+  hostEl.querySelectorAll(`input[name="logoScope-${m}"]`).forEach(radio => {
+    radio.onchange = () => {
+      appearanceLogoScope[m] = radio.value === "mode" ? "mode" : "project";
+    };
+  });
+
+  // Eventos: Upload de Logo
+  const fileInp = hostEl.querySelector("[data-app-logo-file]");
+  const uploadBtn = hostEl.querySelector("[data-app-logo-upload]");
+  if (uploadBtn && fileInp) {
+    uploadBtn.onclick = () => fileInp.click();
+    fileInp.onchange = async () => {
+      const f = fileInp.files?.[0];
+      fileInp.value = "";
+      if (!f) return;
+      try {
+        const dataUrl = await readLogoFileToDataUrl(f);
+        const chosenScope = hostEl.querySelector(`input[name="logoScope-${m}"]:checked`)?.value || "project";
+        appearanceLogoScope[m] = chosenScope;
+        if (chosenScope === "project") {
+          if (!state.params) state.params = {};
+          state.params.customLogo = dataUrl;
+          applyCurrentAppearance();
+          save("🖼️ Logo aplicada apenas a este calendário/projeto!");
+        } else {
+          appearancePrefs[m].logoDataUrl = dataUrl;
+          if (state?.params?.customLogo) {
+            delete state.params.customLogo;
+            save(null, true);
+          }
+          persistAppearance(`🖼️ Logo aplicada a todos os calendários do ${modeLabel}!`);
+        }
+        renderAppearancePanel(hostEl, m);
+      } catch (err) {
+        toast(err.message || "Falha ao processar a imagem da logo.");
+      }
+    };
+  }
+
+  // Evento: Restaurar logo padrão
+  const resetBtn = hostEl.querySelector("[data-app-logo-reset]");
+  if (resetBtn) {
+    resetBtn.onclick = () => {
+      let tripChanged = false;
+      if (state?.params?.customLogo) {
+        delete state.params.customLogo;
+        tripChanged = true;
+      }
+      appearancePrefs[m].logoDataUrl = "";
+      persistAppearance("↺ Logo original do My Plan restaurada!");
+      if (tripChanged) save(null, true);
+      renderAppearancePanel(hostEl, m);
+    };
+  }
+
+  // Evento: Remover apenas a sobrescrita do projeto atual (mantendo global do modo)
+  const clearProjBtn = hostEl.querySelector("[data-app-logo-clear-proj]");
+  if (clearProjBtn) {
+    clearProjBtn.onclick = () => {
+      if (state?.params?.customLogo) {
+        delete state.params.customLogo;
+        applyCurrentAppearance();
+        save("🖼️ Sobrescrita local removida — usando a logo global do modo.");
+        renderAppearancePanel(hostEl, m);
+      }
+    };
+  }
+}
+
+function saveModeMenuOrder(mode, orderIds) {
+  const m = mode === "professional" ? "professional" : "personal";
+  appearancePrefs[m].menuOrder = Array.isArray(orderIds) ? [...orderIds] : [];
+  persistAppearance();
+}
+
 function applyTheme(theme) {
   const t = theme === "light" ? "light" : "dark";
   document.documentElement.setAttribute("data-theme", t);
   localStorage.setItem(THEME_KEY, t);
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) {
-    const isPro = appMode === "professional";
-    meta.setAttribute("content", t === "dark" ? (isPro ? "#050c19" : "#0b0f1a") : (isPro ? "#edf2f8" : "#f1f5f9"));
-  }
   const icon = $("#themeIcon"), authBtn = $("#authThemeBtn");
   if (icon) icon.textContent = t === "dark" ? "☀️" : "🌙";
   if (authBtn) authBtn.textContent = t === "dark" ? "☀️" : "🌙";
+  applyCurrentAppearance();
+  if ($("#view-params")?.classList.contains("active")) renderAppearancePanel($("#personalAppearanceHost"), "personal");
+  if ($("#view-pro-params")?.classList.contains("active")) renderAppearancePanel($("#proAppearanceHost"), "professional");
 }
 function isDarkTheme() { return document.documentElement.getAttribute("data-theme") !== "light"; }
-function initTheme() { applyTheme(localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark"); }
+function initTheme() {
+  loadAppearanceFromLocal();
+  applyTheme(localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark");
+}
 
 /* ---------- UTILS ---------- */
 const parseD = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
@@ -1299,6 +2071,7 @@ function populateTypeSelectors() {
 
 /* ---------- RENDER ---------- */
 function render(allSortedOpt) {
+  applyCurrentAppearance();
   if (appMode === "professional" && window.MyPlanPro) {
     window.MyPlanPro.renderAll();
     return;
@@ -3021,19 +3794,41 @@ const PERSONAL_MENU_DEFS = [
   { id: "checklist", tabId: "tab-checklist", label: "✅ Checklist" }
 ];
 
+function getOrderedPersonalMenus() {
+  const rawOrder = (Array.isArray(state?.params?.menuOrder) && state.params.menuOrder.length)
+    ? state.params.menuOrder
+    : (Array.isArray(appearancePrefs?.personal?.menuOrder) ? appearancePrefs.personal.menuOrder : []);
+  const byId = new Map(PERSONAL_MENU_DEFS.map(m => [m.id, m]));
+  const ordered = [];
+  rawOrder.forEach(id => {
+    if (byId.has(id) && !ordered.some(x => x.id === id)) ordered.push(byId.get(id));
+  });
+  PERSONAL_MENU_DEFS.forEach(m => {
+    if (!ordered.some(x => x.id === m.id)) ordered.push(m);
+  });
+  return ordered;
+}
+
 function applyPersonalHiddenMenus() {
   if (appMode === "professional") return;
+  const nav = $("#tabs");
+  const filterHost = $("#personalMapNavFilterHost");
+  const ordered = getOrderedPersonalMenus();
   const hidden = new Set(Array.isArray(state?.params?.hiddenMenus) ? state.params.hiddenMenus : []);
   let activeHidden = false;
-  PERSONAL_MENU_DEFS.forEach(m => {
+  ordered.forEach(m => {
     const btn = document.getElementById(m.tabId);
     if (!btn) return;
+    if (nav && btn.parentElement === nav) nav.appendChild(btn);
     const isHid = hidden.has(m.id);
     btn.hidden = isHid;
     if (isHid && btn.classList.contains("active")) activeHidden = true;
   });
+  if (nav && filterHost && filterHost.parentElement === nav) {
+    nav.appendChild(filterHost);
+  }
   if (activeHidden) {
-    const firstVis = PERSONAL_MENU_DEFS.find(m => !hidden.has(m.id));
+    const firstVis = ordered.find(m => !hidden.has(m.id));
     if (firstVis) document.getElementById(firstVis.tabId)?.click();
   }
 }
@@ -3041,13 +3836,38 @@ function applyPersonalHiddenMenus() {
 function renderPersonalVisibleMenusManager() {
   const host = $("#personalVisibleMenusManager");
   if (!host) return;
+  const ordered = getOrderedPersonalMenus();
   const hidden = new Set(Array.isArray(state?.params?.hiddenMenus) ? state.params.hiddenMenus : []);
-  host.innerHTML = PERSONAL_MENU_DEFS.map(m => `
-    <label class="pro-toggle-item">
-      <input type="checkbox" data-pmenu-vis="${esc(m.id)}" ${hidden.has(m.id) ? "" : "checked"}>
-      <span>${esc(m.label)}</span>
-    </label>
-  `).join("");
+  host.innerHTML = ordered.map((m, idx) => {
+    const isVisible = !hidden.has(m.id);
+    return `
+    <div class="menu-order-row${isVisible ? "" : " is-hidden-menu"}" draggable="true" data-pmenu-idx="${idx}" data-pmenu-id="${esc(m.id)}">
+      <span class="menu-drag-handle" title="Arraste para reordenar" aria-hidden="true">⋮⋮</span>
+      <label class="cfg-switch" title="${isVisible ? "Ocultar menu" : "Exibir menu"}">
+        <input type="checkbox" data-pmenu-vis="${esc(m.id)}" ${isVisible ? "checked" : ""} aria-label="Exibir menu ${esc(m.label)}">
+        <span class="cfg-switch-track"></span>
+      </label>
+      <span class="menu-order-label">${esc(m.label)}</span>
+      <div class="menu-order-arrows">
+        <button type="button" class="menu-arrow-btn" data-pmenu-up="${idx}" ${idx === 0 ? "disabled" : ""} title="Mover para cima" aria-label="Mover ${esc(m.label)} para cima">↑</button>
+        <button type="button" class="menu-arrow-btn" data-pmenu-down="${idx}" ${idx === ordered.length - 1 ? "disabled" : ""} title="Mover para baixo" aria-label="Mover ${esc(m.label)} para baixo">↓</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  const commitOrder = (fromIdx, toIdx) => {
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= ordered.length || toIdx >= ordered.length) return;
+    const ids = ordered.map(x => x.id);
+    const [moved] = ids.splice(fromIdx, 1);
+    ids.splice(toIdx, 0, moved);
+    if (!state.params) state.params = {};
+    state.params.menuOrder = ids;
+    saveModeMenuOrder("personal", ids);
+    applyPersonalHiddenMenus();
+    renderPersonalVisibleMenusManager();
+    save("↕️ Ordem dos menus atualizada!");
+  };
+
   host.querySelectorAll("[data-pmenu-vis]").forEach(cb => {
     cb.onchange = () => {
       if (!state.params) state.params = {};
@@ -3063,9 +3883,49 @@ function renderPersonalVisibleMenusManager() {
       }
       state.params.hiddenMenus = [...nextHidden];
       applyPersonalHiddenMenus();
+      renderPersonalVisibleMenusManager();
       save("👁️ Visibilidade dos menus atualizada!");
     };
   });
+
+  host.querySelectorAll("[data-pmenu-up]").forEach(btn => {
+    btn.onclick = () => { const i = parseInt(btn.dataset.pmenuUp, 10); commitOrder(i, i - 1); };
+  });
+  host.querySelectorAll("[data-pmenu-down]").forEach(btn => {
+    btn.onclick = () => { const i = parseInt(btn.dataset.pmenuDown, 10); commitOrder(i, i + 1); };
+  });
+
+  let dragFrom = -1;
+  host.querySelectorAll(".menu-order-row[draggable]").forEach(row => {
+    row.ondragstart = e => {
+      dragFrom = parseInt(row.dataset.pmenuIdx, 10);
+      row.style.opacity = "0.5";
+      try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(dragFrom)); } catch {}
+    };
+    row.ondragend = () => { row.style.opacity = ""; dragFrom = -1; };
+    row.ondragover = e => { e.preventDefault(); row.classList.add("drag-over"); };
+    row.ondragleave = () => row.classList.remove("drag-over");
+    row.ondrop = e => {
+      e.preventDefault();
+      row.classList.remove("drag-over");
+      const toIdx = parseInt(row.dataset.pmenuIdx, 10);
+      if (dragFrom >= 0 && toIdx >= 0 && dragFrom !== toIdx) commitOrder(dragFrom, toIdx);
+    };
+  });
+
+  const resetBtn = $("#btnResetPersonalMenuOrder");
+  if (resetBtn && !resetBtn.dataset.boundReset) {
+    resetBtn.dataset.boundReset = "1";
+    resetBtn.onclick = () => {
+      if (!state.params) state.params = {};
+      state.params.menuOrder = PERSONAL_MENU_DEFS.map(m => m.id);
+      state.params.hiddenMenus = [];
+      saveModeMenuOrder("personal", state.params.menuOrder);
+      applyPersonalHiddenMenus();
+      renderPersonalVisibleMenusManager();
+      save("↺ Ordem e visibilidade padrão dos menus restauradas!");
+    };
+  }
 }
 
 function getPersonalActivityCostCents(a) {
@@ -3827,6 +4687,7 @@ const AUTO_PARAM_DEFS = [
 ];
 
 function renderParams() {
+  renderAppearancePanel($("#personalAppearanceHost"), "personal");
   renderPersonalVisibleMenusManager();
   const pmNote = $("#paramsMultiNote");
   if (pmNote) {
@@ -6142,6 +7003,7 @@ async function enterApp() {
   $("#authView").hidden = true;
   $("#appShell").hidden = false;
   const usr = window.FeriasApi.getUser();
+  if (usr?.appearance) hydrateAppearanceFromUser(usr);
   if (usr?.integrations?.gmapsKey && window.FeriasMaps && !window.FeriasMaps.hasKey()) {
     window.FeriasMaps.setKey(usr.integrations.gmapsKey);
   }
@@ -6204,6 +7066,7 @@ async function boot() {
   populateTypeSelectors();
   if (window.MyPlanPro) {
     window.MyPlanPro.init({
+      applyCurrentAppearance,
       buildGanttScale,
       buildUnifiedItems,
       clone,
@@ -6225,6 +7088,7 @@ async function boot() {
       fmtShortBR,
       GANTT_ZOOM_STEPS,
       getAppMode: () => appMode,
+      getAppearance: () => appearancePrefs,
       getActiveTrip: () => activeTrip,
       getAllAvailableTags,
       getAllUnifiedTripEntries,
@@ -6251,6 +7115,7 @@ async function boot() {
       populateEventSelect,
       prefetchWalletPassForActivity,
       registerCustomTag,
+      renderAppearancePanel,
       renderTripDropdown,
       renderUnifiedCardSubBadges,
       renderUnifiedStatusBar,
@@ -6258,6 +7123,7 @@ async function boot() {
       resolveTripRefById,
       sanitizeSheetRows,
       save,
+      saveModeMenuOrder,
       saveTripRecord,
       sendPlanToMyWhatsApp,
       setUnifiedState: next => toggleUnifiedGanttMode(next),
@@ -6576,6 +7442,7 @@ function switchAppView(viewId) {
   $("#tabsPro")?.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.proView === viewId));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
   if (viewId === "admin") loadAndRenderAdmin();
+  if (viewId === "params") { renderParams(); window.scrollTo(0, 0); }
   if ($("#personalMapNavFilterHost")) $("#personalMapNavFilterHost").hidden = (viewId === "admin" || viewId === "params");
   if (viewId === "personal-map") renderPersonalMap();
   if (viewId === "personal-board") renderPersonalBoard();
@@ -6596,6 +7463,7 @@ function switchProView(viewId) {
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + viewId));
   const renderedDirty = Boolean(window.MyPlanPro?.renderProViewIfDirty?.(viewId));
   if (viewId === "admin") loadAndRenderAdmin();
+  else if (viewId === "pro-params") renderAppearancePanel($("#proAppearanceHost"), "professional");
   else if (viewId === "pro-map" && !renderedDirty && window.MyPlanPro?.renderProMap) window.MyPlanPro.renderProMap();
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();

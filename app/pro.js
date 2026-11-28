@@ -2389,15 +2389,36 @@
     return out;
   }
 
-  function applyProVisibleMenusUI() {
-    const vis = getVisibleProMenus();
+  function getOrderedProMenus(stOpt = null) {
+    const st = stOpt || core?.getState?.() || {};
+    const appPrefs = core?.getAppearance?.() || {};
+    const rawOrder = (Array.isArray(st.params?.menuOrder) && st.params.menuOrder.length)
+      ? st.params.menuOrder
+      : (Array.isArray(appPrefs?.professional?.menuOrder) ? appPrefs.professional.menuOrder : []);
+    const byId = new Map(PRO_MENU_ITEMS.map(m => [m.id, m]));
+    const ordered = [];
+    rawOrder.forEach(id => {
+      if (byId.has(id) && !ordered.some(x => x.id === id)) ordered.push(byId.get(id));
+    });
     PRO_MENU_ITEMS.forEach(m => {
+      if (!ordered.some(x => x.id === m.id)) ordered.push(m);
+    });
+    return ordered;
+  }
+
+  function applyProVisibleMenusUI() {
+    const nav = $("#tabsPro");
+    const vis = getVisibleProMenus();
+    const ordered = getOrderedProMenus();
+    ordered.forEach(m => {
       const btn = document.getElementById(m.tabId);
-      if (btn) btn.hidden = !vis[m.id];
+      if (!btn) return;
+      if (nav && btn.parentElement === nav) nav.appendChild(btn);
+      btn.hidden = !vis[m.id];
     });
     const activeTab = document.querySelector("#tabsPro .tab.active");
     if (activeTab && activeTab.hidden) {
-      const firstVis = PRO_MENU_ITEMS.find(m => vis[m.id]);
+      const firstVis = ordered.find(m => vis[m.id]);
       core?.switchProView?.(firstVis ? firstVis.id : "pro-params");
     }
   }
@@ -7719,15 +7740,43 @@
       }
     }
 
-    // Menus Visíveis neste Projeto
+    // Aparência & Identidade Visual (Modo Profissional)
+    core.renderAppearancePanel?.($("#proAppearanceHost"), "professional");
+
+    // Menus Visíveis & Ordem neste Projeto
     const menusMgr = $("#proVisibleMenusManager");
     if (menusMgr) {
       const vis = getVisibleProMenus(st);
-      menusMgr.innerHTML = PRO_MENU_ITEMS.map(m => `
-        <label class="pro-toggle-item">
-          <input type="checkbox" data-pmenu-vis="${core.esc(m.id)}" ${vis[m.id] ? "checked" : ""}>
-          <span>${core.esc(m.label)}</span>
-        </label>`).join("");
+      const ordered = getOrderedProMenus(st);
+      menusMgr.innerHTML = ordered.map((m, idx) => {
+        const isVisible = Boolean(vis[m.id]);
+        return `
+        <div class="menu-order-row${isVisible ? "" : " is-hidden-menu"}" draggable="true" data-promenu-idx="${idx}" data-promenu-id="${core.esc(m.id)}">
+          <span class="menu-drag-handle" title="Arraste para reordenar" aria-hidden="true">⋮⋮</span>
+          <label class="cfg-switch" title="${isVisible ? "Ocultar menu" : "Exibir menu"}">
+            <input type="checkbox" data-pmenu-vis="${core.esc(m.id)}" ${isVisible ? "checked" : ""} aria-label="Exibir menu ${core.esc(m.label)}">
+            <span class="cfg-switch-track"></span>
+          </label>
+          <span class="menu-order-label">${core.esc(m.label)}</span>
+          <div class="menu-order-arrows">
+            <button type="button" class="menu-arrow-btn" data-promenu-up="${idx}" ${idx === 0 ? "disabled" : ""} title="Mover para cima" aria-label="Mover ${core.esc(m.label)} para cima">↑</button>
+            <button type="button" class="menu-arrow-btn" data-promenu-down="${idx}" ${idx === ordered.length - 1 ? "disabled" : ""} title="Mover para baixo" aria-label="Mover ${core.esc(m.label)} para baixo">↓</button>
+          </div>
+        </div>`;
+      }).join("");
+
+      const commitProOrder = (fromIdx, toIdx) => {
+        if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0 || fromIdx >= ordered.length || toIdx >= ordered.length) return;
+        const ids = ordered.map(x => x.id);
+        const [moved] = ids.splice(fromIdx, 1);
+        ids.splice(toIdx, 0, moved);
+        st.params.menuOrder = ids;
+        core.saveModeMenuOrder?.("professional", ids);
+        applyProVisibleMenusUI();
+        renderProParams();
+        core.save("↕️ Ordem dos menus do projeto atualizada");
+      };
+
       menusMgr.querySelectorAll("[data-pmenu-vis]").forEach(cb => {
         cb.onchange = () => {
           const id = cb.dataset.pmenuVis;
@@ -7741,9 +7790,51 @@
             return core.toast("Mantenha ao menos 1 menu visível no projeto.");
           }
           applyProVisibleMenusUI();
+          renderProParams();
           core.save("👁️ Menus visíveis do projeto atualizados");
         };
       });
+
+      menusMgr.querySelectorAll("[data-promenu-up]").forEach(btn => {
+        btn.onclick = () => { const i = parseInt(btn.dataset.promenuUp, 10); commitProOrder(i, i - 1); };
+      });
+      menusMgr.querySelectorAll("[data-promenu-down]").forEach(btn => {
+        btn.onclick = () => { const i = parseInt(btn.dataset.promenuDown, 10); commitProOrder(i, i + 1); };
+      });
+
+      let proDragFrom = -1;
+      menusMgr.querySelectorAll(".menu-order-row[draggable]").forEach(row => {
+        row.ondragstart = e => {
+          proDragFrom = parseInt(row.dataset.promenuIdx, 10);
+          row.style.opacity = "0.5";
+          try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(proDragFrom)); } catch {}
+        };
+        row.ondragend = () => { row.style.opacity = ""; proDragFrom = -1; };
+        row.ondragover = e => { e.preventDefault(); row.classList.add("drag-over"); };
+        row.ondragleave = () => row.classList.remove("drag-over");
+        row.ondrop = e => {
+          e.preventDefault();
+          row.classList.remove("drag-over");
+          const toIdx = parseInt(row.dataset.promenuIdx, 10);
+          if (proDragFrom >= 0 && toIdx >= 0 && proDragFrom !== toIdx) commitProOrder(proDragFrom, toIdx);
+        };
+      });
+
+      const resetProBtn = $("#btnResetProMenuOrder");
+      if (resetProBtn && !resetProBtn.dataset.boundReset) {
+        resetProBtn.dataset.boundReset = "1";
+        resetProBtn.onclick = () => {
+          const curSt = core.getState();
+          if (!curSt.params) curSt.params = {};
+          curSt.params.menuOrder = PRO_MENU_ITEMS.map(m => m.id);
+          curSt.params.visibleMenus = {};
+          PRO_MENU_ITEMS.forEach(m => { curSt.params.visibleMenus[m.id] = true; });
+          core.saveModeMenuOrder?.("professional", curSt.params.menuOrder);
+          applyProVisibleMenusUI();
+          renderProParams();
+          core.save("↺ Ordem e visibilidade padrão dos menus restauradas!");
+        };
+      }
     }
 
     // Seções & Gráficos do Dashboard
@@ -10491,15 +10582,48 @@
       };
     }
 
-    // Busca Global no Topo do Site
+    // Busca Global no Topo do Site (Desktop + Overlay Lupa Mobile < 768px)
     (function bindGlobalCardSearch() {
       const inp = $("#globalCardSearchInput");
       const dd = $("#globalCardSearchDropdown");
       const wrap = $("#globalCardSearchWrap");
+      const mobToggle = $("#btnMobileSearchToggle");
+      const mobClose = $("#btnMobileSearchClose");
       if (!inp || !dd || inp.dataset.gsBound) return;
       inp.dataset.gsBound = "1";
 
       const closeDd = () => { dd.hidden = true; dd.innerHTML = ""; };
+      const closeMobileSearch = () => {
+        closeDd();
+        if (wrap) wrap.classList.remove("is-mobile-open");
+        if (mobToggle) mobToggle.setAttribute("aria-expanded", "false");
+      };
+      const openMobileSearch = () => {
+        if (!wrap) return;
+        wrap.classList.add("is-mobile-open");
+        if (mobToggle) mobToggle.setAttribute("aria-expanded", "true");
+        requestAnimationFrame(() => {
+          inp.focus();
+          if (inp.value.trim()) renderResults();
+        });
+      };
+
+      if (mobToggle) {
+        mobToggle.onclick = e => {
+          e.stopPropagation();
+          if (wrap?.classList.contains("is-mobile-open")) closeMobileSearch();
+          else openMobileSearch();
+        };
+      }
+      if (mobClose) {
+        mobClose.onclick = e => {
+          e.stopPropagation();
+          inp.value = "";
+          closeMobileSearch();
+          mobToggle?.focus?.();
+        };
+      }
+
       const renderResults = () => {
         const q = (inp.value || "").trim().toLowerCase();
         if (!q) { closeDd(); return; }
@@ -10546,8 +10670,8 @@
         dd.querySelectorAll("[data-gs-card]").forEach(btn => {
           btn.onclick = () => {
             const cid = btn.dataset.gsCard;
-            closeDd();
             inp.value = "";
+            closeMobileSearch();
             if (isPersonalMode()) core.openModal(cid);
             else openProCardModal(cid);
           };
@@ -10557,14 +10681,16 @@
       inp.addEventListener("input", renderResults);
       inp.addEventListener("focus", () => { if (inp.value.trim()) renderResults(); });
       inp.addEventListener("keydown", e => {
-        if (e.key === "Escape") { closeDd(); inp.blur(); }
+        if (e.key === "Escape") { closeMobileSearch(); inp.blur(); }
         else if (e.key === "Enter") {
           const first = dd.querySelector("[data-gs-card]");
           if (first) { e.preventDefault(); first.click(); }
         }
       });
       document.addEventListener("click", e => {
-        if (wrap && !wrap.contains(e.target)) closeDd();
+        if (wrap && !wrap.contains(e.target) && (!mobToggle || !mobToggle.contains(e.target))) {
+          closeMobileSearch();
+        }
       });
     })();
 

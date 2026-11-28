@@ -5,17 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>My Plan</title>
 <meta name="description" content="My Plan: planejamento pessoal e profissional com Quadro Trello, Gantt avançado em tela cheia, Fluxo de Caixa, Google Maps, Google Agenda, Carteira do Google e IA Gemini.">
+<meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#0b0f1a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=64">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=64">
-<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=64">
+<link rel="manifest" href="/manifest.webmanifest?v=65">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=65">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg?v=65">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=64">
+<link rel="stylesheet" href="styles.css?v=65">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -27,7 +28,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=64" alt="" width="30" height="30" class="brand-logo-img">
+          <img src="icons/icon.svg?v=65" alt="" width="30" height="30" class="brand-logo-img">
         </span>
         <h1>My Plan</h1>
       </div>
@@ -131,8 +132,8 @@
     <div class="topbar-row">
       <div class="brand-group">
         <div class="brand">
-          <span class="logo" aria-hidden="true">
-            <img src="icons/icon.svg?v=64" alt="" width="30" height="30" class="brand-logo-img">
+          <span class="logo" id="appBrandLogoWrap" aria-hidden="true">
+            <img src="icons/icon.svg?v=65" alt="" width="30" height="30" class="brand-logo-img" id="appBrandLogoImg">
           </span>
           <h1 id="appBrand">My Plan <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
         </div>
@@ -148,6 +149,7 @@
       <div class="global-search-wrap" id="globalCardSearchWrap">
         <span class="global-search-ico" aria-hidden="true">🔎</span>
         <input type="search" id="globalCardSearchInput" placeholder="Buscar cartão..." autocomplete="off" aria-label="Buscar cartão em todo o sistema">
+        <button type="button" class="global-search-close" id="btnMobileSearchClose" aria-label="Fechar busca" title="Fechar busca">✕</button>
         <div class="global-search-dd" id="globalCardSearchDropdown" hidden role="listbox"></div>
       </div>
 
@@ -155,6 +157,9 @@
         <button type="button" class="btn ghost small btn-learn-more mode-switch-btn" id="btnModeSwitch" title="Alternar entre Modo Pessoal e Modo Profissional">
           <span class="mode-switch-full">Mudar para Profissional</span>
           <span class="mode-switch-short">Pro</span>
+        </button>
+        <button class="btn ghost icon-only mobile-search-trigger" id="btnMobileSearchToggle" type="button" title="Buscar cartão" aria-label="Buscar cartão" aria-expanded="false" aria-controls="globalCardSearchWrap">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         </button>
         <button class="btn ghost small invite-pill" id="btnPendingInvites" type="button" hidden>📩 <span id="inviteCount">0</span></button>
         <a class="btn ghost small btn-learn-more" id="btnTopLearnMore" href="/como-usar.html" title="Conheça todas as funções e saiba como usar o My Plan">📖 <span class="hide-sm">Saiba mais</span></a>
@@ -679,196 +684,266 @@
       </div>
     </section>
 
-    <!-- PARÂMETROS -->
+    <!-- PARÂMETROS & CONFIGURAÇÕES (MODO PESSOAL) -->
     <section class="view" id="view-params">
       <div id="paramsMultiNote" class="fin-redist-banner warn" hidden style="margin-bottom:14px"></div>
-      <div class="grid2">
-        <div class="card">
+
+      <!-- NÍVEL 1: CONFIGURAÇÕES AMPLAS (ABERTAS POR PADRÃO) -->
+      <div class="cfg-tier-head">
+        <span class="cfg-tier-badge">✨ Configurações Gerais</span>
+        <span class="muted small">Personalize o visual e a organização dos menus do Modo Pessoal</span>
+      </div>
+
+      <div class="cfg-broad-grid">
+        <div class="card cfg-broad-card">
           <div class="card-head">
-            <h2>🚗 Veículo &amp; Viagem</h2>
-            <button type="button" class="btn ai-pill small" id="btnLookupVehicleAI" title="Consultar modelo no Gemini AI caso não esteja no catálogo">⚡ Preencher c/ IA</button>
-          </div>
-          <div class="params-form">
-            <label class="param-row">
-              <span>Nome desta viagem</span>
-              <input id="p-planTitle" type="text" placeholder="Ex: Férias Final de Ano 2026">
-              <span class="u">nome</span>
-            </label>
-            <div class="param-row">
-              <span>Modelo do carro</span>
-              <div class="ac-wrap" style="width:100%">
-                <input id="p-vehicleName" type="text" placeholder="Busque clássico, flex, diesel, SUV, híbrido ou EV..." autocomplete="off">
-                <div class="ac-list" id="ac-vehicle" hidden></div>
-              </div>
-              <span class="u" id="vehicleSourceTag">catálogo auto</span>
+            <div>
+              <h2>🎨 Aparência &amp; Identidade Visual</h2>
+              <span class="muted small">Tema Dia/Noite, paletas de cores e logo do Modo Pessoal</span>
             </div>
-            <details class="help-details" id="epaBrowserDetails" style="margin:2px 0 6px">
-              <summary>🌐 Explorar banco completo por Ano / Marca / Modelo (1984–2026)</summary>
-              <div class="form-grid" style="margin-top:8px">
-                <label>Ano
-                  <select id="epaYear"></select>
-                </label>
-                <label>Marca
-                  <select id="epaMake"><option value="">Selecione...</option></select>
-                </label>
-                <label>Modelo
-                  <select id="epaModel"><option value="">Selecione a marca...</option></select>
-                </label>
-                <label>Versão / Motor
-                  <select id="epaOption"><option value="">Selecione o modelo...</option></select>
-                </label>
-                <div class="span2 key-actions-row">
-                  <button type="button" class="btn primary small" id="btnApplyEpaVehicle">✅ Preencher veículo selecionado</button>
-                  <span class="muted small" id="epaStatus">Carrega dados oficiais EPA (45.000+ versões) e converte p/ km/L</span>
-                </div>
-              </div>
-            </details>
-            <label class="param-row">
-              <span>Motorização</span>
-              <select id="p-powertrain">
-                <option value="PHEV">Híbrido Plug-in (PHEV)</option>
-                <option value="HEV">Híbrido Convencional (HEV)</option>
-                <option value="COMBUSTION">Combustão (Flex / Gasolina / Diesel)</option>
-                <option value="BEV">100% Elétrico (BEV)</option>
-              </select>
-              <span class="u">tipo</span>
-            </label>
           </div>
-          <div id="vehicleParamsList" class="params-form"></div>
+          <div id="personalAppearanceHost" class="appearance-host"></div>
         </div>
 
-        <div class="card">
-          <h2>💰 Orçamento Flexível, Hospedagem &amp; Tarifas</h2>
-          <div id="costParamsList" class="params-form"></div>
+        <div class="card cfg-broad-card">
+          <div class="card-head">
+            <div>
+              <h2>🧭 Menus Visíveis &amp; Ordem</h2>
+              <span class="muted small">Arraste (⋮⋮), use ↑/↓ ou oculte abas do topo</span>
+            </div>
+            <button type="button" class="btn ghost small" id="btnResetPersonalMenuOrder" title="Restaurar ordem e visibilidade padrão">↺ Padrão</button>
+          </div>
+          <div id="personalVisibleMenusManager" class="menu-order-list"></div>
         </div>
       </div>
 
-      <!-- INGRESSOS, TICKETS E PASSAGENS EM PARÂMETROS (VINCULADOS AO CRONOGRAMA E DASHBOARD) -->
-      <div class="card">
-        <div class="card-head">
-          <h2>🎟️ Ingressos, Tickets, Passagens &amp; Extras da Viagem</h2>
-        </div>
-        <form id="paramTicketForm" class="ticket-inline-form">
-          <select id="pt-type" aria-label="Tipo do item">
-            <option value="Ingresso">🎟️ Ingresso / Ticket</option>
-            <option value="Voo">✈️ Voo / Passagem</option>
-            <option value="Trem">🚂 Trem</option>
-            <option value="Ônibus">🚌 Ônibus</option>
-            <option value="Passeio">🎢 Passeio / Parque</option>
-            <option value="Evento">★ Evento / Jogo / Show</option>
-            <option value="Hospedagem">🏨 Hospedagem</option>
-            <option value="Restaurante">🍽️ Restaurante</option>
-            <option value="Outro">📌 Outro Gasto</option>
-          </select>
-          <input type="text" id="pt-name" required placeholder="Nome (ex: Ingresso Beto Carrero, Voo BSB-GRU...)">
-          <input type="date" id="pt-start" required aria-label="Data">
-          <input type="number" min="1" step="1" id="pt-qty" value="1" placeholder="Qtd" title="Quantidade">
-          <input type="number" step="any" min="0" id="pt-cost" placeholder="Valor unit. R$">
-          <input type="text" id="pt-notes" placeholder="Local / observação (opcional)">
-          <button type="submit" class="btn primary small">➕ Adicionar</button>
-        </form>
-        <div id="paramTicketsList" class="param-tickets-list"></div>
+      <!-- NÍVEL 2: CONFIGURAÇÕES ESPECÍFICAS (ACORDEÕES RECOLHIDOS POR PADRÃO) -->
+      <div class="cfg-tier-head cfg-tier-specific">
+        <span class="cfg-tier-badge">⚙️ Configurações Específicas</span>
+        <span class="muted small">Clique em qualquer cartão abaixo para expandir e editar</span>
       </div>
 
-      <div class="grid2">
-        <div class="card">
-          <h2>🤖 IA Gemini, Maps, Agenda &amp; WhatsApp (Central Única)</h2>
-          <div id="automationParamsList" class="params-form"></div>
-
-          <div class="gmaps-key-panel">
-            <div class="gmaps-key-head">
-              <strong>✨ Google Gemini AI (Todo o App)</strong>
-              <span class="pill warn" id="geminiStatusBadge">Não configurada</span>
+      <div class="cfg-accordions-list" aria-label="Configurações específicas do Modo Pessoal">
+        <details class="cfg-accordion" id="acc-p-vehicle">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">🚗</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Dados do Veículo &amp; Viagem de Carro</span>
+              <span class="cfg-acc-sub">Nome da viagem, modelo do carro, catálogo EPA, motorização, consumo e combustível</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <div class="cfg-acc-toolbar">
+              <span class="muted small">Configure o veículo usado para cálculos de autonomia, pedágios e consumo.</span>
+              <button type="button" class="btn ai-pill small" id="btnLookupVehicleAI" title="Consultar modelo no Gemini AI caso não esteja no catálogo">⚡ Preencher c/ IA</button>
             </div>
-            <p class="muted small">Salve sua Gemini API Key uma única vez aqui ou em <code>GEMINI_API_KEY</code> na VPS — ativa automaticamente “Planejar com IA”, busca automática de veículos e leitura de ingressos/voos.</p>
-            <div class="key-input-row">
-              <input type="password" id="geminiKeyInput" placeholder="Cole sua Gemini API Key (AIza...)" autocomplete="off">
-              <button type="button" class="btn primary small" id="btnSaveGeminiKey">Salvar IA</button>
-            </div>
-          </div>
-
-          <div class="gmaps-key-panel">
-            <div class="gmaps-key-head">
-              <strong>🔑 Chave Google Maps Platform API</strong>
-              <span class="pill" id="gmapsKeyBadge">Não configurada</span>
-            </div>
-            <div class="key-input-row">
-              <input type="password" id="gmapsKeyInput" placeholder="Cole sua Google Maps API Key..." autocomplete="off">
-              <button type="button" class="btn ghost small" id="btnToggleKey" title="Mostrar/ocultar" aria-label="Mostrar ou ocultar chave do Google Maps">👁️</button>
-              <button type="button" class="btn primary small" id="btnSaveKey">Salvar</button>
-            </div>
-            <div class="key-actions-row">
-              <button type="button" class="btn ghost small" id="btnTestKey">⚡ Testar Maps</button>
-              <button type="button" class="btn ghost small" id="btnRecalcAllRoutes">🔄 Recalcular viagens no Maps</button>
-              <button type="button" class="btn ghost small" id="btnReapplyStops">⏱️ Reaplicar paradas</button>
-            </div>
-          </div>
-
-          <div class="gmaps-key-panel">
-            <div class="gmaps-key-head">
-              <strong>📅 Integração Google Agenda &amp; 💳 Carteira do Google</strong>
-              <span class="pill" id="calBadge">Lembrete dia anterior 09:00</span>
-            </div>
-            <div class="key-actions-row">
-              <button type="button" class="btn primary small" id="btnSyncAllCalendar">📅 Sincronizar / Assinar Agenda</button>
-              <button type="button" class="btn ghost small" id="btnDownloadAllIcs">📆 Baixar .ics</button>
-              <button type="button" class="btn ghost small" id="btnParamProfile">💬 WhatsApp &amp; Perfil</button>
-            </div>
-            <details class="help-details">
-              <summary>⚙️ Opcional avançado: Client ID próprio verificado (API Google Agenda)</summary>
-              <p class="muted small" style="margin-top:6px">Deixe vazio para usar o envio direto (Agenda / assinatura .ics) sem bloqueio do Google.</p>
-              <div class="key-input-row" style="margin-top:8px">
-                <input type="text" id="calClientIdInput" placeholder="Deixe vazio p/ envio direto sem bloqueio..." autocomplete="off">
-                <button type="button" class="btn ghost small" id="btnSaveCalClientId">Salvar ID</button>
-                <button type="button" class="btn ghost small" id="btnClearCalClientId">Limpar</button>
-              </div>
-            </details>
-          </div>
-
-          <div class="gmaps-key-panel" id="personalDriveParamsPanel" style="margin-top:12px">
-            <div class="gmaps-key-head">
-              <strong>☁️ Google Drive — Modo Pessoal (Sincronização de Cartões &amp; Anexos)</strong>
-              <span class="pill warn" id="personalDriveStatusBadge">Desconectado</span>
-            </div>
-            <p class="muted small">Escolha uma pasta do Google Drive separada para backup dos seus cartões, bilhetes e anexos do Modo Pessoal.</p>
-            <div class="key-actions-row" style="margin-top:8px;margin-bottom:10px;align-items:center">
-              <button type="button" class="btn primary small" id="btnPersonalDriveConnect">🔗 Conectar Google Drive</button>
-              <button type="button" class="btn ghost small" id="btnPersonalDriveDisconnect" hidden>🔌 Desconectar</button>
-              <span class="muted small" id="personalDriveAccountInfo"></span>
-            </div>
-            <div class="form-grid" style="margin-top:6px">
-              <label class="span2">Pasta Raiz Pessoal no Google Drive (cole a URL da pasta ou o ID)
-                <div class="key-input-row">
-                  <input type="text" id="personalDriveFolderInput" placeholder="Ex: https://drive.google.com/drive/folders/1AbC... ou ID da pasta" autocomplete="off">
-                  <button type="button" class="btn ghost small" id="btnPersonalDrivePickFolder" title="Listar e escolher uma pasta do seu Google Drive">📂 Escolher pasta</button>
+            <div class="params-form">
+              <label class="param-row">
+                <span>Nome desta viagem</span>
+                <input id="p-planTitle" type="text" placeholder="Ex: Férias Final de Ano 2026">
+                <span class="u">nome</span>
+              </label>
+              <div class="param-row">
+                <span>Modelo do carro</span>
+                <div class="ac-wrap" style="width:100%">
+                  <input id="p-vehicleName" type="text" placeholder="Busque clássico, flex, diesel, SUV, híbrido ou EV..." autocomplete="off">
+                  <div class="ac-list" id="ac-vehicle" hidden></div>
                 </div>
+                <span class="u" id="vehicleSourceTag">catálogo auto</span>
+              </div>
+              <details class="help-details" id="epaBrowserDetails" style="margin:2px 0 6px">
+                <summary>🌐 Explorar banco completo por Ano / Marca / Modelo (1984–2026)</summary>
+                <div class="form-grid" style="margin-top:8px">
+                  <label>Ano
+                    <select id="epaYear"></select>
+                  </label>
+                  <label>Marca
+                    <select id="epaMake"><option value="">Selecione...</option></select>
+                  </label>
+                  <label>Modelo
+                    <select id="epaModel"><option value="">Selecione a marca...</option></select>
+                  </label>
+                  <label>Versão / Motor
+                    <select id="epaOption"><option value="">Selecione o modelo...</option></select>
+                  </label>
+                  <div class="span2 key-actions-row">
+                    <button type="button" class="btn primary small" id="btnApplyEpaVehicle">✅ Preencher veículo selecionado</button>
+                    <span class="muted small" id="epaStatus">Carrega dados oficiais EPA (45.000+ versões) e converte p/ km/L</span>
+                  </div>
+                </div>
+              </details>
+              <label class="param-row">
+                <span>Motorização</span>
+                <select id="p-powertrain">
+                  <option value="PHEV">Híbrido Plug-in (PHEV)</option>
+                  <option value="HEV">Híbrido Convencional (HEV)</option>
+                  <option value="COMBUSTION">Combustão (Flex / Gasolina / Diesel)</option>
+                  <option value="BEV">100% Elétrico (BEV)</option>
+                </select>
+                <span class="u">tipo</span>
               </label>
             </div>
-            <div class="key-actions-row" style="margin-top:8px;align-items:center">
-              <button type="button" class="btn primary small" id="btnPersonalSaveDriveConfig">💾 Salvar Pasta do Drive</button>
-              <button type="button" class="btn ghost small" id="btnPersonalSyncDriveNow">🔄 Sincronizar Drive (Pessoal)</button>
-              <span class="muted small" id="personalDriveLastSyncInfo"></span>
+            <div id="vehicleParamsList" class="params-form"></div>
+          </div>
+        </details>
+
+        <details class="cfg-accordion" id="acc-p-budget">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">💰</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Orçamento Flexível, Hospedagem &amp; Tarifas</span>
+              <span class="cfg-acc-sub">Meta diária, economia, alimentação, hospedagem e preços de combustível/recarga</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <div id="costParamsList" class="params-form"></div>
+          </div>
+        </details>
+
+        <details class="cfg-accordion" id="acc-p-tickets">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">🎟️</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Ingressos, Tickets, Passagens &amp; Extras da Viagem</span>
+              <span class="cfg-acc-sub">Cadastro rápido vinculado automaticamente ao Cronograma e ao Dashboard</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <form id="paramTicketForm" class="ticket-inline-form">
+              <select id="pt-type" aria-label="Tipo do item">
+                <option value="Ingresso">🎟️ Ingresso / Ticket</option>
+                <option value="Voo">✈️ Voo / Passagem</option>
+                <option value="Trem">🚂 Trem</option>
+                <option value="Ônibus">🚌 Ônibus</option>
+                <option value="Passeio">🎢 Passeio / Parque</option>
+                <option value="Evento">★ Evento / Jogo / Show</option>
+                <option value="Hospedagem">🏨 Hospedagem</option>
+                <option value="Restaurante">🍽️ Restaurante</option>
+                <option value="Outro">📌 Outro Gasto</option>
+              </select>
+              <input type="text" id="pt-name" required placeholder="Nome (ex: Ingresso Beto Carrero, Voo BSB-GRU...)">
+              <input type="date" id="pt-start" required aria-label="Data">
+              <input type="number" min="1" step="1" id="pt-qty" value="1" placeholder="Qtd" title="Quantidade">
+              <input type="number" step="any" min="0" id="pt-cost" placeholder="Valor unit. R$">
+              <input type="text" id="pt-notes" placeholder="Local / observação (opcional)">
+              <button type="submit" class="btn primary small">➕ Adicionar</button>
+            </form>
+            <div id="paramTicketsList" class="param-tickets-list"></div>
+          </div>
+        </details>
+
+        <details class="cfg-accordion" id="acc-p-scenarios">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">📈</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Simulação de Cenários de Viagem</span>
+              <span class="cfg-acc-sub">Compare variações de gasolina, pedágios e recargas elétricas</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <div class="cfg-acc-toolbar">
+              <span class="muted small">*Total = Gasolina + Pedágios + Recargas elétricas das viagens de carro.</span>
+              <button class="btn ghost small" id="btnAddScenario" type="button">➕ Cenário</button>
+            </div>
+            <div id="scenarios"></div>
+          </div>
+        </details>
+
+        <details class="cfg-accordion" id="acc-p-integrations">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">🔌</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Integrações (IA Gemini, Maps, Agenda, Google Drive &amp; WhatsApp)</span>
+              <span class="cfg-acc-sub">Chaves de API, regras de rotas/paradas, sincronização de agenda e backup no Drive</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <div id="automationParamsList" class="params-form"></div>
+
+            <div class="grid2" style="margin-top:10px">
+              <div class="gmaps-key-panel" style="margin-top:0">
+                <div class="gmaps-key-head">
+                  <strong>✨ Google Gemini AI (Todo o App)</strong>
+                  <span class="pill warn" id="geminiStatusBadge">Não configurada</span>
+                </div>
+                <p class="muted small">Salve sua Gemini API Key uma única vez aqui ou em <code>GEMINI_API_KEY</code> na VPS — ativa automaticamente “Planejar com IA”, busca automática de veículos e leitura de ingressos/voos.</p>
+                <div class="key-input-row">
+                  <input type="password" id="geminiKeyInput" placeholder="Cole sua Gemini API Key (AIza...)" autocomplete="off">
+                  <button type="button" class="btn primary small" id="btnSaveGeminiKey">Salvar IA</button>
+                </div>
+              </div>
+
+              <div class="gmaps-key-panel" style="margin-top:0">
+                <div class="gmaps-key-head">
+                  <strong>🔑 Chave Google Maps Platform API</strong>
+                  <span class="pill" id="gmapsKeyBadge">Não configurada</span>
+                </div>
+                <div class="key-input-row">
+                  <input type="password" id="gmapsKeyInput" placeholder="Cole sua Google Maps API Key..." autocomplete="off">
+                  <button type="button" class="btn ghost small" id="btnToggleKey" title="Mostrar/ocultar" aria-label="Mostrar ou ocultar chave do Google Maps">👁️</button>
+                  <button type="button" class="btn primary small" id="btnSaveKey">Salvar</button>
+                </div>
+                <div class="key-actions-row">
+                  <button type="button" class="btn ghost small" id="btnTestKey">⚡ Testar Maps</button>
+                  <button type="button" class="btn ghost small" id="btnRecalcAllRoutes">🔄 Recalcular viagens no Maps</button>
+                  <button type="button" class="btn ghost small" id="btnReapplyStops">⏱️ Reaplicar paradas</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="gmaps-key-panel">
+              <div class="gmaps-key-head">
+                <strong>📅 Integração Google Agenda &amp; 💳 Carteira do Google</strong>
+                <span class="pill" id="calBadge">Lembrete dia anterior 09:00</span>
+              </div>
+              <div class="key-actions-row">
+                <button type="button" class="btn primary small" id="btnSyncAllCalendar">📅 Sincronizar / Assinar Agenda</button>
+                <button type="button" class="btn ghost small" id="btnDownloadAllIcs">📆 Baixar .ics</button>
+                <button type="button" class="btn ghost small" id="btnParamProfile">💬 WhatsApp &amp; Perfil</button>
+              </div>
+              <details class="help-details">
+                <summary>⚙️ Opcional avançado: Client ID próprio verificado (API Google Agenda)</summary>
+                <p class="muted small" style="margin-top:6px">Deixe vazio para usar o envio direto (Agenda / assinatura .ics) sem bloqueio do Google.</p>
+                <div class="key-input-row" style="margin-top:8px">
+                  <input type="text" id="calClientIdInput" placeholder="Deixe vazio p/ envio direto sem bloqueio..." autocomplete="off">
+                  <button type="button" class="btn ghost small" id="btnSaveCalClientId">Salvar ID</button>
+                  <button type="button" class="btn ghost small" id="btnClearCalClientId">Limpar</button>
+                </div>
+              </details>
+            </div>
+
+            <div class="gmaps-key-panel" id="personalDriveParamsPanel" style="margin-top:12px">
+              <div class="gmaps-key-head">
+                <strong>☁️ Google Drive — Modo Pessoal (Sincronização de Cartões &amp; Anexos)</strong>
+                <span class="pill warn" id="personalDriveStatusBadge">Desconectado</span>
+              </div>
+              <p class="muted small">Escolha uma pasta do Google Drive separada para backup dos seus cartões, bilhetes e anexos do Modo Pessoal.</p>
+              <div class="key-actions-row" style="margin-top:8px;margin-bottom:10px;align-items:center">
+                <button type="button" class="btn primary small" id="btnPersonalDriveConnect">🔗 Conectar Google Drive</button>
+                <button type="button" class="btn ghost small" id="btnPersonalDriveDisconnect" hidden>🔌 Desconectar</button>
+                <span class="muted small" id="personalDriveAccountInfo"></span>
+              </div>
+              <div class="form-grid" style="margin-top:6px">
+                <label class="span2">Pasta Raiz Pessoal no Google Drive (cole a URL da pasta ou o ID)
+                  <div class="key-input-row">
+                    <input type="text" id="personalDriveFolderInput" placeholder="Ex: https://drive.google.com/drive/folders/1AbC... ou ID da pasta" autocomplete="off">
+                    <button type="button" class="btn ghost small" id="btnPersonalDrivePickFolder" title="Listar e escolher uma pasta do seu Google Drive">📂 Escolher pasta</button>
+                  </div>
+                </label>
+              </div>
+              <div class="key-actions-row" style="margin-top:8px;align-items:center">
+                <button type="button" class="btn primary small" id="btnPersonalSaveDriveConfig">💾 Salvar Pasta do Drive</button>
+                <button type="button" class="btn ghost small" id="btnPersonalSyncDriveNow">🔄 Sincronizar Drive (Pessoal)</button>
+                <span class="muted small" id="personalDriveLastSyncInfo"></span>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
-            <h2>📈 Simulação de cenários</h2>
-            <button class="btn ghost small" id="btnAddScenario" type="button">➕ Cenário</button>
-          </div>
-          <div id="scenarios"></div>
-          <p class="muted small">*Total = Gasolina + Pedágios + Recargas elétricas das viagens de carro.</p>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
-            <h2>👁️ Menus Visíveis (Modo Pessoal)</h2>
-            <span class="muted small">Oculte abas que não for usar</span>
-          </div>
-          <p class="muted small" style="margin-top:0">Ative ou desative os menus exibidos na barra superior do Modo Pessoal:</p>
-          <div id="personalVisibleMenusManager" class="pro-toggles-grid"></div>
-        </div>
+        </details>
       </div>
     </section>
 
@@ -2537,253 +2612,324 @@
       </div>
     </section>
 
-    <!-- MODO PROFISSIONAL: PARÂMETROS & ESTRUTURA TRELLO -->
+    <!-- MODO PROFISSIONAL: PARÂMETROS & CONFIGURAÇÕES -->
     <section class="view" id="view-pro-params">
       <div id="proParamsMultiNote" class="fin-redist-banner warn" hidden style="margin-bottom:14px"></div>
-      <div class="grid2">
-        <div class="card">
-          <h2>⚙️ Configurações do Projeto &amp; Metas</h2>
-          <div class="params-form">
-            <label class="param-row">
-              <span>Nome do projeto / agenda</span>
-              <input id="pp-title" type="text" placeholder="Ex: Roadmap Q1 2027">
-              <span class="u">nome</span>
-            </label>
-            <label class="param-row">
-              <span>Cliente / Carteira padrão</span>
-              <input id="pp-client" type="text" placeholder="Ex: Conta Corporativa">
-              <span class="u">cliente</span>
-            </label>
-            <label class="param-row">
-              <span>Meta de faturamento</span>
-              <input id="pp-revenueTarget" type="number" step="100" min="0">
-              <span class="u">R$</span>
-            </label>
-            <label class="param-row">
-              <span>Teto / orçamento de custos</span>
-              <input id="pp-costBudget" type="number" step="50" min="0">
-              <span class="u">R$</span>
-            </label>
-            <label class="param-row">
-              <span>Alíquota estimada impostos</span>
-              <input id="pp-taxRatePct" type="number" step="0.5" min="0" max="100">
-              <span class="u">%</span>
-            </label>
-            <label class="param-row">
-              <span>Valor hora técnico (ref.)</span>
-              <input id="pp-hourlyRate" type="number" step="10" min="0">
-              <span class="u">R$/h</span>
-            </label>
-            <label class="param-row">
-              <span>Horário lembrete Agenda</span>
-              <input id="pp-remTime" type="time">
-              <span class="u">h:m</span>
-            </label>
-            <label class="param-row">
-              <span>Mover ao concluir para</span>
-              <select id="pp-doneColumnId" aria-label="Lista destino ao concluir tarefa"></select>
-              <span class="u">lista</span>
-            </label>
-          </div>
-        </div>
 
-        <div class="card">
+      <!-- NÍVEL 1: CONFIGURAÇÕES AMPLAS (ABERTAS POR PADRÃO) -->
+      <div class="cfg-tier-head">
+        <span class="cfg-tier-badge">✨ Configurações Gerais</span>
+        <span class="muted small">Personalize o visual e a organização dos menus do Modo Profissional</span>
+      </div>
+
+      <div class="cfg-broad-grid">
+        <div class="card cfg-broad-card">
           <div class="card-head">
-            <h2>🗂️ Listas do Quadro &amp; Etiquetas</h2>
-            <button type="button" class="btn primary small" id="btnProAddColumn">➕ Nova Lista</button>
-          </div>
-          <div id="proColumnsManager" class="pro-cols-manager"></div>
-          <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
-          <strong style="font-size:0.86rem;display:block;margin-bottom:8px">🏷️ Etiquetas do Quadro</strong>
-          <div id="proLabelsManager" class="pro-labels-manager"></div>
-        </div>
-      </div>
-
-      <div class="grid2" style="margin-top:14px">
-        <div class="card" style="margin-bottom:0">
-          <div class="card-head">
-            <h2>👁️ Menus Visíveis neste Projeto</h2>
-            <span class="muted small">Oculte abas que não for usar</span>
-          </div>
-          <p class="muted small" style="margin-top:0">Desmarque menus que não se aplicam a este projeto (ex: Financeiro, Checklist ou Tabela) para despoluir a barra superior:</p>
-          <div id="proVisibleMenusManager" class="pro-toggles-grid"></div>
-        </div>
-
-        <div class="card" style="margin-bottom:0">
-          <div class="card-head">
-            <h2>📊 Seções &amp; Gráficos do Dashboard</h2>
-            <span class="muted small">Personalize o Dashboard</span>
-          </div>
-          <p class="muted small" style="margin-top:0">Escolha quais blocos, cartões financeiros e gráficos aparecem na aba Dashboard deste projeto:</p>
-          <div id="proDashWidgetsManager" class="pro-toggles-grid"></div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:14px">
-        <div class="card-head">
-          <h2>👤 Responsáveis do Projeto</h2>
-        </div>
-        <form id="proAssigneeAddForm" class="key-input-row" style="margin-bottom:10px">
-          <input type="text" id="proNewAssigneeInput" placeholder="Nome do responsável (ex: Maria, Equipe Dev, Financeiro)..." maxlength="48" autocomplete="off">
-          <button type="submit" class="btn primary small">➕ Adicionar Responsável</button>
-        </form>
-        <div id="proAssigneesManager" class="pro-types-manager"></div>
-      </div>
-
-      <div class="card" style="margin-top:14px">
-        <div class="card-head">
-          <h2>🧩 Tipos de Cartões <small class="muted" style="font-weight:400;font-size:0.78rem">(edite ou reordene com ↑/↓ ou arrastando)</small></h2>
-          <button type="button" class="btn primary small" id="btnProAddCardType">➕ Novo Tipo</button>
-        </div>
-        <div id="proCardTypesManager" class="pro-types-manager"></div>
-      </div>
-
-      <div class="card" style="margin-top:14px">
-        <h2>🤖 IA Gemini, Google Agenda &amp; WhatsApp (Central Profissional)</h2>
-        <div class="grid2" style="margin-top:10px">
-          <div class="gmaps-key-panel" style="margin-top:0">
-            <div class="gmaps-key-head">
-              <strong>✨ Google Gemini AI (Extração de Pautas, Contratos &amp; Áudios)</strong>
-              <span class="pill warn" id="proGeminiStatusBadge">Não configurada</span>
-            </div>
-            <p class="muted small">Use a mesma chave Gemini da sua conta para criar projetos ou preencher cartões por voz/texto/imagem.</p>
-            <div class="key-input-row">
-              <input type="password" id="proGeminiKeyInput" placeholder="Cole sua Gemini API Key (AIza...)" autocomplete="off">
-              <button type="button" class="btn primary small" id="btnProSaveGeminiKey">Salvar IA</button>
-            </div>
-          </div>
-
-          <div class="gmaps-key-panel" style="margin-top:0">
-            <div class="gmaps-key-head">
-              <strong>📅 Google Agenda &amp; 💬 WhatsApp</strong>
-              <span class="pill" id="proCalBadge">Lembrete 09:00</span>
-            </div>
-            <p class="muted small">Sincronize entregas, reuniões e viagens corporativas na sua Agenda Google ou envie o resumo executivo no WhatsApp.</p>
-            <div class="key-actions-row">
-              <button type="button" class="btn primary small" id="btnProSyncAllCalendar">📅 Sincronizar / Assinar Agenda</button>
-              <button type="button" class="btn ghost small" id="btnProDownloadAllIcs">📆 Baixar .ics</button>
-              <button type="button" class="btn ghost small" id="btnProParamProfile">💬 WhatsApp &amp; Perfil</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="gmaps-key-panel" id="proWalletParamsPanel" style="margin-top:12px">
-          <div class="gmaps-key-head">
-            <strong>💳 Carteira do Google (Google Wallet API — Envio Direto por Trecho)</strong>
-            <span class="pill warn" id="proWalletStatusBadge">Não configurada</span>
-          </div>
-          <p class="muted small">Permite clicar no botão <b>Carteira</b> em cada trecho de viagem para abrir diretamente o cartão de embarque na Google Wallet (sem baixar arquivos). Configure abaixo no seu Cofre AES-256-GCM ou via variáveis de ambiente no servidor (<code>GOOGLE_WALLET_ISSUER_ID</code>, <code>GOOGLE_WALLET_CLIENT_EMAIL</code> e <code>GOOGLE_WALLET_PRIVATE_KEY</code> ou <code>GOOGLE_WALLET_SA_JSON</code>).</p>
-          <div class="form-grid" style="margin-top:8px">
-            <label>Google Wallet Issuer ID
-              <input type="text" id="proWalletIssuerInput" placeholder="Ex: 3388000000022212345" autocomplete="off">
-            </label>
-            <label>Service Account JSON (Google Cloud)
-              <input type="password" id="proWalletSaInput" placeholder='{"type":"service_account","client_email":"...","private_key":"..."}' autocomplete="off">
-            </label>
-          </div>
-          <div class="key-actions-row" style="margin-top:8px">
-            <button type="button" class="btn primary small" id="btnProSaveWalletCreds">💾 Salvar Credenciais Google Wallet</button>
-          </div>
-        </div>
-
-        <div class="gmaps-key-panel" id="proDriveParamsPanel" style="margin-top:12px">
-          <div class="gmaps-key-head">
-            <strong>☁️ Integração com Google Drive (Sincronização de Cartões &amp; Anexos)</strong>
-            <span class="pill warn" id="proDriveStatusBadge">Desconectado</span>
-          </div>
-          <p class="muted small">Conecte sua conta Google e informe a pasta raiz do Drive (URL ou ID) onde cada cartão do projeto terá sua subpasta com <code>Detalhes_do_Cartao.txt</code> e todos os anexos atualizados sem duplicidade.</p>
-          <div class="key-actions-row" style="margin-top:8px;margin-bottom:10px;align-items:center">
-            <button type="button" class="btn primary small" id="btnProDriveConnect">🔗 Conectar Google Drive</button>
-            <button type="button" class="btn ghost small" id="btnProDriveDisconnect" hidden>🔌 Desconectar</button>
-            <span class="muted small" id="proDriveAccountInfo"></span>
-          </div>
-          <div class="form-grid" style="margin-top:6px">
-            <label class="span2">Pasta Raiz no Google Drive (cole a URL da pasta ou o ID)
-              <div class="key-input-row">
-                <input type="text" id="proDriveFolderInput" placeholder="Ex: https://drive.google.com/drive/folders/1AbC... ou ID da pasta" autocomplete="off">
-                <button type="button" class="btn ghost small" id="btnProDrivePickFolder" title="Listar e escolher uma pasta do seu Google Drive">📂 Escolher pasta</button>
-              </div>
-            </label>
-          </div>
-          <div class="key-actions-row" style="margin-top:8px;align-items:center">
-            <button type="button" class="btn primary small" id="btnProSaveDriveConfig">💾 Salvar Configuração do Drive</button>
-            <button type="button" class="btn ghost small" id="btnProSyncDriveNow">🔄 Atualizar Google Drive</button>
-            <span class="muted small" id="proDriveLastSyncInfo"></span>
-          </div>
-        </div>
-      </div>
-
-      <!-- PARÂMETROS FINANCEIROS DE VIAGENS (FORÇAS ARMADAS — 2026) -->
-      <div class="card pro-tf-params-card" id="proTravelFinanceParamsCard" style="margin-top:14px">
-        <div class="card-head">
-          <div>
-            <h2>🎖️ Parâmetros Financeiros de Viagens (Forças Armadas)</h2>
-            <span class="muted small">Valores vigentes de 2026 pré-carregados e 100% editáveis — usados automaticamente nos Cartões e na aba Controle</span>
-          </div>
-          <button type="button" class="btn ghost small" id="btnProTfResetDefaults" title="Restaurar tabelas padrão de 2026">↺ Restaurar padrão 2026</button>
-        </div>
-
-        <!-- 1.1 Vínculo Pessoas -> Posto/Graduação -->
-        <div class="pro-tf-subblock">
-          <div class="pro-tf-subhead">
-            <h3>1. Posto / Graduação por Pessoa</h3>
-            <span class="muted small">Vincule cada responsável cadastrado ao seu Posto/Graduação para cálculo automático de Diárias e Grat. de Representação</span>
-          </div>
-          <div id="proTfPeopleRanksWrap"></div>
-        </div>
-
-        <!-- 1.2 Tabela de Soldos e Gratificação de Representação -->
-        <div class="pro-tf-subblock">
-          <div class="pro-tf-subhead">
             <div>
-              <h3>2. Tabela de Soldos e Gratificação de Representação</h3>
-              <span class="muted small">Cálculo automático: Grat. Bruta = Soldo × Percentual · Líquida = Bruta × (1 − IR%)</span>
+              <h2>🎨 Aparência &amp; Identidade Visual</h2>
+              <span class="muted small">Tema Dia/Noite, paletas de cores e logo do Modo Profissional</span>
             </div>
-            <div class="pro-tf-head-actions">
-              <label class="pro-tf-inline-pct">
-                <span>% Grat. Rep./dia:</span>
-                <input type="number" id="proTfGratPct" step="0.1" min="0" max="100" value="2">
-                <span>%</span>
+          </div>
+          <div id="proAppearanceHost" class="appearance-host"></div>
+        </div>
+
+        <div class="card cfg-broad-card">
+          <div class="card-head">
+            <div>
+              <h2>🧭 Menus Visíveis &amp; Ordem</h2>
+              <span class="muted small">Arraste (⋮⋮), use ↑/↓ ou oculte abas deste projeto</span>
+            </div>
+            <button type="button" class="btn ghost small" id="btnResetProMenuOrder" title="Restaurar ordem e visibilidade padrão">↺ Padrão</button>
+          </div>
+          <div id="proVisibleMenusManager" class="menu-order-list"></div>
+        </div>
+      </div>
+
+      <!-- NÍVEL 2: CONFIGURAÇÕES ESPECÍFICAS (ACORDEÕES RECOLHIDOS POR PADRÃO) -->
+      <div class="cfg-tier-head cfg-tier-specific">
+        <span class="cfg-tier-badge">⚙️ Configurações Específicas</span>
+        <span class="muted small">Clique em qualquer cartão abaixo para expandir e editar</span>
+      </div>
+
+      <div class="cfg-accordions-list" aria-label="Configurações específicas do Modo Profissional">
+        <details class="cfg-accordion" id="acc-pro-project">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">🎯</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Dados do Projeto, Metas &amp; Regras</span>
+              <span class="cfg-acc-sub">Nome do projeto, cliente, meta de faturamento, teto de custos, impostos e lembrete</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <div class="params-form">
+              <label class="param-row">
+                <span>Nome do projeto / agenda</span>
+                <input id="pp-title" type="text" placeholder="Ex: Roadmap Q1 2027">
+                <span class="u">nome</span>
               </label>
-              <button type="button" class="btn primary small" id="btnProTfAddRank">➕ Novo Posto</button>
+              <label class="param-row">
+                <span>Cliente / Carteira padrão</span>
+                <input id="pp-client" type="text" placeholder="Ex: Conta Corporativa">
+                <span class="u">cliente</span>
+              </label>
+              <label class="param-row">
+                <span>Meta de faturamento</span>
+                <input id="pp-revenueTarget" type="number" step="100" min="0">
+                <span class="u">R$</span>
+              </label>
+              <label class="param-row">
+                <span>Teto / orçamento de custos</span>
+                <input id="pp-costBudget" type="number" step="50" min="0">
+                <span class="u">R$</span>
+              </label>
+              <label class="param-row">
+                <span>Alíquota estimada impostos</span>
+                <input id="pp-taxRatePct" type="number" step="0.5" min="0" max="100">
+                <span class="u">%</span>
+              </label>
+              <label class="param-row">
+                <span>Valor hora técnico (ref.)</span>
+                <input id="pp-hourlyRate" type="number" step="10" min="0">
+                <span class="u">R$/h</span>
+              </label>
+              <label class="param-row">
+                <span>Horário lembrete Agenda</span>
+                <input id="pp-remTime" type="time">
+                <span class="u">h:m</span>
+              </label>
+              <label class="param-row">
+                <span>Mover ao concluir para</span>
+                <select id="pp-doneColumnId" aria-label="Lista destino ao concluir tarefa"></select>
+                <span class="u">lista</span>
+              </label>
             </div>
           </div>
-          <div class="table-wrap"><table id="proTfRanksTable" class="pro-tf-edit-table"></table></div>
-        </div>
+        </details>
 
-        <!-- 1.3 Tabela de Diárias no País (Decreto 12.324/2024) -->
-        <div class="pro-tf-subblock">
-          <div class="pro-tf-subhead">
-            <div>
-              <h3>3. Tabela de Diárias no País (Decreto nº 12.324/2024 — Isenta de IR)</h3>
-              <span class="muted small">Sem pernoite = 0,5 diária · Com pernoite = (Dias de pernoite + 0,5) × Valor da Faixa</span>
+        <details class="cfg-accordion" id="acc-pro-board">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">🗂️</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Listas do Quadro, Etiquetas &amp; Responsáveis</span>
+              <span class="cfg-acc-sub">Colunas do Kanban, cores de etiquetas e cadastro de responsáveis</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <div class="cfg-acc-toolbar">
+              <strong style="font-size:0.88rem">🗂️ Listas do Quadro</strong>
+              <button type="button" class="btn primary small" id="btnProAddColumn">➕ Nova Lista</button>
             </div>
+            <div id="proColumnsManager" class="pro-cols-manager"></div>
+            <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
+            <strong style="font-size:0.86rem;display:block;margin-bottom:8px">🏷️ Etiquetas do Quadro</strong>
+            <div id="proLabelsManager" class="pro-labels-manager"></div>
+            <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
+            <strong style="font-size:0.86rem;display:block;margin-bottom:8px">👤 Responsáveis do Projeto</strong>
+            <form id="proAssigneeAddForm" class="key-input-row" style="margin-bottom:10px">
+              <input type="text" id="proNewAssigneeInput" placeholder="Nome do responsável (ex: Maria, Equipe Dev, Financeiro)..." maxlength="48" autocomplete="off">
+              <button type="submit" class="btn primary small">➕ Adicionar Responsável</button>
+            </form>
+            <div id="proAssigneesManager" class="pro-types-manager"></div>
           </div>
-          <div class="table-wrap"><table id="proTfDiariasTable" class="pro-tf-edit-table"></table></div>
-        </div>
+        </details>
 
-        <!-- 1.4 Classificação de Localidades por Faixa -->
-        <div class="pro-tf-subblock">
-          <div class="pro-tf-subhead">
-            <div>
-              <h3>4. Classificação de Localidades por Faixa</h3>
-              <span class="muted small">Separe os nomes das cidades por vírgula. Qualquer localidade não listada nas Faixas 1 ou 2 cai automaticamente na Faixa 3.</span>
+        <details class="cfg-accordion" id="acc-pro-cardtypes">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">🧩</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Tipos de Cartão</span>
+              <span class="cfg-acc-sub">Crie, edite, mude cores/ícones ou reordene os tipos de cartões (↑/↓ ou arrastando)</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <div class="cfg-acc-toolbar">
+              <span class="muted small">Edite ou reordene com ↑/↓ ou arrastando</span>
+              <button type="button" class="btn primary small" id="btnProAddCardType">➕ Novo Tipo</button>
+            </div>
+            <div id="proCardTypesManager" class="pro-types-manager"></div>
+          </div>
+        </details>
+
+        <details class="cfg-accordion" id="acc-pro-dashboard">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">📊</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Seções &amp; Gráficos do Dashboard</span>
+              <span class="cfg-acc-sub">Escolha quais blocos, cartões financeiros e gráficos aparecem no Dashboard</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <p class="muted small" style="margin-top:0">Escolha quais blocos, cartões financeiros e gráficos aparecem na aba Dashboard deste projeto:</p>
+            <div id="proDashWidgetsManager" class="pro-toggles-grid"></div>
+          </div>
+        </details>
+
+        <details class="cfg-accordion" id="acc-pro-travel-finance">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">🎖️</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Parâmetros de Viagens &amp; Diárias (Forças Armadas)</span>
+              <span class="cfg-acc-sub">Postos/graduações, soldos, gratificação de representação, diárias e faixas de cidades</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body pro-tf-params-card" id="proTravelFinanceParamsCard">
+            <div class="cfg-acc-toolbar">
+              <span class="muted small">Valores vigentes de 2026 pré-carregados e 100% editáveis — usados automaticamente nos Cartões e na aba Controle</span>
+              <button type="button" class="btn ghost small" id="btnProTfResetDefaults" title="Restaurar tabelas padrão de 2026">↺ Restaurar padrão 2026</button>
+            </div>
+
+            <!-- 1.1 Vínculo Pessoas -> Posto/Graduação -->
+            <div class="pro-tf-subblock">
+              <div class="pro-tf-subhead">
+                <h3>1. Posto / Graduação por Pessoa</h3>
+                <span class="muted small">Vincule cada responsável cadastrado ao seu Posto/Graduação para cálculo automático de Diárias e Grat. de Representação</span>
+              </div>
+              <div id="proTfPeopleRanksWrap"></div>
+            </div>
+
+            <!-- 1.2 Tabela de Soldos e Gratificação de Representação -->
+            <div class="pro-tf-subblock">
+              <div class="pro-tf-subhead">
+                <div>
+                  <h3>2. Tabela de Soldos e Gratificação de Representação</h3>
+                  <span class="muted small">Cálculo automático: Grat. Bruta = Soldo × Percentual · Líquida = Bruta × (1 − IR%)</span>
+                </div>
+                <div class="pro-tf-head-actions">
+                  <label class="pro-tf-inline-pct">
+                    <span>% Grat. Rep./dia:</span>
+                    <input type="number" id="proTfGratPct" step="0.1" min="0" max="100" value="2">
+                    <span>%</span>
+                  </label>
+                  <button type="button" class="btn primary small" id="btnProTfAddRank">➕ Novo Posto</button>
+                </div>
+              </div>
+              <div class="table-wrap"><table id="proTfRanksTable" class="pro-tf-edit-table"></table></div>
+            </div>
+
+            <!-- 1.3 Tabela de Diárias no País (Decreto 12.324/2024) -->
+            <div class="pro-tf-subblock">
+              <div class="pro-tf-subhead">
+                <div>
+                  <h3>3. Tabela de Diárias no País (Decreto nº 12.324/2024 — Isenta de IR)</h3>
+                  <span class="muted small">Sem pernoite = 0,5 diária · Com pernoite = (Dias de pernoite + 0,5) × Valor da Faixa</span>
+                </div>
+              </div>
+              <div class="table-wrap"><table id="proTfDiariasTable" class="pro-tf-edit-table"></table></div>
+            </div>
+
+            <!-- 1.4 Classificação de Localidades por Faixa -->
+            <div class="pro-tf-subblock">
+              <div class="pro-tf-subhead">
+                <div>
+                  <h3>4. Classificação de Localidades por Faixa</h3>
+                  <span class="muted small">Separe os nomes das cidades por vírgula. Qualquer localidade não listada nas Faixas 1 ou 2 cai automaticamente na Faixa 3.</span>
+                </div>
+              </div>
+              <div class="pro-tf-cities-grid">
+                <label class="pro-field-stack">
+                  <span><strong>Faixa 1 (Mais Alta)</strong> — BSB / MAO / RJ / SP</span>
+                  <textarea id="proTfCitiesF1" rows="2" placeholder="Brasília, Manaus, Rio de Janeiro, São Paulo"></textarea>
+                </label>
+                <label class="pro-field-stack">
+                  <span><strong>Faixa 2 (Demais Capitais)</strong></span>
+                  <textarea id="proTfCitiesF2" rows="3" placeholder="Aracaju, Belém, Belo Horizonte..."></textarea>
+                </label>
+                <div class="pro-tf-f3-note">
+                  <strong>Faixa 3 (Interior / Demais Localidades):</strong> Automática para qualquer cidade não listada na Faixa 1 ou Faixa 2 (ex: Canoas, Anápolis, Santa Maria, Pirassununga, Navegantes, etc.).
+                </div>
+              </div>
             </div>
           </div>
-          <div class="pro-tf-cities-grid">
-            <label class="pro-field-stack">
-              <span><strong>Faixa 1 (Mais Alta)</strong> — BSB / MAO / RJ / SP</span>
-              <textarea id="proTfCitiesF1" rows="2" placeholder="Brasília, Manaus, Rio de Janeiro, São Paulo"></textarea>
-            </label>
-            <label class="pro-field-stack">
-              <span><strong>Faixa 2 (Demais Capitais)</strong></span>
-              <textarea id="proTfCitiesF2" rows="3" placeholder="Aracaju, Belém, Belo Horizonte..."></textarea>
-            </label>
-            <div class="pro-tf-f3-note">
-              <strong>Faixa 3 (Interior / Demais Localidades):</strong> Automática para qualquer cidade não listada na Faixa 1 ou Faixa 2 (ex: Canoas, Anápolis, Santa Maria, Pirassununga, Navegantes, etc.).
+        </details>
+
+        <details class="cfg-accordion" id="acc-pro-integrations">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">🔌</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Integrações (IA Gemini, Google Agenda, Carteira &amp; Google Drive)</span>
+              <span class="cfg-acc-sub">Chave Gemini, sincronização de agenda, Google Wallet e backup automático no Drive</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <div class="grid2" style="margin-top:0">
+              <div class="gmaps-key-panel" style="margin-top:0">
+                <div class="gmaps-key-head">
+                  <strong>✨ Google Gemini AI (Extração de Pautas, Contratos &amp; Áudios)</strong>
+                  <span class="pill warn" id="proGeminiStatusBadge">Não configurada</span>
+                </div>
+                <p class="muted small">Use a mesma chave Gemini da sua conta para criar projetos ou preencher cartões por voz/texto/imagem.</p>
+                <div class="key-input-row">
+                  <input type="password" id="proGeminiKeyInput" placeholder="Cole sua Gemini API Key (AIza...)" autocomplete="off">
+                  <button type="button" class="btn primary small" id="btnProSaveGeminiKey">Salvar IA</button>
+                </div>
+              </div>
+
+              <div class="gmaps-key-panel" style="margin-top:0">
+                <div class="gmaps-key-head">
+                  <strong>📅 Google Agenda &amp; 💬 WhatsApp</strong>
+                  <span class="pill" id="proCalBadge">Lembrete 09:00</span>
+                </div>
+                <p class="muted small">Sincronize entregas, reuniões e viagens corporativas na sua Agenda Google ou envie o resumo executivo no WhatsApp.</p>
+                <div class="key-actions-row">
+                  <button type="button" class="btn primary small" id="btnProSyncAllCalendar">📅 Sincronizar / Assinar Agenda</button>
+                  <button type="button" class="btn ghost small" id="btnProDownloadAllIcs">📆 Baixar .ics</button>
+                  <button type="button" class="btn ghost small" id="btnProParamProfile">💬 WhatsApp &amp; Perfil</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="gmaps-key-panel" id="proWalletParamsPanel" style="margin-top:12px">
+              <div class="gmaps-key-head">
+                <strong>💳 Carteira do Google (Google Wallet API — Envio Direto por Trecho)</strong>
+                <span class="pill warn" id="proWalletStatusBadge">Não configurada</span>
+              </div>
+              <p class="muted small">Permite clicar no botão <b>Carteira</b> em cada trecho de viagem para abrir diretamente o cartão de embarque na Google Wallet (sem baixar arquivos). Configure abaixo no seu Cofre AES-256-GCM ou via variáveis de ambiente no servidor (<code>GOOGLE_WALLET_ISSUER_ID</code>, <code>GOOGLE_WALLET_CLIENT_EMAIL</code> e <code>GOOGLE_WALLET_PRIVATE_KEY</code> ou <code>GOOGLE_WALLET_SA_JSON</code>).</p>
+              <div class="form-grid" style="margin-top:8px">
+                <label>Google Wallet Issuer ID
+                  <input type="text" id="proWalletIssuerInput" placeholder="Ex: 3388000000022212345" autocomplete="off">
+                </label>
+                <label>Service Account JSON (Google Cloud)
+                  <input type="password" id="proWalletSaInput" placeholder='{"type":"service_account","client_email":"...","private_key":"..."}' autocomplete="off">
+                </label>
+              </div>
+              <div class="key-actions-row" style="margin-top:8px">
+                <button type="button" class="btn primary small" id="btnProSaveWalletCreds">💾 Salvar Credenciais Google Wallet</button>
+              </div>
+            </div>
+
+            <div class="gmaps-key-panel" id="proDriveParamsPanel" style="margin-top:12px">
+              <div class="gmaps-key-head">
+                <strong>☁️ Integração com Google Drive (Sincronização de Cartões &amp; Anexos)</strong>
+                <span class="pill warn" id="proDriveStatusBadge">Desconectado</span>
+              </div>
+              <p class="muted small">Conecte sua conta Google e informe a pasta raiz do Drive (URL ou ID) onde cada cartão do projeto terá sua subpasta com <code>Detalhes_do_Cartao.txt</code> e todos os anexos atualizados sem duplicidade.</p>
+              <div class="key-actions-row" style="margin-top:8px;margin-bottom:10px;align-items:center">
+                <button type="button" class="btn primary small" id="btnProDriveConnect">🔗 Conectar Google Drive</button>
+                <button type="button" class="btn ghost small" id="btnProDriveDisconnect" hidden>🔌 Desconectar</button>
+                <span class="muted small" id="proDriveAccountInfo"></span>
+              </div>
+              <div class="form-grid" style="margin-top:6px">
+                <label class="span2">Pasta Raiz no Google Drive (cole a URL da pasta ou o ID)
+                  <div class="key-input-row">
+                    <input type="text" id="proDriveFolderInput" placeholder="Ex: https://drive.google.com/drive/folders/1AbC... ou ID da pasta" autocomplete="off">
+                    <button type="button" class="btn ghost small" id="btnProDrivePickFolder" title="Listar e escolher uma pasta do seu Google Drive">📂 Escolher pasta</button>
+                  </div>
+                </label>
+              </div>
+              <div class="key-actions-row" style="margin-top:8px;align-items:center">
+                <button type="button" class="btn primary small" id="btnProSaveDriveConfig">💾 Salvar Configuração do Drive</button>
+                <button type="button" class="btn ghost small" id="btnProSyncDriveNow">🔄 Atualizar Google Drive</button>
+                <span class="muted small" id="proDriveLastSyncInfo"></span>
+              </div>
             </div>
           </div>
-        </div>
+        </details>
       </div>
     </section>
 
@@ -4995,22 +5141,22 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="shared-utils.js?v=64"></script>
-<script src="config.example.js?v=64"></script>
-<script src="vehicles.js?v=64"></script>
-<script src="countries.js?v=64"></script>
-<script src="data.js?v=64"></script>
-<script src="maps.js?v=64"></script>
-<script src="calendar.js?v=64"></script>
-<script src="drive.js?v=64"></script>
-<script src="report.js?v=64"></script>
-<script src="api.js?v=64"></script>
-<script src="minutes.js?v=64"></script>
-<script src="pro-annual.js?v=64"></script>
-<script src="checklists.js?v=64"></script>
-<script src="pro.js?v=64"></script>
-<script src="personal-map.js?v=64"></script>
-<script src="splitwise.js?v=64"></script>
-<script src="app.js?v=64"></script>
+<script src="shared-utils.js?v=65"></script>
+<script src="config.example.js?v=65"></script>
+<script src="vehicles.js?v=65"></script>
+<script src="countries.js?v=65"></script>
+<script src="data.js?v=65"></script>
+<script src="maps.js?v=65"></script>
+<script src="calendar.js?v=65"></script>
+<script src="drive.js?v=65"></script>
+<script src="report.js?v=65"></script>
+<script src="api.js?v=65"></script>
+<script src="minutes.js?v=65"></script>
+<script src="pro-annual.js?v=65"></script>
+<script src="checklists.js?v=65"></script>
+<script src="pro.js?v=65"></script>
+<script src="personal-map.js?v=65"></script>
+<script src="splitwise.js?v=65"></script>
+<script src="app.js?v=65"></script>
 </body>
 </html>

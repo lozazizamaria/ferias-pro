@@ -459,6 +459,18 @@
     return r.data;
   }
 
+  async function savePreferences(appearance) {
+    if (!serverAvailable) {
+      if (currentUser) currentUser = Object.assign({}, currentUser, { appearance });
+      return { ok: true, user: currentUser };
+    }
+    const r = await req("/api/auth/preferences", { method: "PUT", body: JSON.stringify({ appearance }) });
+    if (!r.ok) throw new Error(r.data?.error || "Erro ao salvar preferências de aparência.");
+    currentUser = r.data.user;
+    notify();
+    return r.data;
+  }
+
   async function aiPlanTrip(payload) {
     if (!serverAvailable) throw new Error("GEMINI_NOT_CONFIGURED");
     const r = await req("/api/ai/plan-trip", { method: "POST", body: JSON.stringify(payload) });
@@ -755,6 +767,7 @@
     getCalendarFeedUrl,
     updateProfile,
     saveIntegrations,
+    savePreferences,
     aiPlanTrip,
     aiTranscribeAudio,
     aiImportCalendar,

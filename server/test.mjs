@@ -549,3 +549,72 @@ test("Splitwise Public Invite — Token isolado, lançamento convidado e revoga�
   const afterRev = await apiJson(baseUrl, `/api/public/splitwise/${token}`);
   assert.equal(afterRev.resp.status, 404);
 });
+
+test("Appearance Preferences API — Paletas, Ordem de Menus e Sanitização de Logo SVG/PNG", async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "myplan-apppref-"));
+  const port = await getFreePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const srv = startServerInstance(tmpDir, port);
+
+  t.after(async () => {
+    await srv.stop();
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  });
+
+  await waitForHealth(baseUrl, srv.child);
+
+  // Sem auth -> 401
+  const unauth = await apiJson(baseUrl, "/api/auth/preferences", {
+    method: "PUT",
+    body: { personal: { paletteId: "emerald" } }
+  });
+  assert.equal(unauth.resp.status, 401);
+
+  const reg = await apiJson(baseUrl, "/api/auth/register", {
+    method: "POST",
+    body: { name: "Designer", email: "designer@example.com", password: "Forte!Password2026" }
+  });
+  assert.equal(reg.resp.status, 201);
+  const cookie = reg.setCookie;
+
+  const safeSvg = "data:image/svg+xml;base64," + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#10b981"/></svg>').toString("base64");
+  const evilSvg = "data:image/svg+xml;base64," + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString("base64");
+
+  const saveRes = await apiJson(baseUrl, "/api/auth/preferences", {
+    method: "PUT",
+    cookie,
+    body: {
+      appearance: {
+        personal: {
+          paletteId: "emerald",
+          customPrimary: "#10B981",
+          logoDataUrl: safeSvg,
+          menuOrder: ["dashboard", "gantt", "finance"]
+        },
+        professional: {
+          paletteId: "custom",
+          customPrimary: "#e11d48",
+          logoDataUrl: evilSvg,
+          menuOrder: ["pro-gantt", "pro-board"]
+        }
+      }
+    }
+  });
+  assert.equal(saveRes.resp.status, 200);
+  const app = saveRes.json.user.appearance;
+  assert.equal(app.personal.paletteId, "emerald");
+  assert.equal(app.personal.customPrimary, "#10b981");
+  assert.equal(app.personal.logoDataUrl, safeSvg);
+  assert.deepEqual(app.personal.menuOrder, ["dashboard", "gantt", "finance"]);
+
+  assert.equal(app.professional.paletteId, "custom");
+  assert.equal(app.professional.customPrimary, "#e11d48");
+  assert.equal(app.professional.logoDataUrl, "", "SVG com <script> deve ser bloqueado");
+  assert.deepEqual(app.professional.menuOrder, ["pro-gantt", "pro-board"]);
+
+  // Persiste em /api/auth/me
+  const meRes = await apiJson(baseUrl, "/api/auth/me", { cookie });
+  assert.equal(meRes.resp.status, 200);
+  assert.equal(meRes.json.user.appearance.personal.paletteId, "emerald");
+  assert.equal(meRes.json.user.appearance.professional.paletteId, "custom");
+});

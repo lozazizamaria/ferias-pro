@@ -851,6 +851,58 @@ function ensureAdminSeedDemoData(adminUser, forceRecreate = false) {
   return { demoUserId: demoUser.id, demoTripId: demoTrip.id };
 }
 
+const ALLOWED_APPEARANCE_PALETTES = new Set([
+  "default", "ocean", "emerald", "graphite", "amber", "indigo", "ruby", "neutral", "custom"
+]);
+
+function sanitizeLogoDataUrl(raw) {
+  if (typeof raw !== "string") return "";
+  const s = raw.trim();
+  if (!s) return "";
+  if (s.length > 360000) return "";
+  const m = s.match(/^data:image\/(png|jpeg|jpg|webp|svg\+xml);base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (!m) return "";
+  const mime = m[1].toLowerCase();
+  const b64 = m[2].replace(/\s+/g, "");
+  if (mime === "svg+xml") {
+    try {
+      const decoded = Buffer.from(b64, "base64").toString("utf8");
+      if (/<script\b|javascript:|on[a-z]+\s*=|<foreignObject\b/i.test(decoded)) return "";
+    } catch {
+      return "";
+    }
+  }
+  return `data:image/${mime};base64,${b64}`;
+}
+
+function sanitizeModeAppearance(raw, prev = {}) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const base = prev && typeof prev === "object" ? prev : {};
+  const paletteRaw = typeof src.paletteId === "string" ? src.paletteId.trim().toLowerCase() : (base.paletteId || "default");
+  const paletteId = ALLOWED_APPEARANCE_PALETTES.has(paletteRaw) ? paletteRaw : "default";
+  const customRaw = typeof src.customPrimary === "string" ? src.customPrimary.trim() : (base.customPrimary || "");
+  const customPrimary = /^#[0-9a-fA-F]{6}$/.test(customRaw) ? customRaw.toLowerCase() : "";
+  const logoDataUrl = src.logoDataUrl !== undefined
+    ? sanitizeLogoDataUrl(src.logoDataUrl)
+    : sanitizeLogoDataUrl(base.logoDataUrl || "");
+  let menuOrder = Array.isArray(base.menuOrder) ? base.menuOrder : [];
+  if (Array.isArray(src.menuOrder)) {
+    menuOrder = [...new Set(src.menuOrder
+      .map(x => String(x || "").trim().slice(0, 40))
+      .filter(Boolean))].slice(0, 20);
+  }
+  return { paletteId, customPrimary, logoDataUrl, menuOrder };
+}
+
+function sanitizeAppearancePrefs(raw, prev = {}) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const base = prev && typeof prev === "object" ? prev : {};
+  return {
+    personal: sanitizeModeAppearance(src.personal, base.personal),
+    professional: sanitizeModeAppearance(src.professional, base.professional)
+  };
+}
+
 function publicUser(u) {
   const creds = getEffectiveCredentials(u);
   return {
@@ -875,6 +927,7 @@ function publicUser(u) {
     whatsappCountry: u.whatsappCountry || "+55",
     whatsappNumber: u.whatsappNumber || "",
     whatsappFull: u.whatsappFull || "",
+    appearance: sanitizeAppearancePrefs(u.appearance),
     integrations: {
       hasGemini: Boolean(creds.geminiKey),
       geminiHint: maskKeyHint(creds.geminiKey),
@@ -2720,6 +2773,17 @@ const server = http.createServer(async (req, res) => {
           u.whatsappFull = v.full;
         }
       }
+      saveDb();
+      return sendJson(res, 200, { ok: true, user: publicUser(u) });
+    }
+
+    if (pathname === "/api/auth/preferences" && req.method === "PUT") {
+      const auth = getAuthUser(req);
+      if (!auth) return sendJson(res, 401, { ok: false, error: "Não autenticado." });
+      const body = await readBody(req);
+      const u = auth.user;
+      const incoming = body && typeof body.appearance === "object" ? body.appearance : body;
+      u.appearance = sanitizeAppearancePrefs(incoming, u.appearance);
       saveDb();
       return sendJson(res, 200, { ok: true, user: publicUser(u) });
     }
