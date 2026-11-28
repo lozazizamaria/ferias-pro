@@ -11,12 +11,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="My Plan">
-<link rel="manifest" href="/manifest.webmanifest?v=66">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=66">
-<link rel="icon" id="appFaviconLink" type="image/svg+xml" href="/icons/icon.svg?v=66">
+<link rel="manifest" href="/manifest.webmanifest?v=67">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=67">
+<link rel="icon" id="appFaviconLink" type="image/svg+xml" href="/icons/icon.svg?v=67">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=66">
+<link rel="stylesheet" href="styles.css?v=67">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 </head>
 <body>
@@ -28,7 +28,7 @@
     <div class="auth-top">
       <div class="brand">
         <span class="logo" aria-hidden="true">
-          <img src="icons/icon.svg?v=66" alt="" width="30" height="30" class="brand-logo-img" id="authBrandLogoImg">
+          <img src="icons/icon.svg?v=67" alt="" width="30" height="30" class="brand-logo-img" id="authBrandLogoImg">
         </span>
         <h1 id="authBrandName">My Plan</h1>
       </div>
@@ -133,7 +133,7 @@
       <div class="brand-group">
         <div class="brand">
           <span class="logo" id="appBrandLogoWrap" aria-hidden="true">
-            <img src="icons/icon.svg?v=66" alt="" width="30" height="30" class="brand-logo-img" id="appBrandLogoImg">
+            <img src="icons/icon.svg?v=67" alt="" width="30" height="30" class="brand-logo-img" id="appBrandLogoImg">
           </span>
           <h1 id="appBrand"><span id="appBrandName">My Plan</span> <span class="brand-mode-tag" id="brandModeTag">Pessoal</span></h1>
           <button type="button" class="btn ghost icon-only sb-collapse-btn" id="btnSidebarCollapse" title="Recolher/expandir barra lateral" aria-label="Recolher ou expandir barra lateral" aria-expanded="true">
@@ -246,13 +246,6 @@
       <button class="tab" data-view="personal-board" id="tab-personal-board" type="button">🗂️ Quadros</button>
       <button class="tab" data-view="table" id="tab-table" type="button">🧾 Tabela</button>
       <button class="tab" data-view="checklist" id="tab-checklist" type="button">✅ Checklist</button>
-      <div class="gantt-pop-host pmap-nav-filter-host" id="personalMapNavFilterHost">
-        <button type="button" class="btn ghost small gantt-pop-trigger pmap-nav-filter-btn" id="btnPmapFilterPop" data-sb-tip="Filtros do Modo Pessoal" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Modo Pessoal">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-          <span class="tab-lbl">Filtros</span>
-          <span class="gantt-pop-count" id="pmapFilterCount" hidden></span>
-        </button>
-      </div>
     </nav>
 
     <nav class="tabs tabs-pro" id="tabsPro" aria-label="Navegação profissional" hidden>
@@ -310,17 +303,35 @@
       </div>
     </div>
 
-    <!-- PAINEL UNIFICADO DE FILTROS DO MODO PESSOAL (POPOVER DESKTOP / DRAWER MOBILE) -->
-  <div class="puf-panel" id="pmapFilterPopPanel" hidden>
+    <!-- PAINEL UNIFICADO E MODULAR DE FILTROS DO MODO PESSOAL (POPOVER DESKTOP / BOTTOM-SHEET MOBILE) -->
+  <div class="puf-backdrop" id="pufBackdrop" hidden aria-hidden="true"></div>
+  <div class="puf-panel" id="pmapFilterPopPanel" hidden role="region" aria-label="Filtros do Modo Pessoal">
+    <div class="puf-sheet-handle" aria-hidden="true"><span></span></div>
     <div class="puf-head">
-      <strong>🔎 Filtros do Planejamento Pessoal</strong>
-      <button type="button" class="icon-btn" id="btnPufClose" aria-label="Fechar filtros">✕</button>
+      <div class="puf-head-title">
+        <strong>🔎 Filtros</strong>
+        <span class="pill puf-ctx-badge" id="pufContextBadge">Cronograma</span>
+        <span class="gantt-pop-count" id="pufHeaderCount" hidden></span>
+      </div>
+      <div class="puf-head-actions">
+        <button type="button" class="btn ghost small" id="btnPufHeadClear" hidden title="Limpar todos os filtros">✕ Limpar</button>
+        <button type="button" class="icon-btn" id="btnPufClose" aria-label="Fechar filtros">✕</button>
+      </div>
     </div>
     <div class="puf-body">
+      <div class="puf-sec-title">Filtros Gerais</div>
       <div class="puf-grid">
         <label class="puf-field puf-span2">
-          <span>Busca por texto (título / descrição)</span>
-          <input type="search" id="pf-search" placeholder="Buscar evento, hotel, voo, cidade..." autocomplete="off">
+          <span>Busca por texto</span>
+          <input type="search" id="pf-search" placeholder="Buscar cartão, atividade, item, local ou nota..." autocomplete="off">
+        </label>
+        <label class="puf-field">
+          <span>Concluídos / Pendentes</span>
+          <select id="pf-doneStatus" aria-label="Filtrar concluídos ou pendentes">
+            <option value="">Todos</option>
+            <option value="pending">⏳ Pendentes</option>
+            <option value="done">✅ Concluídos</option>
+          </select>
         </label>
         <label class="puf-field">
           <span>Ano</span>
@@ -347,39 +358,104 @@
           <input type="date" id="pf-dateTo" aria-label="Data final">
         </label>
         <label class="puf-field">
-          <span>Lista / Status (Quadros)</span>
+          <span>Lista / Status</span>
           <select id="pf-list"><option value="">Todas as listas</option></select>
         </label>
         <label class="puf-field">
-          <span>Tipo de Atividade</span>
+          <span>Tipo de Cartão / Atividade</span>
           <select id="pf-type"><option value="">Todos os tipos</option></select>
         </label>
         <label class="puf-field">
-          <span>Meio de Locomoção</span>
-          <select id="pf-transport">
-            <option value="">Todos</option>
-            <option value="Voo">✈️ Avião / Voo</option>
-            <option value="Viagem">🚗 Carro</option>
-            <option value="Ônibus">🚌 Ônibus</option>
-            <option value="Trem">🚆 Trem</option>
-            <option value="Navio">🚢 Navio / Cruzeiro</option>
-          </select>
-        </label>
-        <label class="puf-field">
-          <span>Localidade / Cidade</span>
-          <select id="pf-city"><option value="">Todas as cidades</option></select>
-        </label>
-        <label class="puf-field">
           <span>Pessoas / Participantes</span>
-          <input type="text" id="pf-person" placeholder="Ex: Família, João..." autocomplete="off">
+          <input type="text" id="pf-person" list="pf-personList" placeholder="Ex: Família, João..." autocomplete="off">
+          <datalist id="pf-personList"></datalist>
         </label>
         <label class="puf-field">
           <span>Etiquetas / Tags</span>
           <select id="pf-tag"><option value="">Todas as tags</option></select>
         </label>
-        <div class="puf-checks puf-span3">
-          <label class="puf-chk"><input type="checkbox" id="pf-onlyTravel"><span>✈️ Somente com viagem</span></label>
-          <label class="puf-chk"><input type="checkbox" id="pf-onlyAttach"><span>📎 Somente com anexos</span></label>
+      </div>
+
+      <div class="puf-context-sec" id="pufContextualSection">
+        <div class="puf-sec-title" id="pufContextualTitle">Filtros desta aba</div>
+        <div class="puf-grid">
+          <label class="puf-field" data-puf-views="gantt,personal-map,dashboard,table">
+            <span>Meio de Locomoção</span>
+            <select id="pf-transport">
+              <option value="">Todos</option>
+              <option value="Voo">✈️ Avião / Voo</option>
+              <option value="Viagem">🚗 Carro</option>
+              <option value="Ônibus">🚌 Ônibus</option>
+              <option value="Trem">🚆 Trem</option>
+              <option value="Navio">🚢 Navio / Cruzeiro</option>
+            </select>
+          </label>
+          <label class="puf-field" data-puf-views="gantt,personal-map,dashboard,table">
+            <span>Localidade / Cidade</span>
+            <select id="pf-city"><option value="">Todas as cidades</option></select>
+          </label>
+          <label class="puf-field" data-puf-views="gantt,personal-board,table,dashboard">
+            <span>Tipo de Anexo</span>
+            <select id="pf-attachType">
+              <option value="">Todos os anexos</option>
+              <option value="pdf">📄 PDF</option>
+              <option value="image">🖼️ Imagem</option>
+              <option value="sheet">📊 Planilha / Documento</option>
+              <option value="link">🔗 Link / Bilhete</option>
+            </select>
+          </label>
+          <label class="puf-field" data-puf-views="finance">
+            <span>Categoria Financeira</span>
+            <select id="pf-finCategory">
+              <option value="">Todas as categorias</option>
+              <option value="Viagem">⛽ Deslocamento / Carro</option>
+              <option value="Hospedagem">🏨 Hospedagem</option>
+              <option value="Restaurante">🍽️ Alimentação / Restaurante</option>
+              <option value="Voo">✈️ Voos / Passagens</option>
+              <option value="Ingresso">🎟️ Ingressos / Passeios</option>
+              <option value="Outro">📌 Outros gastos</option>
+            </select>
+          </label>
+          <label class="puf-field" data-puf-views="splitwise">
+            <span>Categoria da Despesa</span>
+            <select id="pf-swCategory"><option value="">Todas as categorias</option></select>
+          </label>
+          <label class="puf-field" data-puf-views="finance,splitwise">
+            <span>Pagador / Responsável</span>
+            <select id="pf-swPayer"><option value="">Todos os pagadores</option></select>
+          </label>
+          <label class="puf-field" data-puf-views="splitwise">
+            <span>Modo de Divisão</span>
+            <select id="pf-swSplitMode">
+              <option value="">Todos os modos</option>
+              <option value="equal">⚖️ Igualmente</option>
+              <option value="exact">💵 Valores exatos</option>
+              <option value="percent">% Porcentagem</option>
+              <option value="shares">🧩 Cotas</option>
+            </select>
+          </label>
+          <label class="puf-field" data-puf-views="checklist">
+            <span>Prioridade</span>
+            <select id="pf-chkPrio">
+              <option value="">Todas</option>
+              <option value="Alta">🔴 Alta</option>
+              <option value="Média">🟡 Média</option>
+              <option value="Baixa">🟢 Baixa</option>
+            </select>
+          </label>
+          <label class="puf-field" data-puf-views="checklist">
+            <span>Origem do Item</span>
+            <select id="pf-chkKind">
+              <option value="">Todos os itens</option>
+              <option value="card-subtask">🗂️ Itens de Cartões</option>
+              <option value="manual">📌 Itens Avulsos</option>
+            </select>
+          </label>
+          <div class="puf-checks puf-span3" data-puf-views="gantt,personal-map,personal-board,table,dashboard,finance">
+            <label class="puf-chk" data-puf-views="gantt,personal-map,personal-board,table,dashboard"><input type="checkbox" id="pf-onlyTravel"><span>✈️ Somente com viagem</span></label>
+            <label class="puf-chk" data-puf-views="gantt,personal-board,table,dashboard"><input type="checkbox" id="pf-onlyAttach"><span>📎 Somente com anexos</span></label>
+            <label class="puf-chk" data-puf-views="finance,table"><input type="checkbox" id="pf-onlyCost"><span>💰 Somente com custo</span></label>
+          </div>
         </div>
       </div>
     </div>
@@ -395,6 +471,17 @@
 
     <!-- MAPA PESSOAL (SINCRONIZADO COM A BARRA DE CIDADES DO GANTT) -->
     <section class="view" id="view-personal-map">
+      <div class="puf-view-bar" aria-label="Filtros do Mapa">
+        <div class="puf-trigger-group">
+          <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnPmapFilterPop" data-puf-trigger="personal-map" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Mapa">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Filtros</span>
+            <span class="gantt-pop-count" id="pmapFilterCount" data-puf-count hidden></span>
+          </button>
+          <button type="button" class="btn ghost small puf-quick-clear" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
+        </div>
+        <div class="puf-active-chips" data-puf-chips></div>
+      </div>
       <div class="pmap-hero-grid">
         <div class="card pmap-canvas-card">
           <div id="personalMapCanvas" class="pmap-canvas" role="region" aria-label="Mapa da rota pessoal"></div>
@@ -445,11 +532,19 @@
     <section class="view" id="view-personal-board">
       <div class="card pboard-bar">
         <div class="pboard-bar-left">
+          <div class="puf-trigger-group">
+            <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnPboardFilterPop" data-puf-trigger="personal-board" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros dos Quadros">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              <span>Filtros</span>
+              <span class="gantt-pop-count" data-puf-count hidden></span>
+            </button>
+            <button type="button" class="btn ghost small puf-quick-clear" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
+          </div>
           <input type="search" id="pboardSearch" placeholder="🔎 Buscar nos quadros pessoais..." autocomplete="off">
         </div>
         <div class="pboard-bar-right">
           <button type="button" class="btn ghost small" id="btnPboardAddCol">➕ Nova Lista</button>
-          <button type="button" class="btn primary small" id="btnPboardAddCard">➕ Novo Evento</button>
+          <button type="button" class="btn primary small" id="btnPboardAddCard">➕ Novo Cartão</button>
         </div>
       </div>
       <div id="personalBoardCols" class="pro-board pboard-cols"></div>
@@ -460,36 +555,13 @@
       <div class="card gantt-card">
         <div class="gantt-header gantt-header-compact">
           <div class="gantt-controls gantt-toolbar-row">
-            <div class="gantt-pop-host">
-              <button type="button" class="btn ghost small gantt-pop-trigger" id="btnGanttFilterPop" aria-expanded="false" aria-controls="ganttFilterPopPanel" title="Filtros">
+            <div class="puf-trigger-group">
+              <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnGanttFilterPop" data-puf-trigger="gantt" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Cronograma">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
                 <span class="hide-xs">Filtros</span>
-                <span class="gantt-pop-count" id="ganttFilterCount" hidden></span>
+                <span class="gantt-pop-count" id="ganttFilterCount" data-puf-count hidden></span>
               </button>
-              <div class="gantt-pop-panel" id="ganttFilterPopPanel" hidden>
-                <div class="gantt-pop-head">
-                  <strong>Filtros</strong>
-                  <button type="button" class="btn ghost small" id="btnGanttClearFilters" hidden>✕ Limpar</button>
-                </div>
-                <div class="gantt-pop-grid">
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Tipo</span>
-                    <div id="ganttTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no cronograma"></div>
-                  </div>
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Tags</span>
-                    <div id="ganttTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no cronograma"></div>
-                  </div>
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">De</span>
-                    <input type="date" id="ganttDateFrom" aria-label="Data inicial do filtro">
-                  </div>
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Até</span>
-                    <input type="date" id="ganttDateTo" aria-label="Data final do filtro">
-                  </div>
-                </div>
-              </div>
+              <button type="button" class="btn ghost small puf-quick-clear" id="btnGanttClearFilters" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar</button>
             </div>
 
             <div class="gantt-pop-host">
@@ -525,6 +597,11 @@
               <button type="button" class="btn ghost small" id="btnGanttFit" title="Ajustar período inteiro na tela">⬌</button>
             </div>
 
+            <button type="button" class="btn ghost small gantt-fit-events-btn" id="btnGanttFitEvents" aria-pressed="false" title="Ajustar janela de datas apenas ao período com eventos cadastrados">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              <span class="gantt-fit-lbl">Ajustar aos eventos</span>
+            </button>
+
             <div class="gantt-toolbar-right">
               <span class="pill gantt-shared-pill" id="tripRoleBadge" hidden>Compartilhada</span>
               <button type="button" class="btn ghost small gantt-print-btn" id="btnPrintGantt" title="Imprimir / PDF">🖨️<span class="gantt-pdf-lbl"> PDF</span></button>
@@ -539,7 +616,7 @@
 
         <div id="ganttUnifiedBar" class="unified-status-bar" hidden></div>
 
-        <div class="gantt-wrap" id="ganttWrap">
+        <div class="gantt-wrap" id="ganttWrap" tabindex="0" role="region" aria-label="Cronograma Gantt">
           <div id="gantt" class="gantt"></div>
         </div>
         <div id="timelineWrap" class="timeline-wrap" hidden></div>
@@ -549,19 +626,16 @@
 
     <!-- DASHBOARD -->
     <section class="view" id="view-dashboard">
-      <div class="view-filter-bar" aria-label="Filtros do dashboard">
-        <span class="vf-title" title="Filtros"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
-        <div id="dashTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no dashboard"></div>
-        <div id="dashTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no dashboard"></div>
-        <label class="date-filter-chip" title="Filtrar a partir da data">
-          <span>De</span>
-          <input type="date" id="dashDateFrom" aria-label="Data inicial no dashboard">
-        </label>
-        <label class="date-filter-chip" title="Filtrar até a data">
-          <span>Até</span>
-          <input type="date" id="dashDateTo" aria-label="Data final no dashboard">
-        </label>
-        <button type="button" class="btn ghost small" id="btnDashClearFilters" hidden>✕ Limpar filtros</button>
+      <div class="puf-view-bar" aria-label="Filtros do dashboard">
+        <div class="puf-trigger-group">
+          <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnDashFilterPop" data-puf-trigger="dashboard" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Dashboard">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Filtros</span>
+            <span class="gantt-pop-count" data-puf-count hidden></span>
+          </button>
+          <button type="button" class="btn ghost small puf-quick-clear" id="btnDashClearFilters" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
+        </div>
+        <div class="puf-active-chips" data-puf-chips></div>
       </div>
       <div class="kpis" id="kpis"></div>
 
@@ -613,19 +687,16 @@
 
     <!-- FINANCEIRO (LINHA DO TEMPO DIÁRIA, GRÁFICOS E CONTROLE REAL) -->
     <section class="view" id="view-finance">
-      <div class="view-filter-bar" aria-label="Filtros do financeiro">
-        <span class="vf-title" title="Filtros"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg></span>
-        <div id="finTypeFilter" class="msel-host msel-compact" aria-label="Filtrar tipos no financeiro"></div>
-        <div id="finTagFilter" class="msel-host msel-compact" aria-label="Filtrar tags no financeiro"></div>
-        <label class="date-filter-chip" title="Filtrar a partir da data">
-          <span>De</span>
-          <input type="date" id="finDateFrom" aria-label="Data inicial no financeiro">
-        </label>
-        <label class="date-filter-chip" title="Filtrar até a data">
-          <span>Até</span>
-          <input type="date" id="finDateTo" aria-label="Data final no financeiro">
-        </label>
-        <button type="button" class="btn ghost small" id="btnFinClearFilters" hidden>✕ Limpar filtros</button>
+      <div class="puf-view-bar" aria-label="Filtros do financeiro">
+        <div class="puf-trigger-group">
+          <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnFinFilterPop" data-puf-trigger="finance" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Financeiro">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Filtros</span>
+            <span class="gantt-pop-count" data-puf-count hidden></span>
+          </button>
+          <button type="button" class="btn ghost small puf-quick-clear" id="btnFinClearFilters" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
+        </div>
+        <div class="puf-active-chips" data-puf-chips></div>
       </div>
       <div class="kpis fin-kpis" id="finKpis"></div>
 
@@ -718,6 +789,17 @@
 
     <!-- DIVIDIR DESPESAS (MODO PESSOAL — ESTILO SPLITWISE + PIX QR CODE + CONVITE WHATSAPP) -->
     <section class="view" id="view-splitwise">
+      <div class="puf-view-bar" aria-label="Filtros de Dividir Despesas">
+        <div class="puf-trigger-group">
+          <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnSwFilterPop" data-puf-trigger="splitwise" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros de Dividir Despesas">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Filtros</span>
+            <span class="gantt-pop-count" data-puf-count hidden></span>
+          </button>
+          <button type="button" class="btn ghost small puf-quick-clear" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
+        </div>
+        <div class="puf-active-chips" data-puf-chips></div>
+      </div>
       <div id="personalSplitwiseHost" class="sw-pane"></div>
     </section>
 
@@ -726,9 +808,15 @@
       <div class="card">
         <div class="card-head">
           <div class="filters">
+            <div class="puf-trigger-group">
+              <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnTableFilterPop" data-puf-trigger="table" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros da Tabela">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                <span>Filtros</span>
+                <span class="gantt-pop-count" data-puf-count hidden></span>
+              </button>
+              <button type="button" class="btn ghost small puf-quick-clear" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar filtros</button>
+            </div>
             <input type="search" id="search" placeholder="🔎 Buscar...">
-            <div id="filterType" class="msel-host msel-compact" aria-label="Filtrar tipos na tabela"></div>
-            <div id="filterTag" class="msel-host msel-compact" aria-label="Filtrar tags na tabela"></div>
             <button type="button" class="btn ghost small" id="btnTableAdd">➕ Novo item</button>
             <button type="button" class="btn primary small" id="btnTablePdf">📄 PDF</button>
           </div>
@@ -778,6 +866,32 @@
       </div>
 
       <div class="cfg-accordions-list" aria-label="Configurações específicas do Modo Pessoal">
+        <details class="cfg-accordion" id="acc-p-board">
+          <summary class="cfg-acc-summary">
+            <span class="cfg-acc-ico" aria-hidden="true">🗂️</span>
+            <span class="cfg-acc-text">
+              <span class="cfg-acc-title">Preferências de Quadros</span>
+              <span class="cfg-acc-sub">Automação ao concluir tarefas e organização das listas do Modo Pessoal</span>
+            </span>
+            <span class="cfg-acc-chev" aria-hidden="true">▾</span>
+          </summary>
+          <div class="cfg-acc-body">
+            <div class="params-form">
+              <label class="param-row">
+                <span>Ao concluir uma tarefa, mover automaticamente para a lista:</span>
+                <select id="p-doneColumnId" aria-label="Ao concluir uma tarefa, mover automaticamente para a lista">
+                  <option value="">Manter na lista atual</option>
+                </select>
+                <span class="u">automação</span>
+              </label>
+            </div>
+            <div class="cfg-acc-toolbar" style="margin-top:8px">
+              <span class="muted small">Ao marcar o checkbox de concluído no cartão (no Quadro ou no modal), ele será movido automaticamente para a lista escolhida.</span>
+              <button type="button" class="btn ghost small" id="btnParamAddPersonalCol">➕ Nova Lista</button>
+            </div>
+          </div>
+        </details>
+
         <details class="cfg-accordion" id="acc-p-vehicle">
           <summary class="cfg-acc-summary">
             <span class="cfg-acc-ico" aria-hidden="true">🚗</span>
@@ -1007,61 +1121,13 @@
         <div class="card-head chk-global-head">
           <h2>Checklist <span id="checkProgress" data-chk-progress class="pill"></span></h2>
           <div class="inline-actions chk-toolbar-actions">
-            <div class="gantt-pop-host">
-              <button type="button" class="btn ghost small gantt-pop-trigger" id="btnChkFilterPop" data-chk-filter-btn aria-expanded="false" aria-controls="chkFilterPopPanel" title="Filtros do Checklist">
+            <div class="puf-trigger-group">
+              <button type="button" class="btn ghost small gantt-pop-trigger puf-trigger-btn" id="btnChkFilterPop" data-puf-trigger="checklist" aria-expanded="false" aria-controls="pmapFilterPopPanel" title="Filtros do Checklist">
                 <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
                 <span>Filtros</span>
-                <span class="gantt-pop-count" id="chkFilterCount" data-chk-filter-count hidden></span>
+                <span class="gantt-pop-count" id="chkFilterCount" data-puf-count hidden></span>
               </button>
-              <div class="gantt-pop-panel chk-filter-panel" id="chkFilterPopPanel" data-chk-filter-panel hidden>
-                <div class="gantt-pop-head">
-                  <strong>Filtros do Checklist</strong>
-                  <button type="button" class="btn ghost small" id="btnChkClearFilters" data-chk-clear-filters hidden>✕ Limpar</button>
-                </div>
-                <div class="gantt-pop-grid">
-                  <div class="gantt-pop-field span2">
-                    <span class="gantt-pop-lbl">Buscar</span>
-                    <input type="search" id="chkFilterSearch" data-chk-f="search" placeholder="🔎 Buscar item, cartão ou nota...">
-                  </div>
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Status</span>
-                    <select id="chkFilterStatus" data-chk-f="status" aria-label="Filtrar status">
-                      <option value="">Todos</option>
-                      <option value="pending">Pendentes</option>
-                      <option value="done">Concluídos</option>
-                    </select>
-                  </div>
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Prioridade</span>
-                    <select id="chkFilterPrio" data-chk-f="prio" aria-label="Filtrar prioridade">
-                      <option value="">Todas</option>
-                      <option value="Alta">🔴 Alta</option>
-                      <option value="Média">🟡 Média</option>
-                      <option value="Baixa">🟢 Baixa</option>
-                    </select>
-                  </div>
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Tipo de Cartão</span>
-                    <select id="chkFilterType" data-chk-f="type" aria-label="Filtrar tipo de cartão"><option value="">Todos os tipos</option></select>
-                  </div>
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Lista</span>
-                    <select id="chkFilterList" data-chk-f="list" aria-label="Filtrar lista"><option value="">Todas as listas</option></select>
-                  </div>
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Tags</span>
-                    <select id="chkFilterTag" data-chk-f="tag" aria-label="Filtrar tags"><option value="">Todas as tags</option></select>
-                  </div>
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">De</span>
-                    <input type="date" id="chkFilterDateFrom" data-chk-f="dateFrom" aria-label="Data inicial">
-                  </div>
-                  <div class="gantt-pop-field">
-                    <span class="gantt-pop-lbl">Até</span>
-                    <input type="date" id="chkFilterDateTo" data-chk-f="dateTo" aria-label="Data final">
-                  </div>
-                </div>
-              </div>
+              <button type="button" class="btn ghost small puf-quick-clear" id="btnChkClearFilters" data-puf-quick-clear hidden title="Limpar filtros ativos">✕ Limpar</button>
             </div>
             <select id="chkSortSelect" data-chk-sort class="chk-sort-select" aria-label="Ordenar checklist">
               <option value="manual">↕️ Prioridade (Manual)</option>
@@ -1361,6 +1427,11 @@
               <button type="button" class="btn ghost small" id="btnProGanttFit" title="Ajustar período inteiro na tela">⬌</button>
             </div>
 
+            <button type="button" class="btn ghost small gantt-fit-events-btn" id="btnProGanttFitEvents" aria-pressed="false" title="Ajustar janela de datas apenas ao período com eventos cadastrados">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              <span class="gantt-fit-lbl">Ajustar aos eventos</span>
+            </button>
+
             <div class="gantt-toolbar-right">
               <span class="pill gantt-shared-pill" id="proTripRoleBadge" hidden>Compartilhado</span>
               <button type="button" class="btn ghost small gantt-print-btn" id="btnProPrintGantt" title="Imprimir / PDF">🖨️<span class="gantt-pdf-lbl"> PDF</span></button>
@@ -1373,7 +1444,7 @@
           </div>
         </div>
         <div id="proGanttUnifiedBar" class="unified-status-bar" hidden></div>
-        <div class="gantt-wrap" id="proGanttWrap">
+        <div class="gantt-wrap" id="proGanttWrap" tabindex="0" role="region" aria-label="Cronograma Gantt Profissional">
           <div id="proGantt" class="gantt"></div>
         </div>
         <div id="proTimelineWrap" class="timeline-wrap" hidden></div>
@@ -5243,22 +5314,22 @@
 <input type="file" id="fileXlsx" accept=".xlsx,.xls" hidden>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="shared-utils.js?v=66"></script>
-<script src="config.example.js?v=66"></script>
-<script src="vehicles.js?v=66"></script>
-<script src="countries.js?v=66"></script>
-<script src="data.js?v=66"></script>
-<script src="maps.js?v=66"></script>
-<script src="calendar.js?v=66"></script>
-<script src="drive.js?v=66"></script>
-<script src="report.js?v=66"></script>
-<script src="api.js?v=66"></script>
-<script src="minutes.js?v=66"></script>
-<script src="pro-annual.js?v=66"></script>
-<script src="checklists.js?v=66"></script>
-<script src="pro.js?v=66"></script>
-<script src="personal-map.js?v=66"></script>
-<script src="splitwise.js?v=66"></script>
-<script src="app.js?v=66"></script>
+<script src="shared-utils.js?v=67"></script>
+<script src="config.example.js?v=67"></script>
+<script src="vehicles.js?v=67"></script>
+<script src="countries.js?v=67"></script>
+<script src="data.js?v=67"></script>
+<script src="maps.js?v=67"></script>
+<script src="calendar.js?v=67"></script>
+<script src="drive.js?v=67"></script>
+<script src="report.js?v=67"></script>
+<script src="api.js?v=67"></script>
+<script src="minutes.js?v=67"></script>
+<script src="pro-annual.js?v=67"></script>
+<script src="checklists.js?v=67"></script>
+<script src="pro.js?v=67"></script>
+<script src="personal-map.js?v=67"></script>
+<script src="splitwise.js?v=67"></script>
+<script src="app.js?v=67"></script>
 </body>
 </html>

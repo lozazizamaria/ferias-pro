@@ -11,21 +11,59 @@ let pmapDirectionsRenderers = [];
 let pmapEventsBound = false;
 const pmapRouteCache = new Map();
 
-let personalUnifiedFilter = {
-  search: "",
-  year: "",
-  month: "",
-  dateFrom: "",
-  dateTo: "",
-  list: "",
-  type: "",
-  transport: "",
-  city: "",
-  person: "",
-  tag: "",
-  onlyTravel: false,
-  onlyAttach: false
+const PERSONAL_FILTER_VIEW_LABELS = {
+  "gantt": "Cronograma",
+  "personal-map": "Mapa",
+  "dashboard": "Dashboard",
+  "finance": "Financeiro",
+  "splitwise": "Dividir Despesas",
+  "personal-board": "Quadros",
+  "table": "Tabela",
+  "checklist": "Checklist"
 };
+
+let personalFilterActiveView = "gantt";
+let personalFilterAnchorBtn = null;
+
+function createEmptyPersonalUnifiedFilter() {
+  return {
+    // Núcleo comum (todos os menus)
+    search: "",
+    year: "",
+    month: "",
+    dateFrom: "",
+    dateTo: "",
+    list: "",
+    type: "",
+    person: "",
+    tag: "",
+    doneStatus: "",
+    // Contextuais por menu
+    transport: "",
+    city: "",
+    attachType: "",
+    finCategory: "",
+    swCategory: "",
+    swPayer: "",
+    swSplitMode: "",
+    chkPrio: "",
+    chkKind: "",
+    onlyTravel: false,
+    onlyAttach: false,
+    onlyCost: false
+  };
+}
+
+let personalUnifiedFilter = createEmptyPersonalUnifiedFilter();
+
+function getActivePersonalViewId() {
+  const activeSec = document.querySelector("main > section.view.active");
+  if (activeSec && activeSec.id && activeSec.id.startsWith("view-") && !activeSec.id.startsWith("view-pro-")) {
+    const v = activeSec.id.slice(5);
+    if (PERSONAL_FILTER_VIEW_LABELS[v]) return v;
+  }
+  return personalFilterActiveView || "gantt";
+}
 
 function readPersonalUnifiedFilterFromDOM() {
   personalUnifiedFilter = {
@@ -36,14 +74,56 @@ function readPersonalUnifiedFilterFromDOM() {
     dateTo: ($("#pf-dateTo")?.value || "").trim(),
     list: ($("#pf-list")?.value || "").trim(),
     type: ($("#pf-type")?.value || "").trim(),
-    transport: ($("#pf-transport")?.value || "").trim(),
-    city: ($("#pf-city")?.value || "").trim(),
     person: ($("#pf-person")?.value || "").trim().toLowerCase(),
     tag: ($("#pf-tag")?.value || "").trim(),
+    doneStatus: ($("#pf-doneStatus")?.value || "").trim(),
+    transport: ($("#pf-transport")?.value || "").trim(),
+    city: ($("#pf-city")?.value || "").trim(),
+    attachType: ($("#pf-attachType")?.value || "").trim(),
+    finCategory: ($("#pf-finCategory")?.value || "").trim(),
+    swCategory: ($("#pf-swCategory")?.value || "").trim(),
+    swPayer: ($("#pf-swPayer")?.value || "").trim(),
+    swSplitMode: ($("#pf-swSplitMode")?.value || "").trim(),
+    chkPrio: ($("#pf-chkPrio")?.value || "").trim(),
+    chkKind: ($("#pf-chkKind")?.value || "").trim(),
     onlyTravel: Boolean($("#pf-onlyTravel")?.checked),
-    onlyAttach: Boolean($("#pf-onlyAttach")?.checked)
+    onlyAttach: Boolean($("#pf-onlyAttach")?.checked),
+    onlyCost: Boolean($("#pf-onlyCost")?.checked)
   };
   return personalUnifiedFilter;
+}
+
+function writePersonalUnifiedFilterToDOM() {
+  const f = personalUnifiedFilter;
+  const setVal = (sel, val) => { const el = $(sel); if (el && el.value !== (val || "")) el.value = val || ""; };
+  setVal("#pf-search", f.search);
+  setVal("#pf-year", f.year);
+  setVal("#pf-month", f.month);
+  setVal("#pf-dateFrom", f.dateFrom);
+  setVal("#pf-dateTo", f.dateTo);
+  setVal("#pf-list", f.list);
+  setVal("#pf-type", f.type);
+  setVal("#pf-person", f.person);
+  setVal("#pf-tag", f.tag);
+  setVal("#pf-doneStatus", f.doneStatus);
+  setVal("#pf-transport", f.transport);
+  setVal("#pf-city", f.city);
+  setVal("#pf-attachType", f.attachType);
+  setVal("#pf-finCategory", f.finCategory);
+  setVal("#pf-swCategory", f.swCategory);
+  setVal("#pf-swPayer", f.swPayer);
+  setVal("#pf-swSplitMode", f.swSplitMode);
+  setVal("#pf-chkPrio", f.chkPrio);
+  setVal("#pf-chkKind", f.chkKind);
+  if ($("#pf-onlyTravel")) $("#pf-onlyTravel").checked = Boolean(f.onlyTravel);
+  if ($("#pf-onlyAttach")) $("#pf-onlyAttach").checked = Boolean(f.onlyAttach);
+  if ($("#pf-onlyCost")) $("#pf-onlyCost").checked = Boolean(f.onlyCost);
+  if ($("#pboardSearch") && document.activeElement !== $("#pboardSearch") && $("#pboardSearch").value !== f.search) {
+    $("#pboardSearch").value = f.search || "";
+  }
+  if ($("#search") && document.activeElement !== $("#search") && $("#search").value !== f.search) {
+    $("#search").value = f.search || "";
+  }
 }
 
 function countActivePersonalUnifiedFilters() {
@@ -56,24 +136,193 @@ function countActivePersonalUnifiedFilters() {
   if (f.dateTo) c++;
   if (f.list) c++;
   if (f.type) c++;
-  if (f.transport) c++;
-  if (f.city) c++;
   if (f.person) c++;
   if (f.tag) c++;
+  if (f.doneStatus) c++;
+  if (f.transport) c++;
+  if (f.city) c++;
+  if (f.attachType) c++;
+  if (f.finCategory) c++;
+  if (f.swCategory) c++;
+  if (f.swPayer) c++;
+  if (f.swSplitMode) c++;
+  if (f.chkPrio) c++;
+  if (f.chkKind) c++;
   if (f.onlyTravel) c++;
   if (f.onlyAttach) c++;
+  if (f.onlyCost) c++;
   return c;
+}
+
+function getPersonalActiveFilterChipList() {
+  const f = personalUnifiedFilter;
+  const chips = [];
+  const cols = typeof ensurePersonalBoardColumns === "function" ? ensurePersonalBoardColumns() : [];
+  const swParts = Array.isArray(state?.splitwise?.participants) ? state.splitwise.participants : [];
+  if (f.search) chips.push({ key: "search", label: `Busca: "${f.search}"` });
+  if (f.doneStatus) chips.push({ key: "doneStatus", label: f.doneStatus === "done" ? "✅ Concluídos" : "⏳ Pendentes" });
+  if (f.year) chips.push({ key: "year", label: `Ano: ${f.year}` });
+  if (f.month) chips.push({ key: "month", label: `Mês: ${f.month}` });
+  if (f.dateFrom) chips.push({ key: "dateFrom", label: `De: ${typeof fmtShortBR === "function" ? fmtShortBR(f.dateFrom) : f.dateFrom}` });
+  if (f.dateTo) chips.push({ key: "dateTo", label: `Até: ${typeof fmtShortBR === "function" ? fmtShortBR(f.dateTo) : f.dateTo}` });
+  if (f.list) {
+    const col = cols.find(c => c.id === f.list);
+    chips.push({ key: "list", label: `Lista: ${col?.title || f.list}` });
+  }
+  if (f.type) chips.push({ key: "type", label: `Tipo: ${f.type}` });
+  if (f.person) chips.push({ key: "person", label: `Pessoa: ${f.person}` });
+  if (f.tag) chips.push({ key: "tag", label: `#${f.tag}` });
+  if (f.transport) chips.push({ key: "transport", label: `Locomoção: ${f.transport}` });
+  if (f.city) chips.push({ key: "city", label: `Cidade: ${f.city}` });
+  if (f.attachType) chips.push({ key: "attachType", label: `Anexo: ${f.attachType.toUpperCase()}` });
+  if (f.finCategory) chips.push({ key: "finCategory", label: `Categoria: ${f.finCategory}` });
+  if (f.swCategory) chips.push({ key: "swCategory", label: `Despesa: ${f.swCategory}` });
+  if (f.swPayer) {
+    const p = swParts.find(x => x.id === f.swPayer);
+    chips.push({ key: "swPayer", label: `Pagador: ${p?.name || f.swPayer}` });
+  }
+  if (f.swSplitMode) chips.push({ key: "swSplitMode", label: `Divisão: ${f.swSplitMode}` });
+  if (f.chkPrio) chips.push({ key: "chkPrio", label: `Prioridade: ${f.chkPrio}` });
+  if (f.chkKind) chips.push({ key: "chkKind", label: f.chkKind === "manual" ? "Itens Avulsos" : "Itens de Cartões" });
+  if (f.onlyTravel) chips.push({ key: "onlyTravel", label: "✈️ Com viagem" });
+  if (f.onlyAttach) chips.push({ key: "onlyAttach", label: "📎 Com anexos" });
+  if (f.onlyCost) chips.push({ key: "onlyCost", label: "💰 Com custo" });
+  return chips;
 }
 
 function updatePersonalUnifiedFilterBadge() {
   const cnt = countActivePersonalUnifiedFilters();
-  const badge = $("#pmapFilterCount");
-  if (badge) {
-    badge.textContent = cnt ? String(cnt) : "";
-    badge.hidden = !cnt;
+  document.querySelectorAll("[data-puf-count]").forEach(b => {
+    b.textContent = cnt ? String(cnt) : "";
+    b.hidden = !cnt;
+  });
+  document.querySelectorAll("[data-puf-trigger]").forEach(btn => {
+    btn.classList.toggle("has-active", cnt > 0);
+  });
+  document.querySelectorAll("[data-puf-quick-clear]").forEach(btn => {
+    btn.hidden = !cnt;
+  });
+  const hCnt = $("#pufHeaderCount");
+  if (hCnt) { hCnt.textContent = cnt ? String(cnt) : ""; hCnt.hidden = !cnt; }
+  const hClr = $("#btnPufHeadClear");
+  if (hClr) hClr.hidden = !cnt;
+
+  const chips = getPersonalActiveFilterChipList();
+  const chipsHtml = chips.map(ch =>
+    `<button type="button" class="puf-chip" data-puf-rm="${esc(ch.key)}" title="Remover filtro ${esc(ch.label)}"><span>${esc(ch.label)}</span><span aria-hidden="true">✕</span></button>`
+  ).join("");
+  document.querySelectorAll("[data-puf-chips]").forEach(host => {
+    host.innerHTML = chipsHtml;
+    host.hidden = !chips.length;
+    host.querySelectorAll("[data-puf-rm]").forEach(b => {
+      b.onclick = () => {
+        const k = b.dataset.pufRm;
+        if (typeof personalUnifiedFilter[k] === "boolean") personalUnifiedFilter[k] = false;
+        else personalUnifiedFilter[k] = "";
+        writePersonalUnifiedFilterToDOM();
+        updatePersonalUnifiedFilterBadge();
+        render();
+      };
+    });
+  });
+}
+
+function adaptPersonalFilterPanelForView(viewIdOpt) {
+  const v = PERSONAL_FILTER_VIEW_LABELS[viewIdOpt] ? viewIdOpt : getActivePersonalViewId();
+  personalFilterActiveView = v;
+  const lbl = PERSONAL_FILTER_VIEW_LABELS[v] || "Pessoal";
+  if ($("#pufContextBadge")) $("#pufContextBadge").textContent = lbl;
+  if ($("#pufContextualTitle")) $("#pufContextualTitle").textContent = `Filtros específicos · ${lbl}`;
+
+  const ctxSec = $("#pufContextualSection");
+  if (!ctxSec) return;
+  let visibleCount = 0;
+  ctxSec.querySelectorAll("[data-puf-views]").forEach(el => {
+    const allowed = String(el.dataset.pufViews || "").split(",").map(x => x.trim()).filter(Boolean);
+    const match = allowed.includes(v);
+    el.hidden = !match;
+    if (match && el.classList.contains("puf-field")) visibleCount++;
+    if (match && el.classList.contains("puf-chk")) visibleCount++;
+  });
+  ctxSec.hidden = visibleCount === 0;
+}
+
+function positionPersonalFilterPanel(triggerBtn) {
+  const panel = $("#pmapFilterPopPanel");
+  const backdrop = $("#pufBackdrop");
+  if (!panel) return;
+  const isMobile = window.innerWidth < 768;
+  panel.classList.toggle("is-sheet", isMobile);
+  if (backdrop) backdrop.hidden = false;
+  if (isMobile) {
+    panel.style.top = "";
+    panel.style.left = "";
+    panel.style.right = "";
+    panel.style.bottom = "";
+    return;
   }
-  const trig = $("#btnPmapFilterPop");
-  if (trig) trig.classList.toggle("has-active", cnt > 0);
+  const margin = 14;
+  const panelW = Math.min(720, window.innerWidth - margin * 2);
+  const estH = Math.min(580, window.innerHeight - 90);
+  if (triggerBtn && triggerBtn.isConnected) {
+    const r = triggerBtn.getBoundingClientRect();
+    let left = r.left;
+    if (left + panelW > window.innerWidth - margin) {
+      left = Math.max(margin, r.right - panelW);
+    }
+    if (left < margin) left = margin;
+    let top = r.bottom + 8;
+    if (top + estH > window.innerHeight - margin && r.top - 8 > window.innerHeight - r.bottom) {
+      top = Math.max(margin, window.innerHeight - estH - margin);
+    }
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.right = "auto";
+    panel.style.top = `${Math.round(Math.max(margin, top))}px`;
+    panel.style.bottom = "auto";
+  } else {
+    panel.style.left = `${Math.round(Math.max(margin, (window.innerWidth - panelW) / 2))}px`;
+    panel.style.right = "auto";
+    panel.style.top = "78px";
+    panel.style.bottom = "auto";
+  }
+}
+
+function closePersonalFilterPanel(markDismiss = false) {
+  const panel = $("#pmapFilterPopPanel");
+  const backdrop = $("#pufBackdrop");
+  const wasOpen = Boolean(panel && !panel.hidden);
+  if (panel) panel.hidden = true;
+  if (backdrop) backdrop.hidden = true;
+  document.querySelectorAll("[data-puf-trigger]").forEach(btn => btn.setAttribute("aria-expanded", "false"));
+  personalFilterAnchorBtn = null;
+  if (wasOpen && markDismiss) window.MyPlanDismiss?.markDismissed?.();
+}
+
+function openPersonalFilterPanel(triggerBtn = null, viewIdOpt = null) {
+  const panel = $("#pmapFilterPopPanel");
+  if (!panel) return;
+  const isSameToggle = !panel.hidden && triggerBtn && personalFilterAnchorBtn === triggerBtn;
+  if (isSameToggle) {
+    closePersonalFilterPanel(true);
+    return;
+  }
+  const targetView = viewIdOpt || triggerBtn?.dataset?.pufTrigger || getActivePersonalViewId();
+  populatePersonalUnifiedFilterOptions(sorted());
+  adaptPersonalFilterPanelForView(targetView);
+  writePersonalUnifiedFilterToDOM();
+  personalFilterAnchorBtn = triggerBtn;
+  panel.hidden = false;
+  positionPersonalFilterPanel(triggerBtn);
+  document.querySelectorAll("[data-puf-trigger]").forEach(btn => {
+    btn.setAttribute("aria-expanded", String(btn === triggerBtn));
+  });
+}
+
+function clearPersonalUnifiedFilters(shouldRender = true) {
+  personalUnifiedFilter = createEmptyPersonalUnifiedFilter();
+  writePersonalUnifiedFilterToDOM();
+  updatePersonalUnifiedFilterBadge();
+  if (shouldRender && typeof render === "function") render();
 }
 
 function populatePersonalUnifiedFilterOptions(allActs) {
@@ -86,8 +335,12 @@ function populatePersonalUnifiedFilterOptions(allActs) {
       + pairs.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
     if (prev && pairs.some(([v]) => v === prev)) sel.value = prev;
   };
-  const years = [...new Set(acts.map(a => String(a.start || "").slice(0, 4)).filter(y => /^\d{4}$/.test(y)))].sort();
-  fillSel($("#pf-year"), "Todos os anos", years.map(y => [y, y]));
+  const swExps = Array.isArray(state?.splitwise?.expenses) ? state.splitwise.expenses : [];
+  const swParts = Array.isArray(state?.splitwise?.participants) ? state.splitwise.participants : [];
+
+  const yearSet = new Set(acts.map(a => String(a.start || "").slice(0, 4)).filter(y => /^\d{4}$/.test(y)));
+  swExps.forEach(ex => { const y = String(ex.date || "").slice(0, 4); if (/^\d{4}$/.test(y)) yearSet.add(y); });
+  fillSel($("#pf-year"), "Todos os anos", [...yearSet].sort().map(y => [y, y]));
 
   const cols = ensurePersonalBoardColumns();
   fillSel($("#pf-list"), "Todas as listas", cols.map(c => [c.id, c.title]));
@@ -106,7 +359,51 @@ function populatePersonalUnifiedFilterOptions(allActs) {
 
   const tags = [...new Set(acts.flatMap(a => Array.isArray(a.tags) ? a.tags : []).filter(Boolean))].sort();
   fillSel($("#pf-tag"), "Todas as tags", tags.map(tg => [tg, `#${tg}`]));
+
+  const swCats = [...new Set([
+    ...(window.MyPlanSplitwise?.CATEGORIES || []),
+    ...swExps.map(e => e.cat).filter(Boolean)
+  ])];
+  fillSel($("#pf-swCategory"), "Todas as categorias", swCats.map(c => [c, c]));
+  fillSel($("#pf-swPayer"), "Todos os pagadores", swParts.map(p => [p.id, p.name]));
+
+  const personDl = $("#pf-personList");
+  if (personDl) {
+    const people = new Set(swParts.map(p => p.name).filter(Boolean));
+    acts.forEach(a => { if (a.assignee) people.add(String(a.assignee).trim()); });
+    personDl.innerHTML = [...people].sort().map(p => `<option value="${esc(p)}"></option>`).join("");
+  }
+
+  adaptPersonalFilterPanelForView(getActivePersonalViewId());
   updatePersonalUnifiedFilterBadge();
+}
+
+function activityMatchesAttachType(a, attachType) {
+  if (!attachType) return true;
+  const list = [
+    ...(Array.isArray(a.attachments) ? a.attachments : []),
+    ...(Array.isArray(a.travelDetails?.tickets) ? a.travelDetails.tickets : [])
+  ];
+  if (!list.length) return false;
+  return list.some(att => {
+    const name = String(att.fileName || att.name || att.url || "").toLowerCase();
+    const mime = String(att.mimeType || "").toLowerCase();
+    if (attachType === "pdf") return mime.includes("pdf") || name.endsWith(".pdf");
+    if (attachType === "image") return mime.startsWith("image/") || /\.(png|jpe?g|webp|gif|svg|bmp|heic)$/i.test(name);
+    if (attachType === "sheet") return /(sheet|excel|csv|word|document|officedocument|presentation|text\/)/i.test(mime) || /\.(xlsx?|csv|docx?|pptx?|txt)$/i.test(name);
+    if (attachType === "link") return Boolean(att.url && !att.id) || /^https?:\/\//i.test(name);
+    return true;
+  });
+}
+
+function activityMatchesFinCategory(a, cat) {
+  if (!cat) return true;
+  if (cat === "Viagem") return a.type === "Viagem";
+  if (cat === "Hospedagem") return a.type === "Hospedagem";
+  if (cat === "Restaurante") return a.type === "Restaurante";
+  if (cat === "Voo") return ["Voo", "Trem", "Ônibus", "Navio"].includes(a.type);
+  if (cat === "Ingresso") return ["Ingresso", "Passeio", "Evento"].includes(a.type);
+  return !["Viagem", "Hospedagem", "Restaurante", "Voo", "Trem", "Ônibus", "Navio", "Ingresso", "Passeio", "Evento"].includes(a.type);
 }
 
 function applyPersonalUnifiedFilter(list) {
@@ -115,12 +412,19 @@ function applyPersonalUnifiedFilter(list) {
   const cols = ensurePersonalBoardColumns();
   const colIds = new Set(cols.map(c => c.id));
   const defColId = cols[0]?.id || "";
+  const swParts = Array.isArray(state?.splitwise?.participants) ? state.splitwise.participants : [];
+  const payerObj = f.swPayer ? swParts.find(p => p.id === f.swPayer) : null;
+
   return list.filter(a => {
     if (!a) return false;
     const s = String(a.start || "");
     const e = String(a.end || s);
     if (f.search) {
-      const hay = [a.name || "", a.notes || "", a.from || "", a.to || "", a.location || "", a.city || "", a.airline || "", a.bookingRef || ""].join(" ").toLowerCase();
+      const hay = [
+        a.name || "", a.notes || "", a.from || "", a.to || "",
+        a.location || "", a.city || "", a.airline || "", a.bookingRef || "",
+        a.type || "", ...(Array.isArray(a.tags) ? a.tags : [])
+      ].join(" ").toLowerCase();
       if (!hay.includes(f.search)) return false;
     }
     if (f.year && !s.startsWith(f.year) && !e.startsWith(f.year)) return false;
@@ -132,6 +436,11 @@ function applyPersonalUnifiedFilter(list) {
       if (cid !== f.list) return false;
     }
     if (f.type && a.type !== f.type) return false;
+    if (f.doneStatus) {
+      const done = typeof isPersonalCardDone === "function" ? isPersonalCardDone(a, cols, state?.params) : Boolean(a.completed);
+      if (f.doneStatus === "done" && !done) return false;
+      if (f.doneStatus === "pending" && done) return false;
+    }
     if (f.transport && a.type !== f.transport) return false;
     if (f.city) {
       const want = normCityKey(f.city);
@@ -139,12 +448,27 @@ function applyPersonalUnifiedFilter(list) {
       if (!has) return false;
     }
     if (f.person) {
-      const pHay = [a.assignee || "", a.notes || "", a.name || "", ...(Array.isArray(a.tags) ? a.tags : [])].join(" ").toLowerCase();
+      const pName = a.splitConfig?.payerId ? (swParts.find(p => p.id === a.splitConfig.payerId)?.name || "") : "";
+      const pHay = [a.assignee || "", pName, a.notes || "", a.name || "", ...(Array.isArray(a.tags) ? a.tags : [])].join(" ").toLowerCase();
       if (!pHay.includes(f.person)) return false;
     }
     if (f.tag && !(Array.isArray(a.tags) && a.tags.includes(f.tag))) return false;
+    if (f.attachType && !activityMatchesAttachType(a, f.attachType)) return false;
+    if (f.finCategory && !activityMatchesFinCategory(a, f.finCategory)) return false;
+    if (f.swPayer) {
+      const matchId = a.splitConfig?.payerId === f.swPayer;
+      const matchTxt = payerObj && `${a.assignee || ""} ${a.notes || ""}`.toLowerCase().includes(payerObj.name.toLowerCase());
+      if (!matchId && !matchTxt) return false;
+    }
     if (f.onlyTravel && !isTravelType(a.type)) return false;
-    if (f.onlyAttach && !(Array.isArray(a.attachments) && a.attachments.length > 0)) return false;
+    if (f.onlyAttach) {
+      const hasAtt = (Array.isArray(a.attachments) && a.attachments.length > 0) || (Array.isArray(a.travelDetails?.tickets) && a.travelDetails.tickets.length > 0);
+      if (!hasAtt) return false;
+    }
+    if (f.onlyCost) {
+      const cVal = (typeof calc === "function") ? calc(a) : { total: 0, extra: Number(a.extraCost) || 0 };
+      if ((cVal.total + cVal.extra) <= 0) return false;
+    }
     return true;
   });
 }
@@ -198,45 +522,76 @@ function computeBezierFlightArc(p1, p2, steps = 36) {
 function bindPersonalMapControls() {
   if (pmapEventsBound) return;
   pmapEventsBound = true;
-  const popBtn = $("#btnPmapFilterPop");
   const popPanel = $("#pmapFilterPopPanel");
-  const closePop = () => {
-    if (popPanel) popPanel.hidden = true;
-    if (popBtn) popBtn.setAttribute("aria-expanded", "false");
-  };
-  if (popBtn && popPanel) {
-    popBtn.onclick = e => {
+  const backdrop = $("#pufBackdrop");
+
+  document.querySelectorAll("[data-puf-trigger]").forEach(btn => {
+    btn.onclick = e => {
       e.stopPropagation();
-      const willOpen = popPanel.hidden;
-      if (willOpen) populatePersonalUnifiedFilterOptions(sorted());
-      popPanel.hidden = !willOpen;
-      popBtn.setAttribute("aria-expanded", String(willOpen));
+      openPersonalFilterPanel(btn, btn.dataset.pufTrigger);
     };
-    document.addEventListener("click", e => {
-      if (!popPanel.hidden && !popPanel.contains(e.target) && !popBtn.contains(e.target)) closePop();
-    });
+  });
+  document.querySelectorAll("[data-puf-quick-clear]").forEach(btn => {
+    btn.onclick = e => {
+      e.stopPropagation();
+      clearPersonalUnifiedFilters(true);
+    };
+  });
+
+  if (backdrop) {
+    backdrop.onclick = e => {
+      e.stopPropagation();
+      closePersonalFilterPanel(true);
+    };
   }
-  if ($("#btnPufClose")) $("#btnPufClose").onclick = closePop;
+  if ($("#btnPufClose")) $("#btnPufClose").onclick = () => closePersonalFilterPanel(true);
+  if ($("#btnPufHeadClear")) $("#btnPufHeadClear").onclick = () => clearPersonalUnifiedFilters(true);
+  if ($("#btnPmapClearFilters")) $("#btnPmapClearFilters").onclick = () => clearPersonalUnifiedFilters(true);
   if ($("#btnPufApply")) {
     $("#btnPufApply").onclick = () => {
       readPersonalUnifiedFilterFromDOM();
+      writePersonalUnifiedFilterToDOM();
       updatePersonalUnifiedFilterBadge();
-      closePop();
+      closePersonalFilterPanel(false);
       render();
     };
   }
-  if ($("#btnPmapClearFilters")) {
-    $("#btnPmapClearFilters").onclick = () => {
-      ["#pf-search", "#pf-year", "#pf-month", "#pf-dateFrom", "#pf-dateTo", "#pf-list", "#pf-type", "#pf-transport", "#pf-city", "#pf-person", "#pf-tag"].forEach(s => {
-        if ($(s)) $(s).value = "";
-      });
-      if ($("#pf-onlyTravel")) $("#pf-onlyTravel").checked = false;
-      if ($("#pf-onlyAttach")) $("#pf-onlyAttach").checked = false;
+
+  // Live update em mudança de selects/checkboxes dentro do painel unificado
+  if (popPanel) {
+    popPanel.addEventListener("change", () => {
       readPersonalUnifiedFilterFromDOM();
       updatePersonalUnifiedFilterBadge();
       render();
-    };
+    });
+    const pfSearch = $("#pf-search");
+    if (pfSearch) {
+      let tmr = null;
+      pfSearch.addEventListener("input", () => {
+        clearTimeout(tmr);
+        tmr = setTimeout(() => {
+          readPersonalUnifiedFilterFromDOM();
+          writePersonalUnifiedFilterToDOM();
+          updatePersonalUnifiedFilterBadge();
+          render();
+        }, 160);
+      });
+    }
   }
+
+  window.addEventListener("resize", () => {
+    if (popPanel && !popPanel.hidden) positionPersonalFilterPanel(personalFilterAnchorBtn);
+  });
+
+  window.MyPlanPersonalFilters = {
+    open: openPersonalFilterPanel,
+    close: closePersonalFilterPanel,
+    clear: clearPersonalUnifiedFilters,
+    getState: () => personalUnifiedFilter,
+    count: countActivePersonalUnifiedFilters,
+    adaptForView: adaptPersonalFilterPanelForView,
+    syncBadges: updatePersonalUnifiedFilterBadge
+  };
 }
 
 function buildPersonalDateRangeISOs(acts, dateFrom, dateTo) {

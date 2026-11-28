@@ -64,6 +64,8 @@ let tripMultiMsel = null;
 let editingTripRef = null;
 let ganttMode = "gantt";
 let ganttZoom = window.innerWidth < 720 ? 50 : 48;
+let ganttFitEvents = false;
+let ganttZoomBeforeFit = null;
 let ganttSlimRail = window.innerWidth < 720;
 let checklistFilter = "";
 let financeFilter = "all";
@@ -2782,21 +2784,14 @@ function syncPersonalFilterUIs(allActsOpt) {
   ["#ganttDateFrom", "#dashDateFrom", "#finDateFrom"].forEach(s => { const el = $(s); if (el && el.value !== personalDateFrom) el.value = personalDateFrom; });
   ["#ganttDateTo", "#dashDateTo", "#finDateTo"].forEach(s => { const el = $(s); if (el && el.value !== personalDateTo) el.value = personalDateTo; });
   const active = isPersonalFilterActive();
-  ["#btnGanttClearFilters", "#btnDashClearFilters", "#btnFinClearFilters"].forEach(s => {
-    const el = $(s);
-    if (el) el.hidden = !active;
-  });
-  const totalTypes = allTypes.length;
-  const activeCount = (ganttFilterTypes.size < totalTypes ? 1 : 0)
-    + (ganttFilterTags.size > 0 ? 1 : 0)
-    + ((personalDateFrom || personalDateTo) ? 1 : 0);
-  const fBtn = $("#btnGanttFilterPop");
-  const fCnt = $("#ganttFilterCount");
-  if (fBtn) fBtn.classList.toggle("has-active", activeCount > 0);
-  if (fCnt) {
-    fCnt.textContent = activeCount ? String(activeCount) : "";
-    fCnt.hidden = !activeCount;
+  const hasUni = typeof countActivePersonalUnifiedFilters === "function" ? countActivePersonalUnifiedFilters() > 0 : false;
+  if (!hasUni && active) {
+    ["#btnGanttClearFilters", "#btnDashClearFilters", "#btnFinClearFilters"].forEach(s => {
+      const el = $(s);
+      if (el) el.hidden = false;
+    });
   }
+  if (typeof updatePersonalUnifiedFilterBadge === "function") updatePersonalUnifiedFilterBadge();
 }
 
 function applyAndRenderPersonalViews() {
@@ -2821,7 +2816,11 @@ function resetGanttTypeFilter() {
   dashTagMsel?.clearAll();
   finTypeMsel?.selectAll();
   finTagMsel?.clearAll();
-  applyAndRenderPersonalViews();
+  if (typeof clearPersonalUnifiedFilters === "function") {
+    clearPersonalUnifiedFilters(true);
+  } else {
+    applyAndRenderPersonalViews();
+  }
 }
 
 function resetTableTypeFilter() {
@@ -2829,6 +2828,8 @@ function resetTableTypeFilter() {
   tableFilterTags = new Set();
   tableTypeMsel?.selectAll();
   tableTagMsel?.clearAll();
+  if ($("#search")) $("#search").value = "";
+  if (typeof clearPersonalUnifiedFilters === "function") clearPersonalUnifiedFilters(true);
 }
 
 function refreshTagSelectors(extraActs = [], modalSelectedOverride = null) {
@@ -3518,12 +3519,16 @@ function renderUnifiedStatusBar(barEl, allUnified, visibleUnified, onRefresh) {
   if (btnEx) btnEx.onclick = () => toggleUnifiedGanttMode(false);
 }
 
-function buildGanttScale(rows, zoomPx, isMobile) {
+function buildGanttScale(rows, zoomPx, isMobile, opts = {}) {
+  const fitToEvents = Boolean(opts?.fitToEvents);
   const isWeekOnly = Number(zoomPx) < 22; // Abaixo de 44% (50px = 100%)
   const todayDt = new Date();
   todayDt.setHours(0, 0, 0, 0);
   const todayISO = fmtISO(todayDt);
   const currentWeekKey = getIsoWeekInfo(todayDt).key;
+
+  const minS = rows.reduce((m, a) => (a.start && a.start < m ? a.start : m), rows[0].start);
+  const maxS = rows.reduce((m, a) => ((a.end || a.start) > m ? (a.end || a.start) : m), rows[0].end || rows[0].start);
 
   const formatMonthLabel = (mIdx, year, widthPx) => {
     if (widthPx < 24) return MON_ABBR[mIdx][0];
@@ -3533,16 +3538,19 @@ function buildGanttScale(rows, zoomPx, isMobile) {
   };
 
   if (isWeekOnly) {
-    const dataMinMon = getIsoWeekMonday(parseD(rows[0].start));
-    const maxS = rows.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, rows[0].start);
+    const dataMinMon = getIsoWeekMonday(parseD(minS));
     const dataMaxMon = getIsoWeekMonday(parseD(maxS));
-    const dataSpanWeeks = Math.max(4, Math.round((dataMaxMon.getTime() - dataMinMon.getTime()) / (7 * DAY)) + 2);
+    const padWeeksBefore = fitToEvents ? 1 : 0;
+    const padWeeksAfter = fitToEvents ? 1 : 2;
+    const paddedMinMon = new Date(dataMinMon.getTime() - padWeeksBefore * 7 * DAY + 3600e3);
+    paddedMinMon.setHours(0, 0, 0, 0);
+    const dataSpanWeeks = Math.max(3, Math.round((dataMaxMon.getTime() - paddedMinMon.getTime()) / (7 * DAY)) + 1 + padWeeksAfter);
     const colW = Math.max(12, Math.round(Number(zoomPx) * 4.4));
 
-    let minMon = dataMinMon;
+    let minMon = paddedMinMon;
     let weeksCount = dataSpanWeeks;
-    if (colW <= 28) {
-      const refYear = parseD(rows[0].start).getFullYear();
+    if (!fitToEvents && colW <= 28) {
+      const refYear = parseD(minS).getFullYear();
       const yearJan4Mon = getIsoWeekMonday(new Date(refYear, 0, 4));
       const totalIsoWeeksInYear = getIsoWeekInfo(new Date(refYear, 11, 28)).week || 52;
       const yearEndMonTs = yearJan4Mon.getTime() + (totalIsoWeeksInYear - 1) * 7 * DAY;
@@ -3552,10 +3560,10 @@ function buildGanttScale(rows, zoomPx, isMobile) {
       } else {
         weeksCount = Math.max(52, Math.min(160, dataSpanWeeks));
       }
-    } else if (colW <= 44) {
+    } else if (!fitToEvents && colW <= 44) {
       weeksCount = Math.max(dataSpanWeeks, Math.min(53, Math.ceil(920 / colW)));
     }
-    weeksCount = Math.max(4, Math.min(160, weeksCount));
+    weeksCount = Math.max(3, Math.min(160, weeksCount));
 
     const weeks = [];
     const monthSpans = [];
@@ -3641,9 +3649,9 @@ function buildGanttScale(rows, zoomPx, isMobile) {
   }
 
   const DW = Number(zoomPx);
-  const minTs = parseD(rows[0].start).getTime() - 2 * DAY;
-  const maxS = rows.reduce((m, a) => (a.end || a.start) > m ? (a.end || a.start) : m, rows[0].start);
-  const trailingDays = isMobile ? 10 : 14;
+  const padBefore = fitToEvents ? 3 : 2;
+  const minTs = parseD(minS).getTime() - padBefore * DAY;
+  const trailingDays = fitToEvents ? 4 : (isMobile ? 10 : 14);
   const nCols = Math.max(5, Math.round((parseD(maxS) - minTs) / DAY) + trailingDays);
   const dates = [];
   for (let i = 0; i < nCols; i++) {
@@ -3837,6 +3845,11 @@ function renderGantt(allSorted) {
   if (vLbl) vLbl.textContent = ganttMode === "annual" ? "Calendário Anual" : (ganttMode === "timeline" ? "Timeline" : "Gantt");
   if (vDot) vDot.hidden = !ganttUnifiedMode;
   if ($("#ganttZoomGroup")) $("#ganttZoomGroup").hidden = ganttMode !== "gantt";
+  if ($("#btnGanttFitEvents")) {
+    $("#btnGanttFitEvents").hidden = ganttMode === "timeline";
+    $("#btnGanttFitEvents").setAttribute("aria-pressed", String(Boolean(ganttFitEvents)));
+    $("#btnGanttFitEvents").classList.toggle("is-active", Boolean(ganttFitEvents));
+  }
   if ($("#btnPrintGantt")) $("#btnPrintGantt").hidden = ganttMode === "annual";
 
   const roleBadge = $("#tripRoleBadge");
@@ -3882,6 +3895,7 @@ function renderGantt(allSorted) {
         projectTitle: activeTrip?.name || state?.title || "My Plan",
         dateFrom: effFrom,
         dateTo: effTo,
+        fitEvents: ganttFitEvents,
         allTypes: Object.values(window.ACTIVITY_TYPES || {}),
         getTypeInfo: getPersonalAnnualTypeInfo,
         fmtBR,
@@ -3893,6 +3907,13 @@ function renderGantt(allSorted) {
           } else {
             openModal(cid);
           }
+        },
+        onCreateAtDate: (isoDate, laneTypeId) => {
+          openModal({ start: isoDate, end: isoDate, type: laneTypeId || undefined });
+        },
+        onToggleFitEvents: nextVal => {
+          ganttFitEvents = Boolean(nextVal);
+          renderGantt(sorted());
         },
         onSavePrefs: msg => save(msg),
         toast
@@ -3931,7 +3952,7 @@ function renderGantt(allSorted) {
     return;
   }
 
-  const scale = buildGanttScale(s, ganttZoom, window.innerWidth < 720);
+  const scale = buildGanttScale(s, ganttZoom, window.innerWidth < 720, { fitToEvents: ganttFitEvents });
   const DW = scale.colW;
   const n = scale.nCols;
   const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : (scale.isYearView && DW <= 18 ? 205 : 265));
@@ -4046,11 +4067,13 @@ function renderGantt(allSorted) {
             ${summaryHtml}
           </div>`;
       }
-      h += `<div class="g-cell ${altCls} ${cm.we ? "weekend" : ""} ${cm.wOdd ? "w-odd" : "w-even"} ${cm.mOdd ? "m-odd" : "m-even"} ${cm.wStart ? "w-start" : ""} ${cm.mStart ? "m-start" : ""} ${cm.isToday ? "today" : ""}" style="grid-column:${i + 2};grid-row:${row}">${inner}</div>`;
+      const cellIso = scale.isWeekOnly ? (scale.weekSpans[i]?.mondayISO || "") : (cm.iso || "");
+      h += `<div class="g-cell ${altCls} ${cm.we ? "weekend" : ""} ${cm.wOdd ? "w-odd" : "w-even"} ${cm.mOdd ? "m-odd" : "m-even"} ${cm.wStart ? "w-start" : ""} ${cm.mStart ? "m-start" : ""} ${cm.isToday ? "today" : ""}${!inner && cellIso ? " is-creatable" : ""}" style="grid-column:${i + 2};grid-row:${row}" data-date="${esc(cellIso)}"${!inner && cellIso ? ` title="Clique para criar evento em ${fmtBR(cellIso)}"` : ""}>${inner}</div>`;
     }
   });
 
   g.innerHTML = h;
+  bindGanttEmptyCellClick(g, wrap, iso => openModal({ start: iso, end: iso }));
   const slimBtn = $("#btnGanttSlim");
   if (slimBtn) {
     slimBtn.onclick = () => {
@@ -4858,6 +4881,7 @@ function renderPersonalSplitwise() {
       tripTitle: activeTrip?.name || state?.title || "My Plan",
       activities: sorted(),
       getActivityCostCents: getPersonalActivityCostCents,
+      externalFilter: typeof personalUnifiedFilter !== "undefined" ? personalUnifiedFilter : null,
       fmtBR,
       onSave: msg => save(msg),
       toast
@@ -5591,6 +5615,7 @@ const AUTO_PARAM_DEFS = [
 function renderParams() {
   renderAppearancePanel($("#personalAppearanceHost"), "personal");
   renderPersonalVisibleMenusManager();
+  renderPersonalBoardPrefs();
   const pmNote = $("#paramsMultiNote");
   if (pmNote) {
     if (isMultiTripMode()) {
@@ -5937,6 +5962,23 @@ function renderChecklist() {
   const acts = sorted();
   const cols = ensurePersonalBoardColumns();
   const allTags = getAllAvailableTags(acts);
+
+  if (typeof personalUnifiedFilter !== "undefined" && window.MyPlanChecklists?.setExternalFilters) {
+    window.MyPlanChecklists.setExternalFilters("personal", {
+      search: personalUnifiedFilter.search || "",
+      status: personalUnifiedFilter.doneStatus || "",
+      prio: personalUnifiedFilter.chkPrio || "",
+      kind: personalUnifiedFilter.chkKind || "",
+      type: personalUnifiedFilter.type || "",
+      list: personalUnifiedFilter.list || "",
+      person: personalUnifiedFilter.person || "",
+      tag: personalUnifiedFilter.tag || "",
+      year: personalUnifiedFilter.year || "",
+      month: personalUnifiedFilter.month || "",
+      dateFrom: personalUnifiedFilter.dateFrom || "",
+      dateTo: personalUnifiedFilter.dateTo || ""
+    });
+  }
 
   window.MyPlanChecklists.renderGlobalChecklist({
     scope: "personal",
@@ -7045,6 +7087,17 @@ function readForm() {
   }
   a.personalColId = ($("#f-personalCol")?.value || "").trim() || (ensurePersonalBoardColumns()[0]?.id || "");
   a.completed = Boolean(modalCompleted);
+  const pDoneColId = String(state?.params?.personalDoneColumnId || "");
+  const pColsNow = ensurePersonalBoardColumns();
+  const prevWasDone = editing ? isPersonalCardDone(findActivityContext(editing)?.activity || {}, pColsNow, state?.params) : false;
+  if (a.completed && pDoneColId && pColsNow.some(c => c.id === pDoneColId)) {
+    if (!prevWasDone && a.personalColId !== pDoneColId) {
+      a.prevPersonalColId = a.personalColId;
+      a.personalColId = pDoneColId;
+    } else if (!editing) {
+      a.personalColId = pDoneColId;
+    }
+  }
   a.subtasks = clone(modalSubtasks || []);
   a.travelDetails = {
     tickets: clone(modalTravelTickets || []),
@@ -7964,6 +8017,7 @@ async function boot() {
   initContextBarAndLayoutControls();
   initLogoSearchModal();
   initCommandPaletteAndShortcuts();
+  initGlobalOutsideDismiss();
   const swInviteToken = new URLSearchParams(window.location.search).get("splitwiseInvite");
   if (swInviteToken && window.MyPlanSplitwise && window.FeriasApi?.getPublicSplitwise) {
     await openPublicSplitwiseGuestMode(swInviteToken);
@@ -7974,6 +8028,8 @@ async function boot() {
   if (window.MyPlanPro) {
     window.MyPlanPro.init({
       applyCurrentAppearance,
+      attachGanttPinchZoom,
+      bindGanttEmptyCellClick,
       buildGanttScale,
       buildUnifiedItems,
       clone,
@@ -8357,6 +8413,8 @@ function switchAppView(viewId) {
   if ($("#personalMapNavFilterHost")) $("#personalMapNavFilterHost").hidden = (viewId === "admin" || viewId === "params");
   if (viewId === "personal-map") renderPersonalMap();
   if (viewId === "personal-board") renderPersonalBoard();
+  window.MyPlanPersonalFilters?.close?.(false);
+  window.MyPlanPersonalFilters?.adaptForView?.(viewId);
   closeAllGanttPopovers();
   closeAllUnifiedCalMenus();
 }
@@ -9893,7 +9951,6 @@ function closeAllGanttPopovers(exceptPanel = null) {
 
 function setupGanttPopovers() {
   [
-    ["#btnGanttFilterPop", "#ganttFilterPopPanel"],
     ["#btnGanttViewPop", "#ganttViewPopPanel"],
     ["#btnProBoardFilterPop", "#proBoardFilterPopPanel"],
     ["#btnProGanttFilterPop", "#proGanttFilterPopPanel"],
@@ -9921,6 +9978,330 @@ function setupGanttPopovers() {
   });
 }
 setupGanttPopovers();
+
+/* ---------- REGRA GLOBAL "CLIQUE FORA = FECHAR", CLIQUE NO VAZIO & PINÇA MOBILE (v67) ---------- */
+let __myplanLastDismissTs = 0;
+let __myplanGlobalDismissBound = false;
+
+function hasAnyOpenOverlay() {
+  if (document.querySelector("dialog[open]")) return true;
+  if (document.querySelector("#pmapFilterPopPanel:not([hidden])")) return true;
+  if (document.querySelector(".gantt-pop-panel:not([hidden])")) return true;
+  if (document.querySelector("#menu.open, #ctxProjectMenu:not([hidden])")) return true;
+  if (document.querySelector(".pm-dd-menu:not([hidden]), .msel-panel:not([hidden]), [data-unif-cal-menu]:not([hidden])")) return true;
+  if (document.querySelector(".ac-list:not([hidden])")) return true;
+  if (document.querySelector("#proMapInspectorBackdrop:not([hidden])")) return true;
+  return false;
+}
+
+function closeAllNonDialogOverlays() {
+  let closed = false;
+  if (document.querySelector("#pmapFilterPopPanel:not([hidden])")) {
+    window.MyPlanPersonalFilters?.close?.(false);
+    closed = true;
+  }
+  if (document.querySelector(".gantt-pop-panel:not([hidden])")) {
+    closeAllGanttPopovers();
+    closed = true;
+  }
+  if (document.querySelector("[data-unif-cal-menu]:not([hidden])")) {
+    closeAllUnifiedCalMenus();
+    closed = true;
+  }
+  const topMenu = $("#menu");
+  if (topMenu && topMenu.classList.contains("open")) {
+    topMenu.classList.remove("open", "is-fixed-menu");
+    $("#btnMenu")?.setAttribute("aria-expanded", "false");
+    closed = true;
+  }
+  const ctxMenu = $("#ctxProjectMenu");
+  if (ctxMenu && !ctxMenu.hidden) {
+    ctxMenu.hidden = true;
+    $("#ctxProjectBtn")?.setAttribute("aria-expanded", "false");
+    closed = true;
+  }
+  document.querySelectorAll(".pm-dd-menu:not([hidden]), .msel-panel:not([hidden]), .ac-list:not([hidden])").forEach(el => {
+    el.hidden = true;
+    closed = true;
+  });
+  const mapBack = $("#proMapInspectorBackdrop");
+  if (mapBack && !mapBack.hidden) {
+    mapBack.click();
+    closed = true;
+  }
+  return closed;
+}
+
+window.MyPlanDismiss = {
+  hasOpenOverlay: hasAnyOpenOverlay,
+  markDismissed: () => { __myplanLastDismissTs = Date.now(); },
+  wasRecentlyDismissed: (ms = 320) => (Date.now() - __myplanLastDismissTs) < ms,
+  closeAllOverlays: closeAllNonDialogOverlays
+};
+
+function isPointOutsideDialogRect(dlg, clientX, clientY) {
+  if (!dlg) return false;
+  const r = dlg.getBoundingClientRect();
+  return clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom;
+}
+
+function closeDialogLikeUser(dlg) {
+  if (!dlg || !dlg.open) return;
+  window.MyPlanDismiss.markDismissed();
+  if (dlg.id === "proCardModal" && $("#btnProCardCloseX")) {
+    $("#btnProCardCloseX").click();
+    return;
+  }
+  if (dlg.id === "modal" && $("#btnCloseX")) {
+    $("#btnCloseX").click();
+    return;
+  }
+  const closeBtn = dlg.querySelector(".modal-close");
+  if (closeBtn) {
+    closeBtn.click();
+    if (dlg.open && dlg.id !== "proCardModal") {
+      try { dlg.close(); } catch {}
+    }
+    return;
+  }
+  try { dlg.close(); } catch {}
+}
+
+function initGlobalOutsideDismiss() {
+  if (__myplanGlobalDismissBound) return;
+  __myplanGlobalDismissBound = true;
+  let backdropDownDialog = null;
+
+  document.addEventListener("pointerdown", ev => {
+    const openDialogs = [...document.querySelectorAll("dialog[open]")];
+    if (openDialogs.length) {
+      const topDlg = openDialogs[openDialogs.length - 1];
+      if (ev.target === topDlg && isPointOutsideDialogRect(topDlg, ev.clientX, ev.clientY)) {
+        backdropDownDialog = topDlg;
+        window.MyPlanDismiss.markDismissed();
+      } else {
+        backdropDownDialog = null;
+      }
+      return;
+    }
+
+    backdropDownDialog = null;
+    // Se algum popover/painel/menu estiver aberto e o clique for fora dele, fecha imediatamente e impede criação no mesmo clique
+    const t = ev.target;
+    let dismissedAny = false;
+    const pufPanel = $("#pmapFilterPopPanel");
+    if (pufPanel && !pufPanel.hidden && !pufPanel.contains(t) && !t.closest("[data-puf-trigger]")) {
+      window.MyPlanPersonalFilters?.close?.(false);
+      dismissedAny = true;
+    }
+    if (document.querySelector(".gantt-pop-panel:not([hidden])") && !t.closest(".gantt-pop-host")) {
+      closeAllGanttPopovers();
+      dismissedAny = true;
+    }
+    if (document.querySelector("[data-unif-cal-menu]:not([hidden])") && !t.closest(".unified-cal-host")) {
+      closeAllUnifiedCalMenus();
+      dismissedAny = true;
+    }
+    const topMenu = $("#menu");
+    if (topMenu && topMenu.classList.contains("open") && !topMenu.contains(t) && !t.closest("#btnMenu")) {
+      topMenu.classList.remove("open", "is-fixed-menu");
+      $("#btnMenu")?.setAttribute("aria-expanded", "false");
+      dismissedAny = true;
+    }
+    const ctxMenu = $("#ctxProjectMenu");
+    if (ctxMenu && !ctxMenu.hidden && !ctxMenu.contains(t) && !t.closest("#ctxProjectBtn")) {
+      ctxMenu.hidden = true;
+      $("#ctxProjectBtn")?.setAttribute("aria-expanded", "false");
+      dismissedAny = true;
+    }
+    document.querySelectorAll(".pm-dd-menu:not([hidden])").forEach(m => {
+      if (!m.contains(t) && !m.closest(".pm-dd-host")?.contains(t)) {
+        m.hidden = true;
+        dismissedAny = true;
+      }
+    });
+    document.querySelectorAll(".msel-panel:not([hidden])").forEach(m => {
+      if (!m.contains(t) && !m.closest(".msel-host")?.contains(t)) {
+        m.hidden = true;
+        dismissedAny = true;
+      }
+    });
+    if (dismissedAny) {
+      window.MyPlanDismiss.markDismissed();
+    }
+  }, true);
+
+  document.addEventListener("click", ev => {
+    const dlg = backdropDownDialog;
+    backdropDownDialog = null;
+    if (dlg && dlg.open && ev.target === dlg && isPointOutsideDialogRect(dlg, ev.clientX, ev.clientY)) {
+      const nativeClosedBy = dlg.hasAttribute("closedby") && ("closedBy" in HTMLDialogElement.prototype);
+      window.MyPlanDismiss.markDismissed();
+      if (!nativeClosedBy) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeDialogLikeUser(dlg);
+      }
+    }
+  }, true);
+}
+
+function showGanttPinchBadge(wrapEl, text) {
+  if (!wrapEl) return;
+  const host = wrapEl.closest(".gantt-card") || wrapEl.parentElement || document.body;
+  let badge = host.querySelector(".chart-pinch-toast");
+  if (!badge) {
+    badge = document.createElement("div");
+    badge.className = "chart-pinch-toast";
+    badge.setAttribute("aria-live", "polite");
+    host.appendChild(badge);
+  }
+  badge.textContent = text;
+  badge.classList.add("is-visible");
+  clearTimeout(badge._hideTimer);
+  badge._hideTimer = setTimeout(() => badge.classList.remove("is-visible"), 950);
+}
+
+function attachGanttPinchZoom(wrapEl, { getZoom, setZoom, getNameW, onRender }) {
+  if (!wrapEl || wrapEl.dataset.pinchBound) return;
+  wrapEl.dataset.pinchBound = "1";
+  let pinchActive = false;
+  let startDist = 0;
+  let startZoom = 48;
+  let focalUnits = 0;
+  let rafId = 0;
+  let pendingZoom = null;
+
+  const unitWidthOf = z => (z < 22 ? Math.max(12, Math.round(z * 4.4)) / 7 : z);
+
+  wrapEl.addEventListener("touchstart", e => {
+    if (e.touches.length === 2) {
+      pinchActive = true;
+      const t0 = e.touches[0], t1 = e.touches[1];
+      startDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY) || 1;
+      startZoom = Number(getZoom()) || 48;
+      const rect = wrapEl.getBoundingClientRect();
+      const nameW = Number(getNameW?.()) || 156;
+      const midX = Math.max(0, ((t0.clientX + t1.clientX) / 2) - rect.left - nameW);
+      focalUnits = Math.max(0, (wrapEl.scrollLeft + midX) / Math.max(1, unitWidthOf(startZoom)));
+      wrapEl.dataset.pinchActive = "1";
+    }
+  }, { passive: true });
+
+  wrapEl.addEventListener("touchmove", e => {
+    if (!pinchActive || e.touches.length !== 2) return;
+    e.preventDefault();
+    const t0 = e.touches[0], t1 = e.touches[1];
+    const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY) || 1;
+    const ratio = dist / Math.max(12, startDist);
+    const nextZoom = Math.max(2.5, Math.min(116, Math.round(startZoom * ratio * 10) / 10));
+    const rect = wrapEl.getBoundingClientRect();
+    const nameW = Number(getNameW?.()) || 156;
+    const midX = Math.max(0, ((t0.clientX + t1.clientX) / 2) - rect.left - nameW);
+    pendingZoom = { nextZoom, midX };
+    if (!rafId) {
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        if (!pendingZoom) return;
+        const { nextZoom: zVal, midX: mX } = pendingZoom;
+        pendingZoom = null;
+        if (Math.abs(zVal - Number(getZoom())) >= 0.4) {
+          setZoom(zVal);
+          onRender?.();
+          wrapEl.scrollLeft = Math.max(0, Math.round(focalUnits * unitWidthOf(zVal) - mX));
+        }
+        const pct = Math.round((zVal / 50) * 100);
+        const scaleLbl = zVal < 10 ? "Meses / Ano" : (zVal < 22 ? "Semanas" : "Dias");
+        showGanttPinchBadge(wrapEl, `🔍 ${pct}% · ${scaleLbl}`);
+      });
+    }
+  }, { passive: false });
+
+  const endPinch = () => {
+    if (!pinchActive) return;
+    pinchActive = false;
+    delete wrapEl.dataset.pinchActive;
+    wrapEl.dataset.lastPinchEndTs = String(Date.now());
+  };
+  wrapEl.addEventListener("touchend", e => {
+    if (pinchActive && e.touches.length < 2) endPinch();
+  }, { passive: true });
+  wrapEl.addEventListener("touchcancel", endPinch, { passive: true });
+}
+
+function bindGanttEmptyCellClick(gridEl, wrapEl, onCreateAtDate) {
+  if (!gridEl || !wrapEl || typeof onCreateAtDate !== "function") return;
+  if (gridEl.dataset.emptyClickBound) return;
+  gridEl.dataset.emptyClickBound = "1";
+  let downInfo = null;
+
+  gridEl.addEventListener("pointerdown", e => {
+    if (e.button && e.button !== 0) return;
+    if (wrapEl.dataset.pinchActive === "1") { downInfo = null; return; }
+    if (e.target.closest(".g-bar, .g-event-wrap, .g-summary, .g-resize, .g-name, .g-head, .g-week-head, .g-month-head, .g-corner, .g-city-span, .g-group-corner, .g-group-band, button, a, input, select")) {
+      downInfo = null;
+      return;
+    }
+    const cell = e.target.closest(".g-cell[data-date]");
+    if (!cell || !cell.dataset.date) { downInfo = null; return; }
+    downInfo = {
+      x: e.clientX,
+      y: e.clientY,
+      sl: wrapEl.scrollLeft,
+      st: wrapEl.scrollTop,
+      date: cell.dataset.date,
+      hadOverlay: Boolean(window.MyPlanDismiss?.hasOpenOverlay?.())
+    };
+  });
+
+  gridEl.addEventListener("click", e => {
+    const di = downInfo;
+    downInfo = null;
+    if (!di || di.hadOverlay) return;
+    const lastPinch = Number(wrapEl.dataset.lastPinchEndTs) || 0;
+    if (Date.now() - lastPinch < 380) return;
+    if (window.MyPlanDismiss?.hasOpenOverlay?.() || window.MyPlanDismiss?.wasRecentlyDismissed?.()) return;
+    if (e.target.closest(".g-bar, .g-event-wrap, .g-summary, .g-resize, button, a, input, select")) return;
+    const cell = e.target.closest(".g-cell[data-date]");
+    if (!cell || cell.dataset.date !== di.date) return;
+    if (Math.hypot(e.clientX - di.x, e.clientY - di.y) > 8) return;
+    if (Math.abs(wrapEl.scrollLeft - di.sl) > 5 || Math.abs(wrapEl.scrollTop - di.st) > 5) return;
+    onCreateAtDate(di.date);
+  });
+}
+
+function togglePersonalGanttFitEvents() {
+  const nextVal = !ganttFitEvents;
+  ganttFitEvents = nextVal;
+  if (ganttMode === "annual") {
+    window.MyPlanProAnnual?.setFitEvents?.(ganttFitEvents, "personal");
+    renderGantt(sorted());
+    return;
+  }
+  const wrap = $("#ganttWrap");
+  if (ganttFitEvents) {
+    ganttZoomBeforeFit = ganttZoom;
+    const s = ganttUnifiedMode ? getUnifiedFilteredItems().filtered : applyPersonalFilters(applyPersonalUnifiedFilter(sorted()));
+    if (s.length && wrap) {
+      const nameW = ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 265);
+      const minS = s.reduce((m, a) => (a.start && a.start < m ? a.start : m), s[0].start);
+      const maxS = s.reduce((m, a) => ((a.end || a.start) > m ? (a.end || a.start) : m), s[0].end || s[0].start);
+      const nDays = Math.max(7, Math.round((parseD(maxS) - parseD(minS)) / DAY) + 8);
+      const avail = Math.max(240, wrap.clientWidth - nameW - 24);
+      ganttZoom = Math.max(4, Math.min(94, Math.floor((avail / nDays) * 10) / 10));
+    }
+    updateGanttZoomReadout();
+    renderGantt(sorted());
+    if (wrap) wrap.scrollTo({ left: 0, behavior: "smooth" });
+  } else {
+    if (Number.isFinite(ganttZoomBeforeFit)) {
+      ganttZoom = ganttZoomBeforeFit;
+      ganttZoomBeforeFit = null;
+    }
+    updateGanttZoomReadout();
+    renderGantt(sorted());
+  }
+}
 
 document.addEventListener("click", ev => {
   if (!ev.target.closest(".gantt-pop-host")) closeAllGanttPopovers();
@@ -10012,6 +10393,13 @@ if ($("#btnGanttZoomReset")) {
   };
 }
 if ($("#btnGanttFit")) $("#btnGanttFit").onclick = fitGanttZoom;
+if ($("#btnGanttFitEvents")) $("#btnGanttFitEvents").onclick = togglePersonalGanttFitEvents;
+attachGanttPinchZoom($("#ganttWrap"), {
+  getZoom: () => ganttZoom,
+  setZoom: z => { ganttZoom = z; updateGanttZoomReadout(); },
+  getNameW: () => (ganttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : (ganttZoom <= 4 ? 205 : 265))),
+  onRender: () => renderGantt(sorted())
+});
 if ($("#btnGanttFullscreen")) {
   $("#btnGanttFullscreen").onclick = () => toggleGanttFullscreen($("#view-gantt .gantt-card"), $("#btnGanttFullscreen"), () => renderGantt(sorted()));
 }
@@ -12237,7 +12625,15 @@ $("#btnProfileSendWa").onclick = async () => {
 };
 
 /* ---------- BUSCA, CHECKLIST MODAL, MENU E BACKUP ---------- */
-$("#search").oninput = () => renderTable(sorted(), totals());
+$("#search").oninput = () => {
+  if (typeof personalUnifiedFilter !== "undefined") {
+    personalUnifiedFilter.search = ($("#search").value || "").trim().toLowerCase();
+    if ($("#pf-search")) $("#pf-search").value = $("#search").value || "";
+    if (typeof updatePersonalUnifiedFilterBadge === "function") updatePersonalUnifiedFilterBadge();
+  }
+  const s = typeof applyPersonalUnifiedFilter === "function" ? applyPersonalUnifiedFilter(sorted()) : sorted();
+  renderTable(s, totals(undefined, s));
+};
 if ($("#filterChecklist")) $("#filterChecklist").onchange = e => { checklistFilter = e.target.value; renderChecklist(); };
 $("#btnAddScenario").onclick = () => { state.scenarios.push({ id: uid(), name: "Novo cenário", kmL: state.vehicle.hevKmL }); save("➕ Cenário adicionado"); };
 $("#btnAddCheck").onclick = () => openCheckModal();
@@ -12768,6 +13164,11 @@ function bindPersonalCardProFeatures() {
     $("#btnHeadDoneToggle").onclick = () => {
       modalCompleted = !modalCompleted;
       updatePersonalModalDoneBtn();
+      const doneColId = String(state?.params?.personalDoneColumnId || "");
+      const cols = ensurePersonalBoardColumns();
+      if (modalCompleted && doneColId && cols.some(c => c.id === doneColId) && $("#f-personalCol")) {
+        $("#f-personalCol").value = doneColId;
+      }
     };
   }
   if ($("#btnHeadWhatsApp")) {
@@ -13021,11 +13422,93 @@ function ensurePersonalBoardColumns() {
   return state.personalColumns;
 }
 
+function isPersonalCardDone(a, colsOpt = null, paramsOpt = null) {
+  if (!a || typeof a !== "object") return false;
+  if (a.completed === true) return true;
+  const p = paramsOpt || state?.params || {};
+  const doneColId = String(p.personalDoneColumnId || "");
+  if (doneColId && a.personalColId === doneColId) return true;
+  return false;
+}
+
+function togglePersonalCardDone(cardId) {
+  const ctx = findActivityContext(cardId);
+  if (!ctx?.activity) return;
+  if (ctx.trip?.role === "viewer") return toast("👁️ Planejamento compartilhado somente para visualização.");
+  const a = ctx.activity;
+  const tgtData = ctx.data || state;
+  const cols = (Array.isArray(tgtData.personalColumns) && tgtData.personalColumns.length)
+    ? tgtData.personalColumns
+    : ensurePersonalBoardColumns();
+  const params = tgtData.params || state.params || {};
+  const doneColId = String(params.personalDoneColumnId || "");
+  const validDoneCol = doneColId ? cols.find(c => c.id === doneColId) : null;
+  const currentlyDone = isPersonalCardDone(a, cols, params);
+
+  if (!currentlyDone) {
+    if (!validDoneCol || a.personalColId !== validDoneCol.id) {
+      a.prevPersonalColId = a.personalColId || cols[0]?.id || "";
+    }
+    a.completed = true;
+    if (validDoneCol) {
+      a.personalColId = validDoneCol.id;
+      saveTripRecord(ctx.trip, `✅ "${a.name || "Cartão"}" concluído e movido para "${validDoneCol.title}"!`);
+    } else {
+      saveTripRecord(ctx.trip, `✅ "${a.name || "Cartão"}" marcado como concluído!`);
+    }
+    return;
+  }
+
+  a.completed = false;
+  if (validDoneCol && a.personalColId === validDoneCol.id) {
+    if (a.prevPersonalColId && cols.some(c => c.id === a.prevPersonalColId && c.id !== validDoneCol.id)) {
+      a.personalColId = a.prevPersonalColId;
+    } else {
+      const fb = cols.find(c => c.id !== validDoneCol.id);
+      if (fb) a.personalColId = fb.id;
+    }
+  }
+  saveTripRecord(ctx.trip, `↩️ "${a.name || "Cartão"}" reaberto.`);
+}
+
+function renderPersonalBoardPrefs() {
+  const sel = $("#p-doneColumnId");
+  if (sel) {
+    const cols = ensurePersonalBoardColumns();
+    const curVal = String(state?.params?.personalDoneColumnId || "");
+    sel.innerHTML = `<option value="">Manter na lista atual</option>`
+      + cols.map(c => `<option value="${esc(c.id)}"${c.id === curVal ? " selected" : ""}>${esc(c.title)}</option>`).join("");
+    sel.value = cols.some(c => c.id === curVal) ? curVal : "";
+    sel.onchange = () => {
+      if (!state.params) state.params = {};
+      state.params.personalDoneColumnId = sel.value || "";
+      const chosen = cols.find(c => c.id === sel.value);
+      save(chosen
+        ? `🗂️ Tarefas concluídas serão movidas automaticamente para "${chosen.title}".`
+        : "🗂️ Tarefas concluídas permanecerão na lista atual.");
+    };
+  }
+  const addBtn = $("#btnParamAddPersonalCol");
+  if (addBtn && !addBtn.dataset.boundPcol) {
+    addBtn.dataset.boundPcol = "1";
+    addBtn.onclick = () => openPersonalColModal(null);
+  }
+}
+
 function bindPersonalBoardEvents() {
   bindPersonalCardProFeatures();
   if (pboardEventsBound) return;
   pboardEventsBound = true;
-  if ($("#pboardSearch")) $("#pboardSearch").oninput = () => renderPersonalBoard();
+  if ($("#pboardSearch")) {
+    $("#pboardSearch").oninput = () => {
+      if (typeof personalUnifiedFilter !== "undefined") {
+        personalUnifiedFilter.search = ($("#pboardSearch").value || "").trim().toLowerCase();
+        if ($("#pf-search")) $("#pf-search").value = $("#pboardSearch").value || "";
+        if (typeof updatePersonalUnifiedFilterBadge === "function") updatePersonalUnifiedFilterBadge();
+      }
+      renderPersonalBoard();
+    };
+  }
   if ($("#btnPboardAddCard")) $("#btnPboardAddCard").onclick = () => openModal();
   if ($("#btnPboardAddCol")) $("#btnPboardAddCol").onclick = () => openPersonalColModal(null);
 }
@@ -13038,12 +13521,14 @@ function renderPersonalBoard() {
   const q = ($("#pboardSearch")?.value || "").trim().toLowerCase();
   const acts = applyPersonalUnifiedFilter(sorted()).filter(a => {
     if (!q) return true;
-    const hay = [a.name || "", a.notes || "", a.from || "", a.to || "", a.location || "", a.type || ""].join(" ").toLowerCase();
+    const hay = [a.name || "", a.notes || "", a.from || "", a.to || "", a.location || "", a.type || "", ...(Array.isArray(a.tags) ? a.tags : [])].join(" ").toLowerCase();
     return hay.includes(q);
   });
 
   const colIds = new Set(cols.map(c => c.id));
   const defaultColId = cols[0].id;
+  const today = fmtISO(new Date());
+  const soon = fmtISO(new Date(Date.now() + 3 * DAY));
 
   host.innerHTML = cols.map(col => {
     const items = acts.filter(a => {
@@ -13053,80 +13538,184 @@ function renderPersonalBoard() {
     const cardsHtml = items.length
       ? items.map(a => {
           const info = getTypeInfoAny(a);
-          const dt = a.start ? (a.end && a.end !== a.start ? `${fmtShortBR(a.start)} → ${fmtShortBR(a.end)}` : fmtShortBR(a.start)) : "";
+          const done = isPersonalCardDone(a, cols, state?.params);
+          const due = a.end || a.start;
+          let dueCls = "";
+          if (done) dueCls = "due-ok";
+          else if (!a.start) dueCls = "";
+          else if (due < today) dueCls = "due-late";
+          else if (due <= soon) dueCls = "due-soon";
+
+          const dt = a.start ? (a.end && a.end !== a.start ? `${fmtShortBR(a.start)}–${fmtShortBR(a.end)}` : fmtShortBR(a.start)) : "";
           const route = (a.from || a.to) ? `${a.from || "?"} ➔ ${a.to || "?"}` : (a.location || "");
           const subs = Array.isArray(a.subtasks) ? a.subtasks : [];
           const subsDone = subs.filter(s => s.done).length;
-          const attCnt = Array.isArray(a.attachments) ? a.attachments.length : 0;
+          const pct = done ? 100 : (subs.length ? Math.round((subsDone / subs.length) * 100) : 0);
+          const attCnt = (Array.isArray(a.attachments) ? a.attachments.length : 0) + (Array.isArray(a.travelDetails?.tickets) ? a.travelDetails.tickets.length : 0);
           const minCnt = Array.isArray(a.minutes) ? a.minutes.length : 0;
-          const tags = Array.isArray(a.tags) ? a.tags.slice(0, 2) : [];
-          const metaBits = [
-            subs.length ? `☑ ${subsDone}/${subs.length}` : "",
-            attCnt ? `📎 ${attCnt}` : "",
-            minCnt ? `📝 ${minCnt}` : ""
-          ].filter(Boolean);
-          return `<article class="pro-card${a.completed ? " is-done" : ""}" draggable="true" data-pb-card="${esc(a.id)}">
+          const tags = Array.isArray(a.tags) ? a.tags.slice(0, 3) : [];
+          const costInfo = calc(a);
+          const totalCost = (costInfo?.total || 0) + (costInfo?.extra || 0);
+          const curColId = (a.personalColId && colIds.has(a.personalColId)) ? a.personalColId : defaultColId;
+          const moveOpts = cols.map(mc => `<option value="${esc(mc.id)}"${mc.id === curColId ? " selected" : ""}>${esc(mc.title)}</option>`).join("");
+          const typeColStyle = info.isCustom && info.color ? ` style="--t-color:${esc(info.color)}"` : "";
+
+          return `<article class="pro-card pboard-card${done ? " is-done" : ""}" draggable="true" data-pb-card="${esc(a.id)}"${typeColStyle}>
+            ${tags.length ? `<div class="pro-card-labels">${tags.map(tg => `<span class="pro-lbl-pill pboard-tag-pill">#${esc(tg)}</span>`).join("")}</div>` : ""}
             <div class="pro-card-top">
-              <span class="pro-type-pill ${info.cls || ""}">${info.icon || "📌"} ${esc(a.type || "Evento")}</span>
-              ${dt ? `<span class="pro-card-date">${esc(dt)}</span>` : ""}
+              <div class="pro-card-title" style="display:flex;align-items:flex-start;gap:7px">
+                <button type="button" class="pro-done-btn${done ? " is-done" : ""}" data-pb-toggle-done="${esc(a.id)}" title="${done ? "Reabrir tarefa" : "Marcar como concluída"}" aria-label="${done ? "Reabrir tarefa" : "Marcar como concluída"}" aria-pressed="${done ? "true" : "false"}">✓</button>
+                <span>${info.icon || "📌"} ${esc(a.name || "Sem título")}</span>
+              </div>
+              <span class="chip ${info.cls || ""}"${typeColStyle}>${esc(info.short || a.type || "Evento")}</span>
             </div>
-            <div class="pro-card-title">${a.completed ? "✅ " : ""}${esc(a.name || "Sem título")}</div>
-            ${route ? `<div class="pro-card-sub"><span>📍 ${esc(route)}</span></div>` : ""}
-            ${(tags.length || metaBits.length) ? `<div class="pro-card-foot" style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:0.72rem;color:var(--muted)">
-              <span>${tags.map(tg => `<span class="tag-mini">#${esc(tg)}</span>`).join(" ")}</span>
-              <span>${metaBits.join(" · ")}</span>
+            ${(route || a.startTime) ? `<div class="pro-card-sub">
+              ${route ? `<span>📍 ${esc(route)}</span>` : ""}
+              ${a.startTime ? `<span>🕒 ${esc(a.startTime)}</span>` : ""}
             </div>` : ""}
+            <div class="pro-card-meta">
+              ${dt ? `<span class="pro-due-chip ${dueCls}">📅 ${esc(dt)}</span>` : `<span class="pro-due-chip">⏳ Sem data</span>`}
+              ${totalCost > 0 ? `<span class="pro-fin-chip fin-out">${esc(money(totalCost))}</span>` : ""}
+              ${subs.length ? `<span class="pro-chk-chip">☑️ ${subsDone}/${subs.length}</span>` : ""}
+              ${attCnt ? `<span class="pro-chk-chip">📎 ${attCnt}</span>` : ""}
+              ${minCnt ? `<span class="pro-chk-chip">📝 ${minCnt}</span>` : ""}
+              ${getTripBadgeHTML(a)}
+            </div>
+            ${pct > 0 ? `<div class="pro-card-prog" title="Progresso: ${pct}%"><i style="width:${pct}%"></i></div>` : ""}
+            <div class="pro-card-move-row">
+              <span class="muted" style="font-size:0.7rem">${done ? "Concluído" : (subs.length ? `${pct}%` : "")}</span>
+              <select class="pro-card-move-select" data-pb-move-card="${esc(a.id)}" title="Mover para outra lista" aria-label="Mover cartão para outra lista">${moveOpts}</select>
+            </div>
           </article>`;
         }).join("")
-      : `<div class="muted small" style="padding:12px 6px;text-align:center">Nenhum cartão nesta lista.</div>`;
+      : `<div class="muted small" style="text-align:center;padding:18px 8px;border:1px dashed var(--border);border-radius:10px">Arraste cartões para cá</div>`;
 
-    return `<section class="pro-col" data-pb-col="${esc(col.id)}">
-      <div class="pro-col-head" style="border-top:3px solid ${esc(col.color || "#2563eb")}">
-        <div style="display:flex;align-items:center;gap:6px;min-width:0">
-          <strong style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(col.title)}</strong>
-          <span class="pill" style="font-size:0.7rem">${items.length}</span>
+    return `<section class="pro-col" data-pb-col="${esc(col.id)}" style="--col-c:${esc(col.color || "#2563eb")}">
+      <header class="pro-col-head">
+        <div class="pro-col-title-wrap">
+          <span class="pro-col-title">${esc(col.title)}</span>
+          <span class="pro-col-count">${items.length}</span>
         </div>
-        <div class="inline-actions" style="gap:2px">
+        <div class="inline-actions">
           <button type="button" class="icon-btn" data-pb-editcol="${esc(col.id)}" title="Editar lista" aria-label="Editar lista ${esc(col.title)}">✏️</button>
         </div>
-      </div>
-      <div class="pro-col-cards" data-pb-drop="${esc(col.id)}">${cardsHtml}</div>
-      <div class="pro-col-foot" style="padding:6px 8px;border-top:1px solid var(--border);flex:0 0 auto">
-        <button type="button" class="btn ghost small" style="width:100%" data-pb-add-in-col="${esc(col.id)}">➕ Adicionar cartão</button>
-      </div>
+      </header>
+      <div class="pro-col-body" data-pb-drop="${esc(col.id)}">${cardsHtml}</div>
+      <footer class="pro-col-foot">
+        <button type="button" class="btn ghost small pro-quick-add-btn" data-pb-quick-open="${esc(col.id)}">➕ Adicionar um cartão</button>
+        <form class="pro-quick-add-form" data-pb-quick-form="${esc(col.id)}" hidden>
+          <input type="text" placeholder="Título do cartão..." required>
+          <div class="inline-actions">
+            <button type="submit" class="btn primary small">Adicionar</button>
+            <button type="button" class="btn ghost small" data-pb-quick-cancel="${esc(col.id)}">✕</button>
+          </div>
+        </form>
+      </footer>
     </section>`;
   }).join("");
 
+  host.querySelectorAll("[data-pb-toggle-done]").forEach(btn => {
+    btn.onclick = e => {
+      e.stopPropagation();
+      togglePersonalCardDone(btn.dataset.pbToggleDone);
+    };
+  });
+  host.querySelectorAll("[data-pb-move-card]").forEach(sel => {
+    sel.onclick = e => e.stopPropagation();
+    sel.onchange = e => {
+      e.stopPropagation();
+      const id = sel.dataset.pbMoveCard;
+      const targetCol = sel.value;
+      const ctx = findActivityContext(id);
+      if (!ctx?.activity || !targetCol) return;
+      if (ctx.trip?.role === "viewer") return toast("👁️ Somente visualização.");
+      ctx.activity.personalColId = targetCol;
+      const doneColId = String(ctx.data?.params?.personalDoneColumnId || state?.params?.personalDoneColumnId || "");
+      if (doneColId && targetCol === doneColId) ctx.activity.completed = true;
+      saveTripRecord(ctx.trip, "🗂️ Cartão movido no quadro!");
+    };
+  });
   host.querySelectorAll("[data-pb-card]").forEach(el => {
-    el.onclick = () => openModal(el.dataset.pbCard);
+    el.onclick = e => {
+      if (e.target.closest("select, button, input")) return;
+      openModal(el.dataset.pbCard);
+    };
     el.ondragstart = e => {
       e.dataTransfer.setData("text/plain", el.dataset.pbCard);
-      el.style.opacity = "0.55";
+      el.classList.add("dragging");
     };
-    el.ondragend = () => { el.style.opacity = ""; };
+    el.ondragend = () => {
+      el.classList.remove("dragging");
+      host.querySelectorAll(".pro-col").forEach(x => x.classList.remove("drag-over"));
+    };
   });
   host.querySelectorAll("[data-pb-drop]").forEach(zone => {
-    zone.ondragover = e => { e.preventDefault(); zone.classList.add("drag-over"); };
-    zone.ondragleave = () => zone.classList.remove("drag-over");
+    const colEl = zone.closest(".pro-col");
+    zone.ondragover = e => { e.preventDefault(); colEl?.classList.add("drag-over"); };
+    zone.ondragleave = () => colEl?.classList.remove("drag-over");
     zone.ondrop = e => {
       e.preventDefault();
-      zone.classList.remove("drag-over");
+      colEl?.classList.remove("drag-over");
       const id = e.dataTransfer.getData("text/plain");
       const targetCol = zone.dataset.pbDrop;
-      const act = (state.activities || []).find(x => x.id === id);
-      if (act && targetCol) {
-        act.personalColId = targetCol;
-        save("🗂️ Cartão movido no quadro!");
+      const ctx = findActivityContext(id);
+      if (ctx?.activity && targetCol) {
+        if (ctx.trip?.role === "viewer") return toast("👁️ Somente visualização.");
+        ctx.activity.personalColId = targetCol;
+        const doneColId = String(ctx.data?.params?.personalDoneColumnId || state?.params?.personalDoneColumnId || "");
+        if (doneColId && targetCol === doneColId) ctx.activity.completed = true;
+        saveTripRecord(ctx.trip, "🗂️ Cartão movido no quadro!");
       }
     };
   });
   host.querySelectorAll("[data-pb-editcol]").forEach(btn => {
     btn.onclick = () => openPersonalColModal(btn.dataset.pbEditcol);
   });
-  host.querySelectorAll("[data-pb-add-in-col]").forEach(btn => {
+  host.querySelectorAll("[data-pb-quick-open]").forEach(btn => {
     btn.onclick = () => {
-      openModal();
-      if ($("#f-personalCol")) $("#f-personalCol").value = btn.dataset.pbAddInCol;
+      const colId = btn.dataset.pbQuickOpen;
+      const form = host.querySelector(`[data-pb-quick-form="${colId}"]`);
+      if (!form) return;
+      btn.hidden = true;
+      form.hidden = false;
+      form.querySelector("input")?.focus();
+    };
+  });
+  host.querySelectorAll("[data-pb-quick-cancel]").forEach(btn => {
+    btn.onclick = () => {
+      const colId = btn.dataset.pbQuickCancel;
+      const form = host.querySelector(`[data-pb-quick-form="${colId}"]`);
+      const openBtn = host.querySelector(`[data-pb-quick-open="${colId}"]`);
+      if (form) { form.reset(); form.hidden = true; }
+      if (openBtn) openBtn.hidden = false;
+    };
+  });
+  host.querySelectorAll("[data-pb-quick-form]").forEach(form => {
+    form.onsubmit = e => {
+      e.preventDefault();
+      const colId = form.dataset.pbQuickForm;
+      const inp = form.querySelector("input");
+      const name = (inp?.value || "").trim();
+      if (!name) return;
+      if (activeTrip?.role === "viewer") return toast("👁️ Somente visualização.");
+      const baseDate = sorted()[0]?.start || fmtISO(new Date());
+      const doneColId = String(state?.params?.personalDoneColumnId || "");
+      state.activities.push({
+        id: uid(),
+        type: "Evento",
+        name,
+        start: baseDate,
+        end: baseDate,
+        personalColId: colId,
+        completed: Boolean(doneColId && colId === doneColId),
+        charges: 0,
+        extraCost: 0,
+        includeRouteCost: true,
+        tickets: [],
+        attachments: [],
+        subtasks: []
+      });
+      save(`➕ "${name}" adicionado ao quadro!`);
     };
   });
 }

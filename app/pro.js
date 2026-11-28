@@ -89,6 +89,8 @@
   let proGanttMode = "gantt";
   let proGanttGroup = "none";
   let proGanttZoom = window.innerWidth < 720 ? 42 : 48;
+  let proGanttFitEvents = false;
+  let proGanttZoomBeforeFit = null;
   let proGanttSlimRail = window.innerWidth < 720;
   const collapsedGanttGroups = new Set();
 
@@ -1843,6 +1845,39 @@
     wrap.scrollLeft = 0;
   }
 
+  function toggleProGanttFitEvents() {
+    proGanttFitEvents = !proGanttFitEvents;
+    if (proGanttMode === "annual") {
+      window.MyPlanProAnnual?.setFitEvents?.(proGanttFitEvents, "pro");
+      renderProGantt();
+      return;
+    }
+    const wrap = $("#proGanttWrap");
+    if (proGanttFitEvents) {
+      proGanttZoomBeforeFit = proGanttZoom;
+      const unified = Boolean(core.getUnifiedState?.().unified);
+      const s = unified ? getProUnifiedFilteredItems().filtered : getFilteredProGanttRows();
+      if (s.length && wrap) {
+        const nameW = proGanttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : 265);
+        const minS = s.reduce((m, a) => (a.start && a.start < m ? a.start : m), s[0].start);
+        const maxS = s.reduce((m, a) => ((a.end || a.start) > m ? (a.end || a.start) : m), s[0].end || s[0].start);
+        const nDays = Math.max(7, Math.round((core.parseD(maxS) - core.parseD(minS)) / core.DAY) + 8);
+        const avail = Math.max(240, wrap.clientWidth - nameW - 24);
+        proGanttZoom = Math.max(4, Math.min(94, Math.floor((avail / nDays) * 10) / 10));
+      }
+      updateProZoomReadout();
+      renderProGantt();
+      if (wrap) wrap.scrollTo({ left: 0, behavior: "smooth" });
+    } else {
+      if (Number.isFinite(proGanttZoomBeforeFit)) {
+        proGanttZoom = proGanttZoomBeforeFit;
+        proGanttZoomBeforeFit = null;
+      }
+      updateProZoomReadout();
+      renderProGantt();
+    }
+  }
+
   function renderProGantt(allSortedOpt) {
     const g = $("#proGantt");
     const wrap = $("#proGanttWrap");
@@ -1865,6 +1900,11 @@
     if (vLbl) vLbl.textContent = proGanttMode === "annual" ? "Calendário Anual" : (proGanttMode === "timeline" ? "Timeline" : "Gantt");
     if (vDot) vDot.hidden = !unified;
     if ($("#proGanttZoomGroup")) $("#proGanttZoomGroup").hidden = proGanttMode !== "gantt";
+    if ($("#btnProGanttFitEvents")) {
+      $("#btnProGanttFitEvents").hidden = proGanttMode === "timeline";
+      $("#btnProGanttFitEvents").setAttribute("aria-pressed", String(Boolean(proGanttFitEvents)));
+      $("#btnProGanttFitEvents").classList.toggle("is-active", Boolean(proGanttFitEvents));
+    }
     if ($("#btnProPrintGantt")) $("#btnProPrintGantt").hidden = proGanttMode === "annual";
 
     const roleBadge = $("#proTripRoleBadge");
@@ -1899,17 +1939,24 @@
     if (proGanttMode === "annual") {
       if (annualWrap && window.MyPlanProAnnual?.render) {
         window.MyPlanProAnnual.render({
+          scope: "pro",
           container: annualWrap,
           cards: s,
           state: core.getState(),
           projectTitle: core.getActiveTrip()?.name || core.getState()?.title || "My Plan",
           dateFrom: proDateFrom,
           dateTo: proDateTo,
+          fitEvents: proGanttFitEvents,
           allTypes: getAllProTypes(),
           getTypeInfo: t => getProTypeInfo(t),
           fmtBR: core.fmtBR,
           esc: core.esc,
           onOpenCard: cid => openProCardModal(cid),
+          onCreateAtDate: (isoDate, laneTypeId) => openProCardModal({ start: isoDate, end: isoDate, type: laneTypeId || undefined }),
+          onToggleFitEvents: nextVal => {
+            proGanttFitEvents = Boolean(nextVal);
+            renderProGantt();
+          },
           onSavePrefs: msg => core.save(msg),
           toast: core.toast
         });
@@ -1940,7 +1987,7 @@
       return;
     }
 
-    const scale = core.buildGanttScale(s, proGanttZoom, window.innerWidth < 720);
+    const scale = core.buildGanttScale(s, proGanttZoom, window.innerWidth < 720, { fitToEvents: proGanttFitEvents });
     const DW = scale.colW;
     const n = scale.nCols;
     const nameW = proGanttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : (scale.isYearView && DW <= 18 ? 205 : 265));
@@ -2116,11 +2163,13 @@
             ${buildProSummaryHTML(a, meta ? core.renderUnifiedCardSubBadges(a) : null)}
           </div>`;
         }
-        h += `<div class="g-cell ${altCls} ${cm.we ? "weekend" : ""} ${cm.wOdd ? "w-odd" : "w-even"} ${cm.mOdd ? "m-odd" : "m-even"} ${cm.wStart ? "w-start" : ""} ${cm.mStart ? "m-start" : ""} ${cm.isToday ? "today" : ""}" style="grid-column:${i + 2};grid-row:${row}">${inner}</div>`;
+        const cellIso = scale.isWeekOnly ? (scale.weekSpans[i]?.mondayISO || "") : (cm.iso || "");
+        h += `<div class="g-cell ${altCls} ${cm.we ? "weekend" : ""} ${cm.wOdd ? "w-odd" : "w-even"} ${cm.mOdd ? "m-odd" : "m-even"} ${cm.wStart ? "w-start" : ""} ${cm.mStart ? "m-start" : ""} ${cm.isToday ? "today" : ""}${!inner && cellIso ? " is-creatable" : ""}" style="grid-column:${i + 2};grid-row:${row}" data-date="${core.esc(cellIso)}"${!inner && cellIso ? ` title="Clique para criar cartão em ${core.fmtBR(cellIso)}"` : ""}>${inner}</div>`;
       }
     });
 
     g.innerHTML = h;
+    core.bindGanttEmptyCellClick?.(g, wrap, iso => openProCardModal({ start: iso, end: iso }));
 
     const slimBtn = $("#btnProGanttSlim");
     if (slimBtn) {
@@ -10261,6 +10310,13 @@
     if ($("#btnProGanttZoomIn")) $("#btnProGanttZoomIn").onclick = () => stepProGanttZoom(1);
     if ($("#btnProGanttZoomReset")) $("#btnProGanttZoomReset").onclick = () => { proGanttZoom = 50; updateProZoomReadout(); renderProGantt(); };
     if ($("#btnProGanttFit")) $("#btnProGanttFit").onclick = fitProGanttZoom;
+    if ($("#btnProGanttFitEvents")) $("#btnProGanttFitEvents").onclick = toggleProGanttFitEvents;
+    core.attachGanttPinchZoom?.($("#proGanttWrap"), {
+      getZoom: () => proGanttZoom,
+      setZoom: z => { proGanttZoom = z; updateProZoomReadout(); },
+      getNameW: () => (proGanttSlimRail ? 54 : (window.innerWidth < 720 ? 156 : (proGanttZoom <= 4 ? 205 : 265))),
+      onRender: () => renderProGantt()
+    });
     if ($("#btnProGanttFullscreen")) {
       $("#btnProGanttFullscreen").onclick = () => core.toggleGanttFullscreen($("#proGanttCard"), $("#btnProGanttFullscreen"), () => renderProGantt());
     }

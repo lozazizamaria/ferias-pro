@@ -1214,6 +1214,7 @@
     tripTitle = "",
     activities = [],
     getActivityCostCents = null,
+    externalFilter = null,
     guestMode = false,
     onGuestAction = null,
     fmtBR,
@@ -1225,6 +1226,33 @@
     const ledger = computeLedgerAndSettlements(sw);
     const pById = new Map(sw.participants.map(p => [p.id, p]));
     const fmtDate = iso => (iso && fmtBR ? fmtBR(iso) : (iso || ""));
+
+    // Aplicar filtros padronizados do Modo Pessoal sobre a lista de despesas (mantendo saldos globais íntegros)
+    const ef = externalFilter && typeof externalFilter === "object" ? externalFilter : null;
+    const filteredExpenses = ef ? sw.expenses.filter(exp => {
+      const dt = String(exp.date || "");
+      if (ef.search) {
+        const payerTxts = (exp.payers || []).map(py => pById.get(py.participantId)?.name || "").join(" ");
+        const hay = `${exp.desc || ""} ${exp.cat || ""} ${exp.notes || ""} ${payerTxts}`.toLowerCase();
+        if (!hay.includes(ef.search)) return false;
+      }
+      if (ef.year && dt && !dt.startsWith(ef.year)) return false;
+      if (ef.month && dt && dt.slice(5, 7) !== ef.month) return false;
+      if (ef.dateFrom && dt && dt < ef.dateFrom) return false;
+      if (ef.dateTo && dt && dt > ef.dateTo) return false;
+      if (ef.swCategory && (exp.cat || "Outros") !== ef.swCategory) return false;
+      if (ef.swPayer && !(exp.payers || []).some(py => py.participantId === ef.swPayer || (pById.get(py.participantId)?.name || "").toLowerCase() === ef.swPayer.toLowerCase())) return false;
+      if (ef.swSplitMode && (exp.splitMode || "equal") !== ef.swSplitMode) return false;
+      if (ef.person) {
+        const pNames = [
+          ...(exp.payers || []).map(py => pById.get(py.participantId)?.name || ""),
+          ...(exp.shares || []).filter(sh => sh.included !== false).map(sh => pById.get(sh.participantId)?.name || "")
+        ].join(" ").toLowerCase();
+        if (!pNames.includes(ef.person)) return false;
+      }
+      return true;
+    }) : sw.expenses;
+    const isExpFiltered = filteredExpenses.length !== sw.expenses.length;
 
     const participantsHtml = sw.participants.length
       ? ledger.balances.map(b => {
@@ -1281,8 +1309,8 @@
       : `<div class="sw-all-settled">🎉 ${sw.expenses.length ? "Todas as contas estão quitadas! Nenhuma transferência pendente." : "Lance despesas abaixo ou importe dos cartões para gerar a proposta automática de acertos."}</div>`;
 
     const modeLabels = { equal: "Igualmente", exact: "Valores exatos", percent: "Porcentagem", shares: "Cotas" };
-    const expensesHtml = sw.expenses.length
-      ? sw.expenses.map(exp => {
+    const expensesHtml = filteredExpenses.length
+      ? filteredExpenses.map(exp => {
           const payerNames = (exp.payers || []).map(py => {
             const p = pById.get(py.participantId);
             return p ? (exp.payers.length > 1 ? `${p.name} (${formatCents(py.amountCents)})` : p.name) : "—";
@@ -1304,7 +1332,7 @@
             </div>
           </div>`;
         }).join("")
-      : `<div class="muted small" style="padding:12px 2px">Nenhuma despesa lançada neste grupo ainda.</div>`;
+      : `<div class="muted small" style="padding:12px 2px">${sw.expenses.length ? "Nenhuma despesa corresponde aos filtros ativos." : "Nenhuma despesa lançada neste grupo ainda."}</div>`;
 
     const historyHtml = sw.settlements.length
       ? `<div class="card sw-section-card">
@@ -1352,7 +1380,7 @@
 
       <div class="card sw-section-card">
         <div class="card-head">
-          <h2>🧾 Despesas do Grupo <span class="pill">${sw.expenses.length}</span></h2>
+          <h2>🧾 Despesas do Grupo <span class="pill">${isExpFiltered ? `${filteredExpenses.length}/${sw.expenses.length}` : sw.expenses.length}</span></h2>
           <div class="inline-actions">
             ${!guestMode ? `<button type="button" class="btn ghost small" id="btnSwImportCards2" ${sw.participants.length ? "" : "disabled"}>📅 Selecionar dos Cartões</button>` : ""}
             <button type="button" class="btn primary small" id="btnSwAddExpense2" ${sw.participants.length ? "" : "disabled"}>➕ Nova Despesa</button>
@@ -1438,6 +1466,7 @@
   }
 
   window.MyPlanSplitwise = {
+    CATEGORIES,
     parseMoneyToCents,
     formatCents,
     computeExpenseSplits,

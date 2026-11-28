@@ -220,6 +220,7 @@
 
   function applyFilters(entries, f) {
     const q = String(f.search || "").trim().toLowerCase();
+    const personQ = String(f.person || "").trim().toLowerCase();
     return entries.filter(e => {
       if (q) {
         const hay = `${e.text} ${e.cardName} ${e.cardTypeLabel} ${e.listName} ${e.notes} ${e.assignees.join(" ")} ${e.tags.join(" ")}`.toLowerCase();
@@ -228,10 +229,17 @@
       if (f.status === "pending" && e.done) return false;
       if (f.status === "done" && !e.done) return false;
       if (f.prio && e.prio !== f.prio) return false;
+      if (f.kind && e.kind !== f.kind) return false;
       if (f.type && e.cardTypeId !== f.type) return false;
       if (f.list && e.listId !== f.list) return false;
       if (f.assignee && !e.assignees.some(a => a.toLowerCase() === f.assignee.toLowerCase())) return false;
+      if (personQ) {
+        const pHay = `${e.assignees.join(" ")} ${e.text} ${e.cardName} ${e.notes}`.toLowerCase();
+        if (!pHay.includes(personQ)) return false;
+      }
       if (f.tag && !e.tags.some(t => t.toLowerCase() === f.tag.toLowerCase())) return false;
+      if (f.year && (!e.date || !String(e.date).startsWith(f.year))) return false;
+      if (f.month && (!e.date || String(e.date).slice(5, 7) !== f.month)) return false;
       if (f.dateFrom && (!e.date || e.date < f.dateFrom)) return false;
       if (f.dateTo && (!e.date || e.date > f.dateTo)) return false;
       return true;
@@ -649,6 +657,14 @@
   window.MyPlanChecklists = {
     bindDragReorder,
     renderGlobalChecklist,
-    getScopeState: scope => stateByScope[normScope(scope)]
+    getScopeState: scope => stateByScope[normScope(scope)],
+    setExternalFilters: (scope, partial = {}) => {
+      const sc = normScope(scope);
+      stateByScope[sc].filters = {
+        search: "", status: "", prio: "", kind: "", type: "", list: "",
+        assignee: "", person: "", tag: "", year: "", month: "", dateFrom: "", dateTo: "",
+        ...(partial || {})
+      };
+    }
   };
 })();

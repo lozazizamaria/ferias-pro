@@ -9,11 +9,64 @@
 
   const DEFAULT_YEAR = new Date().getFullYear();
   const selectedYearByScope = { pro: DEFAULT_YEAR, personal: DEFAULT_YEAR };
+  const fitEventsByScope = { pro: false, personal: false };
+  const zoomScaleByScope = { pro: 1, personal: 1 };
   const lastModelByScope = { pro: null, personal: null };
   let measureCtx = null;
 
   function normScope(scope) {
     return scope === "personal" ? "personal" : "pro";
+  }
+
+  function getFitEvents(scope) {
+    return Boolean(fitEventsByScope[normScope(scope)]);
+  }
+
+  function setFitEvents(val, scope) {
+    fitEventsByScope[normScope(scope)] = Boolean(val);
+  }
+
+  function computeFitEventsRange(cards, hiddenTypesSet, hiddenCardsSet, getTypeInfo) {
+    let minDt = null;
+    let maxDt = null;
+    (cards || []).forEach(c => {
+      if (!c || (!c.start && !c.end)) return;
+      if (hiddenCardsSet?.has(c.id)) return;
+      const tId = getTypeInfo ? getTypeInfo(c.type)?.id : c.type;
+      if (tId && hiddenTypesSet?.has(tId)) return;
+      const sDt = parseIsoDate(c.start || c.end);
+      if (!sDt) return;
+      let eDt = parseIsoDate(c.end || c.start) || sDt;
+      if (eDt < sDt) eDt = sDt;
+      if (!minDt || sDt < minDt) minDt = sDt;
+      if (!maxDt || eDt > maxDt) maxDt = eDt;
+    });
+    if (!minDt || !maxDt) return null;
+    const spanDays = Math.max(1, diffDays(minDt, maxDt) + 1);
+    const padDays = spanDays <= 30 ? 3 : (spanDays <= 120 ? 5 : 7);
+    const padStart = new Date(minDt.getFullYear(), minDt.getMonth(), minDt.getDate() - padDays);
+    const padEnd = new Date(maxDt.getFullYear(), maxDt.getMonth(), maxDt.getDate() + padDays);
+    return {
+      startIso: toIsoDate(padStart),
+      endIso: toIsoDate(padEnd),
+      rawStartIso: toIsoDate(minDt),
+      rawEndIso: toIsoDate(maxDt)
+    };
+  }
+
+  function showAnnualPinchBadge(scrollEl, text) {
+    if (!scrollEl) return;
+    let badge = scrollEl.parentElement?.querySelector(".chart-pinch-toast");
+    if (!badge) {
+      badge = document.createElement("div");
+      badge.className = "chart-pinch-toast";
+      badge.setAttribute("aria-live", "polite");
+      (scrollEl.parentElement || document.body).appendChild(badge);
+    }
+    badge.textContent = text;
+    badge.classList.add("is-visible");
+    clearTimeout(badge._hideTimer);
+    badge._hideTimer = setTimeout(() => badge.classList.remove("is-visible"), 950);
   }
 
   function getSelectedYear(scope) {
@@ -572,11 +625,14 @@
     projectTitle,
     dateFrom,
     dateTo,
+    fitEvents,
     allTypes,
     getTypeInfo,
     fmtBR,
     esc,
     onOpenCard,
+    onCreateAtDate,
+    onToggleFitEvents,
     onSavePrefs,
     toast
   }) {
@@ -585,7 +641,11 @@
     const idPrefix = sc === "personal" ? "personalPa" : "pa";
     const btnPrefix = sc === "personal" ? "btnPersonalPa" : "btnPa";
     const prefs = ensureAnnualPrefs(state, sc);
+    if (typeof fitEvents === "boolean") fitEventsByScope[sc] = fitEvents;
+    const fitActive = Boolean(fitEventsByScope[sc]);
     const selectedYear = getSelectedYear(sc);
+    const hiddenTypesSet = new Set(prefs.hiddenTypes);
+    const hiddenCardsSet = new Set(prefs.hiddenCards);
 
     // Anos disponíveis (ano corrente ±3 + anos presentes nos cartões)
     const curYear = new Date().getFullYear();
@@ -598,9 +658,11 @@
     });
     const sortedYears = [...yearsSet].sort((a, b) => a - b);
 
-    const period = buildPeriodModel(selectedYear, dateFrom, dateTo);
-    const hiddenTypesSet = new Set(prefs.hiddenTypes);
-    const hiddenCardsSet = new Set(prefs.hiddenCards);
+    const fitRange = fitActive ? computeFitEventsRange(cards, hiddenTypesSet, hiddenCardsSet, getTypeInfo) : null;
+    const effDateFrom = fitRange ? fitRange.startIso : dateFrom;
+    const effDateTo = fitRange ? fitRange.endIso : dateTo;
+    const period = buildPeriodModel(selectedYear, effDateFrom, effDateTo);
+    period.isFitToEvents = Boolean(fitRange);
 
     // Agrupar cartões por Tipo de Cartão
     const byType = new Map();
@@ -630,9 +692,11 @@
     const totalHiddenCount = hiddenPresentTypes.length + hiddenPresentCards.length;
 
     const showDays = Boolean(prefs.showDays);
-    const sheetMinWidth = showDays ? Math.max(960, 46 + period.totalDays * 14) : 960;
+    const zoomScale = Math.max(0.75, Math.min(3.2, Number(zoomScaleByScope[sc]) || 1));
+    const baseSheetMinWidth = showDays ? Math.max(960, 46 + period.totalDays * 14) : 960;
+    const sheetMinWidth = Math.round(baseSheetMinWidth * zoomScale);
     const baseGridPx = Math.max(780, Math.min(1260, (container.clientWidth || 1140) - 82));
-    const gridRefPx = showDays ? Math.max(baseGridPx, period.totalDays * 14) : baseGridPx;
+    const gridRefPx = Math.round((showDays ? Math.max(baseGridPx, period.totalDays * 14) : baseGridPx) * zoomScale);
     const getTypeColor = tId => getTypeInfo(tId).color || "#2563eb";
 
     const lanes = visibleTypeIds.map(tId => {
@@ -721,7 +785,11 @@
             <input type="checkbox" id="${idPrefix}ShowDays" data-pa-role="showDays" ${showDays ? "checked" : ""}>
             <span>Mostrar dias do mês</span>
           </label>
-          ${!period.isFullYear ? `<span class="pill" style="font-size:0.72rem">Período filtrado: ${esc(period.title)}</span>` : ""}
+          <button type="button" class="btn ghost small gantt-fit-events-btn" id="${btnPrefix}FitEvents" data-pa-role="fitEvents" aria-pressed="${fitActive ? "true" : "false"}" title="Ajustar janela de datas apenas ao período com eventos cadastrados">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+            <span>Ajustar aos eventos</span>
+          </button>
+          ${period.isFitToEvents ? `<span class="pill" style="font-size:0.72rem">🎯 ${esc(fmtBR(fitRange.rawStartIso))} → ${esc(fmtBR(fitRange.rawEndIso))}</span>` : (!period.isFullYear ? `<span class="pill" style="font-size:0.72rem">Período filtrado: ${esc(period.title)}</span>` : "")}
           ${totalHiddenCount > 0 ? `<button type="button" class="btn ghost small" id="${btnPrefix}RestoreHidden" data-pa-role="restoreHidden" title="Restaurar categorias e cartões ocultos nesta visualização">👁️ Restaurar ocultos (${totalHiddenCount})</button>` : ""}
         </div>
         <div class="pa-topbar-right">
@@ -735,8 +803,8 @@
         </div>
       </div>
 
-      <div class="pa-sheet-scroll">
-        <div class="pa-sheet${showDays ? " is-show-days" : ""}" id="${idPrefix}ExecutiveSheet"${showDays ? ` style="min-width:${sheetMinWidth}px"` : ""}>
+      <div class="pa-sheet-scroll" tabindex="0" role="region" aria-label="Calendário Anual">
+        <div class="pa-sheet${showDays ? " is-show-days" : ""}" id="${idPrefix}ExecutiveSheet"${(showDays || zoomScale !== 1) ? ` style="min-width:${sheetMinWidth}px"` : ""}>
           <div class="pa-header-box">
             <div class="pa-rail pa-rail-ano"><span class="pa-rail-lbl">ANO</span></div>
             <div class="pa-header-main">
@@ -749,34 +817,66 @@
       </div>
     `;
 
+    const rerender = () => render({
+      scope: sc,
+      container,
+      cards,
+      state,
+      projectTitle,
+      dateFrom,
+      dateTo,
+      fitEvents: fitEventsByScope[sc],
+      allTypes,
+      getTypeInfo,
+      fmtBR,
+      esc,
+      onOpenCard,
+      onCreateAtDate,
+      onToggleFitEvents,
+      onSavePrefs,
+      toast
+    });
+
     // Eventos da barra superior
     const showDaysChk = container.querySelector("[data-pa-role='showDays']");
     if (showDaysChk) {
       showDaysChk.onchange = () => {
         prefs.showDays = Boolean(showDaysChk.checked);
-        render({ scope: sc, container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
+        rerender();
         onSavePrefs?.(prefs.showDays ? "📅 Dias do mês exibidos no Calendário Anual!" : "📅 Dias do mês ocultados no Calendário Anual.");
+      };
+    }
+    const fitBtn = container.querySelector("[data-pa-role='fitEvents']");
+    if (fitBtn) {
+      fitBtn.onclick = () => {
+        const nextVal = !fitEventsByScope[sc];
+        fitEventsByScope[sc] = nextVal;
+        if (typeof onToggleFitEvents === "function") {
+          onToggleFitEvents(nextVal);
+        } else {
+          rerender();
+        }
       };
     }
     const yrSel = container.querySelector("[data-pa-role='yearSelect']");
     if (yrSel) {
       yrSel.onchange = () => {
         setSelectedYear(parseInt(yrSel.value, 10) || curYear, sc);
-        render({ scope: sc, container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
+        rerender();
       };
     }
     const prevBtn = container.querySelector("[data-pa-role='prevYear']");
     if (prevBtn) {
       prevBtn.onclick = () => {
         setSelectedYear(getSelectedYear(sc) - 1, sc);
-        render({ scope: sc, container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
+        rerender();
       };
     }
     const nextBtn = container.querySelector("[data-pa-role='nextYear']");
     if (nextBtn) {
       nextBtn.onclick = () => {
         setSelectedYear(getSelectedYear(sc) + 1, sc);
-        render({ scope: sc, container, cards, state, projectTitle, dateFrom, dateTo, allTypes, getTypeInfo, fmtBR, esc, onOpenCard, onSavePrefs, toast });
+        rerender();
       };
     }
     const restoreBtn = container.querySelector("[data-pa-role='restoreHidden']");
@@ -850,9 +950,116 @@
     container.querySelectorAll("[data-pa-card]").forEach(el => {
       el.onclick = e => {
         if (e.target.closest("[data-pa-hide-card]")) return;
+        if (window.MyPlanDismiss?.wasRecentlyDismissed?.()) return;
+        e.stopPropagation();
         onOpenCard?.(el.dataset.paCard);
       };
     });
+
+    // Interações da área do gráfico: Clique no vazio -> Novo Evento + Pinça (Pinch-to-Zoom) Mobile
+    const scrollEl = container.querySelector(".pa-sheet-scroll");
+    const sheetEl = container.querySelector(".pa-sheet");
+    let lastPinchEndTs = 0;
+
+    if (scrollEl && sheetEl) {
+      let pinchStartDist = 0;
+      let pinchStartScale = zoomScale;
+      let pinchFocalRatio = 0.5;
+      let pinchActive = false;
+
+      scrollEl.addEventListener("touchstart", e => {
+        if (e.touches.length === 2) {
+          pinchActive = true;
+          const t0 = e.touches[0], t1 = e.touches[1];
+          pinchStartDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY) || 1;
+          pinchStartScale = Math.max(0.75, Math.min(3.2, Number(zoomScaleByScope[sc]) || 1));
+          const rect = scrollEl.getBoundingClientRect();
+          const midX = ((t0.clientX + t1.clientX) / 2) - rect.left;
+          const totalW = Math.max(1, scrollEl.scrollWidth);
+          pinchFocalRatio = (scrollEl.scrollLeft + midX) / totalW;
+        }
+      }, { passive: true });
+
+      scrollEl.addEventListener("touchmove", e => {
+        if (!pinchActive || e.touches.length !== 2) return;
+        e.preventDefault();
+        const t0 = e.touches[0], t1 = e.touches[1];
+        const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY) || 1;
+        const factor = dist / Math.max(10, pinchStartDist);
+        const nextScale = Math.max(0.75, Math.min(3.2, Math.round(pinchStartScale * factor * 100) / 100));
+        zoomScaleByScope[sc] = nextScale;
+        const nextMinW = Math.round(baseSheetMinWidth * nextScale);
+        sheetEl.style.minWidth = `${nextMinW}px`;
+        const rect = scrollEl.getBoundingClientRect();
+        const midX = ((t0.clientX + t1.clientX) / 2) - rect.left;
+        scrollEl.scrollLeft = Math.max(0, Math.round(pinchFocalRatio * scrollEl.scrollWidth - midX));
+        const pct = Math.round(nextScale * 100);
+        const granularity = (prefs.showDays || nextScale >= 1.65) ? "Dias" : (nextScale < 0.9 ? "Meses" : "Semanas");
+        showAnnualPinchBadge(scrollEl, `🔍 ${pct}% · ${granularity}`);
+      }, { passive: false });
+
+      const finishPinch = () => {
+        if (!pinchActive) return;
+        pinchActive = false;
+        lastPinchEndTs = Date.now();
+        const scVal = zoomScaleByScope[sc];
+        const prevScrollLeft = scrollEl.scrollLeft;
+        const prevScrollW = Math.max(1, scrollEl.scrollWidth);
+        const ratio = prevScrollLeft / prevScrollW;
+        // Alterna automaticamente granularidade Dias ↔ Semanas ao dar zoom forte na pinça
+        if (scVal >= 1.75 && !prefs.showDays) prefs.showDays = true;
+        else if (scVal <= 0.95 && prefs.showDays) prefs.showDays = false;
+        rerender();
+        const nextScroll = container.querySelector(".pa-sheet-scroll");
+        if (nextScroll) {
+          nextScroll.scrollLeft = Math.max(0, Math.round(ratio * nextScroll.scrollWidth));
+        }
+      };
+      scrollEl.addEventListener("touchend", e => {
+        if (pinchActive && e.touches.length < 2) finishPinch();
+      }, { passive: true });
+      scrollEl.addEventListener("touchcancel", finishPinch, { passive: true });
+
+      // Clique em espaço vazio da grade -> Inserir novo evento com data pré-preenchida
+      if (typeof onCreateAtDate === "function") {
+        let downInfo = null;
+        scrollEl.addEventListener("pointerdown", e => {
+          if (e.button && e.button !== 0) return;
+          if (e.target.closest("[data-pa-card], [data-pa-hide-card], .pa-rail, button, a, input, select")) {
+            downInfo = null;
+            return;
+          }
+          downInfo = {
+            x: e.clientX,
+            y: e.clientY,
+            sl: scrollEl.scrollLeft,
+            st: scrollEl.scrollTop,
+            t: Date.now(),
+            hadOverlay: Boolean(window.MyPlanDismiss?.hasOpenOverlay?.())
+          };
+        });
+        scrollEl.addEventListener("click", e => {
+          const di = downInfo;
+          downInfo = null;
+          if (!di || di.hadOverlay) return;
+          if (Date.now() - lastPinchEndTs < 380) return;
+          if (window.MyPlanDismiss?.hasOpenOverlay?.() || window.MyPlanDismiss?.wasRecentlyDismissed?.()) return;
+          if (e.target.closest("[data-pa-card], [data-pa-hide-card], .pa-rail, .pa-header-box, button, a, input, select")) return;
+          const laneGrid = e.target.closest(".pa-lane-grid");
+          if (!laneGrid) return;
+          if (Math.hypot(e.clientX - di.x, e.clientY - di.y) > 8) return;
+          if (Math.abs(scrollEl.scrollLeft - di.sl) > 5 || Math.abs(scrollEl.scrollTop - di.st) > 5) return;
+
+          const rect = laneGrid.getBoundingClientRect();
+          const ratio = Math.max(0, Math.min(0.9999, (e.clientX - rect.left) / Math.max(1, rect.width)));
+          const dayOff = Math.floor(ratio * period.totalDays);
+          const targetDt = new Date(period.rangeStart.getFullYear(), period.rangeStart.getMonth(), period.rangeStart.getDate() + dayOff);
+          const isoDate = toIsoDate(targetDt);
+          const laneTypeId = laneGrid.closest(".pa-swimlane")?.dataset.paType || "";
+          onCreateAtDate(isoDate, laneTypeId);
+        });
+      }
+    }
   }
 
   window.MyPlanProAnnual = {
@@ -860,6 +1067,8 @@
     exportAnnualPng,
     exportAnnualPdfLandscape,
     setYear: (y, scope = "pro") => setSelectedYear(y, scope),
-    getYear: (scope = "pro") => getSelectedYear(scope)
+    getYear: (scope = "pro") => getSelectedYear(scope),
+    setFitEvents: (v, scope = "pro") => setFitEvents(v, scope),
+    getFitEvents: (scope = "pro") => getFitEvents(scope)
   };
 })();
