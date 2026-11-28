@@ -76,7 +76,13 @@ if (-not (Test-Path $envPath)) {
   Write-Host "[OK] Arquivo .env já existe — preservado sem alterações." -ForegroundColor Green
 }
 
-# 4. Rodar verificação de sintaxe do projeto
+# 4. Ativar sincronização automática (auto-push no commit + auto-pull silencioso a cada 5 min)
+$autoSyncScript = Join-Path $PSScriptRoot "enable-auto-sync.ps1"
+if (Test-Path $autoSyncScript) {
+  & $autoSyncScript -RepoPath $repoRoot
+}
+
+# 5. Rodar verificação de sintaxe do projeto
 Push-Location $repoRoot
 try {
   & npm run check

@@ -2,9 +2,14 @@
 
 ## Repositório & Portabilidade (Laptop / Outro PC)
 - **Repositório Git**: `https://github.com/lozazizamaria/ferias-pro` (ou `myplan` se renomeado no GitHub)
-- **Pasta local recomendada**: `D:\Projetos\MyPlan` (ou `C:\Projetos\MyPlan`)
+- **Pasta local recomendada**: `D:\My Plan` (padrão nos dois PCs)
 - **Plugins & Regras Portáteis embutidos no projeto**: `.agents/plugins/ferias-pro-architect` e `.agents/plugins/ads-intelligence-architect` (descobertos automaticamente pelo Google Antigravity ao abrir a pasta clonada no laptop).
 - **Guia rápido de configuração no laptop (aeroporto/remoto)**: veja [LAPTOP-SETUP.md](./LAPTOP-SETUP.md) e o script automatizado [scripts/setup-laptop.ps1](./scripts/setup-laptop.ps1).
+
+## Sincronização Automática Multi-PC (Regra Obrigatória)
+- **Antes de iniciar qualquer análise ou edição na pasta**: execute `git pull --ff-only origin main` automaticamente para garantir que o workspace local esteja na última versão da nuvem (só interrompa e avise o usuário se houver conflito real).
+- **Ao concluir qualquer alteração no projeto**: após validar com `npm run check` e conferir que `git status` não inclui segredos (`.env`, `.master.key`, `server/data/`), execute automaticamente `git add -A`, `git commit -m "<resumo claro>"` e `git push origin main` — sem esperar o usuário pedir.
+- **Automação em segundo plano no Windows**: executada via `scripts/enable-auto-sync.ps1` (hook `post-commit` com push automático + tarefa agendada silenciosa `MyPlan-AutoPull` a cada 5 minutos e no logon).
 
 ## Autenticação Google OAuth
 - **Google OAuth Client ID (público / site e login)**: `1075987097030-j9htnv6l02rfdbt4spbjp84btj8bopqq.apps.googleusercontent.com`
